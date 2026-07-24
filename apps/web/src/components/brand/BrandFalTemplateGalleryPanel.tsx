@@ -770,13 +770,6 @@ export function BrandFalTemplateGalleryPanel({
         />
       )}
 
-      <div style={{
-        height: 1,
-        background: t.separator,
-        margin: '4px 0',
-      }}
-      />
-
       {needsPreviewGeneration && (
         <div style={{
           padding: '12px 14px',
@@ -813,7 +806,17 @@ export function BrandFalTemplateGalleryPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      <div className="sa-chrome-eyebrow" style={{ marginBottom: 2 }}>Şablon galerisi</div>
+
+      <div
+        style={{
+          display: 'flex',
+          gap: 3,
+          padding: 3,
+          borderRadius: 12,
+          background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
+        }}
+      >
         {(['all', 'post', 'story', 'reel'] as CatalogGalleryFormatFilter[]).map((f) => {
           const active = formatFilter === f;
           const label = f === 'all' ? 'Tümü' : FORMAT_LABELS[f];
@@ -823,13 +826,21 @@ export function BrandFalTemplateGalleryPanel({
               type="button"
               onClick={() => setFormatFilter(f)}
               style={{
-                padding: '5px 10px',
-                borderRadius: 999,
-                fontSize: 11,
+                flex: 1,
+                minHeight: 40,
+                padding: '8px 0',
+                borderRadius: 10,
+                fontSize: 12,
+                fontWeight: 700,
                 cursor: 'pointer',
-                border: `1px solid ${active ? t.accentBorder : t.separator}`,
-                background: active ? (t.isDark ? 'rgba(59,130,246,0.15)' : 'rgba(59,130,246,0.1)') : 'transparent',
-                color: active ? t.accent : t.textMuted,
+                border: 'none',
+                background: active
+                  ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF')
+                  : 'transparent',
+                color: active ? t.textPrimary : t.textMuted,
+                boxShadow: active
+                  ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)')
+                  : 'none',
               }}
             >
               {label}
@@ -838,18 +849,14 @@ export function BrandFalTemplateGalleryPanel({
         })}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <span style={{ fontSize: 12, color: t.textSecondary, display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 12, color: t.textSecondary, display: 'block', lineHeight: 1.35 }}>
             {totalSlotCount
-              ? `${enabledCount}/${totalSlotCount} etkin · ${templateReadyCount} şablon hazır · ${coverage.previewCount} önizlemeli`
+              ? `${enabledCount}/${totalSlotCount} etkin · ${templateReadyCount} hazır`
               : isLoading
                 ? 'Slot kataloğu yükleniyor…'
-                : 'Sektör tanımsız — Kimlik sekmesinde sektör kaydedin'}
-          </span>
-          <span style={{ fontSize: 11, color: t.textMuted, display: 'block', marginTop: 4, lineHeight: 1.45 }}>
-            Deneme için kartlardaki <strong style={{ color: t.textSecondary }}>Bu slotu üret</strong>
-            {' '}(1 slot). Tüm set üstteki butonla ({productionSettings.preview_cap} slot).
+                : 'Sektör tanımsız — Kimlik’te sektör kaydedin'}
           </span>
         </div>
         <button
@@ -857,11 +864,12 @@ export function BrandFalTemplateGalleryPanel({
           disabled={generating || Boolean(generatingSlotKey)}
           onClick={() => void generateBrandSet()}
           style={{
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: `1px solid ${t.separator}`,
-            background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-            color: t.textSecondary,
+            minHeight: 40,
+            padding: '0 12px',
+            borderRadius: 11,
+            border: 'none',
+            background: t.accent,
+            color: '#fff',
             fontSize: 12,
             fontWeight: 700,
             cursor: (generating || generatingSlotKey) ? 'wait' : 'pointer',
@@ -869,7 +877,7 @@ export function BrandFalTemplateGalleryPanel({
             flexShrink: 0,
           }}
         >
-          {generating ? 'Üretiliyor…' : `Tüm seti oluştur (${productionSettings.preview_cap})`}
+          {generating ? 'Üretiliyor…' : `Set (${productionSettings.preview_cap})`}
         </button>
       </div>
 

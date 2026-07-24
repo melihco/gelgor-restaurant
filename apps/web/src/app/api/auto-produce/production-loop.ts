@@ -267,6 +267,7 @@ import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-produc
 import {
   applyCatalogSlotBindingsToQueue,
   enrichProductionQueueWithBrandSlots,
+  resolveSlotBackfillProductionLoop,
   loadBrandActiveSlotSet,
   stampIdeasWithBrandCatalogSlots,
   summarizeCatalogSlotStampCoverage,
@@ -975,8 +976,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const productionLoop: ManifestProductionQueueItem[] = completionPassOnly
     ? []
     : slotBackfillPass && backfillSlotKeys?.length
-      ? fullProductionQueue.filter((item) =>
-          backfillSlotKeys.includes(`${item.ideaIndex}:${item.assignment.slot_role}`),
+      ? resolveSlotBackfillProductionLoop(
+          fullProductionQueue,
+          backfillSlotKeys,
+          catalogSlotBindings,
         )
       : fullProductionQueue;
 

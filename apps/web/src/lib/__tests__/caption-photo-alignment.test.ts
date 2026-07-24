@@ -124,6 +124,7 @@ describe('captionPhotoConflictPenalty — nightlife vs food', () => {
       ),
     ).toBe(true);
   });
+
 });
 
 describe('captionRequiresStrictGalleryMatch', () => {

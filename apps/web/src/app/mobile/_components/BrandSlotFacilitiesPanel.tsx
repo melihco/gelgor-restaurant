@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * Mobile Marka — tesis özellikleri + 7 raf özeti.
+ * Mobile Marka — tesis profili (chip grid) + kompakt raf özeti.
  * Platform admin UI değil; /mobile BrandConstitution (Tasarım → Şablon) altında.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchTenantBff } from '@/lib/bff-fetch';
+import { OPT_IN_SLOT_FACILITIES } from '@/lib/sector-slot-pack';
 import type { T } from './theme-context';
 
 interface FacilityOption {
@@ -57,6 +58,142 @@ interface PreviewResponse {
   coverage: CoverageInfo;
 }
 
+const OPT_IN_SET = new Set<string>(OPT_IN_SLOT_FACILITIES as readonly string[]);
+
+function FacilityGlyph({ name, color }: { name: string; color: string }) {
+  const common = {
+    width: 18,
+    height: 18,
+    viewBox: '0 0 24 24',
+    fill: 'none' as const,
+    stroke: color,
+    strokeWidth: 1.7,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    'aria-hidden': true,
+  };
+  switch (name) {
+    case 'pool':
+      return (
+        <svg {...common}>
+          <path d="M3 14c1.5 0 2.5-1 4-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1" />
+          <path d="M3 18c1.5 0 2.5-1 4-1s2.5 1 4 1 2.5-1 4-1 2.5 1 4 1" />
+          <path d="M8 6.5c1.2 1.8 2.4 2.7 4 2.7s2.8-.9 4-2.7" />
+        </svg>
+      );
+    case 'dj_stage':
+      return (
+        <svg {...common}>
+          <circle cx="8.5" cy="13" r="3.2" />
+          <circle cx="15.5" cy="13" r="3.2" />
+          <path d="M11.7 13h.6" />
+          <path d="M8.5 9.8V6.5h3.2" />
+        </svg>
+      );
+    case 'full_menu':
+      return (
+        <svg {...common}>
+          <path d="M5 5.5h4v13H5z" />
+          <path d="M7 5.5V18.5" />
+          <path d="M13 5.5h2.2c1.8 0 3.3 1.5 3.3 3.3S17 12 15.2 12H13z" />
+          <path d="M13 12v6.5" />
+        </svg>
+      );
+    case 'private_events':
+      return (
+        <svg {...common}>
+          <path d="M5 19V9.5l7-4 7 4V19" />
+          <path d="M9.5 19v-5.5h5V19" />
+        </svg>
+      );
+    case 'live_music':
+      return (
+        <svg {...common}>
+          <path d="M10 17.5a2.5 2.5 0 1 1-2.5-2.5" />
+          <path d="M12.5 15V5.5l6 1.4V14" />
+          <path d="M18.5 15.5a2.5 2.5 0 1 1-2.5-2.5" />
+        </svg>
+      );
+    case 'hiring':
+      return (
+        <svg {...common}>
+          <rect x="4" y="8" width="16" height="12" rx="2" />
+          <path d="M9 8V6.5a3 3 0 0 1 6 0V8" />
+          <path d="M4 13h16" />
+        </svg>
+      );
+    case 'events_calendar':
+      return (
+        <svg {...common}>
+          <rect x="4" y="6" width="16" height="14" rx="2" />
+          <path d="M8 4v4M16 4v4M4 11h16" />
+        </svg>
+      );
+    case 'spa':
+      return (
+        <svg {...common}>
+          <path d="M12 19c-4-3.2-6.5-6-6.5-9A4.2 4.2 0 0 1 12 6.2 4.2 4.2 0 0 1 18.5 10c0 3-2.5 5.8-6.5 9Z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="7.5" />
+          <path d="M12 8.5v5M12 15.8h.01" />
+        </svg>
+      );
+  }
+}
+
+function FacilityChip({
+  opt,
+  on,
+  t,
+  onToggle,
+}: {
+  opt: FacilityOption;
+  on: boolean;
+  t: T;
+  onToggle: () => void;
+}) {
+  const accent = on ? '#8AABBD' : t.textMuted;
+  return (
+    <button
+      type="button"
+      className="brand-facility-chip"
+      data-on={on ? '1' : '0'}
+      aria-pressed={on}
+      onClick={onToggle}
+      title={opt.hint_tr || opt.label_tr}
+    >
+      <span className="brand-facility-chip__icon" style={{ color: accent }}>
+        <FacilityGlyph name={opt.key} color={accent} />
+      </span>
+      <span className="brand-facility-chip__text">
+        <span className="brand-facility-chip__label" style={{ color: on ? t.textPrimary : t.textSecondary }}>
+          {opt.label_tr}
+        </span>
+        {opt.hint_tr ? (
+          <span className="brand-facility-chip__hint" style={{ color: t.textMuted }}>
+            {opt.hint_tr}
+          </span>
+        ) : null}
+      </span>
+      <span
+        className="brand-facility-chip__check"
+        style={{
+          background: on ? 'rgba(138,171,189,0.22)' : 'transparent',
+          borderColor: on ? 'rgba(138,171,189,0.45)' : t.separator,
+          color: on ? '#9DBECE' : 'transparent',
+        }}
+        aria-hidden
+      >
+        ✓
+      </span>
+    </button>
+  );
+}
+
 export function BrandSlotFacilitiesPanel({
   tenantId,
   sector,
@@ -74,6 +211,7 @@ export function BrandSlotFacilitiesPanel({
   const [statusKind, setStatusKind] = useState<'info' | 'success' | 'error'>('info');
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [shelvesOpen, setShelvesOpen] = useState(false);
 
   const overviewQuery = useQuery({
     queryKey: ['brand-slot-overview', tenantId],
@@ -107,11 +245,9 @@ export function BrandSlotFacilitiesPanel({
     for (const slot of overview?.slots ?? []) {
       for (const f of slot.required_facilities ?? []) keys.add(f);
     }
-    // Always surface opt-in service facilities (hiring / events calendar)
     for (const opt of overview?.facility_options ?? []) {
       if (!opt.enabled) keys.add(opt.key);
     }
-    // Fallback: show common venue toggles even if catalog tags empty
     if (keys.size === 0) {
       for (const opt of overview?.facility_options ?? []) keys.add(opt.key);
     }
@@ -124,6 +260,16 @@ export function BrandSlotFacilitiesPanel({
     const filtered = opts.filter((o) => relevantFacilityKeys.has(o.key));
     return filtered.length > 0 ? filtered : opts;
   }, [overview, relevantFacilityKeys]);
+
+  const { venueOptions, serviceOptions } = useMemo(() => {
+    const venue: FacilityOption[] = [];
+    const service: FacilityOption[] = [];
+    for (const opt of visibleOptions) {
+      if (OPT_IN_SET.has(opt.key)) service.push(opt);
+      else venue.push(opt);
+    }
+    return { venueOptions: venue, serviceOptions: service };
+  }, [visibleOptions]);
 
   const runPreview = useCallback(
     async (nextFacilities: Record<string, boolean>) => {
@@ -264,7 +410,7 @@ export function BrandSlotFacilitiesPanel({
   if (overviewQuery.isLoading) {
     return (
       <p style={{ margin: 0, fontSize: 13, color: t.textMuted }}>
-        Tesis ve raf özeti yükleniyor…
+        Tesis profili yükleniyor…
       </p>
     );
   }
@@ -278,30 +424,51 @@ export function BrandSlotFacilitiesPanel({
   }
 
   const facilities = draft ?? overview.facilities;
+  const activeCount = visibleOptions.filter((o) => facilities[o.key] !== false).length;
   const recommendCount = preview?.recommended_disable_by_facility?.length
     ?? preview?.would_disable_by_facility?.length
     ?? 0;
+  const coverage = preview?.coverage ?? overview.coverage;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary }}>
-        Tesis özellikleri
-      </div>
+    <div className="brand-facilities-studio" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <header className="brand-facilities-studio__head">
+        <div>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 4 }}>Tesis profili</div>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: t.textMuted }}>
+            İşletmenizde olan olanakları seçin — kapalı olanlar üretim setinden düşer.
+          </p>
+        </div>
+        <div
+          className="brand-facilities-studio__stats"
+          style={{
+            background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.04)',
+            borderColor: t.separator,
+          }}
+        >
+          <span style={{ color: t.textPrimary }}>{activeCount}/{visibleOptions.length}</span>
+          <span style={{ color: t.textMuted }}>özellik</span>
+          <span className="brand-facilities-studio__dot" style={{ background: t.separator }} />
+          <span style={{ color: coverage.ok ? '#8AABBD' : t.warning }}>
+            {coverage.effective_enabled_count} slot
+          </span>
+        </div>
+      </header>
 
       {overview.using_sector_defaults && overview.assignment_row_count === 0 && (
         <div
           style={{
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: `1px solid ${t.separator}`,
+            padding: '11px 12px',
+            borderRadius: 14,
+            border: `0.5px solid ${t.separator}`,
             background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
             display: 'flex',
             flexDirection: 'column',
-            gap: 10,
+            gap: 8,
           }}
         >
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: t.textSecondary }}>
-            Henüz markaya özel slot kaydı yok — sektör varsayılanları kullanılıyor.
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: t.textSecondary }}>
+            Markaya özel slot kaydı yok — sektör varsayılanları kullanılıyor.
           </p>
           <button
             type="button"
@@ -309,9 +476,8 @@ export function BrandSlotFacilitiesPanel({
             onClick={() => void bootstrapDefaults()}
             style={{
               minHeight: 44,
-              padding: '10px 14px',
               borderRadius: 12,
-              border: `1px solid ${t.separator}`,
+              border: `0.5px solid ${t.separator}`,
               background: t.isDark ? 'rgba(255,255,255,0.06)' : '#fff',
               color: t.textPrimary,
               fontSize: 13,
@@ -324,82 +490,51 @@ export function BrandSlotFacilitiesPanel({
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {visibleOptions.map((opt) => {
-          const on = facilities[opt.key] !== false;
-          return (
-            <button
+      {venueOptions.length > 0 && (
+        <div className="brand-facility-grid">
+          {venueOptions.map((opt) => (
+            <FacilityChip
               key={opt.key}
-              type="button"
-              onClick={() => toggleFacility(opt.key)}
-              aria-pressed={on}
-              style={{
-                minHeight: 52,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 12,
-                padding: '12px 14px',
-                borderRadius: 14,
-                border: `1px solid ${on ? t.separator : t.accentBorder}`,
-                background: on
-                  ? (t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)')
-                  : (t.isDark ? 'rgba(245,158,11,0.1)' : 'rgba(245,158,11,0.08)'),
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
-                  {opt.label_tr}
-                </div>
-              </div>
-              <div
-                style={{
-                  width: 50,
-                  height: 28,
-                  borderRadius: 14,
-                  flexShrink: 0,
-                  background: on ? t.accent : t.separator,
-                  position: 'relative',
-                }}
-              >
-                <div
-                  style={{
-                    position: 'absolute',
-                    top: 3,
-                    width: 22,
-                    height: 22,
-                    borderRadius: '50%',
-                    background: '#fff',
-                    left: on ? 25 : 3,
-                    transition: 'left 0.2s',
-                  }}
-                />
-              </div>
-            </button>
-          );
-        })}
-      </div>
+              opt={opt}
+              on={facilities[opt.key] !== false}
+              t={t}
+              onToggle={() => toggleFacility(opt.key)}
+            />
+          ))}
+        </div>
+      )}
+
+      {serviceOptions.length > 0 && (
+        <div>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 8 }}>Ek hizmetler</div>
+          <div className="brand-facility-grid">
+            {serviceOptions.map((opt) => (
+              <FacilityChip
+                key={opt.key}
+                opt={opt}
+                on={facilities[opt.key] !== false}
+                t={t}
+                onToggle={() => toggleFacility(opt.key)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {dirty && (
         <div
+          className="brand-facilities-studio__save"
           style={{
-            padding: '12px 14px',
-            borderRadius: 12,
-            border: `1px solid ${t.accentBorder}`,
-            background: t.isDark ? 'rgba(59,130,246,0.12)' : 'rgba(59,130,246,0.08)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
+            borderColor: t.accentBorder,
+            background: t.isDark ? 'rgba(90,160,214,0.12)' : 'rgba(90,160,214,0.08)',
           }}
         >
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.45, color: t.textSecondary }}>
+          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: t.textSecondary }}>
             {previewLoading
-              ? 'Önizleme hesaplanıyor…'
+              ? 'Etki hesaplanıyor…'
               : recommendCount > 0
-                ? `${recommendCount} slot tesis değişikliğiyle kapanacak / kapanması önerilir.`
-                : 'Değişiklik kaydedildiğinde üretim seti güncellenir.'}
+                ? `${recommendCount} slot bu değişiklikle kapanacak.`
+                : 'Kaydedince üretim seti güncellenir.'}
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button
@@ -432,7 +567,7 @@ export function BrandSlotFacilitiesPanel({
                 minHeight: 44,
                 padding: '0 14px',
                 borderRadius: 12,
-                border: `1px solid ${t.separator}`,
+                border: `0.5px solid ${t.separator}`,
                 background: 'transparent',
                 color: t.textSecondary,
                 fontSize: 13,
@@ -458,59 +593,95 @@ export function BrandSlotFacilitiesPanel({
         </p>
       )}
 
-      <div>
-        <div style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary, marginBottom: 8 }}>
-          7 raf özeti
-          {overview.coverage && (
-            <span style={{ fontWeight: 500, color: t.textMuted }}>
+      <div
+        className="brand-shelf-summary"
+        style={{
+          borderColor: t.separator,
+          background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(15,23,42,0.03)',
+        }}
+      >
+        <button
+          type="button"
+          className="brand-shelf-summary__toggle"
+          onClick={() => setShelvesOpen((v) => !v)}
+          aria-expanded={shelvesOpen}
+        >
+          <span>
+            <span style={{ fontWeight: 700, color: t.textPrimary }}>Raf özeti</span>
+            <span style={{ color: t.textMuted, fontWeight: 500 }}>
               {' · '}
-              {overview.coverage.effective_enabled_count} etkin slot
-              {!overview.coverage.ok ? ' · eksik format' : ''}
+              {coverage.effective_enabled_count} etkin
+              {!coverage.ok ? ' · eksik format' : ''}
             </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {(overview.shelves ?? []).map((shelf) => (
-            <div
-              key={shelf.key}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 10,
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: `0.5px solid ${t.separator}`,
-                minHeight: 44,
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>
-                  {shelf.label_tr}
-                </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>
-                  {shelf.format}
-                  {shelf.facility_blocked_count > 0
-                    ? ` · ${shelf.facility_blocked_count} tesis kapalı`
-                    : ''}
-                </div>
-              </div>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: shelf.effective_count > 0 ? t.accent : t.textMuted,
-                  flexShrink: 0,
-                }}
-              >
-                {shelf.effective_count}/{shelf.catalog_count}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+          </span>
+          <span style={{ color: t.textMuted, fontSize: 12 }}>{shelvesOpen ? 'Gizle' : 'Detay'}</span>
+        </button>
 
-      <div style={{ height: 1, background: t.separator, margin: '2px 0' }} />
+        {!shelvesOpen && (
+          <div className="brand-shelf-rail" aria-hidden>
+            {(overview.shelves ?? []).map((shelf) => {
+              const pct = shelf.catalog_count > 0
+                ? Math.round((shelf.effective_count / shelf.catalog_count) * 100)
+                : 0;
+              return (
+                <div key={shelf.key} className="brand-shelf-rail__item">
+                  <div className="brand-shelf-rail__label" style={{ color: t.textMuted }}>
+                    {shelf.format}
+                  </div>
+                  <div
+                    className="brand-shelf-rail__bar"
+                    style={{ background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.08)' }}
+                  >
+                    <div
+                      style={{
+                        width: `${Math.max(pct, shelf.effective_count > 0 ? 12 : 0)}%`,
+                        background: shelf.effective_count > 0 ? '#8AABBD' : t.separator,
+                      }}
+                    />
+                  </div>
+                  <div style={{ color: shelf.effective_count > 0 ? t.textPrimary : t.textMuted, fontWeight: 700, fontSize: 11 }}>
+                    {shelf.effective_count}/{shelf.catalog_count}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {shelvesOpen && (
+          <div className="brand-shelf-detail">
+            {(overview.shelves ?? []).map((shelf) => (
+              <div
+                key={shelf.key}
+                className="brand-shelf-detail__row"
+                style={{ borderColor: t.separator }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>
+                    {shelf.label_tr}
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>
+                    {shelf.format}
+                    {shelf.facility_blocked_count > 0
+                      ? ` · ${shelf.facility_blocked_count} tesis kapalı`
+                      : ''}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: shelf.effective_count > 0 ? '#8AABBD' : t.textMuted,
+                    flexShrink: 0,
+                  }}
+                >
+                  {shelf.effective_count}/{shelf.catalog_count}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

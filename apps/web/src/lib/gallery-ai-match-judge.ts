@@ -7,15 +7,17 @@
  * a near-threshold score, a subject conflict, or multilingual ambiguity.
  *
  * Policy (see plan `gallery-match-quality`):
- * - Strong deterministic match → accept, judge NOT called (fast + free).
- * - Gray zone → judge required. Judge returns strict JSON with a pick,
- *   confidence and reason. Low confidence / "none" → fail closed.
- * - Judge unavailable (no key / error) → we do NOT invent a match: the caller
- *   keeps the deterministic decision (which already blocked hard conflicts).
+ * - Meaning for *any* caption is owned by canonical subject + AI judge —
+ *   not venue/campaign keyword scenarios.
+ * - Fast path: strong score AND vision subject matches caption subject AND
+ *   no cross-category theme risk → skip AI.
+ * - Otherwise (no subject lock, gray score, diversity, theme risk) → AI judge
+ *   confirms or swaps. Wrong photo ≫ judge cost.
+ * - Judge unavailable + theme risk → fail closed. Else keep deterministic
+ *   (hard category vetoes still apply).
  *
- * All internal subject tokens are canonical English snake_case; user-facing
- * copy stays in the brand language. The judge only receives caption, headline,
- * canonical intent and top-candidate metadata — never the raw gallery.
+ * Sector-agnostic — no brand/tenant/scenario branches. Judge sees caption,
+ * headline, canonical intent and candidate metadata — never raw pixels.
  */
 
 import OpenAI from 'openai';
@@ -121,7 +123,8 @@ Rules:
 - A generic family caption (e.g. "our jams" / "reçel çeşitlerimiz") may match any specific variant of that family.
 - Never pick a photo of a different product just because it looks nice or is on-brand.
 - Theme alignment (meaning over keywords):
-  * Nightlife / DJ / party / dance copy → need nightlife proof (DJ booth, stage, dancing crowd, neon party). A food plate is NOT OK.
+  * Nightlife / DJ / party / dance copy → need nightlife proof (DJ booth, stage, dancing crowd, neon party). A plated meal is NOT OK.
+  * Any other caption → the photo must depict the same subject/scene/mood the copy is about. Generic "on-brand" venue shots are NOT enough when the copy names a different subject.
   * Food / menu / plated dish copy → need food proof. A DJ stage is NOT OK.
   * Cocktail / drink-hero copy → need a drink/bar hero. A steak/pasta plate is NOT OK.
   * Cocktail mention inside a nightlife/DJ caption MAY match a nightlife crowd/DJ photo (cocktails are atmosphere, not the hero subject).
@@ -292,19 +295,35 @@ export async function confirmGalleryPickWithAiJudge(
   };
 
   const selectedMeta = resolveMetaForUrl(params.selectedUrl, params.galleryAnalysis);
+  const captionBlob = `${params.headline} ${params.caption}`;
   const themeRisk = themeConflictNeedsAiJudge(
-    `${params.headline} ${params.caption}`,
+    captionBlob,
     buildGalleryPhotoSearchable(selectedMeta, params.selectedUrl),
   );
+  const subjectAligned = Boolean(
+    canonicalSubject
+    && selectedMeta
+    && canonicalSubjectRelationForMeta(canonicalSubject, selectedMeta) === 'match',
+  );
 
-  // Fast path: strong score AND no cross-theme risk — skip AI.
-  // Theme-risk picks always go to the judge (keyword heuristics are soft-only).
-  if (typeof score === 'number' && score >= GIS_PILOT_MIN_SCORE && !themeRisk) {
-    return { ...base, action: 'accept', confidence: 1, reason: `strong deterministic score (${score})` };
+  // Fast path only when vision subject locks to caption subject at a strong
+  // score with no cross-category risk. Every other caption (any language /
+  // sector / campaign) goes through the AI meaning gate.
+  if (
+    typeof score === 'number'
+    && score >= GIS_PILOT_MIN_SCORE
+    && subjectAligned
+    && !themeRisk
+  ) {
+    return {
+      ...base,
+      action: 'accept',
+      confidence: 1,
+      reason: `strong subject-aligned score (${score})`,
+    };
   }
 
-  // Judge unavailable → keep the deterministic decision unless theme risk is
-  // present (soft heuristics alone must not ship a nightlife↔food mismatch).
+  // Judge unavailable → keep deterministic unless cross-category theme risk.
   if (!enabled) {
     if (themeRisk) {
       return {
@@ -316,7 +335,14 @@ export async function confirmGalleryPickWithAiJudge(
         rejectReason: 'ai_judge_required_for_theme',
       };
     }
-    return { ...base, action: 'accept', confidence: 0.5, reason: 'ai judge disabled — deterministic pick kept' };
+    return {
+      ...base,
+      action: 'accept',
+      confidence: subjectAligned ? 0.55 : 0.4,
+      reason: subjectAligned
+        ? 'ai judge disabled — subject-aligned deterministic pick kept'
+        : 'ai judge disabled — deterministic pick kept (no subject lock)',
+    };
   }
 
   // Build the top-N candidate pool (selected photo first).
@@ -370,8 +396,9 @@ export async function confirmGalleryPickWithAiJudge(
     : undefined;
   let action: GalleryJudgeAction;
   if (!verdict) {
-    // Judge failed to produce a verdict → keep deterministic pick (do not block).
-    action = 'accept';
+    // Judge transport/parse failure: theme-risk pairs fail closed (do not ship
+    // a nightlife↔food guess). Otherwise keep the deterministic pick.
+    action = themeRisk ? 'reject' : 'accept';
   } else if (verdict.pickIndex == null || !decidedUrl || verdict.confidence < minConfidence) {
     action = 'reject';
   } else if (normalizeGalleryUrl(decidedUrl) === selectedBase) {
@@ -411,9 +438,14 @@ export async function confirmGalleryPickWithAiJudge(
       judged: Boolean(verdict),
       candidateCount: candidates.length,
       confidence: verdict?.confidence ?? 0,
-      reason: verdict?.reason || 'ai judge rejected the pick',
+      reason: verdict?.reason
+        || (themeRisk && !verdict
+          ? 'theme risk and ai judge unavailable — fail closed'
+          : 'ai judge rejected the pick'),
       rejectReason: verdict?.rejectReason
-        || `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`,
+        || (themeRisk && !verdict
+          ? 'ai_judge_required_for_theme'
+          : `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`),
       canonicalSubject: verdict?.canonicalSubject ?? canonicalSubject,
     };
   }
@@ -430,7 +462,10 @@ export async function confirmGalleryPickWithAiJudge(
   };
 }
 
-/** Diversity / gray / theme-risk picks need judge confirmation. */
+/**
+ * Judge when the pick is not a locked subject match — works for any caption.
+ * Diversity / gray scores / cross-category risk always judge.
+ */
 function batchAssignmentNeedsJudge(
   match: PhotoMatchResult,
   input: MatchPhotoInput,
@@ -439,10 +474,14 @@ function batchAssignmentNeedsJudge(
   if (match.reason === 'mission_diversity_fallback') return true;
   if (match.score < GIS_PILOT_MIN_SCORE) return true;
   const meta = resolveMetaForUrl(match.url, galleryAnalysis);
-  return themeConflictNeedsAiJudge(
-    `${input.headline ?? ''} ${input.caption}`,
-    buildGalleryPhotoSearchable(meta, match.url),
-  );
+  const captionBlob = `${input.headline ?? ''} ${input.caption}`;
+  if (themeConflictNeedsAiJudge(captionBlob, buildGalleryPhotoSearchable(meta, match.url))) {
+    return true;
+  }
+  const subjectKey = input.subjectKey?.trim()
+    || canonicalSubjectFromText(captionBlob);
+  if (!subjectKey || !meta) return true;
+  return canonicalSubjectRelationForMeta(subjectKey, meta) !== 'match';
 }
 
 /**

@@ -13,6 +13,10 @@ export function BrandLogoPreviewCard({
   onSave,
   /** When true, renders as an iOS Settings row inside a grouped list (no outer card). */
   embedded = false,
+  /** Profile-mark avatar (CRM-style) — opens the same logo sheet. */
+  variant = 'default',
+  markSize = 76,
+  brandPrimary,
 }: {
   t: T;
   logoUrl: string;
@@ -20,7 +24,13 @@ export function BrandLogoPreviewCard({
   monogram: string;
   onSave: (url: string) => void;
   embedded?: boolean;
+  variant?: 'default' | 'embedded' | 'mark';
+  markSize?: number;
+  brandPrimary?: string;
 }) {
+  const isEmbedded = embedded || variant === 'embedded';
+  const isMark = variant === 'mark';
+  const accent = brandPrimary || t.accent;
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(logoSource);
   const [uploading, setUploading] = useState(false);
@@ -81,9 +91,9 @@ export function BrandLogoPreviewCard({
   const thumb = (
     <div
       style={{
-        width: embedded ? 36 : 40,
-        height: embedded ? 36 : 40,
-        borderRadius: embedded ? 10 : 12,
+        width: isEmbedded ? 36 : 40,
+        height: isEmbedded ? 36 : 40,
+        borderRadius: isEmbedded ? 10 : 12,
         flexShrink: 0,
         overflow: 'hidden',
         display: 'flex',
@@ -98,10 +108,10 @@ export function BrandLogoPreviewCard({
         <img
           src={displaySrc}
           alt=""
-          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: embedded ? 4 : 0 }}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: isEmbedded ? 4 : 0 }}
         />
       ) : (
-        <span style={{ fontSize: embedded ? 13 : 14, fontWeight: 700, color: t.textMuted }}>
+        <span style={{ fontSize: isEmbedded ? 13 : 14, fontWeight: 700, color: t.textMuted }}>
           {monogram.slice(0, 2).toUpperCase() || 'LG'}
         </span>
       )}
@@ -112,7 +122,7 @@ export function BrandLogoPreviewCard({
     <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden>
       <path
         d="M1.5 1.5 7.5 7.5l-6 6"
-        stroke={embedded ? t.textMuted : t.textTertiary}
+        stroke={isEmbedded ? t.textMuted : t.textTertiary}
         strokeWidth="1.8"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -120,14 +130,85 @@ export function BrandLogoPreviewCard({
     </svg>
   );
 
-  const trigger = (
+  const markTrigger = (
     <button
       type="button"
       data-brand-form="brand-logo"
       onClick={openSheet}
-      className={embedded ? undefined : 'brand-hub-gap-cta'}
+      aria-label={hasLogo ? 'Logoyu değiştir' : 'Logo ekle'}
+      className="brand-identity-mark"
+      style={{
+        position: 'relative',
+        width: markSize,
+        height: markSize,
+        borderRadius: Math.round(markSize * 0.28),
+        border: `2px solid ${t.isDark ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.85)'}`,
+        padding: 0,
+        cursor: 'pointer',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: hasLogo
+          ? (t.isDark ? '#0E1218' : '#FFFFFF')
+          : `linear-gradient(145deg, ${accent}, ${t.accent})`,
+        boxShadow: t.isDark
+          ? `0 12px 28px rgba(0,0,0,0.45), 0 0 0 1px ${accent}33`
+          : `0 10px 24px rgba(15,23,42,0.14), 0 0 0 1px ${accent}22`,
+        flexShrink: 0,
+      }}
+    >
+      {displaySrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={displaySrc}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'contain', padding: 6 }}
+        />
+      ) : (
+        <span style={{
+          fontSize: Math.round(markSize * 0.32),
+          fontWeight: 800,
+          color: '#fff',
+          letterSpacing: '-0.05em',
+        }}
+        >
+          {monogram.slice(0, 2).toUpperCase() || 'LG'}
+        </span>
+      )}
+      <span
+        aria-hidden
+        style={{
+          position: 'absolute',
+          right: 4,
+          bottom: 4,
+          width: 22,
+          height: 22,
+          borderRadius: 8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: t.isDark ? 'rgba(8,10,14,0.88)' : 'rgba(255,255,255,0.95)',
+          border: `0.5px solid ${t.isDark ? 'rgba(255,255,255,0.18)' : 'rgba(15,23,42,0.1)'}`,
+          color: t.textSecondary,
+        }}
+      >
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none">
+          <path d="M4 16.5 15.5 5l3.5 3.5L7.5 20H4v-3.5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M13.2 7.2 16.8 10.8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
+      </span>
+    </button>
+  );
+
+  const trigger = isMark ? markTrigger : (
+    <button
+      type="button"
+      data-brand-form="brand-logo"
+      onClick={openSheet}
+      className={isEmbedded ? undefined : 'brand-hub-gap-cta'}
       style={
-        embedded
+        isEmbedded
           ? {
               width: '100%',
               display: 'flex',
@@ -156,7 +237,7 @@ export function BrandLogoPreviewCard({
             }
       }
     >
-      {embedded ? (
+      {isEmbedded ? (
         <>
           {thumb}
           <span style={{ fontSize: 16, fontWeight: 400, color: t.textPrimary, flexShrink: 0 }}>
@@ -197,7 +278,7 @@ export function BrandLogoPreviewCard({
   return (
     <>
       {/* Single DOM node so grouped-list separators stay correct when sheet mounts */}
-      {embedded ? <div>{trigger}</div> : <div style={{ marginBottom: 16 }}>{trigger}</div>}
+      {isMark ? trigger : isEmbedded ? <div>{trigger}</div> : <div style={{ marginBottom: 16 }}>{trigger}</div>}
 
       {open && (
         <ResponsiveAppSheet

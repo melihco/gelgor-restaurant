@@ -69,6 +69,7 @@ export function BrandFalTemplateProductionPanel({
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState('');
   const [statusKind, setStatusKind] = useState<'success' | 'error' | 'info'>('info');
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     // Avoid clobbering in-flight optimistic edits while a PATCH is open.
@@ -186,102 +187,171 @@ export function BrandFalTemplateProductionPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {!themeHydrated && (
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        style={{
+          width: '100%',
+          minHeight: 48,
+          padding: '12px 14px',
+          borderRadius: 14,
+          border: `0.5px solid ${t.separator}`,
+          background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.03)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 10,
+          textAlign: 'left',
+        }}
+      >
+        <span>
+          <span style={{ display: 'block', fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
+            Üretim ayarları
+          </span>
+          <span style={{ display: 'block', marginTop: 2, fontSize: 11, color: t.textMuted }}>
+            Yoğunluk · yüzey · logo · batch
+          </span>
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, flexShrink: 0 }}>
+          {expanded ? 'Gizle' : 'Aç'}
+        </span>
+      </button>
+
+      {!expanded && (
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 6,
+          marginTop: -4,
+        }}
+        >
+          {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
+            <span
+              key={channel}
+              style={{
+                minHeight: 26,
+                padding: '0 9px',
+                borderRadius: 999,
+                border: `0.5px solid ${t.separator}`,
+                fontSize: 11,
+                fontWeight: 600,
+                color: t.textSecondary,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+              }}
+            >
+              {FAL_DESIGN_CHANNEL_LABELS[channel]}
+              <span style={{ color: '#8AABBD' }}>
+                {FAL_DESIGN_INTENSITY_LABELS[local.intensity[channel]].tr}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {expanded && !themeHydrated && (
         <p style={{ margin: 0, fontSize: 12, color: t.warning }}>
           Marka teması henüz tam yüklenmedi — seçimler yine de kaydedilir; ilk PATCH temayı oluşturur.
         </p>
       )}
 
-      <ParamGroup
-        title="Tasarım yoğunluğu"
-        hint="Kanal bazlı tavan — slot bundan daha ağır olamaz"
-        t={t}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
+      {expanded && (
+        <>
+          <ParamGroup
+            title="Tasarım yoğunluğu"
+            hint="Kanal bazlı tavan — slot bundan daha ağır olamaz"
+            t={t}
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {(['story', 'reel', 'post'] as FalDesignChannel[]).map((channel) => (
+                <BrandChromeCombobox
+                  key={channel}
+                  t={t}
+                  label={FAL_DESIGN_CHANNEL_LABELS[channel]}
+                  value={local.intensity[channel]}
+                  options={intensityOptions}
+                  disabled={controlsLocked}
+                  onChange={(level) => void updateIntensity(channel, level)}
+                />
+              ))}
+            </div>
+          </ParamGroup>
+
+          <ParamGroup title="Görsel yüzey" hint="Galeri fotoğrafı yokken veya overlay tercihi" t={t}>
             <BrandChromeCombobox
-              key={channel}
               t={t}
-              label={FAL_DESIGN_CHANNEL_LABELS[channel]}
-              value={local.intensity[channel]}
-              options={intensityOptions}
+              aria-label="Görsel yüzey"
+              value={local.background_style}
+              options={backgroundOptions}
               disabled={controlsLocked}
-              onChange={(level) => void updateIntensity(channel, level)}
+              onChange={(style) => void update({ background_style: style })}
             />
-          ))}
-        </div>
-      </ParamGroup>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              marginTop: 10,
+              fontSize: 12,
+              color: t.textSecondary,
+              cursor: controlsLocked ? 'not-allowed' : 'pointer',
+            }}
+            >
+              <input
+                type="checkbox"
+                checked={local.prefer_gallery_photo}
+                disabled={controlsLocked}
+                onChange={(e) => void update({ prefer_gallery_photo: e.target.checked })}
+              />
+              Galeri fotoğrafı varsa her zaman fotoğraf üstü kullan
+            </label>
+          </ParamGroup>
 
-      <ParamGroup title="Görsel yüzey" hint="Galeri fotoğrafı yokken veya overlay tercihi" t={t}>
-        <BrandChromeCombobox
-          t={t}
-          aria-label="Görsel yüzey"
-          value={local.background_style}
-          options={backgroundOptions}
-          disabled={controlsLocked}
-          onChange={(style) => void update({ background_style: style })}
-        />
-        <label style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          marginTop: 10,
-          fontSize: 12,
-          color: t.textSecondary,
-          cursor: controlsLocked ? 'not-allowed' : 'pointer',
-        }}
-        >
-          <input
-            type="checkbox"
-            checked={local.prefer_gallery_photo}
-            disabled={controlsLocked}
-            onChange={(e) => void update({ prefer_gallery_photo: e.target.checked })}
-          />
-          Galeri fotoğrafı varsa her zaman fotoğraf üstü kullan
-        </label>
-      </ParamGroup>
+          <ParamGroup title="Logo" hint="Şablon önizlemelerinde logo davranışı" t={t}>
+            <BrandChromeCombobox
+              t={t}
+              aria-label="Logo davranışı"
+              value={local.logo_treatment}
+              options={logoOptions}
+              disabled={controlsLocked}
+              onChange={(treatment) => void update({ logo_treatment: treatment })}
+            />
+          </ParamGroup>
 
-      <ParamGroup title="Logo" hint="Şablon önizlemelerinde logo davranışı" t={t}>
-        <BrandChromeCombobox
-          t={t}
-          aria-label="Logo davranışı"
-          value={local.logo_treatment}
-          options={logoOptions}
-          disabled={controlsLocked}
-          onChange={(treatment) => void update({ logo_treatment: treatment })}
-        />
-      </ParamGroup>
+          <ParamGroup title="Batch üretim" hint="Şablon seti oluştururken kullanılır" t={t}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <BrandChromeCombobox
+                t={t}
+                label="Önizleme sayısı"
+                value={String(local.preview_cap)}
+                options={previewCapOptions}
+                disabled={controlsLocked}
+                onChange={(cap) => void update({ preview_cap: Number(cap) })}
+              />
+              <BrandChromeCombobox
+                t={t}
+                label="Paralel üretim"
+                value={String(local.concurrency)}
+                options={concurrencyOptions}
+                disabled={controlsLocked}
+                onChange={(c) => void update({ concurrency: Number(c) })}
+              />
+            </div>
+          </ParamGroup>
 
-      <ParamGroup title="Batch üretim" hint="Şablon seti oluştururken kullanılır" t={t}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <BrandChromeCombobox
-            t={t}
-            label="Önizleme sayısı"
-            value={String(local.preview_cap)}
-            options={previewCapOptions}
-            disabled={controlsLocked}
-            onChange={(cap) => void update({ preview_cap: Number(cap) })}
-          />
-          <BrandChromeCombobox
-            t={t}
-            label="Paralel üretim"
-            value={String(local.concurrency)}
-            options={concurrencyOptions}
-            disabled={controlsLocked}
-            onChange={(c) => void update({ concurrency: Number(c) })}
-          />
-        </div>
-      </ParamGroup>
-
-      {status && (
-        <p style={{
-          margin: 0,
-          fontSize: 12,
-          color: statusKind === 'error' ? t.danger : statusKind === 'success' ? t.success : t.textMuted,
-        }}
-        >
-          {status}
-        </p>
+          {status && (
+            <p style={{
+              margin: 0,
+              fontSize: 12,
+              color: statusKind === 'error' ? t.danger : statusKind === 'success' ? t.success : t.textMuted,
+            }}
+            >
+              {status}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

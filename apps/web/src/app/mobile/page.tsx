@@ -2110,8 +2110,750 @@ const CSS = `
     background: linear-gradient(180deg, rgba(77,112,136,0.07) 0%, transparent 100%);
   }
 
-  /* Brand hub — premium studio tiles */
-  /* Compact hub + menu rows — same height for Marka Profili, Chatbot, İçerik Planı, … */
+  /* Marka Profili — Atölye (studio + yayın dili) */
+  .sa-mobile .brand-atelier {
+    position: relative;
+    border-radius: 22px;
+    overflow: hidden;
+    isolation: isolate;
+    padding: 14px 12px 12px;
+  }
+  .sa-mobile .brand-atelier__veil {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.35;
+    background:
+      radial-gradient(80% 50% at 0% 100%, rgba(200,168,106,0.08), transparent 55%),
+      linear-gradient(180deg, rgba(255,255,255,0.03), transparent 40%);
+  }
+  .sa-mobile .brand-atelier__head {
+    position: relative;
+    z-index: 1;
+    margin-bottom: 8px;
+    padding: 0 2px;
+  }
+  .sa-mobile .brand-atelier__grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .sa-mobile .brand-atelier__grid[data-single="1"] {
+    grid-template-columns: 1fr;
+  }
+  .sa-mobile .brand-atelier-tile {
+    position: relative;
+    min-height: 104px;
+    padding: 12px 12px 11px;
+    border-radius: 16px;
+    border: 0.5px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), border-color 160ms ease;
+  }
+  .sa-mobile .brand-atelier-tile:active {
+    transform: scale(0.975);
+  }
+  .sa-mobile .brand-atelier-tile__glow {
+    position: absolute;
+    top: -18px;
+    right: -14px;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: var(--tile-accent, #8AABBD);
+    opacity: 0.14;
+    filter: blur(18px);
+    pointer-events: none;
+  }
+  .sa-mobile .brand-atelier-tile__top {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .sa-mobile .brand-atelier-tile__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    border: 0.5px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sa-mobile .brand-atelier-tile__pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-top: 4px;
+    flex-shrink: 0;
+  }
+  .sa-mobile .brand-atelier-tile__label {
+    font-size: 14.5px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+  }
+  .sa-mobile .brand-atelier-tile__meta {
+    margin-top: auto;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    opacity: 0.92;
+  }
+  .sa-mobile .brand-atelier__locale {
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 0.5px solid transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sa-mobile .brand-atelier-locale {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 16px;
+    border: 0.5px solid transparent;
+  }
+  .sa-mobile .brand-atelier-locale__btn {
+    min-height: 48px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 0 10px;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 140ms ease, background 160ms ease;
+  }
+  .sa-mobile .brand-atelier-locale__btn:active {
+    transform: scale(0.98);
+  }
+  .sa-mobile .brand-atelier-locale__mark {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    background: rgba(138,171,189,0.12);
+    color: rgba(157,190,206,0.75);
+    border: 0.5px solid rgba(138,171,189,0.22);
+  }
+  .sa-mobile .brand-atelier-locale__mark[data-active="1"] {
+    background: rgba(200,168,106,0.18);
+    border-color: rgba(200,168,106,0.4);
+    color: #E8D2A4;
+  }
+  .sa-mobile .brand-atelier-locale__name {
+    font-size: 13.5px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  @media (max-height: 780px) {
+    .sa-mobile .brand-atelier {
+      padding: 12px 10px 10px;
+    }
+    .sa-mobile .brand-atelier-tile {
+      min-height: 92px;
+      padding: 10px;
+      gap: 6px;
+    }
+    .sa-mobile .brand-atelier__head {
+      margin-bottom: 6px;
+    }
+    .sa-mobile .brand-atelier__locale {
+      margin-top: 10px;
+      padding-top: 10px;
+      gap: 8px;
+    }
+  }
+
+  /* Marka Profili identity home — fit phone/tablet without scroll */
+  .sa-mobile .brand-identity-home .sa-chrome-eyebrow {
+    margin-bottom: 6px !important;
+  }
+  .sa-mobile .brand-identity-home__section {
+    margin-bottom: 10px;
+  }
+  .sa-mobile .brand-identity-home__section:last-child {
+    margin-bottom: 0;
+  }
+  .sa-mobile .brand-identity-home .brand-hub-list {
+    gap: 4px !important;
+  }
+  .sa-mobile .brand-identity-home .brand-hub-tile,
+  .sa-mobile .brand-identity-home .brand-hub-tile.sa-chrome-card {
+    min-height: 48px !important;
+    height: 48px;
+    border-radius: 14px !important;
+  }
+  .sa-mobile .brand-identity-home .brand-hub-tile__icon {
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 9px !important;
+  }
+  .sa-mobile .brand-identity-home .brand-hub-group {
+    border-radius: 14px !important;
+  }
+
+  /* Template library — facility chip studio */
+  .sa-mobile .brand-facilities-studio__head {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sa-mobile .brand-facilities-studio__stats {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 6px;
+    min-height: 30px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 0.5px solid transparent;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .sa-mobile .brand-facilities-studio__dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+  }
+  .sa-mobile .brand-facility-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .sa-mobile .brand-facility-chip {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 64px;
+    padding: 10px 10px 10px 10px;
+    border-radius: 14px;
+    border: 0.5px solid rgba(138,171,189,0.18);
+    background: rgba(255,255,255,0.03);
+    cursor: pointer;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+  }
+  .sa-mobile .brand-facility-chip:active {
+    transform: scale(0.98);
+  }
+  .sa-mobile .brand-facility-chip[data-on="1"] {
+    border-color: rgba(138,171,189,0.42);
+    background:
+      radial-gradient(120% 90% at 0% 0%, rgba(138,171,189,0.16), transparent 55%),
+      rgba(255,255,255,0.04);
+  }
+  .sa-mobile .brand-facility-chip[data-on="0"] {
+    border-color: rgba(245,158,11,0.22);
+    background: rgba(245,158,11,0.06);
+    opacity: 0.92;
+  }
+  .sa-mobile[data-theme="light"] .brand-facility-chip {
+    background: rgba(15,23,42,0.02);
+  }
+  .sa-mobile .brand-facility-chip__icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(138,171,189,0.1);
+  }
+  .sa-mobile .brand-facility-chip__text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 1px;
+  }
+  .sa-mobile .brand-facility-chip__label {
+    font-size: 12.5px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+  }
+  .sa-mobile .brand-facility-chip__hint {
+    font-size: 10px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .sa-mobile .brand-facility-chip__check {
+    width: 20px;
+    height: 20px;
+    border-radius: 7px;
+    border: 0.5px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .sa-mobile .brand-facilities-studio__save {
+    padding: 12px;
+    border-radius: 14px;
+    border: 0.5px solid transparent;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sa-mobile .brand-shelf-summary {
+    border-radius: 14px;
+    border: 0.5px solid transparent;
+    overflow: hidden;
+  }
+  .sa-mobile .brand-shelf-summary__toggle {
+    width: 100%;
+    min-height: 44px;
+    padding: 0 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    text-align: left;
+  }
+  .sa-mobile .brand-shelf-rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+    gap: 8px;
+    padding: 0 12px 12px;
+  }
+  .sa-mobile .brand-shelf-rail__item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sa-mobile .brand-shelf-rail__label {
+    font-size: 9.5px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .sa-mobile .brand-shelf-rail__bar {
+    height: 4px;
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .sa-mobile .brand-shelf-rail__bar > div {
+    height: 100%;
+    border-radius: 999px;
+  }
+  .sa-mobile .brand-shelf-detail {
+    display: flex;
+    flex-direction: column;
+    padding: 0 8px 8px;
+  }
+  .sa-mobile .brand-shelf-detail__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 44px;
+    padding: 8px 6px;
+    border-top: 0.5px solid transparent;
+  }
+
+  /* CRM-style brand identity profile card */
+  .sa-mobile .brand-identity-profile {
+    isolation: isolate;
+  }
+  .sa-mobile .brand-identity-profile__cover {
+    position: relative;
+    height: 72px;
+    overflow: hidden;
+  }
+  .sa-mobile .brand-identity-profile__cover-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: saturate(1.05) brightness(0.85);
+    transform: scale(1.04);
+  }
+  .sa-mobile .brand-identity-profile__cover-wash {
+    position: absolute;
+    inset: 0;
+  }
+  .sa-mobile .brand-identity-profile__cover-grid {
+    position: absolute;
+    inset: 0;
+    opacity: 0.22;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.06) 1px, transparent 1px);
+    background-size: 18px 18px;
+    mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+  }
+  .sa-mobile .brand-identity-profile__body {
+    position: relative;
+    z-index: 1;
+    padding: 0 14px 12px;
+    margin-top: -36px;
+  }
+  .sa-mobile .brand-identity-profile__top {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+  }
+  .sa-mobile .brand-identity-profile__identity {
+    flex: 1;
+    min-width: 0;
+    padding-bottom: 2px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .sa-mobile .brand-identity-profile__name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .brand-identity-profile__name > span {
+    flex: 1;
+    min-width: 0;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1.15;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sa-mobile .brand-identity-profile__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .sa-mobile .brand-identity-profile__chip {
+    min-height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 0.5px solid transparent;
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .brand-identity-profile__chip:active,
+  .sa-mobile .brand-identity-profile__name:active {
+    opacity: 0.82;
+  }
+  .sa-mobile .brand-identity-profile__readiness {
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 999px;
+    border: 0.5px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  /* Tone sits with sector/location chips — one identity strip */
+  .sa-mobile .brand-tone-sigil {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 28px;
+    padding: 0 9px 0 7px;
+    border-radius: 999px;
+    border: 0.5px solid transparent;
+    flex-shrink: 0;
+  }
+  .sa-mobile .brand-tone-sigil__label {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .sa-mobile .brand-identity-profile__editor {
+    margin-top: 10px;
+    padding: 10px;
+    border-radius: 14px;
+    border: 0.5px solid transparent;
+  }
+  .sa-mobile .brand-identity-mark:active {
+    transform: scale(0.97);
+  }
+  .sa-mobile .brand-identity-mark {
+    transition: transform 160ms ease;
+  }
+
+  @media (max-height: 780px) {
+    .sa-mobile .brand-identity-home__section {
+      margin-bottom: 8px;
+    }
+    .sa-mobile .brand-identity-home .brand-hub-list {
+      gap: 3px !important;
+    }
+    .sa-mobile .brand-identity-home .brand-hub-tile,
+    .sa-mobile .brand-identity-home .brand-hub-tile.sa-chrome-card {
+      min-height: 46px !important;
+      height: 46px;
+    }
+    .sa-mobile .brand-identity-profile__cover {
+      height: 58px;
+    }
+    .sa-mobile .brand-identity-profile__body {
+      margin-top: -32px;
+      padding-bottom: 10px;
+    }
+    .sa-mobile .brand-identity-profile__name > span {
+      font-size: 18px;
+    }
+  }
+
+  /* İçerik detay studio */
+  .sa-mobile .content-studio-panel {
+    border-radius: 20px;
+    padding: 14px 14px 14px;
+    overflow: hidden;
+  }
+  .sa-mobile .content-studio-panel__eyebrow {
+    margin-bottom: 12px;
+  }
+  .sa-mobile .content-studio-prose {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 0.5px solid transparent;
+    cursor: pointer;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .content-studio-prose__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .sa-mobile .content-studio-prose__body {
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: -0.015em;
+    display: -webkit-box;
+    -webkit-line-clamp: 8;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .sa-mobile .content-studio-action {
+    width: 100%;
+    min-height: 46px;
+    border-radius: 14px;
+    border: 0.5px solid transparent;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .sa-mobile .content-studio-tones__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .sa-mobile .content-studio-tone {
+    min-height: 56px;
+    padding: 10px;
+    border-radius: 16px;
+    border: 0.5px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .content-studio-tone:active {
+    transform: scale(0.98);
+  }
+  .sa-mobile .content-studio-tone .brand-tone-sigil {
+    border: none !important;
+    background: transparent !important;
+    padding: 0;
+    min-height: 0;
+  }
+  .sa-mobile .content-studio-tones__hint {
+    margin: 10px 2px 0;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .sa-mobile .content-studio-entities {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sa-mobile .content-studio-entities__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sa-mobile .content-studio-entity {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 11px;
+    border-radius: 999px;
+    border: 0.5px solid transparent;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .sa-mobile .content-studio-entities__add {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Editorial menu index — Marka hub + More (not AI list chrome) */
+  .sa-mobile .sa-menu-index {
+    width: 100%;
+    border-radius: 20px;
+    overflow: hidden;
+    isolation: isolate;
+  }
+  .sa-mobile .sa-menu-index__slot + .sa-menu-index__slot {
+    border-top: 0.5px solid rgba(138,171,189,0.12);
+  }
+  .sa-mobile[data-theme="light"] .sa-menu-index__slot + .sa-menu-index__slot {
+    border-top-color: rgba(15,23,42,0.08);
+  }
+  .sa-mobile .sa-menu-row {
+    position: relative;
+    width: 100%;
+    min-height: 56px;
+    padding: 0 14px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border: none;
+    background: transparent;
+    text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 160ms ease;
+  }
+  .sa-mobile .sa-menu-row:active {
+    background: rgba(138,171,189,0.07);
+  }
+  .sa-mobile .sa-menu-row[data-danger="1"]:active {
+    background: rgba(248,113,113,0.08);
+  }
+  .sa-mobile .sa-menu-row__rail {
+    width: 3px;
+    align-self: stretch;
+    margin: 12px 0;
+    border-radius: 0 3px 3px 0;
+    background: linear-gradient(180deg, var(--row-accent), transparent);
+    opacity: 0.55;
+    flex-shrink: 0;
+  }
+  .sa-mobile .sa-menu-row:active .sa-menu-row__rail {
+    opacity: 1;
+  }
+  .sa-mobile .sa-menu-row__glyph {
+    position: relative;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sa-mobile .sa-menu-row__count {
+    position: absolute;
+    top: -5px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #EF4444;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 2px 6px rgba(239,68,68,0.4);
+  }
+  .sa-mobile .sa-menu-row__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sa-mobile .sa-menu-row__label {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sa-mobile .sa-menu-row__warn {
+    flex-shrink: 0;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 9.5px;
+    font-weight: 800;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sa-mobile .sa-menu-row__end {
+    flex-shrink: 0;
+  }
+
+  /* Legacy hub-tile hooks kept for non-menu surfaces */
   .sa-mobile .brand-hub-tile,
   .sa-mobile .brand-hub-tile.sa-chrome-card {
     min-height: 52px !important;
@@ -2205,43 +2947,33 @@ const CSS = `
     --hub-accent: #4D7088;
     isolation: isolate;
     animation: brandHubHeroIn 720ms cubic-bezier(0.22, 1, 0.36, 1) both;
-    box-shadow:
-      0 0 0 0.5px rgba(138, 171, 189, 0.18),
-      0 24px 48px rgba(0, 0, 0, 0.38),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  }
-  .sa-mobile[data-theme="light"] .brand-hub-hero {
-    box-shadow:
-      0 0 0 0.5px rgba(77, 112, 136, 0.14),
-      0 18px 36px rgba(15, 23, 42, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.85);
   }
   .sa-mobile .brand-hub-hero-aurora,
   .sa-mobile .brand-hub-hero-aurora-2 {
     position: absolute;
     border-radius: 50%;
     pointer-events: none;
-    filter: blur(28px);
+    filter: blur(32px);
     will-change: transform, opacity;
   }
   .sa-mobile .brand-hub-hero-aurora {
-    width: 70%;
-    height: 58%;
-    top: -30%;
+    width: 78%;
+    height: 64%;
+    top: -34%;
     left: 0;
     right: 0;
     margin-inline: auto;
-    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 55%, transparent) 0%, transparent 70%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 72%, transparent) 0%, transparent 72%);
     animation: brandHubAuroraDrift 7.5s ease-in-out infinite;
   }
   .sa-mobile .brand-hub-hero-aurora-2 {
-    width: 52%;
-    height: 48%;
+    width: 62%;
+    height: 54%;
     left: 0;
     right: 0;
-    bottom: -26%;
+    bottom: -30%;
     margin-inline: auto;
-    background: radial-gradient(circle, color-mix(in srgb, var(--hub-accent) 42%, transparent) 0%, transparent 72%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-accent) 58%, transparent) 0%, transparent 74%);
     animation: brandHubAuroraDrift 9.2s ease-in-out infinite reverse;
   }
   .sa-mobile .brand-hub-hero-grid {
@@ -2265,9 +2997,9 @@ const CSS = `
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.14) 45%,
-      rgba(138, 171, 189, 0.22) 50%,
-      rgba(255, 255, 255, 0.1) 55%,
+      color-mix(in srgb, var(--hub-brand) 28%, transparent) 45%,
+      color-mix(in srgb, var(--hub-brand) 55%, #fff) 50%,
+      color-mix(in srgb, var(--hub-accent) 30%, transparent) 55%,
       transparent 100%
     );
     animation: brandHubSweep 1.35s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
@@ -2301,12 +3033,20 @@ const CSS = `
   }
   .sa-mobile .brand-hub-hero-glow {
     position: absolute;
-    inset: -10px;
-    border-radius: 38px;
+    inset: -14px;
+    border-radius: 40px;
     pointer-events: none;
-    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 48%, transparent) 0%, transparent 70%);
-    filter: blur(10px);
+    background: radial-gradient(circle, color-mix(in srgb, var(--hub-brand) 62%, transparent) 0%, transparent 72%);
+    filter: blur(12px);
     animation: brandHubPulse 3.6s ease-in-out infinite;
+  }
+  .sa-mobile .brand-hub-hero-glow-accent {
+    inset: -22px;
+    border-radius: 48px;
+    background: radial-gradient(circle at 70% 80%, color-mix(in srgb, var(--hub-accent) 45%, transparent) 0%, transparent 68%);
+    filter: blur(16px);
+    animation: brandHubPulse 4.4s ease-in-out infinite reverse;
+    opacity: 0.9;
   }
   .sa-mobile .brand-hub-hero-title {
     animation: brandHubTitleIn 700ms cubic-bezier(0.22, 1, 0.36, 1) 0.28s both;

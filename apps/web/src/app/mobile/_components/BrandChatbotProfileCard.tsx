@@ -9,6 +9,11 @@ import type { BrandChatbotProfile } from '@/types/brand-chatbot';
 
 type ChatGroup = 'info' | 'catalog' | 'ai' | 'integrations';
 
+function normalizeChatGroup(g: ChatGroup | null): ChatGroup | null {
+  if (g === 'integrations') return 'ai';
+  return g;
+}
+
 function ChevronRight({ color }: { color: string }) {
   return (
     <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden>
@@ -160,7 +165,7 @@ export function BrandChatbotProfileCard({
   const [chatGroup, setChatGroup] = useState<ChatGroup | null>(null);
 
   const openChatGroup = useCallback((g: ChatGroup | null) => {
-    setChatGroup(g);
+    setChatGroup(normalizeChatGroup(g));
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
@@ -220,10 +225,15 @@ export function BrandChatbotProfileCard({
   const CHAT_GROUPS: { key: ChatGroup; label: string; hint: string; accent: string }[] = [
     { key: 'info', label: 'İşletme Bilgisi', hint: form.businessDisplayName || 'Ad, saat, adres, telefon', accent: '#5AA0D6' },
     { key: 'catalog', label: 'Menü & Politikalar', hint: form.menuSummary.trim() ? 'Menü tanımlı' : 'Menü ve sipariş akışı', accent: '#4FB597' },
-    { key: 'ai', label: 'AI Analiz & SSS', hint: profile ? `%${confidence} güven · ${faqCount} SSS` : 'Profil oluştur', accent: '#A985E0' },
-    { key: 'integrations', label: 'Entegrasyonlar', hint: 'Mertcafe bağlantısı', accent: '#818cf8' },
+    {
+      key: 'ai',
+      label: 'AI & bağlantılar',
+      hint: profile ? `%${confidence} güven · ${faqCount} SSS · Mertcafe` : 'Profil + Mertcafe',
+      accent: '#A985E0',
+    },
   ];
-  const activeChatGroup = CHAT_GROUPS.find((g) => g.key === chatGroup);
+  const activeChatGroup = CHAT_GROUPS.find((g) => g.key === chatGroup)
+    ?? (chatGroup === 'integrations' ? CHAT_GROUPS[2] : undefined);
 
   if (isLoading) {
     return <p style={{ fontSize: 13, color: t.textTertiary }}>Chatbot profili yükleniyor…</p>;
@@ -281,7 +291,7 @@ export function BrandChatbotProfileCard({
           style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
         >
           <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          Chatbot · <span style={{ color: t.textPrimary }}>{activeChatGroup?.label}</span>
+          Asistan · <span style={{ color: t.textPrimary }}>{activeChatGroup?.label}</span>
         </button>
       )}
 
@@ -317,7 +327,7 @@ export function BrandChatbotProfileCard({
         </>
       )}
 
-      {chatGroup === 'ai' && (
+      {(chatGroup === 'ai' || chatGroup === 'integrations') && (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
             <span style={{
@@ -336,7 +346,7 @@ export function BrandChatbotProfileCard({
           <SCard t={t} title="Profil Analizi" accent="#A985E0">
             {!profile && (
               <p style={{ fontSize: 13, color: t.textSecondary, marginBottom: 12, lineHeight: 1.5 }}>
-                Henüz chatbot profili yok. Markayı analiz ederek oluşturun.
+                Henüz asistan profili yok. Markayı analiz ederek oluşturun.
               </p>
             )}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
@@ -422,21 +432,19 @@ export function BrandChatbotProfileCard({
               </pre>
             )}
           </SCard>
-        </>
-      )}
 
-      {chatGroup === 'integrations' && (
-        <>
-          <MertcafeIntegrationsCard
-            t={t}
-            workspaceId={workspaceId}
-            brandName={form.businessDisplayName || brandName}
-            businessMenu={form.menuSummary}
-            businessHours={form.businessHours}
-            businessAddress={form.address}
-            businessPhone={form.phone}
-            saveThemePatch={saveThemePatch}
-          />
+          <div style={{ marginTop: 12 }}>
+            <MertcafeIntegrationsCard
+              t={t}
+              workspaceId={workspaceId}
+              brandName={form.businessDisplayName || brandName}
+              businessMenu={form.menuSummary}
+              businessHours={form.businessHours}
+              businessAddress={form.address}
+              businessPhone={form.phone}
+              saveThemePatch={saveThemePatch}
+            />
+          </div>
         </>
       )}
     </>

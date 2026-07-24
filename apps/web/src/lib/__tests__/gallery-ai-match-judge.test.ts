@@ -34,7 +34,7 @@ function fixedJudge(verdict: GalleryJudgeVerdict | null) {
 const model = 'gpt-4o-mini';
 
 describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
-  it('strong deterministic score accepts WITHOUT calling the judge', async () => {
+  it('subject-aligned strong score skips the judge (any sector)', async () => {
     let called = false;
     const decision = await confirmGalleryPickWithAiJudge({
       caption: 'Doğal balımız',
@@ -54,6 +54,47 @@ describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
     expect(decision.action).toBe('accept');
     expect(decision.judged).toBe(false);
     expect(called).toBe(false);
+  });
+
+  it('any caption without subject lock still judges at a strong score', async () => {
+    const VENUE = 'https://cdn.example.com/terrace.jpg';
+    const CROWD = 'https://cdn.example.com/crowd.jpg';
+    let called = false;
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Join us for an unforgettable evening by the sea',
+      headline: 'Special night',
+      // no subjectKey — meaning gate must run for arbitrary copy
+      businessType: 'beach_club',
+      selectedUrl: VENUE,
+      deterministicScore: 70,
+      galleryAnalysis: {
+        [VENUE]: {
+          contentTags: ['terrace', 'daylight', 'breakfast'],
+          description: 'Sunny breakfast terrace',
+          primarySubject: 'breakfast_plate',
+        },
+        [CROWD]: {
+          contentTags: ['crowd', 'evening', 'lights'],
+          description: 'Evening crowd by the sea',
+          primarySubject: 'venue_ambiance',
+        },
+      },
+      candidateUrls: [VENUE, CROWD],
+      enabled: true,
+      judgeFn: async () => {
+        called = true;
+        return {
+          pickIndex: 1,
+          confidence: 0.9,
+          reason: 'evening crowd matches evening caption',
+          model,
+          usage: null,
+        };
+      },
+    });
+    expect(called).toBe(true);
+    expect(decision.action).toBe('swap');
+    expect(decision.url).toBe(CROWD);
   });
 
   it('accepts a gray-zone pick the judge confirms (Turkish caption)', async () => {
@@ -253,6 +294,7 @@ describe('confirmGalleryPickWithAiJudge — theme risk forces AI', () => {
     expect(decision.action).toBe('reject');
     expect(decision.rejectReason).toBe('ai_judge_required_for_theme');
   });
+
 });
 
 describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
@@ -261,7 +303,7 @@ describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
     [HONEY]: { primarySubject: 'honey', contentTags: ['honey'], description: 'Honey.' },
   });
 
-  it('passes through strong scores without judging', async () => {
+  it('passes through subject-aligned strong scores without judging', async () => {
     let called = false;
     const out = await gatePhotoMatchResult(
       { url: HONEY, score: 60, reason: 'strong', confidence: 0.9 },
@@ -272,6 +314,32 @@ describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
     );
     expect(out?.url).toBe(HONEY);
     expect(called).toBe(false);
+  });
+
+  it('judges strong scores when subject is not locked (gym)', async () => {
+    const MAT = 'https://cdn.example.com/yoga-mat.jpg';
+    let called = false;
+    const out = await gatePhotoMatchResult(
+      { url: MAT, score: 60, reason: 'strong', confidence: 0.9 },
+      { caption: 'Recover after training', headline: 'Recovery day', businessType: 'gym' },
+      { [MAT]: { contentTags: ['yoga', 'mat'], description: 'Yoga mat on floor', primarySubject: 'yoga_mat' } },
+      [MAT],
+      {
+        enabled: true,
+        judgeFn: async () => {
+          called = true;
+          return {
+            pickIndex: 0,
+            confidence: 0.88,
+            reason: 'acceptable recovery mood',
+            model,
+            usage: null,
+          };
+        },
+      },
+    );
+    expect(out?.url).toBe(MAT);
+    expect(called).toBe(true);
   });
 
   it('returns null when judge rejects a gray-zone batch pick', async () => {

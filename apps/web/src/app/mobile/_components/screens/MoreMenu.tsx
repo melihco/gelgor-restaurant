@@ -16,6 +16,7 @@ import {
 import { useMobileArtifacts } from '../../_hooks/use-mobile-artifacts';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
 import { IcoLogout } from '../Icons';
+import { SaMenuIndex, SaMenuRow } from '../SaMenuIndex';
 import { MobileStackHeader, ThemeToggleButton } from '../ui-primitives';
 
 // Icon paths per menu item type — premium SVG, no emoji
@@ -157,185 +158,38 @@ export function MoreMenuPanel({
             </div>
           ) : null}
 
-          <div
-            className="brand-hub-list"
-            style={{ display: 'flex', flexDirection: 'column', width: '100%' }}
-          >
-            {group.items.map((item) => {
-              const accent = item.iconBg;
-              const hasBadge = item.badge !== undefined && item.badge !== '';
-              const isWarn = hasBadge && (item.badgeKind ?? 'warn') === 'warn';
-              const isCount = hasBadge && item.badgeKind === 'count';
-              const completion = item.label === 'Entegrasyonlar' && integrationTotal > 0
-                ? Math.max(0.08, connectedCount / integrationTotal)
-                : isWarn
-                  ? 0.42
-                  : 0.72;
-              const barColor = isWarn ? '#F59E0B' : accent;
-
-              return (
-                <button
-                  key={item.label}
-                  type="button"
-                  className="brand-hub-tile sa-chrome-card"
+          <SaMenuIndex>
+            {group.items.map((item) => (
+              <div key={item.label} className="sa-menu-index__slot">
+                <SaMenuRow
+                  t={t}
+                  label={item.label}
+                  accent={item.iconBg}
+                  badge={item.badge}
+                  badgeKind={item.badgeKind}
+                  icon={<MenuItemIcon iconBg={item.iconBg} label={item.label} size={18} />}
                   onClick={() => openMenuItem(item.screen)}
-                  style={{
-                    position: 'relative',
-                    width: '100%',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    alignItems: 'center',
-                    border: 'none',
-                  }}
-                >
-                  <div
-                    aria-hidden
-                    style={{
-                      position: 'absolute',
-                      top: -16,
-                      left: -16,
-                      width: 48,
-                      height: 48,
-                      borderRadius: '50%',
-                      background: accent,
-                      opacity: t.isDark ? 0.14 : 0.09,
-                      filter: 'blur(12px)',
-                      pointerEvents: 'none',
-                    }}
-                  />
-                  <div
-                    className="brand-hub-tile__icon"
-                    style={{
-                      position: 'relative',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: `linear-gradient(135deg, ${accent}2e, ${accent}14)`,
-                      border: `0.5px solid ${accent}3d`,
-                    }}
-                  >
-                    <MenuItemIcon iconBg={accent} label={item.label} size={18} />
-                    {isCount && (
-                      <span
-                        aria-label={`${item.badge} bildirim`}
-                        style={{
-                          position: 'absolute',
-                          top: -4,
-                          right: -4,
-                          minWidth: 16,
-                          height: 16,
-                          padding: '0 4px',
-                          borderRadius: 999,
-                          background: '#EF4444',
-                          color: '#fff',
-                          fontSize: 9,
-                          fontWeight: 800,
-                          lineHeight: '16px',
-                          textAlign: 'center',
-                          boxShadow: '0 2px 6px rgba(239,68,68,0.45)',
-                          border: `1.5px solid ${t.isDark ? '#1a1a1f' : '#fff'}`,
-                        }}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: 6, minWidth: 0,
-                    }}
-                    >
-                      <span
-                        className="brand-hub-tile__label"
-                        style={{
-                          color: t.textPrimary,
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {item.label}
-                      </span>
-                      {isWarn && (
-                        <span style={{
-                          flexShrink: 0, minWidth: 16, height: 16, padding: '0 5px',
-                          borderRadius: 20, background: t.warningDim, color: t.warning,
-                          fontSize: 9.5, fontWeight: 800,
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        }}
-                        >
-                          {item.badge}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      className="brand-hub-tile__bar"
-                      style={{
-                        borderRadius: 999,
-                        overflow: 'hidden',
-                        background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.06)',
-                      }}
-                    >
-                      <div style={{
-                        width: `${Math.max(8, completion * 100)}%`,
-                        height: '100%',
-                        borderRadius: 999,
-                        background: barColor,
-                        opacity: 0.95,
-                      }}
-                      />
-                    </div>
-                  </div>
-                  <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden style={{ flexShrink: 0, opacity: 0.55 }}>
-                    <path
-                      d="M1.5 1.5 7.5 7.5l-6 6"
-                      stroke={t.textTertiary}
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-              );
-            })}
-          </div>
+                />
+              </div>
+            ))}
+          </SaMenuIndex>
         </div>
       ))}
 
-      {/* ─── Logout — same compact row height as hub tiles ─────────────── */}
-      <div style={{ padding: `6px ${horizontalPadding}px 0` }}>
-        <button
-          type="button"
-          className="brand-hub-tile"
-          onClick={handleLogout}
-          disabled={loggingOut}
-          style={{
-            width: '100%',
-            cursor: loggingOut ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            background: t.dangerDim,
-            border: '0.5px solid rgba(248,113,113,0.20)',
-            opacity: loggingOut ? 0.55 : 1,
-            transition: 'opacity 160ms ease',
-          }}
-        >
-          <div
-            className="brand-hub-tile__icon"
-            style={{
-              background: 'rgba(248,113,113,0.12)',
-              border: '0.5px solid rgba(248,113,113,0.20)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <IcoLogout size={15} color={t.danger} />
+      <div style={{ padding: `10px ${horizontalPadding}px 0` }}>
+        <SaMenuIndex>
+          <div className="sa-menu-index__slot">
+            <SaMenuRow
+              t={t}
+              danger
+              disabled={loggingOut}
+              label={loggingOut ? 'Çıkış yapılıyor…' : 'Çıkış Yap'}
+              accent={t.danger}
+              icon={<IcoLogout size={16} color={t.danger} />}
+              onClick={() => void handleLogout()}
+            />
           </div>
-          <span className="brand-hub-tile__label" style={{ color: t.danger }}>
-            {loggingOut ? 'Çıkış yapılıyor…' : 'Çıkış Yap'}
-          </span>
-        </button>
+        </SaMenuIndex>
       </div>
 
     </>

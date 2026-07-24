@@ -66,17 +66,14 @@ function ChipEditor({
           {items.map((item) => (
             <div
               key={item}
+              className="content-studio-entity"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                padding: '6px 12px',
-                borderRadius: 20,
-                background: `${t.accent}20`,
-                border: `1.5px solid ${t.accent}`,
-                color: t.accent,
-                fontSize: 13,
-                fontWeight: 500,
+                background: 'rgba(138,171,189,0.14)',
+                border: '0.5px solid rgba(138,171,189,0.4)',
+                color: '#B0C4D4',
               }}
             >
               {pillarLabel(item) !== item ? (
@@ -91,7 +88,7 @@ function ChipEditor({
                   background: 'none',
                   border: 'none',
                   cursor: 'pointer',
-                  color: t.accent,
+                  color: 'inherit',
                   fontSize: 16,
                   lineHeight: 1,
                   padding: 0,
@@ -106,29 +103,18 @@ function ChipEditor({
 
       {unselected.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{
-            fontSize: 11,
-            color: t.textSecondary,
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-          >
-            Öneriler
-          </span>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 2 }}>Öneriler</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {unselected.map((s) => (
               <button
                 key={s}
                 type="button"
+                className="content-studio-entity"
                 onClick={() => add(s)}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: 20,
-                  background: t.surface,
-                  border: `1.5px dashed ${t.separator}`,
+                  background: 'transparent',
+                  border: `0.5px solid ${t.separator}`,
                   color: t.textSecondary,
-                  fontSize: 12,
                   cursor: 'pointer',
                 }}
               >
@@ -139,7 +125,7 @@ function ChipEditor({
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="content-studio-entities__add">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -147,14 +133,16 @@ function ChipEditor({
             if (e.key === 'Enter' && draft.trim()) add(draft);
           }}
           placeholder={placeholder}
+          enterKeyHint="done"
           style={{
             flex: 1,
-            padding: '8px 12px',
-            borderRadius: 10,
-            border: `1.5px solid ${t.separator}`,
-            background: t.surface,
+            minHeight: 44,
+            padding: '0 12px',
+            borderRadius: 12,
+            border: 'none',
+            background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.04)',
             color: t.textPrimary,
-            fontSize: 13,
+            fontSize: 16,
             outline: 'none',
           }}
         />
@@ -162,14 +150,15 @@ function ChipEditor({
           type="button"
           onClick={() => add(draft)}
           style={{
-            padding: '8px 14px',
-            borderRadius: 10,
-            background: t.accent,
+            minWidth: 44,
+            minHeight: 44,
+            borderRadius: 12,
+            background: '#4D7088',
             border: 'none',
             color: '#fff',
-            fontSize: 13,
+            fontSize: 18,
             cursor: 'pointer',
-            fontWeight: 600,
+            fontWeight: 700,
           }}
         >
           +

@@ -30,7 +30,7 @@ export function OgImageMarkup({ logoSrc }: OgImageMarkupProps) {
           width: 480,
           height: 480,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(99,102,241,0.35) 0%, transparent 68%)',
+          background: 'radial-gradient(circle, rgba(138,171,189,0.28) 0%, transparent 68%)',
         }}
       />
       <div
@@ -41,21 +41,27 @@ export function OgImageMarkup({ logoSrc }: OgImageMarkupProps) {
           width: 360,
           height: 360,
           borderRadius: '50%',
-          background: 'radial-gradient(circle, rgba(129,140,248,0.18) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(77,112,136,0.22) 0%, transparent 70%)',
         }}
       />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, zIndex: 1 }}>
         {logoSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt="" width={72} height={72} style={{ objectFit: 'contain' }} />
+          <img
+            src={logoSrc}
+            alt=""
+            width={80}
+            height={80}
+            style={{ objectFit: 'contain', borderRadius: 18 }}
+          />
         ) : (
           <div
             style={{
-              width: 72,
-              height: 72,
+              width: 80,
+              height: 80,
               borderRadius: 18,
-              background: 'linear-gradient(135deg, #6366f1, #818cf8)',
+              background: 'linear-gradient(135deg, #8AABBD, #4D7088)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -63,12 +69,12 @@ export function OgImageMarkup({ logoSrc }: OgImageMarkupProps) {
               fontWeight: 800,
             }}
           >
-            S
+            A
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 44, fontWeight: 700, letterSpacing: '-0.03em' }}>{SITE_NAME}</div>
-          <div style={{ fontSize: 22, color: '#a5b4fc', fontWeight: 500 }}>{SITE_TAGLINE}</div>
+          <div style={{ fontSize: 22, color: '#8AABBD', fontWeight: 500 }}>{SITE_TAGLINE}</div>
         </div>
       </div>
 
@@ -102,10 +108,10 @@ export function OgImageMarkup({ logoSrc }: OgImageMarkupProps) {
               style={{
                 padding: '8px 16px',
                 borderRadius: 999,
-                border: '1px solid rgba(129,140,248,0.35)',
-                background: 'rgba(99,102,241,0.12)',
+                border: '1px solid rgba(138,171,189,0.35)',
+                background: 'rgba(77,112,136,0.18)',
                 fontSize: 16,
-                color: '#c7d2fe',
+                color: '#B0C4D4',
               }}
             >
               {tag}

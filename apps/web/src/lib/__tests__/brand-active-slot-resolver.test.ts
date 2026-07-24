@@ -8,6 +8,7 @@ import {
   enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
   resolveBrandProductionFormatTargets,
+  resolveSlotBackfillProductionLoop,
   summarizeCatalogSlotStampCoverage,
 } from '@/lib/brand-active-slot-resolver';
 import type { BrandDesignTemplateRecord } from '@/lib/brand-design-template-matcher';
@@ -696,6 +697,66 @@ describe('applyCatalogSlotBindingsToQueue (Faz 5 — production_jobs.slot_key)',
     );
     const enriched = enrichProductionQueueWithBrandSlots(bound, activeSet);
     expect(enriched[0]!.assignment.catalog_slot_key).toBe('beach_club_sunset_golden_story');
+  });
+});
+
+describe('resolveSlotBackfillProductionLoop', () => {
+  it('matches exact keys and repairs drifted slot_role by idea index', () => {
+    const queue: ManifestProductionQueueItem[] = [
+      {
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: { headline: 'A', content_type: 'instagram_post' },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'organic_post',
+          pipeline: 'gallery_photo',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+        },
+      },
+      {
+        queueIndex: 1,
+        ideaIndex: 1,
+        idea: { headline: 'B', content_type: 'instagram_post' },
+        assignment: {
+          idea_index: 1,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+        },
+      },
+    ];
+
+    const loop = resolveSlotBackfillProductionLoop(
+      queue,
+      ['0:fal_designed_post', '1:fal_designed_post'],
+      { '0:fal_designed_post': 'beach_club_guest_social_proof_post' },
+    );
+
+    expect(loop).toHaveLength(2);
+    expect(loop[0]!.assignment.slot_role).toBe('fal_designed_post');
+    expect(loop[0]!.assignment.catalog_slot_key).toBe('beach_club_guest_social_proof_post');
+    expect(loop[1]!.assignment.slot_role).toBe('fal_designed_post');
+  });
+
+  it('returns empty when idea indexes are absent (local_products_shop keys)', () => {
+    const queue: ManifestProductionQueueItem[] = [{
+      queueIndex: 0,
+      ideaIndex: 0,
+      idea: { headline: 'Shop', content_type: 'instagram_post' },
+      assignment: {
+        idea_index: 0,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+      },
+    }];
+    expect(
+      resolveSlotBackfillProductionLoop(queue, ['9:organic_carousel'], null),
+    ).toEqual([]);
   });
 });
 

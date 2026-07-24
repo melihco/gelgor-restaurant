@@ -44,7 +44,10 @@ const MEAT_FOOD_PHOTO_HINTS = [
   ' et ', ' et,', ' et.',
 ];
 
-/** Strong nightlife intent in caption (DJ / party / live music). */
+/**
+ * Cross-category nightlife intent (DJ / party / live music) — NOT venue or
+ * campaign scenarios. Arbitrary event copy is matched via subject + AI judge.
+ */
 const NIGHTLIFE_CAPTION_HINTS = [
   'dj', 'dj night', 'dj nights', 'party', 'beach party', 'nightlife',
   'dance', 'dancing', 'live music', 'concert', 'festival', 'opening night',
@@ -62,10 +65,12 @@ const NIGHTLIFE_HARD_PHOTO_HINTS = [
   'beach party', 'party crowd', 'dancefloor', 'dance floor',
 ];
 
+/** Plated / prepared food proof (category, not a brand scenario). */
 const FOOD_PHOTO_HINTS = [
   'food', 'dish', 'plate', 'meal', 'seafood', 'fish', 'cuisine', 'menu', 'chef',
   'kitchen', 'yemek', 'tabak', 'balık', 'deniz', 'platter', 'serving', 'dessert',
   'pasta', 'steak', 'sushi', 'soup', 'bowl', 'gazpacho', 'meze',
+  'breakfast', 'brunch', 'kahvaltı', 'kahvalti',
 ];
 
 /** Penalty at/above this is a hard veto — photo must never ship for that caption. */
@@ -190,8 +195,9 @@ function photoBodyForThemeHints(photoSearchable: string): string {
 }
 
 /**
- * Cheap cross-theme signal used ONLY to trigger the AI gallery judge.
- * Never invent nested keyword exceptions here — the judge owns meaning.
+ * Cheap cross-category signal used ONLY to trigger the AI gallery judge.
+ * Meaning for arbitrary captions belongs to the judge + canonical subject —
+ * not venue/campaign keyword lists.
  */
 export function themeConflictNeedsAiJudge(
   captionText: string,
@@ -243,7 +249,7 @@ export function captionPhotoConflictPenalty(
   const photoNightlifeHard = textHits(photo, NIGHTLIFE_HARD_PHOTO_HINTS);
   const photoMeat = textHits(photo, MEAT_FOOD_PHOTO_HINTS);
 
-  // ── Hard (clear nightlife ↔ food plate) ──────────────────────────────────
+  // ── Hard (clear nightlife ↔ plated food) — category, not a campaign scene ─
   if (captionNightlife >= 1 && photoFood >= 1 && photoNightlifeHard === 0) {
     return captionNightlife >= 2 ? 80 : 72;
   }

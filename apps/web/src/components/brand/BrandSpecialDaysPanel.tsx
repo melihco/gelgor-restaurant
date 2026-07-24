@@ -84,69 +84,61 @@ export function BrandSpecialDaysPanel({
   const days = data?.days ?? [];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {data && (
-        <p style={{ margin: 0, fontSize: 11, color: t.textSecondary }}>
-          Takvim: {data.country_code} · Sektör: {data.sector.replace(/_/g, ' ')}
-        </p>
-      )}
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {isLoading && (
         <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>Yükleniyor…</p>
       )}
 
       {isError && (
         <p style={{ fontSize: 12, color: t.warning, margin: 0 }}>
-          Özel günler yüklenemedi. Python servisi çalışıyor mu kontrol edin.
+          Özel günler yüklenemedi.
         </p>
       )}
 
       {!isLoading && !isError && days.length === 0 && (
         <p style={{ fontSize: 12, color: t.textMuted, margin: 0 }}>
-          Önümüzdeki 120 günde kayıtlı özel gün bulunamadı.
+          Önümüzdeki 120 günde kayıtlı özel gün yok.
         </p>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {days.map((day) => {
+      <div className="sa-menu-index" style={{ borderRadius: 16, overflow: 'hidden' }}>
+        {days.map((day, idx) => {
           const categoryLabel = CATEGORY_LABELS[day.category] ?? day.category;
           const dateLabel = `${day.day}.${day.month}`;
           return (
             <div
               key={`${day.country_code}-${day.mmdd}-${day.name}`}
+              className="sa-menu-index__slot"
               style={{
                 padding: '12px 14px',
-                borderRadius: 12,
-                background: t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)',
-                border: `0.5px solid ${t.separator}`,
+                borderTop: idx === 0 ? 'none' : undefined,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
                       {day.name}
                     </span>
                     <span style={{
                       fontSize: 10,
-                      fontWeight: 600,
+                      fontWeight: 700,
                       padding: '2px 8px',
-                      borderRadius: 20,
-                      background: `${t.accent}18`,
-                      color: t.accent,
-                      textTransform: 'uppercase',
+                      borderRadius: 999,
+                      background: 'rgba(138,171,189,0.14)',
+                      color: '#9DBECE',
                       letterSpacing: '0.04em',
                     }}
                     >
                       {categoryLabel}
                     </span>
                   </div>
-                  <p style={{ margin: '6px 0 0', fontSize: 12, color: t.textSecondary, lineHeight: 1.45 }}>
+                  <p style={{ margin: '5px 0 0', fontSize: 12, color: t.textMuted, lineHeight: 1.4 }}>
                     {day.theme_hint}
                   </p>
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.accent }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#C8A86A' }}>
                     {formatDaysUntil(day.days_until)}
                   </div>
                   <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>

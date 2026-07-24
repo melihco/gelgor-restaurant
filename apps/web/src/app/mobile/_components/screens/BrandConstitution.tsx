@@ -32,7 +32,9 @@ import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/
 import type { T } from '../theme-context';
 import {
   buildCompanyProfilePatchFromPython,
+  isBrandTonePreset,
   isCompanyProfileSparse,
+  resolveBrandTonePreset,
 } from '@/lib/sync-company-profile-from-python';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import { resolveCoherentLogoUrl, isCrossTenantPollutionName } from '@/lib/brand-identity-coherence';
@@ -96,6 +98,16 @@ import {
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
 import { BrandLogoPreviewCard } from '../BrandLogoPreviewCard';
+import { BrandIdentityProfileCard } from '../BrandIdentityProfileCard';
+import { BrandIdentityAtelier, BRAND_ATELIER_ACCENTS } from '../BrandIdentityAtelier';
+import {
+  ContentStudioShell,
+  ContentStudioPanel,
+  ContentStudioProseField,
+  ContentStudioTonePicker,
+  ContentStudioAction,
+  ContentStudioEntityBoard,
+} from '../BrandContentStudio';
 import { BrandProductionRepairCard } from '../BrandProductionRepairCard';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
@@ -161,12 +173,51 @@ function ChevronRight({ color }: { color: string }) {
 
 /** Short mission under visioner sub-nav — one line, no hero card. */
 const DESIGN_GROUP_MISSIONS: Record<string, string> = {
+  style: 'Palet, tipografi ve marka DNA — her üretime yansır.',
   colors: 'Palet, tipografi ve görsel dil — her üretime yansır.',
   templates: 'Tesis özellikleri ve şablonlar; beğenilenler üretimde kullanılır.',
+  production: 'Motorlar, motion/ses ve onay kuralları.',
   engines: 'Hareket, müzik ve üretim motorları.',
   dna: 'AI’ın öğrendiği görsel karakter — analizi güncel tutun.',
   rules: 'Üretim sınırları ve onay akışı.',
 };
+
+/** Canonical content leaves (+ legacy deep-link aliases). */
+type ContentGroup =
+  | 'story' | 'goals' | 'special' | 'competitors'
+  | 'about' | 'voice' | 'audience' | 'strategy';
+
+/** Canonical design leaves (+ legacy deep-link aliases). */
+type DesignGroup =
+  | 'style' | 'templates' | 'production'
+  | 'colors' | 'engines' | 'dna' | 'rules';
+
+function normalizeContentGroup(g: ContentGroup | null): ContentGroup | null {
+  if (!g) return null;
+  if (g === 'about' || g === 'voice') return 'story';
+  if (g === 'audience' || g === 'strategy') return 'goals';
+  return g;
+}
+
+function normalizeDesignGroup(g: DesignGroup | null): DesignGroup | null {
+  if (!g) return null;
+  if (g === 'colors' || g === 'dna') return 'style';
+  if (g === 'engines' || g === 'rules') return 'production';
+  return g;
+}
+
+function isContentStory(g: ContentGroup | null): boolean {
+  return g === 'story' || g === 'about' || g === 'voice';
+}
+function isContentGoals(g: ContentGroup | null): boolean {
+  return g === 'goals' || g === 'audience' || g === 'strategy';
+}
+function isDesignStyle(g: DesignGroup | null): boolean {
+  return g === 'style' || g === 'colors' || g === 'dna';
+}
+function isDesignProduction(g: DesignGroup | null): boolean {
+  return g === 'production' || g === 'engines' || g === 'rules';
+}
 
 /** Compact back + eyebrow — matches hub visioner chrome on all sub-screens. */
 function VisionerSubNav({
@@ -281,6 +332,7 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <rect x="13.5" y="13.5" width="7" height="7" rx="1.6" />
         </svg>
       );
+    case 'style':
     case 'colors':
       return (
         <svg {...common}>
@@ -290,6 +342,7 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <circle cx="14.4" cy="7.6" r="1.05" fill={color} stroke="none" />
         </svg>
       );
+    case 'production':
     case 'engines':
       return (
         <svg {...common}>
@@ -312,6 +365,7 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <path d="M9 11.8 11.2 14 15 9.8" />
         </svg>
       );
+    case 'story':
     case 'about':
       return (
         <svg {...common}>
@@ -327,6 +381,7 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <path d="M5.5 11.5v1.5M18.5 11.5v1.5" />
         </svg>
       );
+    case 'goals':
     case 'audience':
       return (
         <svg {...common}>
@@ -1908,7 +1963,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
   onInitialGroupConsumed?: () => void;
 }) {
   type GalleryGroup = 'upload' | 'analyze' | 'photos';
-  const [galleryGroup, setGalleryGroup] = useState<GalleryGroup | null>(null);
+  const [galleryGroup, setGalleryGroup] = useState<GalleryGroup>(initialGroup ?? 'photos');
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeStatus, setAnalyzeStatus] = useState<string>('');
   const [uploading, setUploading] = useState(false);
@@ -1993,7 +2048,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
     }
   }
 
-  const openGalleryGroup = React.useCallback((g: GalleryGroup | null) => {
+  const openGalleryGroup = React.useCallback((g: GalleryGroup) => {
     setGalleryGroup(g);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
@@ -2222,40 +2277,59 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
   const analyzedCount = displayUrls.filter((u) => analyzedKeySet.has(normGalleryUrl(u))).length;
   const pendingCount = Math.max(0, displayUrls.length - analyzedCount);
 
-  const GALLERY_GROUPS: { key: GalleryGroup; label: string; hint: string; accent: string }[] = [
-    { key: 'upload', label: 'Fotoğraf Yükle', hint: displayUrls.length > 0 ? `${displayUrls.length} fotoğraf mevcut` : 'JPG · PNG · WebP', accent: '#5AA0D6' },
-    { key: 'analyze', label: 'AI Analiz', hint: displayUrls.length > 0 ? `${analyzedCount}/${displayUrls.length} analizli` : 'Etiketleme ve skor', accent: '#4FB597' },
-    { key: 'photos', label: 'Galeri Görünümü', hint: displayUrls.length > 0 ? `${displayUrls.length} görsel · düzenle/sil` : 'Henüz fotoğraf yok', accent: '#C79A4B' },
+  const GALLERY_SEGMENTS: { key: GalleryGroup; label: string }[] = [
+    { key: 'photos', label: 'Fotoğraflar' },
+    { key: 'upload', label: 'Yükle' },
+    { key: 'analyze', label: 'Analiz' },
   ];
-  const activeGalleryGroup = GALLERY_GROUPS.find((g) => g.key === galleryGroup);
 
   return (
     <>
-      {galleryGroup === null && (
-        <BrandVisionerList>
-          {GALLERY_GROUPS.map((g) => (
-            <BrandVisionerGroup key={g.key}>
-              <BrandVisionerNavRow
-                t={t}
-                label={g.label}
-                hint={g.hint}
-                accent={g.accent}
-                icon={<SectionIcon name={g.key} color={g.accent} size={18} />}
-                onClick={() => openGalleryGroup(g.key)}
-              />
-            </BrandVisionerGroup>
-          ))}
-        </BrandVisionerList>
-      )}
-
-      {galleryGroup !== null && activeGalleryGroup && (
-        <VisionerSubNav
-          t={t}
-          parentLabel="Galeri"
-          title={activeGalleryGroup.label}
-          onBack={() => openGalleryGroup(null)}
-        />
-      )}
+      <div
+        role="tablist"
+        aria-label="Galeri"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gap: 4,
+          marginBottom: 14,
+          padding: 4,
+          borderRadius: 14,
+          background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(15,23,42,0.04)',
+          border: `0.5px solid ${t.separator}`,
+        }}
+      >
+        {GALLERY_SEGMENTS.map((seg) => {
+          const active = galleryGroup === seg.key;
+          return (
+            <button
+              key={seg.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => openGalleryGroup(seg.key)}
+              style={{
+                minHeight: 44,
+                border: 'none',
+                borderRadius: 11,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: active ? 700 : 500,
+                letterSpacing: '-0.01em',
+                color: active ? t.textPrimary : t.textMuted,
+                background: active
+                  ? (t.isDark ? 'rgba(138,171,189,0.22)' : 'rgba(255,255,255,0.95)')
+                  : 'transparent',
+                boxShadow: active
+                  ? (t.isDark ? 'inset 0 0 0 1px rgba(138,171,189,0.35)' : '0 1px 4px rgba(15,23,42,0.08)')
+                  : 'none',
+              }}
+            >
+              {seg.label}
+            </button>
+          );
+        })}
+      </div>
 
       {galleryGroup === 'analyze' && (
         <div data-brand-fix="gallery-analyze">
@@ -3002,8 +3076,6 @@ export function BrandConstitution() {
   const brandGaps = useBrandCompleteGaps(tenantId);
   const { goBack, brandReadinessFix, brandReadinessCheckId, clearBrandReadinessFix, history, brandHomeNonce } = useMobileStore();
   const debugUi = isDebugUiMode();
-  type DesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
-  type ContentGroup = 'about' | 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
   type IdentityGroup = 'basics' | 'channels' | 'about';
   const [tab, setTab] = useState<Tab>('identity');
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
@@ -3018,28 +3090,28 @@ export function BrandConstitution() {
   ) => {
     setTab(next);
     setView('section');
-    setDesignGroup(opts?.designGroup ?? null);
-    setContentGroup(opts?.contentGroup ?? null);
+    setDesignGroup(normalizeDesignGroup(opts?.designGroup ?? null));
+    setContentGroup(normalizeContentGroup(opts?.contentGroup ?? null));
     setIdentityGroup(opts?.identityGroup ?? null);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
   const openDesignGroup = React.useCallback((g: DesignGroup | null) => {
-    setDesignGroup(g);
+    setDesignGroup(normalizeDesignGroup(g));
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
   const openContentGroup = React.useCallback((g: ContentGroup | null) => {
-    setContentGroup(g);
+    setContentGroup(normalizeContentGroup(g));
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
   const openIdentityGroup = React.useCallback((g: IdentityGroup | null) => {
-    // Açıklama & Ürünler moved under İçerik → about.
+    // Açıklama & Ürünler → İçerik DNA → Hikaye & Ses
     if (g === 'about') {
       setTab('content');
       setView('section');
-      setContentGroup('about');
+      setContentGroup('story');
       setIdentityGroup(null);
       if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
       return;
@@ -3091,12 +3163,16 @@ export function BrandConstitution() {
     if (!brandReadinessFix && !brandReadinessCheckId) return;
     const target = resolveBrandReadinessNav(brandReadinessFix, brandReadinessCheckId);
     if (target) {
-      // Legacy identity/about deep-links → İçerik → Açıklama & Ürünler
+      // Legacy identity/about deep-links → İçerik DNA → Hikaye & Ses
       const aboutFromIdentity = target.identityGroup === 'about' && !target.contentGroup;
       setTab(aboutFromIdentity ? 'content' : target.tab);
       setView('section');
-      setDesignGroup(target.designGroup ?? null);
-      setContentGroup(aboutFromIdentity ? 'about' : (target.contentGroup ?? null));
+      setDesignGroup(normalizeDesignGroup((target.designGroup as DesignGroup | null | undefined) ?? null));
+      setContentGroup(
+        normalizeContentGroup(
+          aboutFromIdentity ? 'story' : ((target.contentGroup as ContentGroup | null | undefined) ?? null),
+        ),
+      );
       setIdentityGroup(aboutFromIdentity ? null : (target.identityGroup ?? null));
       if (target.galleryGroup) setGalleryInitialGroup(target.galleryGroup);
       setFocusAnchor(aboutFromIdentity ? 'brand-about' : target.anchor);
@@ -3715,11 +3791,11 @@ export function BrandConstitution() {
   }
 
   const TABS: { id: Tab; label: string }[] = [
-    { id: 'identity', label: 'Marka Profili' },
-    { id: 'content', label: 'İçerik' },
-    { id: 'design', label: 'Tasarım' },
+    { id: 'identity', label: 'Kimlik' },
+    { id: 'content', label: 'İçerik DNA' },
+    { id: 'design', label: 'Görünüm' },
     { id: 'gallery', label: 'Galeri' },
-    { id: 'chatbot', label: 'Chatbot' },
+    { id: 'chatbot', label: 'Asistan' },
   ];
   const constitutionConfirmedAt = (pyCtx as { brand_constitution_confirmed_at?: string | null } | undefined)
     ?.brand_constitution_confirmed_at;
@@ -3767,15 +3843,25 @@ export function BrandConstitution() {
   });
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
-    { key: 'colors', label: 'Renk & Tipografi', hint: 'Palet, fontlar, görsel dil', accent: '#C79A4B' },
-    { key: 'templates', label: 'Şablon Kütüphanesi', hint: 'Tesis özellikleri, raflar, şablonlar', accent: '#5AA0D6' },
-    { key: 'engines', label: 'Üretim & Ses', hint: 'Hareket, müzik, motor ayarları', accent: '#A985E0' },
-    { key: 'dna', label: 'Marka DNA & Analiz', hint: 'Vibe DNA, AI değerlendirme', accent: '#4FB597' },
-    { key: 'rules', label: 'Kurallar & Onay', hint: 'Risk, yetenek, onay modu', accent: '#E08A6B' },
+    { key: 'style', label: 'Stil & DNA', hint: 'Palet, tipografi, vibe DNA', accent: '#C79A4B' },
+    { key: 'templates', label: 'Şablonlar', hint: 'Tesis özellikleri ve şablon kütüphanesi', accent: '#5AA0D6' },
+    { key: 'production', label: 'Üretim ayarları', hint: 'Motorlar, motion, ses, kurallar', accent: '#A985E0' },
   ];
-  const activeDesignGroup = DESIGN_GROUPS.find((g) => g.key === designGroup);
+  const activeDesignGroup = DESIGN_GROUPS.find((g) => g.key === designGroup)
+    ?? (isDesignStyle(designGroup)
+      ? DESIGN_GROUPS[0]
+      : isDesignProduction(designGroup)
+        ? DESIGN_GROUPS[2]
+        : undefined);
 
-  const toneLabel = TONE_OPTIONS.find((o) => o.value === (p.brandTone ?? 'professional'))?.label ?? 'Profesyonel';
+  const resolvedTone = resolveBrandTonePreset(
+    p.brandTone,
+    (pyCtx as { brand_tone?: string | null } | undefined)?.brand_tone,
+  );
+  const toneLabel = TONE_OPTIONS.find((o) => o.value === resolvedTone)?.label ?? 'Profesyonel';
+  const rawToneForHint = String(
+    p.brandTone || (pyCtx as { brand_tone?: string | null } | undefined)?.brand_tone || '',
+  ).trim();
   const audienceFilled = Boolean(String(p.targetAudience || (pyCtx as any)?.target_audience || '').trim());
   const goalsFilled = Boolean(String(p.campaignGoals || (pyCtx as any)?.campaign_goals || '').trim());
   const competitorsRaw = String(p.competitors || (pyCtx as any)?.competitors || '');
@@ -3784,32 +3870,51 @@ export function BrandConstitution() {
   const descriptionFilled = Boolean(String(descriptionDisplay || '').trim());
   const CONTENT_GROUPS: { key: ContentGroup; label: string; hint: string; accent: string }[] = [
     {
-      key: 'about',
-      label: 'Açıklama & Ürünler',
-      hint: descriptionFilled ? 'Marka tanımı ve ürün/hizmet listesi' : 'AI ile doldur veya yaz',
+      key: 'story',
+      label: 'Hikaye & Ses',
+      hint: descriptionFilled ? `${toneLabel} · tanım hazır` : 'Açıklama, ürünler ve marka tonu',
       accent: '#6B9BD1',
     },
-    { key: 'voice', label: 'Ses & Ton', hint: toneLabel, accent: '#5AA0D6' },
-    { key: 'audience', label: 'Hedef & Kampanya', hint: audienceFilled && goalsFilled ? 'Hedef kitle ve kampanya tanımlı' : 'Kitle ve hedefler', accent: '#4FB597' },
-    { key: 'strategy', label: 'İçerik Stratejisi', hint: `${pillarsCount} sütun · ${ctasCount} CTA`, accent: '#C79A4B' },
-    { key: 'special', label: 'Özel Günler & Plan', hint: 'Tatiller, sektör günleri, zamanlı şablonlar', accent: '#A985E0' },
+    {
+      key: 'goals',
+      label: 'Hedef & Strateji',
+      hint: audienceFilled && goalsFilled
+        ? `${pillarsCount} sütun · ${ctasCount} CTA`
+        : 'Kitle, hedefler, sütunlar ve CTA',
+      accent: '#4FB597',
+    },
+    { key: 'special', label: 'Özel Günler', hint: 'Tatiller, sektör günleri, zamanlı şablonlar', accent: '#A985E0' },
     { key: 'competitors', label: 'Rakipler', hint: competitorCount > 0 ? `${competitorCount} rakip tanımlı` : 'Rakip ekle veya AI önerisi al', accent: '#E08A6B' },
   ];
-  const activeContentGroup = CONTENT_GROUPS.find((g) => g.key === contentGroup);
+  const activeContentGroup = CONTENT_GROUPS.find((g) => g.key === contentGroup)
+    ?? (isContentStory(contentGroup)
+      ? CONTENT_GROUPS[0]
+      : isContentGoals(contentGroup)
+        ? CONTENT_GROUPS[1]
+        : undefined);
 
   /** Top-level section only — subgroup titles live in VisionerSubNav. */
   const sectionEyebrow = (() => {
-    if (tab === 'identity') return 'Marka Profili';
-    if (tab === 'content') return 'İçerik';
-    if (tab === 'design') return 'Tasarım';
+    if (tab === 'identity') return 'Kimlik';
+    if (tab === 'content') return 'İçerik DNA';
+    if (tab === 'design') return 'Görünüm';
     if (tab === 'gallery') return 'Galeri';
-    if (tab === 'chatbot') return 'Chatbot';
+    if (tab === 'chatbot') return 'Asistan';
     return HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
       ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
   })();
 
   const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
-  const brandPrimary = String((pyCtx as any)?.brand_primary_color || (p as any).brandColors || t.accent).match(/#[0-9a-fA-F]{3,8}/)?.[0] || t.accent;
+  const brandColorHexes = String((pyCtx as any)?.brand_primary_color
+    ? `${(pyCtx as any).brand_primary_color} ${(pyCtx as any).brand_accent_color || ''}`
+    : (p as any).brandColors || t.accent)
+    .match(/#[0-9a-fA-F]{3,8}/g) ?? [];
+  const brandPrimary = brandColorHexes[0]
+    || String((pyCtx as any)?.brand_primary_color || '').match(/#[0-9a-fA-F]{3,8}/)?.[0]
+    || t.accent;
+  const brandAccent = String((pyCtx as any)?.brand_accent_color || '').match(/#[0-9a-fA-F]{3,8}/)?.[0]
+    || brandColorHexes[1]
+    || brandPrimary;
 
   const sharedStatusBanners = (
     <>
@@ -3861,6 +3966,7 @@ export function BrandConstitution() {
             logoUrl={logoUrl}
             monogram={monogram}
             brandPrimary={brandPrimary}
+            brandAccent={brandAccent}
             industryLabel={industryDisplay || null}
             locationLabel={locationDisplay || null}
             navItems={HUB_NAV_ITEMS}
@@ -3935,7 +4041,12 @@ export function BrandConstitution() {
           || (tab === 'design' && designGroup !== null)
           || (tab === 'identity' && identityGroup !== null)
         ) && (
-          <div className="sa-chrome-eyebrow" style={{ marginBottom: 14 }}>{sectionEyebrow}</div>
+          <div
+            className="sa-chrome-eyebrow"
+            style={{ marginBottom: tab === 'identity' ? 8 : 14 }}
+          >
+            {sectionEyebrow}
+          </div>
         )}
         {sharedStatusBanners}
 
@@ -3967,7 +4078,7 @@ export function BrandConstitution() {
           <>
             <VisionerSubNav
               t={t}
-              parentLabel="Marka Profili"
+              parentLabel="Kimlik"
               title="Kanallar"
               onBack={() => openIdentityGroup(null)}
             />
@@ -4004,28 +4115,28 @@ export function BrandConstitution() {
           </>
         )}
 
-        {/* Marka Profili — kimlik alanları önce; studio kısayolları sonda */}
+        {/* Marka Profili — kimlik → studio → içerik dili (tek ekrana sığacak yoğunluk) */}
         {tab === 'identity' && identityGroup === null && (
-          <>
+          <div className="brand-identity-home">
             {!constitutionConfirmedAt && (
               <div
                 data-brand-form="constitution-confirm"
                 style={{
-                  marginBottom: 12,
-                  padding: '14px 14px',
+                  marginBottom: 8,
+                  padding: '12px 12px',
                   borderRadius: 14,
                   background: t.isDark ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.06)',
                   border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.28)' : 'rgba(245,158,11,0.22)'}`,
                 }}
               >
-                <div style={{ fontSize: 15, fontWeight: 600, color: t.textPrimary, marginBottom: 4, letterSpacing: '-0.02em' }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: t.textPrimary, marginBottom: 2, letterSpacing: '-0.02em' }}>
                   Marka Anayasası onay bekliyor
                 </div>
-                <div style={{ fontSize: 12.5, color: t.textTertiary, lineHeight: 1.45, marginBottom: 12 }}>
+                <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.4, marginBottom: 10 }}>
                   Profili gözden geçirip onaylayın — hazırlık skoruna +20 puan.
                 </div>
                 {constitutionConfirmError && (
-                  <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 10, padding: '10px 12px', borderRadius: 10, background: t.dangerDim }}>
+                  <div style={{ fontSize: 13, color: t.danger, lineHeight: 1.45, marginBottom: 8, padding: '8px 10px', borderRadius: 10, background: t.dangerDim }}>
                     {constitutionConfirmError}
                   </div>
                 )}
@@ -4034,7 +4145,7 @@ export function BrandConstitution() {
                   onClick={() => void handleConfirmConstitution()}
                   disabled={confirmingConstitution}
                   style={{
-                    width: '100%', padding: '12px 16px', minHeight: 44, borderRadius: 12, border: 'none',
+                    width: '100%', padding: '11px 14px', minHeight: 44, borderRadius: 12, border: 'none',
                     cursor: confirmingConstitution ? 'wait' : 'pointer', fontSize: 15, fontWeight: 600, color: '#fff',
                     background: 'linear-gradient(135deg, #F59E0B, #D97706)',
                   }}
@@ -4052,143 +4163,47 @@ export function BrandConstitution() {
               />
             )}
 
-            {Number(score) < 100 && (
-              <div
-                data-brand-form="identity-readiness"
-                style={{
-                  marginBottom: 14,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'flex-start',
-                }}
-              >
-                <span
-                  aria-label={`Profil hazırlığı ${Number(score) || 0}`}
-                  style={{
-                    minHeight: 32,
-                    padding: '0 12px',
-                    borderRadius: 999,
-                    border: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.35)' : 'rgba(217,119,6,0.28)'}`,
-                    background: t.isDark ? 'rgba(245,158,11,0.12)' : 'rgba(255,251,235,0.9)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 7,
-                    color: t.textPrimary,
-                  }}
-                >
-                  <ReadinessRing
-                    score={Number(score) || 0}
-                    size={16}
-                    accent={Number(score) >= 80 ? SA_CHROME.steel300 : '#F59E0B'}
-                    track={t.isDark ? 'rgba(255,255,255,0.12)' : 'rgba(15,23,42,0.1)'}
-                  />
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '-0.01em' }}>
-                    Hazırlık {Number(score) || 0}
-                  </span>
-                </span>
-              </div>
-            )}
-
-            {/* Kimlik: logo + temel alanlar tek grup */}
-            <div data-brand-form="service-profile">
-              <section style={{ marginBottom: 16 }}>
-                <SLabel t={t} text="Kimlik" />
-                <div className="brand-grouped-fields" style={{ ...t.surfaceGroup, overflow: 'hidden' }}>
-                  <BrandLogoPreviewCard
-                    t={t}
-                    embedded
-                    logoUrl={logoUrl ?? ''}
-                    logoSource={String(logoCandidate || '')}
-                    monogram={monogram}
-                    onSave={save('logoUrl')}
-                  />
-                  <Field t={t} label="Marka Adı" value={brandNameDisplay} onSave={save('brandName')} />
-                  <Field t={t} label="Sektör" value={industryDisplay} onSave={save('industry')} hint={industrySlug !== industryDisplay ? industrySlug : undefined} />
-                  <Field t={t} label="Konum" value={locationDisplay} onSave={save('location')} hint="Şehir veya bölge" />
-                </div>
-              </section>
+            <div className="brand-identity-home__section">
+              <BrandIdentityProfileCard
+                t={t}
+                brandName={brandNameDisplay}
+                industry={industryDisplay}
+                location={locationDisplay}
+                logoUrl={logoUrl ?? ''}
+                logoSource={String(logoCandidate || '')}
+                monogram={monogram}
+                brandPrimary={brandPrimary}
+                coverUrl={galleryRefUrls[0] ?? null}
+                readinessScore={Number(score) || 0}
+                tonePreset={resolvedTone}
+                toneLabel={toneLabel}
+                onSaveLogo={save('logoUrl')}
+                onSaveBrandName={save('brandName')}
+                onSaveIndustry={save('industry')}
+                onSaveLocation={save('location')}
+              />
             </div>
 
-            <section style={{ marginBottom: 16 }}>
-              <SLabel t={t} text="İçerik dili" />
-              <div style={{ ...t.surfaceGroup, padding: 10 }}>
-                <div style={{
-                  display: 'flex', gap: 3, padding: 3, borderRadius: 12,
-                  background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-                }}>
-                  {(['tr', 'en'] as const).map((lang) => {
-                    const active = contentLanguage === lang;
-                    return (
-                      <button
-                        key={lang}
-                        type="button"
-                        onClick={() => save('languages')(lang)}
-                        style={{
-                          flex: 1, minHeight: 44, padding: '10px 0', borderRadius: 10, border: 'none',
-                          background: active ? (t.isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF') : 'transparent',
-                          color: active ? t.textPrimary : t.textTertiary,
-                          fontWeight: 600, fontSize: 15, cursor: 'pointer',
-                          boxShadow: active ? (t.isDark ? '0 1px 4px rgba(0,0,0,0.25)' : '0 1px 3px rgba(0,0,0,0.08)') : 'none',
-                        }}
-                      >
-                        {lang === 'tr' ? 'Türkçe' : 'English'}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-
-            {/* Studio kısayolları — Kanallar + içerik/tasarım/galeri */}
-            <section style={{ marginBottom: 8 }}>
-              <SLabel text="Studio" />
-              <BrandVisionerList>
-                <BrandVisionerGroup>
-                  <BrandVisionerNavRow
-                    t={t}
-                    label="Kanallar"
-                    hint={channelsConnected ? 'Web · Instagram · Google' : 'Keşif kanallarını bağla'}
-                    accent="#6B9BD1"
-                    icon={<SectionIcon name="channels" color="#6B9BD1" size={18} />}
-                    onClick={() => openIdentityGroup('channels')}
-                  />
-                </BrandVisionerGroup>
-                {([
+            <div className="brand-identity-home__section">
+              <BrandIdentityAtelier
+                t={t}
+                brandPrimary={brandPrimary}
+                contentLanguage={contentLanguage}
+                onLanguageChange={(lang) => save('languages')(lang)}
+                tiles={[
                   {
-                    key: 'content' as const,
-                    label: 'İçerik',
-                    hint: pillarsCount > 0 || ctasCount > 0
-                      ? `${pillarsCount} sütun · açıklama & CTA`
-                      : 'Açıklama, ses, sütunlar & CTA',
-                    accent: SA_STUDIO_ACCENTS.content,
+                    key: 'channels',
+                    label: 'Web · Instagram · Google',
+                    meta: channelsConnected ? 'Keşif linkleri tanımlı' : 'Profil linklerini ekle',
+                    accent: BRAND_ATELIER_ACCENTS.channels,
+                    icon: 'channels',
+                    ready: channelsConnected,
+                    onClick: () => openIdentityGroup('channels'),
                   },
-                  {
-                    key: 'design' as const,
-                    label: 'Tasarım',
-                    hint: `Üretim profili ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`,
-                    accent: SA_STUDIO_ACCENTS.design,
-                  },
-                  {
-                    key: 'gallery' as const,
-                    label: 'Galeri',
-                    hint: photoCount > 0 ? `${photoCount} görsel` : 'Fotoğraf ekle',
-                    accent: SA_STUDIO_ACCENTS.gallery,
-                  },
-                ]).map((item) => (
-                  <BrandVisionerGroup key={item.key}>
-                    <BrandVisionerNavRow
-                      t={t}
-                      label={item.label}
-                      hint={item.hint}
-                      accent={item.accent}
-                      icon={<SectionIcon name={item.key} color={item.accent} size={18} />}
-                      onClick={() => openSection(item.key)}
-                    />
-                  </BrandVisionerGroup>
-                ))}
-              </BrandVisionerList>
-            </section>
-          </>
+                ]}
+              />
+            </div>
+          </div>
         )}
 
         {/* Content group index */}
@@ -4212,244 +4227,145 @@ export function BrandConstitution() {
         {tab === 'content' && contentGroup !== null && activeContentGroup && (
           <VisionerSubNav
             t={t}
-            parentLabel="İçerik"
+            parentLabel="İçerik DNA"
             title={activeContentGroup.label}
             onBack={() => openContentGroup(null)}
           />
         )}
 
-        {tab === 'content' && contentGroup === 'about' && (
-          <div data-brand-form="brand-about">
-            <section style={{ marginBottom: 16 }}>
-              <SLabel t={t} text="Marka açıklaması" />
-              <div style={{ ...t.surfaceCard, padding: '12px 14px' }}>
-                <button
-                  type="button"
-                  onClick={() => descriptionAiMutation.mutate()}
-                  disabled={descriptionAiMutation.isPending}
-                  style={{
-                    width: '100%', minHeight: 44, padding: '12px 14px', borderRadius: 12,
-                    border: `0.5px solid ${t.accentBorder}`, background: t.accentDim, color: t.accent,
-                    fontSize: 14, fontWeight: 700, cursor: descriptionAiMutation.isPending ? 'wait' : 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                  }}
-                >
-                  {descriptionAiMutation.isPending ? 'AI markayı analiz ediyor…' : 'AI ile analiz et ve doldur'}
-                </button>
-                {descriptionAiFeedback && (
-                  <div style={{
-                    marginTop: 8, padding: '9px 11px', borderRadius: 10, fontSize: 12, lineHeight: 1.45,
-                    color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
-                    background: descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.12)' : (t.isDark ? 'rgba(16,185,129,0.10)' : 'rgba(16,185,129,0.08)'),
-                    border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.28)'}`,
-                  }}>
-                    {descriptionAiFeedback.text}
-                  </div>
-                )}
+        {tab === 'content' && isContentStory(contentGroup) && (
+          <ContentStudioShell t={t} brandPrimary={brandPrimary}>
+            <ContentStudioPanel t={t} eyebrow="Marka anlatısı">
+              <ContentStudioAction
+                t={t}
+                label="AI ile analiz et ve doldur"
+                pendingLabel="AI markayı analiz ediyor…"
+                pending={descriptionAiMutation.isPending}
+                onClick={() => descriptionAiMutation.mutate()}
+              />
+              {descriptionAiFeedback && (
                 <div
-                  className="brand-grouped-fields"
                   style={{
                     marginTop: 10,
-                    marginLeft: -14,
-                    marginRight: -14,
-                    marginBottom: -12,
-                    borderTop: `0.5px solid ${t.separator}`,
+                    padding: '10px 12px',
+                    borderRadius: 12,
+                    fontSize: 12,
+                    lineHeight: 1.45,
+                    color: descriptionAiFeedback.kind === 'err' ? '#b45309' : t.textSecondary,
+                    background: descriptionAiFeedback.kind === 'err'
+                      ? 'rgba(245,158,11,0.12)'
+                      : (t.isDark ? 'rgba(138,171,189,0.10)' : 'rgba(138,171,189,0.08)'),
+                    border: `0.5px solid ${descriptionAiFeedback.kind === 'err' ? 'rgba(245,158,11,0.35)' : 'rgba(138,171,189,0.28)'}`,
                   }}
                 >
-                  <Field
+                  {descriptionAiFeedback.text}
+                </div>
+              )}
+              <div style={{ marginTop: 12 }} data-brand-form="brand-about">
+                <ContentStudioProseField
+                  t={t}
+                  label="Açıklama & ürünler"
+                  value={descriptionDisplay}
+                  onSave={save('description')}
+                  hint="Marka tanımı, ürün ve hizmetler"
+                  rows={7}
+                />
+              </div>
+            </ContentStudioPanel>
+            <ContentStudioPanel t={t} eyebrow="Marka tonu">
+              <ContentStudioTonePicker
+                t={t}
+                selected={resolvedTone}
+                onSelect={(tone) => save('brandTone')(tone)}
+                rawHint={rawToneForHint && !isBrandTonePreset(rawToneForHint) ? rawToneForHint : null}
+              />
+            </ContentStudioPanel>
+          </ContentStudioShell>
+        )}
+
+        {tab === 'content' && isContentGoals(contentGroup) && (
+          <ContentStudioShell t={t} brandPrimary={brandPrimary}>
+            <ContentStudioPanel t={t} eyebrow="Hedef kitle">
+              <ContentStudioProseField
+                t={t}
+                label="Kime konuşuyoruz"
+                value={p.targetAudience || (pyCtx as any)?.target_audience || ''}
+                onSave={save('targetAudience')}
+                hint="Yaş, tarz, ziyaret motivasyonu…"
+                rows={5}
+              />
+            </ContentStudioPanel>
+            <ContentStudioPanel t={t} eyebrow="Kampanya hedefleri">
+              <ContentStudioProseField
+                t={t}
+                label="Ne başarmak istiyoruz"
+                value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''}
+                onSave={save('campaignGoals')}
+                hint="Rezervasyon, farkındalık, etkinlik…"
+                rows={5}
+              />
+            </ContentStudioPanel>
+            {tenantId && (
+              <ContentStudioPanel t={t} eyebrow="Sütunlar & CTA">
+                <div data-brand-form="content-pillars">
+                  <BrandContentStrategyPanel
+                    tenantId={tenantId}
                     t={t}
-                    label="Açıklama & Ürünler"
-                    value={descriptionDisplay}
-                    onSave={save('description')}
-                    multiline
-                    hint="Marka tanımı"
+                    pyCtx={pyCtx as Record<string, unknown> | undefined}
+                    sector={industrySlug || 'restaurant_cafe'}
+                    onSaved={() => {
+                      void queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
+                      void queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
+                    }}
                   />
                 </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {tab === 'content' && contentGroup === 'voice' && (
-          <>
-            <SCard t={t} title="Marka Tonu" accent={t.accent}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-                {TONE_OPTIONS.map(opt => {
-                  const isSelected = (p.brandTone ?? 'professional') === opt.value;
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => save('brandTone')(opt.value)}
-                      style={{
-                        padding: '14px 12px', borderRadius: 14, cursor: 'pointer', textAlign: 'left',
-                        background: isSelected
-                          ? (t.isDark ? 'linear-gradient(135deg, rgba(90,160,214,0.18), rgba(90,160,214,0.06))' : 'linear-gradient(135deg, rgba(90,160,214,0.12), rgba(90,160,214,0.04))')
-                          : (t.isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.025)'),
-                        border: `1px solid ${isSelected ? 'rgba(90,160,214,0.45)' : t.separator}`,
-                        boxShadow: isSelected ? '0 8px 24px rgba(0,0,0,0.12)' : 'none',
-                        transition: 'all 0.15s',
-                      }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: isSelected ? '#9DBECE' : t.textPrimary }}>{opt.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              {p.brandTone && !TONE_OPTIONS.find(o => o.value === p.brandTone) && (
-                <p style={{ fontSize: 11, color: t.textMuted, marginTop: 10 }}>
-                  Özel ton: <span style={{ color: t.textSecondary }}>{p.brandTone}</span>
-                </p>
-              )}
-            </SCard>
-          </>
-        )}
-
-        {tab === 'content' && contentGroup === 'audience' && (
-          <>
-            <SCard t={t} title="Hedef Kitle">
-              <Field t={t} label="Hedef Kitle" value={p.targetAudience || (pyCtx as any)?.target_audience || ''} onSave={save('targetAudience')} multiline />
-            </SCard>
-            <SCard t={t} title="Kampanya Hedefleri">
-              <Field t={t} label="Hedefler" value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''} onSave={save('campaignGoals')} multiline />
-            </SCard>
-          </>
-        )}
-
-        {tab === 'content' && contentGroup === 'strategy' && tenantId && (
-          <div data-brand-fix="content-pillars">
-            <SCard t={t} title="Sütunlar & CTA'lar" accent={t.accent}>
-              <BrandContentStrategyPanel
-                tenantId={tenantId}
-                t={t}
-                pyCtx={pyCtx as Record<string, unknown> | undefined}
-                sector={industrySlug || 'restaurant_cafe'}
-                onSaved={() => {
-                  void queryClient.invalidateQueries({ queryKey: ['brand-context-data', tenantId] });
-                  void queryClient.invalidateQueries({ queryKey: ['brand-readiness', tenantId] });
-                }}
-              />
-            </SCard>
-          </div>
+              </ContentStudioPanel>
+            )}
+          </ContentStudioShell>
         )}
 
         {tab === 'content' && contentGroup === 'special' && tenantId && (
-          <>
-            <SCard t={t} title="Özel Günler">
+          <ContentStudioShell t={t} brandPrimary={brandPrimary}>
+            <ContentStudioPanel t={t} eyebrow="Özel günler">
               <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
-            </SCard>
-            <BrandScheduledTemplatesPanel
-              tenantId={tenantId}
-              t={t}
-              sector={industrySlug || 'restaurant'}
-            />
-          </>
+            </ContentStudioPanel>
+            <ContentStudioPanel t={t} eyebrow="Zamanlı şablonlar">
+              <BrandScheduledTemplatesPanel
+                tenantId={tenantId}
+                t={t}
+                sector={industrySlug || 'restaurant'}
+              />
+            </ContentStudioPanel>
+          </ContentStudioShell>
         )}
 
-        {tab === 'content' && contentGroup === 'competitors' && (
-          <>
-            <SCard t={t} title="Rakip Listesi">
-              {(() => {
-                const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
-                const confirmed: string[] = confirmedRaw
-                  ? confirmedRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
-                  : [];
-                const suggestedRaw = (pyCtx as any)?.suggested_competitors || '';
-                let suggested: string[] = [];
-                try { suggested = JSON.parse(suggestedRaw); } catch { suggested = []; }
-                const unconfirmedSuggestions = suggested.filter((s: string) => !confirmed.includes(s));
-
-                const saveCompetitors = (list: string[]) => {
-                  save('competitors')(list.join(', '));
-                };
-                const addCompetitor = (name: string) => saveCompetitors([...confirmed, name]);
-                const removeCompetitor = (name: string) => saveCompetitors(confirmed.filter(c => c !== name));
-
-
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {/* Confirmed chips */}
-                    {confirmed.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                        {confirmed.map((name: string) => (
-                          <div key={name} style={{
-                            display: 'flex', alignItems: 'center', gap: 6,
-                            padding: '6px 12px', borderRadius: 20,
-                            background: `${t.accent}20`, border: `1.5px solid ${t.accent}`,
-                            color: t.accent, fontSize: 13, fontWeight: 500,
-                          }}>
-                            {name}
-                            <button onClick={() => removeCompetitor(name)} style={{
-                              background: 'none', border: 'none', cursor: 'pointer',
-                              color: t.accent, fontSize: 16, lineHeight: 1, padding: 0,
-                            }}>×</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* AI suggestions */}
-                    {unconfirmedSuggestions.length > 0 && (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <span style={{ fontSize: 11, color: t.textSecondary, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                          AI Önerileri
-                        </span>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                          {unconfirmedSuggestions.map((name: string) => (
-                            <button key={name} onClick={() => addCompetitor(name)} style={{
-                              display: 'flex', alignItems: 'center', gap: 6,
-                              padding: '6px 12px', borderRadius: 20,
-                              background: t.surface, border: `1.5px dashed ${t.separator}`,
-                              color: t.textSecondary, fontSize: 13, cursor: 'pointer',
-                              transition: 'all 0.15s',
-                            }}>
-                              + {name}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Manual add */}
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <input
-                        value={newCompetitor}
-                        onChange={e => setNewCompetitor(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && newCompetitor.trim()) {
-                            addCompetitor(newCompetitor.trim());
-                            setNewCompetitor('');
-                          }
-                        }}
-                        placeholder="Rakip ekle… (Enter)"
-                        style={{
-                          flex: 1, padding: '8px 12px', borderRadius: 10,
-                          border: `1.5px solid ${t.separator}`, background: t.surface,
-                          color: t.textPrimary, fontSize: 13, outline: 'none',
-                        }}
-                      />
-                      <button
-                        onClick={() => {
-                          if (newCompetitor.trim()) { addCompetitor(newCompetitor.trim()); setNewCompetitor(''); }
-                        }}
-                        style={{
-                          padding: '8px 14px', borderRadius: 10,
-                          background: t.accent, border: 'none',
-                          color: '#fff', fontSize: 13, cursor: 'pointer', fontWeight: 600,
-                        }}
-                      >+</button>
-                    </div>
-
-                    {confirmed.length === 0 && unconfirmedSuggestions.length === 0 && (
-                      <span style={{ fontSize: 12, color: t.textSecondary }}>
-                        Rakip bulunamadı. Yukarıdan manuel ekleyebilirsin.
-                      </span>
-                    )}
-                  </div>
-                );
-              })()}
-            </SCard>
-          </>
-        )}
+        {tab === 'content' && contentGroup === 'competitors' && (() => {
+          const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
+          const confirmed: string[] = confirmedRaw
+            ? confirmedRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
+            : [];
+          const suggestedRaw = (pyCtx as any)?.suggested_competitors || '';
+          let suggested: string[] = [];
+          try { suggested = JSON.parse(suggestedRaw); } catch { suggested = []; }
+          const unconfirmedSuggestions = suggested.filter((s: string) => !confirmed.includes(s));
+          const saveCompetitors = (list: string[]) => save('competitors')(list.join(', '));
+          return (
+            <ContentStudioShell t={t} brandPrimary={brandPrimary}>
+              <ContentStudioPanel t={t} eyebrow="Rakipler">
+                <ContentStudioEntityBoard
+                  t={t}
+                  confirmed={confirmed}
+                  suggestions={unconfirmedSuggestions}
+                  draft={newCompetitor}
+                  onDraftChange={setNewCompetitor}
+                  onAdd={(name) => saveCompetitors([...confirmed, name])}
+                  onRemove={(name) => saveCompetitors(confirmed.filter((c) => c !== name))}
+                  emptyHint="Rakip yok — önerilerden seç veya manuel ekle."
+                />
+              </ContentStudioPanel>
+            </ContentStudioShell>
+          );
+        })()}
 
         {/* Design group index */}
         {tab === 'design' && designGroup === null && (
@@ -4472,14 +4388,14 @@ export function BrandConstitution() {
         {tab === 'design' && designGroup !== null && activeDesignGroup && (
           <VisionerSubNav
             t={t}
-            parentLabel="Tasarım"
+            parentLabel="Görünüm"
             title={activeDesignGroup.label}
             mission={DESIGN_GROUP_MISSIONS[activeDesignGroup.key]}
             onBack={() => openDesignGroup(null)}
           />
         )}
 
-        {tab === 'design' && designGroup === 'colors' && (
+        {tab === 'design' && isDesignStyle(designGroup) && (
           <>
             <SCard t={t} title="Görsel Dil">
               <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
@@ -4488,7 +4404,11 @@ export function BrandConstitution() {
         )}
 
         {tab === 'design' && designGroup === 'templates' && (
-          <div data-brand-fix="story-templates" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div
+            data-brand-form="story-templates"
+            className="brand-templates-studio"
+            style={{ display: 'flex', flexDirection: 'column', gap: 14 }}
+          >
             {tenantId && (
               <BrandSlotFacilitiesPanel
                 tenantId={tenantId}
@@ -4496,6 +4416,7 @@ export function BrandConstitution() {
                 t={t}
               />
             )}
+            <div style={{ height: 1, background: t.separator, opacity: 0.7 }} />
             {tenantId && (
               <BrandFalTemplateGalleryPanel
                 tenantId={tenantId}
@@ -4507,7 +4428,7 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {tab === 'design' && designGroup === 'colors' && (
+        {tab === 'design' && isDesignStyle(designGroup) && (
           <div data-brand-fix="brand-theme">
             <CollapsibleGroup
               t={t}
@@ -4609,7 +4530,7 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {tab === 'design' && designGroup === 'dna' && (
+        {tab === 'design' && isDesignStyle(designGroup) && (
           <div data-brand-fix="brand-dna-analyze">
             <CollapsibleGroup
               t={t}
@@ -4622,7 +4543,7 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {tab === 'design' && designGroup === 'rules' && (
+        {tab === 'design' && isDesignProduction(designGroup) && (
           <>
             <CollapsibleGroup
               t={t}
@@ -4717,7 +4638,7 @@ export function BrandConstitution() {
           </>
         )}
 
-        {tab === 'design' && designGroup === 'dna' && (
+        {tab === 'design' && isDesignStyle(designGroup) && (
           <div data-brand-fix="brand-dna-analyze">
             {/* Re-analyze button */}
             <button
@@ -4927,7 +4848,7 @@ export function BrandConstitution() {
           </div>
         )}
 
-        {tab === 'design' && designGroup === 'rules' && (
+        {tab === 'design' && isDesignProduction(designGroup) && (
           <>
             <SCard t={t} title="Onay Modu" accent={t.warning}>
               <div style={{ marginBottom: 10 }}>
@@ -5105,7 +5026,7 @@ export function BrandConstitution() {
           </>
         )}
 
-        {tab === 'design' && designGroup === 'engines' && (
+        {tab === 'design' && isDesignProduction(designGroup) && (
           <>
             <CollapsibleGroup
               t={t}

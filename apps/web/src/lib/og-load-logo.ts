@@ -4,7 +4,7 @@ import { resolveSiteUrl } from '@/lib/site-metadata';
 export async function loadMarkLogoDataUri(): Promise<string | undefined> {
   const siteUrl = resolveSiteUrl();
   try {
-    const res = await fetch(`${siteUrl}/smartagency-mark.png`, { cache: 'force-cache' });
+    const res = await fetch(`${siteUrl}/smartagency-icon.png`, { cache: 'force-cache' });
     if (!res.ok) return undefined;
     const bytes = new Uint8Array(await res.arrayBuffer());
     let binary = '';

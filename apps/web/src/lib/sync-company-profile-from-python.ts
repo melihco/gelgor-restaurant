@@ -6,15 +6,57 @@ import {
 } from '@/lib/canonical-sector';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
 
-/** Map Python brand_tone text → Setup Wizard preset value. */
-export function pythonToneToPreset(tone: string): string {
-  const t = tone.toLowerCase();
-  if (t.includes('samimi') || t.includes('sıcak') || t.includes('davetkar')) return 'friendly';
-  if (t.includes('enerjik') || t.includes('dinamik')) return 'energetic';
-  if (t.includes('premium') || t.includes('lüks') || t.includes('zarif')) return 'luxury';
-  if (t.includes('rahat') || t.includes('gündelik') || t.includes('doğal')) return 'casual';
-  if (t.includes('profesyonel') || t.includes('güven')) return 'professional';
+/** Setup Wizard / Marka Tonu chip values. */
+export const BRAND_TONE_PRESETS = [
+  'professional',
+  'friendly',
+  'energetic',
+  'luxury',
+  'casual',
+] as const;
+
+export type BrandTonePreset = (typeof BRAND_TONE_PRESETS)[number];
+
+const BRAND_TONE_PRESET_SET = new Set<string>(BRAND_TONE_PRESETS);
+
+/** True when value is already a wizard preset key (not freeform Turkish copy). */
+export function isBrandTonePreset(tone: string | null | undefined): boolean {
+  return BRAND_TONE_PRESET_SET.has(String(tone ?? '').trim().toLowerCase());
+}
+
+/**
+ * Map Python / discovery brand_tone text → Setup Wizard preset value.
+ * Accepts preset keys, Turkish labels, or freeform phrases like "samimi, sıcak, davetkar".
+ */
+export function pythonToneToPreset(tone: string): BrandTonePreset {
+  const t = tone.toLowerCase().trim();
+  if (BRAND_TONE_PRESET_SET.has(t)) return t as BrandTonePreset;
+  if (t.includes('samimi') || t.includes('sıcak') || t.includes('davetkar') || t.includes('kişisel')) {
+    return 'friendly';
+  }
+  if (t.includes('enerjik') || t.includes('dinamik') || t.includes('heyecan')) return 'energetic';
+  if (t.includes('premium') || t.includes('lüks') || t.includes('luks') || t.includes('zarif') || t.includes('sofistike')) {
+    return 'luxury';
+  }
+  if (t.includes('rahat') || t.includes('gündelik') || t.includes('gundelik') || t.includes('doğal') || t.includes('dogal')) {
+    return 'casual';
+  }
+  if (t.includes('profesyonel') || t.includes('güven') || t.includes('guven') || t.includes('kurumsal')) {
+    return 'professional';
+  }
   return 'friendly';
+}
+
+/** First non-empty candidate → preset (company profile, then Python brand_tone, …). */
+export function resolveBrandTonePreset(
+  ...candidates: Array<string | null | undefined>
+): BrandTonePreset {
+  for (const c of candidates) {
+    const s = String(c ?? '').trim();
+    if (!s) continue;
+    return pythonToneToPreset(s);
+  }
+  return 'professional';
 }
 
 function str(v: unknown): string {
@@ -82,8 +124,15 @@ export function buildCompanyProfilePatchFromPython(
   if (!str(profile.googleBusinessUrl) && str(py.google_business_url)) {
     patch.googleBusinessUrl = str(py.google_business_url).slice(0, 500);
   }
-  if (!str(profile.brandTone) && str(py.brand_tone)) {
-    patch.brandTone = pythonToneToPreset(str(py.brand_tone));
+  {
+    const existingTone = str(profile.brandTone);
+    const pyTone = str(py.brand_tone);
+    if (!existingTone && pyTone) {
+      patch.brandTone = pythonToneToPreset(pyTone);
+    } else if (existingTone && !isBrandTonePreset(existingTone)) {
+      // Freeform discovery text was saved into Nexus — normalize to a chip key.
+      patch.brandTone = pythonToneToPreset(existingTone || pyTone);
+    }
   }
   if (!str(profile.brandName) && str(py.business_name)) {
     patch.brandName = str(py.business_name).slice(0, 200);

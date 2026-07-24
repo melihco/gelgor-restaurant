@@ -26,9 +26,14 @@ const RATE_DURATION_MS = Math.max(1000, Number(process.env.PRODUCTION_WORKER_RAT
 // Returns true when the service is up, false otherwise.
 async function isNextJsReachable(): Promise<boolean> {
   try {
+    // Dev cold-compile regularly exceeds 8s; keep this above Next's first-hit latency.
+    const healthTimeoutMs = Math.max(
+      8_000,
+      Number(process.env.PRODUCTION_WORKER_HEALTH_TIMEOUT_MS ?? 35_000),
+    );
     const resp = await fetch(`${WEB_BASE_URL}/api/health/live`, {
       method: 'GET',
-      signal: AbortSignal.timeout(8_000),
+      signal: AbortSignal.timeout(healthTimeoutMs),
       headers: { 'X-Internal-Api-Key': INTERNAL_KEY },
     });
     return resp.ok;

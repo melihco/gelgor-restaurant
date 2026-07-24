@@ -6,8 +6,13 @@ import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 
 export type BrandConstitutionTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 export type BrandIdentityGroup = 'basics' | 'channels' | 'about';
-export type BrandContentGroup = 'about' | 'voice' | 'audience' | 'strategy' | 'special' | 'competitors';
-export type BrandDesignGroup = 'colors' | 'templates' | 'engines' | 'dna' | 'rules';
+/** Canonical leaves + legacy aliases (normalized in BrandConstitution). */
+export type BrandContentGroup =
+  | 'story' | 'goals' | 'special' | 'competitors'
+  | 'about' | 'voice' | 'audience' | 'strategy';
+export type BrandDesignGroup =
+  | 'style' | 'templates' | 'production'
+  | 'colors' | 'engines' | 'dna' | 'rules';
 export type BrandGalleryGroup = 'upload' | 'analyze' | 'photos';
 
 export interface BrandReadinessNavTarget {
@@ -16,7 +21,7 @@ export interface BrandReadinessNavTarget {
   contentGroup?: BrandContentGroup | null;
   designGroup?: BrandDesignGroup | null;
   galleryGroup?: BrandGalleryGroup | null;
-  /** DOM anchor via data-brand-fix */
+  /** DOM anchor via data-brand-form */
   anchor: string;
   label: string;
 }
@@ -48,25 +53,25 @@ const CHECK_TARGETS: Record<string, BrandReadinessNavTarget> = {
   },
   brand_dna: {
     tab: 'design',
-    designGroup: 'dna',
+    designGroup: 'style',
     anchor: 'brand-dna-analyze',
     label: 'Marka DNA',
   },
   brand_theme: {
     tab: 'design',
-    designGroup: 'colors',
+    designGroup: 'style',
     anchor: 'brand-theme',
     label: 'Marka teması',
   },
   content_pillars: {
     tab: 'content',
-    contentGroup: 'strategy',
+    contentGroup: 'goals',
     anchor: 'content-pillars',
     label: 'İçerik sütunları',
   },
   default_ctas: {
     tab: 'content',
-    contentGroup: 'strategy',
+    contentGroup: 'goals',
     anchor: 'content-pillars',
     label: 'Varsayılan CTA',
   },
@@ -78,19 +83,19 @@ const CHECK_TARGETS: Record<string, BrandReadinessNavTarget> = {
   },
   brand_about: {
     tab: 'content',
-    contentGroup: 'about',
+    contentGroup: 'story',
     anchor: 'brand-about',
-    label: 'Açıklama & Ürünler',
+    label: 'Hikaye & Ses',
   },
   production_visual_dna: {
     tab: 'design',
-    designGroup: 'dna',
+    designGroup: 'style',
     anchor: 'brand-dna-analyze',
     label: 'Production visual DNA',
   },
   production_theme_layers: {
     tab: 'design',
-    designGroup: 'colors',
+    designGroup: 'style',
     anchor: 'theme-layers',
     label: 'Tema üretim katmanları',
   },
@@ -159,16 +164,16 @@ export function resolveBrandReadinessNav(
 export function focusBrandReadinessAnchor(anchor: string, delayMs = 360): void {
   if (typeof window === 'undefined') return;
   window.setTimeout(() => {
-    const el = document.querySelector(`[data-brand-fix="${anchor}"]`);
+    const el = document.querySelector(`[data-brand-form="${anchor}"]`);
     if (!el) return;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    el.classList.add('brand-fix-highlight');
+    el.classList.add('brand-form-highlight');
     const focusable = el.querySelector<HTMLElement>(
       'input:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex="0"]',
     );
     if (focusable) {
       window.setTimeout(() => focusable.focus({ preventScroll: true }), 280);
     }
-    window.setTimeout(() => el.classList.remove('brand-fix-highlight'), 2600);
+    window.setTimeout(() => el.classList.remove('brand-form-highlight'), 2600);
   }, delayMs);
 }

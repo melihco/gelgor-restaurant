@@ -195,8 +195,7 @@ export function buildMoreMenuGroups(opts: {
 
   const clientGroups: { title: string; items: MoreMenuItem[] }[] = [
     {
-      // No section eyebrow — flat list under Marka hub
-      title: '',
+      title: 'Plan',
       items: [
         {
           label: 'İçerik Planı',
@@ -205,9 +204,14 @@ export function buildMoreMenuGroups(opts: {
           iconText: '▣',
           screen: 'missions',
         },
+      ],
+    },
+    {
+      title: 'Hesap',
+      items: [
         {
-          label: 'Entegrasyonlar',
-          sub: `${opts.connectedCount}/${opts.integrationTotal} bağlı`,
+          label: 'Bağlantılar',
+          sub: `OAuth · ${opts.connectedCount}/${opts.integrationTotal} bağlı`,
           iconBg: '#34d399',
           iconText: '⟳',
           screen: 'settings',

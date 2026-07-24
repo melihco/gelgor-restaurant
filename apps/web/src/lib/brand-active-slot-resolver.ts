@@ -548,7 +548,15 @@ export function applyCatalogSlotBindingsToQueue(
 ): ManifestProductionQueueItem[] {
   if (!bindings || Object.keys(bindings).length === 0) return queue;
   return queue.map((item) => {
-    const bound = bindings[`${item.ideaIndex}:${item.assignment.slot_role}`];
+    const exactKey = `${item.ideaIndex}:${item.assignment.slot_role}`;
+    let bound = bindings[exactKey];
+    // Drain rebuild can drift slot_role before bindings apply — fall back to
+    // the sole binding for this idea_index when exact role key misses.
+    if (!bound) {
+      const ideaPrefix = `${item.ideaIndex}:`;
+      const ideaMatches = Object.entries(bindings).filter(([k]) => k.startsWith(ideaPrefix));
+      if (ideaMatches.length === 1) bound = ideaMatches[0]![1];
+    }
     if (!bound) return item;
     return {
       ...item,
@@ -556,6 +564,92 @@ export function applyCatalogSlotBindingsToQueue(
       assignment: { ...item.assignment, catalog_slot_key: bound },
     };
   });
+}
+
+/**
+ * Factory drain backfill: map plan-time `${ideaIndex}:${slot_role}` keys onto the
+ * rebuilt manifest queue. Exact role match wins; when FD/catalog enrich drifted the
+ * role, pin the planned role (+ catalog binding) onto that idea's row so result
+ * `slotKey`s still match `production_jobs`.
+ */
+export function resolveSlotBackfillProductionLoop(
+  queue: ManifestProductionQueueItem[],
+  backfillSlotKeys: string[],
+  catalogSlotBindings?: Record<string, string> | null,
+): ManifestProductionQueueItem[] {
+  if (!backfillSlotKeys.length) return [];
+
+  const byExact = new Map<string, ManifestProductionQueueItem>();
+  const byIdea = new Map<number, ManifestProductionQueueItem[]>();
+  for (const item of queue) {
+    const key = `${item.ideaIndex}:${item.assignment.slot_role}`;
+    if (!byExact.has(key)) byExact.set(key, item);
+    const list = byIdea.get(item.ideaIndex) ?? [];
+    list.push(item);
+    byIdea.set(item.ideaIndex, list);
+  }
+
+  const out: ManifestProductionQueueItem[] = [];
+  const missing: string[] = [];
+  const repaired: string[] = [];
+
+  for (const plannedKey of backfillSlotKeys) {
+    const exact = byExact.get(plannedKey);
+    if (exact) {
+      out.push(exact);
+      continue;
+    }
+
+    const colon = plannedKey.indexOf(':');
+    if (colon <= 0) {
+      missing.push(plannedKey);
+      continue;
+    }
+    const ideaIndex = Number.parseInt(plannedKey.slice(0, colon), 10);
+    const plannedRole = plannedKey.slice(colon + 1).trim();
+    if (!Number.isFinite(ideaIndex) || !plannedRole) {
+      missing.push(plannedKey);
+      continue;
+    }
+
+    const base = (byIdea.get(ideaIndex) ?? [])[0];
+    if (!base) {
+      missing.push(plannedKey);
+      continue;
+    }
+
+    const catalogKey =
+      catalogSlotBindings?.[plannedKey]
+      ?? (typeof base.assignment.catalog_slot_key === 'string'
+        ? base.assignment.catalog_slot_key
+        : null)
+      ?? (typeof base.idea.catalog_slot_key === 'string'
+        ? base.idea.catalog_slot_key
+        : null);
+
+    repaired.push(`${plannedKey}←${base.ideaIndex}:${base.assignment.slot_role}`);
+    out.push({
+      ...base,
+      idea: catalogKey
+        ? { ...base.idea, catalog_slot_key: catalogKey }
+        : { ...base.idea },
+      assignment: {
+        ...base.assignment,
+        slot_role: plannedRole as ProductionSlotRole,
+        ...(catalogKey ? { catalog_slot_key: catalogKey } : {}),
+      },
+    });
+  }
+
+  if (repaired.length > 0 || missing.length > 0) {
+    console.warn(
+      `[auto-produce] Slot backfill key reconcile: repaired=${repaired.length} missing=${missing.length}`
+        + (repaired.length ? ` repaired=[${repaired.join('; ')}]` : '')
+        + (missing.length ? ` missing=[${missing.join(', ')}]` : ''),
+    );
+  }
+
+  return out;
 }
 
 /**

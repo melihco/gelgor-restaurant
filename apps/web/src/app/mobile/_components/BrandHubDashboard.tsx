@@ -7,6 +7,7 @@ import { resolveGalleryImageSrc } from '@/lib/gallery-display-url';
 import { SA_CHROME, SA_STUDIO_ACCENTS } from './sa-chrome';
 import { MobileBrandNavbar } from './MobileBrandNavbar';
 import { BrandVisionerNavRow } from './BrandVisionerNavRow';
+import { SaMenuIndex } from './SaMenuIndex';
 
 type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
 
@@ -102,7 +103,6 @@ function BrandHubTile({
       t={t}
       label={item.label}
       accent={item.accent}
-      completion={item.completion}
       icon={<SectionIcon name={item.key} color={item.accent} size={18} />}
       onClick={() => onOpen(item.target)}
     />
@@ -151,7 +151,7 @@ export function buildBrandHubNavItems(input: {
     {
       key: 'identity',
       target: 'identity',
-      label: 'Marka Profili',
+      label: 'Kimlik',
       accent: SA_STUDIO_ACCENTS.identity,
       status: input.constitutionConfirmedAt ? 'done' : 'warn',
       completion: input.constitutionConfirmedAt ? 1 : 0.42,
@@ -159,7 +159,7 @@ export function buildBrandHubNavItems(input: {
     {
       key: 'content',
       target: 'content',
-      label: 'İçerik',
+      label: 'İçerik DNA',
       accent: SA_STUDIO_ACCENTS.content,
       status: contentDone ? 'done' : 'warn',
       completion: contentDone ? 1 : Math.min(0.85, (input.pillarsCount / 2) * 0.55 + (input.ctasCount > 0 ? 0.25 : 0)),
@@ -167,7 +167,7 @@ export function buildBrandHubNavItems(input: {
     {
       key: 'design',
       target: 'design',
-      label: 'Tasarım',
+      label: 'Görünüm',
       accent: SA_STUDIO_ACCENTS.design,
       status: input.pprReady ? 'done' : 'warn',
       completion: Math.min(1, input.pprScore / PRODUCTION_PROFILE_THRESHOLD),
@@ -183,7 +183,7 @@ export function buildBrandHubNavItems(input: {
     {
       key: 'chatbot',
       target: 'chatbot',
-      label: 'Chatbot',
+      label: 'Asistan',
       accent: SA_STUDIO_ACCENTS.chatbot,
       status: input.hasChatbot ? 'done' : 'neutral',
       completion: input.hasChatbot ? 1 : 0.18,
@@ -199,6 +199,8 @@ export interface BrandHubDashboardProps {
   logoUrl?: string | null;
   monogram: string;
   brandPrimary: string;
+  /** Corporate secondary — drives hero aurora / rule with primary. */
+  brandAccent?: string | null;
   industryLabel?: string | null;
   locationLabel?: string | null;
   navItems: BrandHubNavItem[];
@@ -223,6 +225,7 @@ export function BrandHubDashboard({
   logoUrl,
   monogram,
   brandPrimary,
+  brandAccent,
   industryLabel,
   locationLabel,
   navItems,
@@ -235,10 +238,8 @@ export function BrandHubDashboard({
   pprScore,
   statusBanners,
 }: BrandHubDashboardProps) {
-  // İçerik / Tasarım / Galeri live under Marka Profili detail — hub only lists top-level entries.
-  const hubItems = navItems.filter((item) =>
-    item.key !== 'content' && item.key !== 'design' && item.key !== 'gallery',
-  );
+  // Peer product modules — Kimlik / İçerik DNA / Görünüm / Galeri / Asistan (max depth 3).
+  const hubItems = navItems;
 
   return (
     <div
@@ -291,12 +292,25 @@ export function BrandHubDashboard({
           borderRadius: 26,
           overflow: 'hidden',
           ['--hub-brand' as string]: brandPrimary || SA_CHROME.steel300,
-          ['--hub-accent' as string]: t.accent || SA_CHROME.steel500,
+          ['--hub-accent' as string]: brandAccent || brandPrimary || SA_CHROME.steel500,
           background: t.isDark
-            ? `radial-gradient(110% 80% at 50% -10%, ${brandPrimary}28 0%, transparent 58%),
+            ? `radial-gradient(120% 90% at 50% -8%, ${brandPrimary}55 0%, transparent 52%),
+               radial-gradient(90% 70% at 85% 110%, ${brandAccent || brandPrimary}40 0%, transparent 55%),
+               radial-gradient(70% 55% at 12% 95%, ${brandPrimary}22 0%, transparent 50%),
                linear-gradient(165deg, rgba(12,16,22,0.98) 0%, rgba(5,7,12,1) 100%)`
-            : `radial-gradient(110% 80% at 50% -10%, ${brandPrimary}1c 0%, transparent 58%),
+            : `radial-gradient(120% 90% at 50% -8%, ${brandPrimary}32 0%, transparent 52%),
+               radial-gradient(90% 70% at 85% 110%, ${brandAccent || brandPrimary}28 0%, transparent 55%),
+               radial-gradient(70% 55% at 12% 95%, ${brandPrimary}14 0%, transparent 50%),
                linear-gradient(165deg, rgba(255,255,255,0.98) 0%, rgba(244,246,250,0.98) 100%)`,
+          boxShadow: t.isDark
+            ? `0 0 0 0.5px color-mix(in srgb, ${brandPrimary} 35%, transparent),
+               0 24px 48px rgba(0, 0, 0, 0.38),
+               0 0 40px color-mix(in srgb, ${brandPrimary} 18%, transparent),
+               inset 0 1px 0 rgba(255, 255, 255, 0.08)`
+            : `0 0 0 0.5px color-mix(in srgb, ${brandAccent || brandPrimary} 22%, transparent),
+               0 18px 36px rgba(15, 23, 42, 0.1),
+               0 0 28px color-mix(in srgb, ${brandPrimary} 12%, transparent),
+               inset 0 1px 0 rgba(255, 255, 255, 0.85)`,
         }}
       >
         <div className="brand-hub-hero-aurora" aria-hidden />
@@ -323,6 +337,7 @@ export function BrandHubDashboard({
             style={{ position: 'relative', flexShrink: 0 }}
           >
             <div className="brand-hub-hero-glow" aria-hidden />
+            <div className="brand-hub-hero-glow brand-hub-hero-glow-accent" aria-hidden />
             <div style={{
               width: 112,
               height: 112,
@@ -331,7 +346,7 @@ export function BrandHubDashboard({
               position: 'relative',
               background: logoUrl
                 ? 'transparent'
-                : `linear-gradient(145deg, ${brandPrimary}, ${t.accent})`,
+                : `linear-gradient(145deg, ${brandPrimary}, ${brandAccent || brandPrimary})`,
               border: 'none',
               boxShadow: 'none',
             }}
@@ -441,7 +456,7 @@ export function BrandHubDashboard({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
-            Tasarım profili tamamlanmalı
+            Görünüm profili tamamlanmalı
           </div>
           <div style={{
             marginTop: 8, height: 3, borderRadius: 999, overflow: 'hidden',
@@ -457,16 +472,9 @@ export function BrandHubDashboard({
         </button>
       )}
 
-      <div
-        className="brand-hub-list"
-        style={{ width: '100%', margin: 0 }}
-      >
+      <SaMenuIndex>
         {hubItems.map((item) => (
-          <div
-            key={item.key}
-            className="brand-hub-group sa-chrome-card"
-            style={{ width: '100%', overflow: 'hidden' }}
-          >
+          <div key={item.key} className="sa-menu-index__slot">
             <BrandHubTile
               item={item}
               t={t}
@@ -474,7 +482,7 @@ export function BrandHubDashboard({
             />
           </div>
         ))}
-      </div>
+      </SaMenuIndex>
       </div>
     </div>
   );

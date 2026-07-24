@@ -3,13 +3,15 @@
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
-/** Icon-only (A mark) — dar alanlar, collapsed nav, favicon kaynak */
+/** Icon-only square mark — nav, favicon, OG/Twitter/WhatsApp chip */
 export const SMART_AGENCY_MARK_SRC = '/smartagency-mark.png';
+/** 1024² master — PWA / share previews */
+export const SMART_AGENCY_ICON_SRC = '/smartagency-icon.png';
 /** Icon + SmartAgency wordmark — geniş header, splash, login */
 export const SMART_AGENCY_FULL_SRC = '/smartagency-logo.png';
 
-const MARK_W = 199;
-const MARK_H = 123;
+const MARK_W = 512;
+const MARK_H = 512;
 const FULL_W = 525;
 const FULL_H = 123;
 
@@ -69,7 +71,7 @@ function MarkImage({
       width={MARK_W}
       height={MARK_H}
       priority={priority}
-      className={cn('h-9 w-auto object-contain object-left', className)}
+      className={cn('h-9 w-9 object-contain', className)}
     />
   );
 }
@@ -135,9 +137,9 @@ export function SmartAgencyLogo({
     <div
       className={cn(
         'inline-flex shrink-0 items-center justify-center rounded-xl bg-black shadow-theme-md dark:ring-1 dark:ring-white/10',
-        isMarkOnly && 'h-10 w-10 overflow-hidden px-1',
+        isMarkOnly && 'h-10 w-10 overflow-hidden p-0',
         !isMarkOnly && !isAuto && 'px-3 py-2',
-        isAuto && 'h-10 w-10 overflow-hidden px-1 xl:overflow-visible xl:h-auto xl:w-auto xl:min-w-0 xl:px-3 xl:py-2',
+        isAuto && 'h-10 w-10 overflow-hidden p-0 xl:overflow-visible xl:h-auto xl:w-auto xl:min-w-0 xl:px-3 xl:py-2',
         frameClassName,
       )}
     >
