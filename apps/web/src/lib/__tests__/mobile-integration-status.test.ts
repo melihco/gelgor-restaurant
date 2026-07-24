@@ -55,7 +55,9 @@ describe('buildMoreMenuGroups growth + notifications', () => {
       showAds: false,
       notificationCount: 0,
     });
-    expect(groups.some((g) => g.title === 'Büyüme')).toBe(false);
+    const account = groups.find((g) => g.title === 'Hesap');
+    expect(account?.items.some((i) => i.label === 'Google Yorumları')).toBe(false);
+    expect(account?.items.some((i) => i.label === 'Reklamlar')).toBe(false);
     const notif = groups.flatMap((g) => g.items).find((i) => i.label === 'Bildirimler');
     expect(notif?.badge).toBeUndefined();
   });
@@ -68,8 +70,10 @@ describe('buildMoreMenuGroups growth + notifications', () => {
       showAds: true,
       notificationCount: 4,
     });
-    const growth = groups.find((g) => g.title === 'Büyüme');
-    expect(growth?.items.map((i) => i.label)).toEqual(['Google Yorumları', 'Reklamlar']);
+    const account = groups.find((g) => g.title === 'Hesap');
+    expect(account?.items.map((i) => i.label)).toEqual(
+      expect.arrayContaining(['Google Yorumları', 'Reklamlar']),
+    );
     const notif = groups.flatMap((g) => g.items).find((i) => i.label === 'Bildirimler');
     expect(notif?.badge).toBe(4);
     expect(notif?.badgeKind).toBe('count');

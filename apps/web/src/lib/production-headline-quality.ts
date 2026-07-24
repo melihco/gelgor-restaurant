@@ -6,6 +6,7 @@ import {
   isIncompleteOverlayPhrase,
   isInternalStrategyBriefing,
 } from './fal-caption-headline';
+import { hasDaypartCopyConflict } from './brand-operating-profile';
 import { enforceDisplayHeadline } from './grafiker-quality';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 import { isNonVenueSector } from './sector-gallery-seed';
@@ -299,6 +300,32 @@ export function resolveMeaningfulProductionHeadline(input: {
       headline: genericHeadlineFallback(brandName, businessType, language),
       replaced: true,
       reason: 'generic_fallback',
+    };
+  }
+
+  if (caption && hasDaypartCopyConflict(caption, headline)) {
+    if (usableCard && !/\b(gece|night|dj\b)/i.test(usableCard)) {
+      return { headline: usableCard, replaced: true, reason: 'daypart_visual_design_card' };
+    }
+    const fromCaption = extractHookFromCaption(caption, brandName, maxLen);
+    if (fromCaption) {
+      return { headline: fromCaption, replaced: true, reason: 'daypart_conflict_caption' };
+    }
+    if (
+      conceptTitle
+      && !isMeaninglessBrandEchoHeadline(conceptTitle, brandName)
+      && !/\b(gece|night|dj\b)/i.test(conceptTitle)
+    ) {
+      return {
+        headline: enforceDisplayHeadline(conceptTitle, maxLen),
+        replaced: true,
+        reason: 'daypart_concept',
+      };
+    }
+    return {
+      headline: genericHeadlineFallback(brandName, businessType, language),
+      replaced: true,
+      reason: 'daypart_conflict_generic',
     };
   }
 

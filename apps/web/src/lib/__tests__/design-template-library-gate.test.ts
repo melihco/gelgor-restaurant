@@ -11,7 +11,7 @@ import {
   selectBrandDesignTemplate,
   type BrandDesignTemplateRecord,
 } from '@/lib/brand-design-template-matcher';
-import { resolveLibraryTemplateReplicaLock } from '@/lib/brand-design-template-production';
+import { requiresLibraryTemplateReplica } from '@/lib/brand-design-template-production';
 import type { MatchedDesignTemplate } from '@/lib/brand-design-template-matcher';
 
 const READY_PROMPT =
@@ -113,26 +113,33 @@ describe('Phase D hard-pin approve gate', () => {
     } as BrandDesignTemplateRecord;
   }
 
-  it('fails closed on draft catalog key (beach_club) with unapproved_template', () => {
-    const active = [
-      tpl({
-        id: 'draft_dj',
-        template_type: 'event_special',
-        format: 'post',
-        status: 'draft',
-        catalog_slot_key: 'beach_club_dj_night_teaser_post',
-        design_spec: { prompt: 'short' },
-      }),
-    ];
-    const sel = selectBrandDesignTemplate(active, {
+  it('matcher hard-pins catalog key for draft rows; gate marks shell ineligible', () => {
+    const draft = tpl({
+      id: 'draft_dj',
+      template_type: 'event_special',
+      format: 'post',
+      status: 'draft',
+      catalog_slot_key: 'beach_club_dj_night_teaser_post',
+      design_spec: { prompt: 'short' },
+    });
+    const sel = selectBrandDesignTemplate([draft], {
       slotRole: 'fal_designed_post',
       format: 'post',
       catalogSlotKey: 'beach_club_dj_night_teaser_post',
     });
-    expect(sel).toBeNull();
+    expect(sel?.matchQuality).toBe('hard');
+    expect(sel?.record.status).toBe('draft');
     expect(
-      diagnoseCatalogHardPinMiss(active, 'post', 'beach_club_dj_night_teaser_post').reason,
-    ).toBe('unapproved_template');
+      isDesignTemplateHardPinEligible({
+        status: 'draft',
+        thumbnailUrl: draft.thumbnail_url,
+        designSpec: draft.design_spec,
+        format: 'post',
+      }),
+    ).toBe(false);
+    expect(
+      diagnoseCatalogHardPinMiss([draft], 'post', 'beach_club_dj_night_teaser_post').reason,
+    ).toBe('missing_template');
   });
 
   it('hard-pins approved product shell (local_products_shop)', () => {
@@ -155,7 +162,7 @@ describe('Phase D hard-pin approve gate', () => {
     expect(sel?.record.id).toBe('harvest');
   });
 
-  it('replica lock withholds unapproved hard pins', () => {
+  it('renderable match requires replica; draft shells fail hard-pin eligibility', () => {
     const matched: MatchedDesignTemplate = {
       id: 'd1',
       templateType: 'daily_story',
@@ -176,18 +183,18 @@ describe('Phase D hard-pin approve gate', () => {
       }),
       matchQuality: 'hard',
     };
-    const lock = resolveLibraryTemplateReplicaLock({
-      matched,
-      lockedVibe: null,
-      referencePhotoUrl: 'https://cdn.example.com/mission.jpg',
-      styleReferenceUrl: 'https://cdn.example.com/preview.jpg',
-      brandDirectives: [],
-      brandColors: null,
-      logoUrl: undefined,
-      occasion: undefined,
-    });
-    expect(lock.required).toBe(true);
-    expect(lock.ready).toBe(false);
-    expect(lock.reason).toBe('unapproved_template');
+    expect(requiresLibraryTemplateReplica(matched)).toBe(true);
+    expect(
+      isDesignTemplateHardPinEligible({
+        status: 'draft',
+        thumbnailUrl: matched.thumbnailUrl,
+        designSpec: {
+          prompt: READY_PROMPT,
+          layout: matched.layout,
+          canvaArchetypeId: matched.canvaArchetypeId,
+        },
+        format: 'story',
+      }),
+    ).toBe(false);
   });
 });

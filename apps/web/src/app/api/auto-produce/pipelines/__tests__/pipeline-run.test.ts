@@ -131,14 +131,31 @@ vi.mock('@/app/api/auto-produce/handlers/image-generators', () => ({
   generateDesignedPostImage: h.generateDesignedPostImage,
   generateProductShowcaseImage: h.generateProductShowcaseImage,
 }));
-vi.mock('@/lib/fal-caption-headline', () => ({
-  resolveFalProductionOverlayHeadline: h.resolveFalProductionOverlayHeadline,
-  resolveFalOverlayCopy: vi.fn(({ headline, cta }: { headline: string; cta?: string }) => ({
-    headline,
-    subtitle: cta ?? '',
-  })),
-  areFalOverlayTextsRedundant: () => false,
-}));
+vi.mock('@/lib/fal-caption-headline', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/fal-caption-headline')>();
+  return {
+    ...actual,
+    resolveFalProductionOverlayHeadline: h.resolveFalProductionOverlayHeadline,
+    resolveFalOverlayCopy: vi.fn(({ headline, cta }: { headline: string; cta?: string }) => ({
+      headline,
+      subtitle: cta ?? '',
+    })),
+    areFalOverlayTextsRedundant: () => false,
+    fitMissionOverlayToTemplateBudget: vi.fn((input: {
+      headline: string;
+      subtitle?: string | null;
+    }) => ({
+      headline: input.headline,
+      subtitle: input.subtitle ?? undefined,
+      budget: {
+        source: 'default',
+        headline: { maxLen: 32, maxWords: 6 },
+        subtitle: null,
+        showSubline: false,
+      },
+    })),
+  };
+});
 vi.mock('@/lib/typography-text-validation', () => ({
   validateTypographyText: h.validateTypographyText,
   validateFalCanvasText: vi.fn().mockResolvedValue({

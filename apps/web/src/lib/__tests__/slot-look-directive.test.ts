@@ -80,8 +80,8 @@ describe('buildSlotLookDirective', () => {
   });
 });
 
-describe('design-card slot look wiring', () => {
-  it('injects distinct SLOT LOOK for DJ vs sunset in protected prompt', () => {
+describe('design-card prompt wiring', () => {
+  it('builds distinct brand-soul prompts for DJ vs sunset slots', () => {
     const dj = buildDesignedPostDesignCardPrompt({
       vibe: 'warm_coastal',
       headline: 'DJ Night',
@@ -108,15 +108,13 @@ describe('design-card slot look wiring', () => {
       announcementType: 'daily_story',
       catalogSlotKey: 'beach_club_sunset_ambiance_post',
     });
-    expect(dj).toContain('SLOT LOOK');
-    expect(sunset).toContain('SLOT LOOK');
-    expect(dj).toMatch(/Kind=nightlife_event/);
-    expect(sunset).toMatch(/Kind=golden_hour/);
-    expect(dj).toContain('BRAND COLOR LOCK');
+    expect(dj).toContain('BRAND SOUL LOCK');
+    expect(sunset).toContain('BRAND SOUL LOCK');
+    expect(dj).toContain('HEADLINE: "DJ Night"');
+    expect(sunset).toContain('HEADLINE: "Gün batımı"');
     expect(dj).toContain('#E85A3C');
     expect(dj).toContain('#1B3A5C');
-    expect(dj).toContain('COMPOSE ORDER (MANDATORY photo-led)');
-    expect(dj).toMatch(/nightlife|impact|condensed/i);
-    expect(sunset).toContain('COMPOSE ORDER (MANDATORY photo-led)');
+    expect(dj).toMatch(/nightlife|DJ/i);
+    expect(dj).not.toEqual(sunset);
   });
 });

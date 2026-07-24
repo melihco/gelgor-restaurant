@@ -9,8 +9,6 @@ import {
   resolveDesignSpecLayout,
   seedDesignSpecLayout,
 } from '@/lib/design-spec-layout';
-import { buildTemplateLayoutLockBlock } from '@/lib/brand-design-template-production';
-
 describe('design_spec.layout v1 seeds', () => {
   it('covers every Canva archetype in the catalog', () => {
     const seeded = new Set(listSeededDesignSpecArchetypeIds());
@@ -158,25 +156,7 @@ describe('layout lock prompt dual-read', () => {
     expect(block).toContain('photoSlot:');
     expect(block).toContain('headlineSlot:');
     expect(block).toContain('logoSlot:');
-
-    const lock = buildTemplateLayoutLockBlock({
-      templateName: 'Menü feature',
-      canvaArchetypeId: 'split_feature_panel',
-      layoutPattern: layout.layoutPattern,
-      layout,
-    });
-    expect(lock).toContain('NUMERIC layout document');
-    expect(lock).toContain('LAYOUT DOCUMENT');
-    expect(lock).toMatch(/x=\d+%/);
-  });
-
-  it('keeps prose-only lock for legacy templates without layout', () => {
-    const lock = buildTemplateLayoutLockBlock({
-      templateName: 'Legacy shell',
-      canvaArchetypeId: 'split_feature_panel',
-      layoutPattern: 'split_feature_panel — 45/55',
-    });
-    expect(lock).toContain('IMAGE 2 (template preview) is the geometry authority');
-    expect(lock).not.toContain('LAYOUT DOCUMENT');
+    expect(block).toContain('NUMERIC AUTHORITY');
+    expect(block).toMatch(/1080×1350/);
   });
 });

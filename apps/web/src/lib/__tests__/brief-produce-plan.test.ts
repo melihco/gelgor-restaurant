@@ -37,7 +37,7 @@ describe('validateBriefProduceRequest', () => {
       workspaceId: 'w',
       title: 'Bal',
       outputType: 'post',
-    })).toEqual({ ok: true });
+    })).toEqual({ ok: true, workspaceId: 'w' });
   });
 });
 

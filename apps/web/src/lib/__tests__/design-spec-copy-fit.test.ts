@@ -118,11 +118,10 @@ describe('TYPE FIT prompt + logoSlot', () => {
         layout,
       },
       { headline: 'Alfresco', subtitle: 'Bu akşam' },
-      { typeFit: fit, channel: 'feed_post' },
     );
-    expect(prompt).toContain('TYPE FIT');
     expect(prompt).toContain('Alfresco');
-    expect(prompt).toContain('LAYOUT DOCUMENT');
+    expect(prompt).toContain('MISSION COPY OVERRIDE');
+    expect(prompt).not.toContain('TYPE FIT');
   });
 
   it('maps logoSlot centroids to sharp corners', () => {
