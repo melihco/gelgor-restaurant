@@ -75,3 +75,5 @@ class TenantSlotAssignment(BaseModel):
     priority: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     assignment_source: Mapped[str] = mapped_column(String(32), nullable=False, default="auto_default")
     notes: Mapped[str | None] = mapped_column(Text)
+    # Brand×slot creative brief overlay (template library + production).
+    customization: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

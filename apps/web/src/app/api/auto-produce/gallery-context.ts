@@ -32,6 +32,7 @@ import {
   filterGalleryAnalysisKeys,
   parseBrandReferenceUrls,
 } from '@/lib/gallery-upload';
+import { resolveVisualSourceMode } from '@/lib/ai-visual-production-standard';
 
 const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
@@ -148,17 +149,30 @@ export async function fetchGalleryContext(
   let photos = health.urls;
 
   try {
-    const { prioritizeTenantStoredGalleryUrls, resolveTenantGalleryFallbackUrls } = await import(
-      '@/lib/gallery-mirror-server'
-    );
+    const {
+      prioritizeTenantStoredGalleryUrls,
+      orderGalleryUrlsForVisualSource,
+      resolveTenantGalleryFallbackUrls,
+    } = await import('@/lib/gallery-mirror-server');
     const r2Photos = await resolveTenantGalleryFallbackUrls(workspaceId, { maxKeys: 120 });
-    if (r2Photos.length > 0) {
-      photos = prioritizeTenantStoredGalleryUrls([...r2Photos, ...photos], workspaceId);
-      console.log(
-        `[gallery-context:${workspaceId}] merged ${r2Photos.length} tenant R2 gallery URLs (brand-site fallback)`,
-      );
-    } else {
+    const merged = r2Photos.length > 0 ? [...r2Photos, ...photos] : photos;
+    const theme = (brandCtxRaw.brand_theme && typeof brandCtxRaw.brand_theme === 'object'
+      ? brandCtxRaw.brand_theme
+      : brandCtxRaw) as Record<string, unknown>;
+    const visualSourceMode = resolveVisualSourceMode(theme);
+    photos = orderGalleryUrlsForVisualSource(merged, {
+      visualSourceMode,
+      brandDomain,
+      workspaceId,
+    });
+    // ai_generated still prefers tenant mirrors via prioritize when mode is ai.
+    if (visualSourceMode === 'ai_generated') {
       photos = prioritizeTenantStoredGalleryUrls(photos, workspaceId);
+    } else if (r2Photos.length > 0) {
+      console.log(
+        `[gallery-context:${workspaceId}] gallery pool ordered for ${visualSourceMode} `
+        + `(brand-site first; ${r2Photos.length} tenant media demoted)`,
+      );
     }
   } catch {
     /* gallery-mirror optional in tests */

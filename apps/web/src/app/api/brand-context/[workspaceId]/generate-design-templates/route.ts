@@ -20,6 +20,10 @@ import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-product
 import { resolveOnboardingDesignPresetsFromCatalog } from '@/lib/catalog-design-template-presets';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
 import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
+import {
+  ensureSlotCreativeBriefsForAssignments,
+  persistSlotCreativeBriefsFromTemplates,
+} from '@/lib/slot-creative-library-persist';
 
 export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
@@ -165,6 +169,24 @@ export async function POST(
     + `selected=${catalogPresets.selectedSlotCount} bootstrapped=${catalogPresets.bootstrapped}`,
   );
 
+  // Fill empty assignment.customization for every enabled slot before generate
+  // so library shells are purpose-built (brand×slot), not generic/holiday chrome.
+  const {
+    byKey: slotCreativeByKey,
+    assignments: slotAssignments,
+    seededCount: slotCreativesSeeded,
+  } = await ensureSlotCreativeBriefsForAssignments(workspaceId, {
+    brandName,
+    location: typeof brandCtx.location === 'string' ? brandCtx.location : undefined,
+    visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+    brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+  });
+  if (slotCreativesSeeded > 0) {
+    console.log(
+      `[generate-design-templates] seeded slot creative briefs: ${slotCreativesSeeded}`,
+    );
+  }
+
   // ── Generate ───────────────────────────────────────────────────────────────
   const result = await generateBrandDesignTemplates({
     workspaceId,
@@ -204,6 +226,7 @@ export async function POST(
     concurrency: body.concurrency ?? productionSettings.concurrency,
     presets: catalogPresets.presets,
     templatePreviewMode: true,
+    slotCreativeByKey,
   });
 
   // ── Persist (bulk upsert replaces prior auto-generated set) ────────────────
@@ -239,6 +262,20 @@ export async function POST(
     invalidateDesignTemplateCache(workspaceId);
   }
 
+  let creativeBriefsPersisted = 0;
+  try {
+    creativeBriefsPersisted = await persistSlotCreativeBriefsFromTemplates(
+      workspaceId,
+      result.templates,
+      slotAssignments,
+    );
+  } catch (err) {
+    console.warn(
+      `[generate-design-templates] slot creative persist skipped for ${workspaceId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   return NextResponse.json({
     workspaceId,
     sector,
@@ -252,6 +289,8 @@ export async function POST(
       error: persistRes.error ?? 'persist_failed',
       detail: persistRes.data ?? null,
     },
+    creative_briefs_seeded: slotCreativesSeeded,
+    creative_briefs_persisted: creativeBriefsPersisted,
     catalog: {
       source: catalogPresets.source,
       enabled_slot_count: catalogPresets.enabledSlotCount,

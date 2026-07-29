@@ -153,6 +153,8 @@ export interface TenantSlotAssignment {
   priority: number;
   assignment_source: 'auto_default' | 'operator' | 'onboarding' | string;
   notes: string | null;
+  /** Brand×slot creative brief overlay (creative_intent_tr, must_show, …). */
+  customization?: Record<string, unknown> | null;
   slot: ProductionSlotDefinition | null;
   created_at?: string;
   updated_at?: string;
@@ -347,6 +349,8 @@ export interface TenantSlotAssignmentUpsert {
   priority?: number;
   assignment_source?: 'operator' | 'onboarding' | 'auto_default';
   notes?: string | null;
+  /** Omit to leave existing customization unchanged. */
+  customization?: Record<string, unknown> | null;
 }
 
 export async function upsertTenantSlotAssignments(

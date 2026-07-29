@@ -1207,8 +1207,8 @@ function buildDesignedDesignCardPrompt(
     designHarmonyLock,
     logoBlock,
     isVertical
-      ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping.'
-      : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin); headline/CTA inside central 4:5 crop.',
+      ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping. Native 9:16 full frame — no post-crop.'
+      : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin). Native 4:5 full frame — no cover-crop.',
     craftZonesActive
       ? (isVertical
         ? 'PHOTO FRAMING (9:16): After craft+type zones are reserved, contain the FULL gallery photo in the leftover photo window — no crop of hero subjects; never paint over the photo.'

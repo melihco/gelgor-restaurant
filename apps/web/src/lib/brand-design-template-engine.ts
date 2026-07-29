@@ -100,6 +100,11 @@ import {
   resolveSlotSampleCopy,
 } from '@/lib/slot-sample-copy';
 import { showSublineFromSampleCopy } from '@/lib/slot-subline-policy';
+import {
+  formatSlotCreativeBriefPromptBlock,
+  resolveSlotCreativeForLibraryGen,
+  type SlotCreativeCustomization,
+} from '@/lib/slot-creative-customization';
 
 /** A special day (DB-resolved) the brand should get a dedicated event template for. */
 export interface EngineSpecialDay {
@@ -181,6 +186,13 @@ export interface DesignTemplateEngineInput {
   forceShowSubline?: boolean | null;
   /** When false, skip CrewAI slot art direction (tests / offline). Default true. */
   enableSlotArtDirection?: boolean;
+  /**
+   * Existing brand×slot creative briefs keyed by catalog_slot_key
+   * (from tenant_slot_assignments.customization).
+   */
+  slotCreativeByKey?: Record<string, unknown>;
+  /** When true, reseed auto briefs even if one already exists (never overwrites operator). */
+  forceReseedSlotCreative?: boolean;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -226,6 +238,8 @@ export interface GeneratedDesignTemplate {
     typographyMode?: string;
     /** CrewAI marka×slot art direction persisted for mission replica. */
     slot_art_direction?: SlotArtDirection | null;
+    /** Brand×slot structured creative brief used during library generation. */
+    slot_creative_brief?: SlotCreativeCustomization | null;
     designBriefDirectives?: string[];
     /**
      * Reel production recipe (motion/kurgu/audio) — seeded for reel_cover
@@ -643,6 +657,8 @@ export function buildBrandSlotDesignRecipe(input: {
   templateType?: string | null;
   /** Fal/Canva use-case id (e.g. event_announcement). */
   falUseCase?: string | null;
+  /** Brand×slot structured creative brief (design craft intent). */
+  creativeBrief?: SlotCreativeCustomization | null;
 }): string {
   const place = input.location?.trim() || input.sector.replace(/_/g, ' ');
   const dnaCue = input.visualDna?.trim()
@@ -661,6 +677,7 @@ export function buildBrandSlotDesignRecipe(input: {
     falUseCase: input.falUseCase,
     channel: input.channel,
   });
+  const creativeBlock = formatSlotCreativeBriefPromptBlock(input.creativeBrief);
   // Brand + DNA first; sample punchline is the type-zone footprint, not the creative thesis.
   const idea = [
     `Design idea: a reusable ${input.channel} recipe that could ONLY belong to ${input.brandName} for slot ${input.slotName} — ${toneCue}.`,
@@ -672,6 +689,7 @@ export function buildBrandSlotDesignRecipe(input: {
   return [
     `═══ BRAND SLOT DESIGN RECIPE ═══`,
     `Slot: ${input.slotName} (${input.slotKey}) · ${input.channel} · intensity ${input.level}.`,
+    creativeBlock,
     `═══ TEMPLATE PURPOSE ═══`,
     `Job: "${purpose.jobLabel}" — this canvas exists for that job; layout/type energy must read as that purpose at a glance.`,
     input.templateType || input.falUseCase
@@ -895,13 +913,34 @@ async function generateOne(
       resolveCraftAllowlistForPack(layoutLanguage),
     )
     : null;
+
+  const catalogKey = preset.catalogSlotKey || layoutFamilySeed;
+  const existingCreative = input.slotCreativeByKey?.[catalogKey]
+    ?? (preset.catalogSlotKey ? input.slotCreativeByKey?.[preset.catalogSlotKey] : undefined);
+  const { brief: slotCreativeBrief } = resolveSlotCreativeForLibraryGen({
+    existing: existingCreative,
+    forceReseed: input.forceReseedSlotCreative === true,
+    seed: {
+      brandName: input.brandName,
+      location: input.location,
+      visualDna: input.brandIntelligence?.visualDna ?? input.visualDnaTone,
+      brandTone: input.brandIntelligence?.brandTone,
+      slotName: preset.name,
+      slotKey: catalogKey,
+      templateType: preset.templateType,
+      format: preset.format,
+      falUseCase,
+      seedSource: 'auto_template_gen',
+    },
+  });
+
   const slotDesignRecipe = buildBrandSlotDesignRecipe({
     brandName: input.brandName,
     sector: input.sector,
     location: input.location,
     primary: input.brandColors.primary,
     accent: input.brandColors.accent,
-    slotKey: preset.catalogSlotKey || layoutFamilySeed,
+    slotKey: catalogKey,
     slotName: preset.name,
     channel: intensityChannel,
     level: designIntensityLevel,
@@ -912,6 +951,7 @@ async function generateOne(
     sampleHeadline: headline || preset.sampleHeadline,
     templateType: preset.templateType,
     falUseCase,
+    creativeBrief: slotCreativeBrief,
   });
 
   const copyFit = buildSlotCopyFitDirective({
@@ -1124,6 +1164,7 @@ async function generateOne(
       layoutPattern: layoutBrief.layoutPattern,
       typographyMode: layoutBrief.typographyMode,
       slot_art_direction: slotArtDirection,
+      slot_creative_brief: slotCreativeBrief,
       designBriefDirectives: layoutDirectives,
       ...(preset.format === 'reel_cover'
         ? {

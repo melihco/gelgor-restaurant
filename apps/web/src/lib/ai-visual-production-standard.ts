@@ -60,6 +60,18 @@ export interface AiVisualProductionStandard {
 
 export type VisualSourceMode = 'gallery_only' | 'gallery_enhanced' | 'ai_generated';
 
+/**
+ * Template `galleryRef` may be a shell-bake photo (or a prior designed card).
+ * Brand Hub "Galeri fotoğrafları" / "Galeri + düzeltme" must never fall back to
+ * that — only the mission-matched gallery photo. `ai_generated` may still use
+ * template galleryRef as last resort.
+ */
+export function allowsTemplateGalleryPhotoFallback(
+  mode: VisualSourceMode | null | undefined,
+): boolean {
+  return mode === 'ai_generated';
+}
+
 const DEFAULT_FORMATS: AiEnhanceFormat[] = ['post', 'story', 'carousel', 'reel'];
 
 import { normalizeBrandThemeRecord } from '@/lib/brand-theme-normalize';

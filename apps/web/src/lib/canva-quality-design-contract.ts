@@ -64,7 +64,7 @@ export function buildCanvaQualityDesignContract(input?: {
       'PHOTO LOCK — exact reference photo.',
       'TYPE CRAFT — designed display + hierarchy + asymmetric lockup.',
       'TYPE FIT — letters in scrim ≥8% pad.',
-      isVertical ? 'GEOMETRY — 9:16 UI-safe.' : 'GEOMETRY — 4:5 crop-safe.',
+      isVertical ? 'GEOMETRY — 9:16 UI-safe.' : 'GEOMETRY — 4:5 full-frame (no cover-crop).',
       hardOpaque
         ? 'LAYOUT LAW — soft plates OK; forbid paint slabs ≥20%.'
         : 'LAYOUT LAW — photo-led; FORBIDDEN opaque panels / paint wedges.',
@@ -77,23 +77,23 @@ export function buildCanvaQualityDesignContract(input?: {
     ? (isVertical
       ? [
           'SLOT GEOMETRY (9:16 HARD PIN): Match the numeric layout document / IMAGE 2 panel roles exactly (including color_block/wedge when present); photo window keeps the hero subject fully visible.',
-          'SAFE CROP: Keep all letterforms inside the central readable frame — top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
+          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
         ]
       : [
           'SLOT GEOMETRY (4:5 HARD PIN): Match the numeric layout document / IMAGE 2 panel roles exactly (including color_block/wedge when present) with ≥10% inner padding in type zones.',
-          'SAFE CROP: GPT may render 2:3 then crop to 4:5 — keep ALL type inside the central 4:5 safe region (never park headlines in extreme top/bottom strips that cover-crop will clip).',
+          'SAFE ZONE: Native 4:5 feed canvas — compose for the FULL frame (no cover-crop). Keep ALL type ≥8% from edges.',
         ])
     : (isVertical
       ? [
           'SLOT GEOMETRY (9:16): Prefer translucent scrim / asymmetric type lockup / thin brand rules ON a full-bleed photo — not a tall opaque header stack.',
-          'SAFE CROP: Keep all letterforms inside the central readable frame — top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
+          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
           'FORBIDDEN: opaque geometric header/diagonal paint covering ≥25% of frame unless a hard layout document demands color_block|wedge.',
         ]
       : [
           photoLedIntensity
             ? 'SLOT GEOMETRY (4:5 feed): Prefer translucent scrim / asymmetric corner type lockup / thin brand rules on a full-bleed photo — NOT a top color panel sandwich.'
             : 'SLOT GEOMETRY (4:5 feed): Prefer type-led editorial or soft plates with a clear photo hero — solid color_block only when the hard layout document demands it.',
-          'SAFE CROP: GPT may render 2:3 then crop to 4:5 — keep ALL type inside the central 4:5 safe region (never park headlines in extreme top/bottom strips that cover-crop will clip).',
+          'SAFE ZONE: Native 4:5 feed canvas — compose for the FULL frame (no cover-crop). Keep ALL type ≥8% from edges.',
           'FORBIDDEN: opaque geometric header/diagonal paint covering ≥25% of frame unless pinMode=hard and layout.panels include color_block|wedge.',
         ]);
 

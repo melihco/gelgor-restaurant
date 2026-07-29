@@ -29,6 +29,31 @@ describe('prioritizeTenantStoredGalleryUrls', () => {
   });
 });
 
+describe('orderGalleryUrlsForVisualSource', () => {
+  it('prefers brand-site galeri over tenant /api/media under gallery_only', async () => {
+    const { orderGalleryUrlsForVisualSource } = await import('@/lib/gallery-mirror-server');
+    const brand = 'https://yulabodrum.com/galeri/49.webp';
+    const ordered = orderGalleryUrlsForVisualSource([R2_URL, brand], {
+      visualSourceMode: 'gallery_only',
+      brandDomain: 'yulabodrum.com',
+      workspaceId: TENANT,
+    });
+    expect(ordered[0]).toBe(brand);
+    expect(ordered[ordered.length - 1]).toBe(R2_URL);
+  });
+
+  it('keeps tenant-first under ai_generated', async () => {
+    const { orderGalleryUrlsForVisualSource } = await import('@/lib/gallery-mirror-server');
+    const brand = 'https://yulabodrum.com/galeri/49.webp';
+    const ordered = orderGalleryUrlsForVisualSource([brand, R2_URL], {
+      visualSourceMode: 'ai_generated',
+      brandDomain: 'yulabodrum.com',
+      workspaceId: TENANT,
+    });
+    expect(ordered[0]).toBe(R2_URL);
+  });
+});
+
 describe('pickReachableProductionGalleryUrl', () => {
   afterEach(() => {
     vi.restoreAllMocks();

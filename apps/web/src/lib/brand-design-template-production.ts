@@ -15,6 +15,10 @@ import {
   type MatchedDesignTemplate,
 } from '@/lib/brand-design-template-matcher';
 import type { BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
+import {
+  allowsTemplateGalleryPhotoFallback,
+  type VisualSourceMode,
+} from '@/lib/ai-visual-production-standard';
 import { collectTemplatePlaceholderTexts } from '@/lib/template-placeholder-guard';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 
@@ -175,13 +179,18 @@ export function pickTemplateReferenceUrls(input: {
   missionPhotoUrl: string | null | undefined;
   matched: MatchedDesignTemplate | null;
   brandReferenceImageUrls?: string[];
+  /** Brand Hub Görsel Kaynak — gallery modes never fall back to template galleryRef. */
+  visualSourceMode?: VisualSourceMode | null;
 }): string[] {
   const mission =
     input.missionPhotoUrl && isUsableGalleryPhotoUrl(input.missionPhotoUrl)
       ? input.missionPhotoUrl
       : null;
+  const allowTemplateGallery = allowsTemplateGalleryPhotoFallback(input.visualSourceMode);
   const templateGallery =
-    input.matched?.galleryRef && isUsableGalleryPhotoUrl(input.matched.galleryRef)
+    allowTemplateGallery
+    && input.matched?.galleryRef
+    && isUsableGalleryPhotoUrl(input.matched.galleryRef)
       ? input.matched.galleryRef
       : null;
 
@@ -234,6 +243,8 @@ export async function bindBrandTemplateForFalProduction(input: {
   brandColors: { primary: string; accent: string };
   logoUrl?: string;
   brandVibe: TypographyVibe | null;
+  /** Brand Hub Görsel Kaynak — gates template galleryRef photo fallback. */
+  visualSourceMode?: VisualSourceMode | null;
 }): Promise<BrandTemplateFalBinding> {
   const empty: BrandTemplateFalBinding = {
     matched: null,
@@ -285,11 +296,23 @@ export async function bindBrandTemplateForFalProduction(input: {
     void recordDesignTemplateUsage(input.workspaceId, matched.id);
 
     const specialDay = matched.specialDay;
-    const referencePhotoUrl =
-      (input.missionReferenceUrl && isUsableGalleryPhotoUrl(input.missionReferenceUrl)
+    const missionPhoto =
+      input.missionReferenceUrl && isUsableGalleryPhotoUrl(input.missionReferenceUrl)
         ? input.missionReferenceUrl
-        : null) ??
-      (matched.galleryRef && isUsableGalleryPhotoUrl(matched.galleryRef) ? matched.galleryRef : null);
+        : null;
+    const templateGallery =
+      allowsTemplateGalleryPhotoFallback(input.visualSourceMode)
+      && matched.galleryRef
+      && isUsableGalleryPhotoUrl(matched.galleryRef)
+        ? matched.galleryRef
+        : null;
+    const referencePhotoUrl = missionPhoto ?? templateGallery;
+    if (!missionPhoto && matched.galleryRef && !templateGallery) {
+      console.warn(
+        `[design-matcher] skip template galleryRef under visual_source=${input.visualSourceMode ?? 'gallery_only'} `
+        + `for "${matched.templateName}" — mission gallery photo required`,
+      );
+    }
 
     return {
       matched,
@@ -505,6 +528,21 @@ export function buildTemplateReplicaPrompt(
   };
   swap(spec.sampleHeadline, mission.headline);
   swap(spec.sampleSubtitle, missionSubtitle);
+
+  // Sample→mission string swap leaves tokenized "Headline word order: 1=DJ · 2=Night"
+  // lines intact — rewrite locks to the mission headline so GPT-image has one authority.
+  const missionWords = mission.headline.trim().split(/\s+/).filter(Boolean);
+  if (missionWords.length > 0) {
+    const wordOrder =
+      `Headline word order (${missionWords.length} words, do not reorder or misspell): ${
+        missionWords.map((w, i) => `${i + 1}="${w}"`).join(' · ')
+      }`;
+    prompt = prompt.replace(
+      /Headline word order \(\d+ words, do not reorder or misspell\):[^\n]*/g,
+      wordOrder,
+    );
+    prompt = prompt.replace(/HEADLINE: "[^"]*"/g, `HEADLINE: "${mission.headline}"`);
+  }
 
   const sampleH = String(spec.sampleHeadline ?? '').trim();
   const sampleS = String(spec.sampleSubtitle ?? '').trim();

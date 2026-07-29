@@ -3,10 +3,13 @@ import sharp from 'sharp';
 import {
   POST_CANVAS,
   STORY_CANVAS,
+  GPT_IMAGE_2_FEED_SIZE,
+  GPT_IMAGE_2_STORY_SIZE,
   canvasNeedsNormalization,
   normalizeCanvasBuffer,
   resolveTargetCanvas,
   resolveTargetCanvasForFormat,
+  supportsFlexibleOpenAiImageSize,
 } from '@/lib/design-canvas-aspect';
 
 async function makeImage(width: number, height: number): Promise<Buffer> {
@@ -42,6 +45,28 @@ describe('resolveTargetCanvasForFormat', () => {
   });
 });
 
+describe('gpt-image-2 native sizes', () => {
+  it('exposes exact 4:5 and 9:16 request sizes (edges ÷16)', () => {
+    expect(GPT_IMAGE_2_FEED_SIZE).toBe('1088x1360');
+    expect(GPT_IMAGE_2_STORY_SIZE).toBe('1152x2048');
+    const [fw, fh] = GPT_IMAGE_2_FEED_SIZE.split('x').map(Number);
+    const [sw, sh] = GPT_IMAGE_2_STORY_SIZE.split('x').map(Number);
+    expect(fw! % 16).toBe(0);
+    expect(fh! % 16).toBe(0);
+    expect(sw! % 16).toBe(0);
+    expect(sh! % 16).toBe(0);
+    expect(fw! / fh!).toBeCloseTo(4 / 5, 5);
+    expect(sw! / sh!).toBeCloseTo(9 / 16, 5);
+  });
+
+  it('detects flexible size models', () => {
+    expect(supportsFlexibleOpenAiImageSize('gpt-image-2')).toBe(true);
+    expect(supportsFlexibleOpenAiImageSize('gpt-image-2-2026-04-21')).toBe(true);
+    expect(supportsFlexibleOpenAiImageSize('gpt-image-1')).toBe(false);
+    expect(supportsFlexibleOpenAiImageSize('gpt-image-1.5')).toBe(false);
+  });
+});
+
 describe('canvasNeedsNormalization', () => {
   it('flags the GPT-image 1024x1536 (2:3) canvas for both post and story targets', () => {
     expect(canvasNeedsNormalization(1024, 1536, POST_CANVAS)).toBe(true);
@@ -52,25 +77,27 @@ describe('canvasNeedsNormalization', () => {
     expect(canvasNeedsNormalization(1080, 1350, POST_CANVAS)).toBe(false);
     expect(canvasNeedsNormalization(1080, 1920, STORY_CANVAS)).toBe(false);
     expect(canvasNeedsNormalization(1024, 1280, POST_CANVAS)).toBe(false);
+    expect(canvasNeedsNormalization(1088, 1360, POST_CANVAS)).toBe(false);
+    expect(canvasNeedsNormalization(1152, 2048, STORY_CANVAS)).toBe(false);
   });
 });
 
 describe('normalizeCanvasBuffer', () => {
-  it('cover-fills a 2:3 design card onto exact 4:5 post canvas (no letterbox bars)', async () => {
+  it('letterboxes a 2:3 design card onto exact 4:5 post canvas (never cover-crops)', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, POST_CANVAS);
     expect(out).not.toBeNull();
     const meta = await sharp(out!).metadata();
     expect(meta.width).toBe(1080);
     expect(meta.height).toBe(1350);
-    // Cover must not leave empty pillarbox — every output pixel is image content.
-    // Spot-check corner is not the letterbox navy background.
+    // Contain leaves pillarbox bars — corner is near letterbox navy, not source blue-gray.
     const { data } = await sharp(out!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-    // top-left pixel
-    expect(data[0]).not.toBe(8);
+    expect(data[0]!).toBeLessThan(20);
+    expect(data[1]!).toBeLessThan(20);
+    expect(data[2]!).toBeLessThan(25);
   });
 
-  it('cover-fills a 2:3 design card onto exact 9:16 story canvas', async () => {
+  it('letterboxes a 2:3 design card onto exact 9:16 story canvas', async () => {
     const img = await makeImage(1024, 1536);
     const out = await normalizeCanvasBuffer(img, STORY_CANVAS);
     expect(out).not.toBeNull();
@@ -79,7 +106,19 @@ describe('normalizeCanvasBuffer', () => {
     expect(meta.height).toBe(1920);
   });
 
-  it('returns null when the canvas already matches the target', async () => {
+  it('scales same-ratio native gpt-image-2 feed size to Instagram 4:5 without crop', async () => {
+    const img = await makeImage(1088, 1360);
+    const out = await normalizeCanvasBuffer(img, POST_CANVAS);
+    expect(out).not.toBeNull();
+    const meta = await sharp(out!).metadata();
+    expect(meta.width).toBe(1080);
+    expect(meta.height).toBe(1350);
+    // Fill scale — no letterbox; corner stays source color.
+    const { data } = await sharp(out!).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect(data[0]).toBe(40);
+  });
+
+  it('returns null when the canvas already matches the target exactly', async () => {
     const img = await makeImage(1080, 1920);
     expect(await normalizeCanvasBuffer(img, STORY_CANVAS)).toBeNull();
     const post = await makeImage(1080, 1350);

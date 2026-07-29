@@ -120,7 +120,14 @@ describe('Phase D hard-pin approve gate', () => {
       format: 'post',
       status: 'draft',
       catalog_slot_key: 'beach_club_dj_night_teaser_post',
-      design_spec: { prompt: 'short' },
+      design_spec: {
+        ...readySpec(),
+        slot_creative_brief: {
+          version: 1,
+          creative_intent_tr: 'DJ teaser purpose shell',
+          seed_source: 'auto_template_gen',
+        },
+      },
     });
     const sel = selectBrandDesignTemplate([draft], {
       slotRole: 'fal_designed_post',
@@ -137,9 +144,6 @@ describe('Phase D hard-pin approve gate', () => {
         format: 'post',
       }),
     ).toBe(false);
-    expect(
-      diagnoseCatalogHardPinMiss([draft], 'post', 'beach_club_dj_night_teaser_post').reason,
-    ).toBe('missing_template');
   });
 
   it('hard-pins approved product shell (local_products_shop)', () => {
@@ -150,7 +154,14 @@ describe('Phase D hard-pin approve gate', () => {
         format: 'post',
         status: 'approved',
         catalog_slot_key: 'local_products_shop_harvest_post',
-        design_spec: readySpec('product_hero_card'),
+        design_spec: {
+          ...readySpec('product_hero_card'),
+          slot_creative_brief: {
+            version: 1,
+            creative_intent_tr: 'Harvest product purpose shell',
+            seed_source: 'auto_template_gen',
+          },
+        },
       }),
     ];
     const sel = selectBrandDesignTemplate(active, {

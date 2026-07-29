@@ -275,6 +275,14 @@ import {
 } from '@/lib/brand-active-slot-resolver';
 import { summarizeCatalogTemplateHardPinCoverage } from '@/lib/catalog-template-coverage';
 import {
+  invalidateDesignTemplateCache,
+  loadWorkspaceDesignTemplates,
+} from '@/lib/brand-design-template-matcher';
+import {
+  ensureSlotCreativeBriefsForAssignments,
+  stampAssignmentBriefsOntoKeyedTemplates,
+} from '@/lib/slot-creative-library-persist';
+import {
   getProductionProviderPreflight,
   httpStatusForProviderPreflight,
   recordProductionProviderBillingFailure,
@@ -763,15 +771,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   let brandActiveSlots: BrandActiveSlotSet | null = null;
   if (brandSector) {
     try {
+      // Seed empty assignment briefs, stamp onto keyed shells missing purpose brief,
+      // then load coverage with real templates (hasTemplate ≡ hard-pin ready).
+      const briefSeed = await ensureSlotCreativeBriefsForAssignments(workspaceId, {
+        brandName: resolvedBrandName,
+        location: brandLocation || undefined,
+        visualDna: typeof brandTheme?.visual_dna === 'string' ? brandTheme.visual_dna : undefined,
+        brandTone: typeof brandTheme?.tone === 'string' ? brandTheme.tone : undefined,
+      });
+      if (briefSeed.seededCount > 0) {
+        console.log(
+          `[auto-produce] seeded ${briefSeed.seededCount} empty slot creative briefs`,
+        );
+      }
+      let designTemplates = await loadWorkspaceDesignTemplates(workspaceId);
+      const stamp = await stampAssignmentBriefsOntoKeyedTemplates(
+        workspaceId,
+        designTemplates,
+        briefSeed.assignments,
+      );
+      if (stamp.stamped > 0) {
+        invalidateDesignTemplateCache(workspaceId);
+        designTemplates = await loadWorkspaceDesignTemplates(workspaceId);
+        console.log(
+          `[auto-produce] stamped purpose briefs onto ${stamp.stamped} keyed shells`,
+        );
+      }
       brandActiveSlots = await loadBrandActiveSlotSet(
         workspaceId,
         brandSector,
-        undefined,
+        designTemplates,
         readBrandSlotFacilitiesFromTheme(brandTheme as Record<string, unknown> | null),
       );
       console.log(
         `[auto-produce] Brand active slots: ${brandActiveSlots.slots.length} enabled `
-        + `(sector=${brandSector})`,
+        + `(sector=${brandSector}, hardPinReady=${brandActiveSlots.slots.filter((s) => s.hasTemplate).length})`,
       );
     } catch (err) {
       console.warn(
@@ -4146,7 +4180,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     if (!isFalMissionVideo && isDesignedPostSlot && referenceUrl && !videoUrl && (!imageUrl || imageUrl === referenceUrl) && !designedPosterSyncUrl) {
       // Remotion poster path removed — fal_design pipeline + event overlay handle designed posts.
-      if (isDesignedPostSlot && !designedPosterSyncUrl) {
+      const catalogKey = String(assignment.catalog_slot_key ?? '').trim();
+      const purposeShellReady = Boolean(
+        catalogKey
+        && brandActiveSlots?.slots.some((s) => s.slotKey === catalogKey && s.hasTemplate),
+      );
+      if (purposeShellReady) {
+        console.warn(
+          `[auto-produce] Designed post slot withheld — refusing fal_only `
+          + `(purpose-briefed shell for ${catalogKey}): "${headline.slice(0, 40)}"`,
+        );
+      } else if (isDesignedPostSlot && !designedPosterSyncUrl) {
         console.warn(
           `[auto-produce] Designed post slot withheld (no branded poster) — trying fal_only fallback: "${headline.slice(0, 40)}"`,
         );

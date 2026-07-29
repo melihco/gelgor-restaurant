@@ -262,9 +262,12 @@ export async function generateDesignedImageFromMissionCard(opts: {
   if (!prompt || !isUsableGalleryPhotoUrl(opts.referenceImageUrl)) return null;
   try {
     const baseUrl = getNextjsInternalOrigin();
+    const extraRefs = Array.isArray(opts.extraReferenceImageUrls)
+      ? opts.extraReferenceImageUrls
+      : [];
     const referenceImageUrls = [
       opts.referenceImageUrl,
-      ...(opts.extraReferenceImageUrls ?? []).filter((url) => url && url !== opts.referenceImageUrl),
+      ...extraRefs.filter((url) => url && url !== opts.referenceImageUrl),
     ].slice(0, 2);
     const res = await fetch(`${baseUrl}/api/generate-instagram-image`, {
       method: 'POST',

@@ -74,7 +74,17 @@ describe('resolveBrandActiveSlotKeys', () => {
         mockAssignment('beach_club_sunset_golden_story', true, beachSlots[3]),
       ],
       designTemplates: [
-        { id: 't1', catalog_slot_key: 'beach_club_dj_night_teaser_post', status: 'active' },
+        {
+          id: 't1',
+          catalog_slot_key: 'beach_club_dj_night_teaser_post',
+          status: 'active',
+          design_spec: {
+            slot_creative_brief: {
+              version: 1,
+              creative_intent_tr: 'DJ gece teaser purpose brief for tests.',
+            },
+          },
+        },
       ],
     });
 

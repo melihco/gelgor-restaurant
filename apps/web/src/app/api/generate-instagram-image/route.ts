@@ -23,6 +23,11 @@ import {
   expectsProductPackaging,
   packagingAwareTextConstraints,
 } from '@/lib/product-packaging-fidelity';
+import {
+  GPT_IMAGE_2_FEED_SIZE,
+  GPT_IMAGE_2_STORY_SIZE,
+  supportsFlexibleOpenAiImageSize,
+} from '@/lib/design-canvas-aspect';
 
 export const runtime = 'nodejs';
 /** gpt-image-2 high design cards regularly exceed 2 minutes. */
@@ -220,19 +225,50 @@ function supportsOpenAiInputFidelity(model: string): boolean {
   return !m.startsWith('gpt-image-2');
 }
 
-function sizeFor(contentType: string, model: string, isDesignCard = false) {
-  const isStory = contentType === 'story' || contentType.includes('story');
-  if (isDesignCard) {
-    // Feed designed posts are 4:5; reels/stories are 9:16 — both use portrait canvas.
-    return '1024x1536';
-  }
-  if (isDalleModel(model)) return isStory ? '1024x1536' : '1024x1024';
-  if (model === 'gpt-image-2') return isStory ? '1024x1536' : '1024x1024';
-  return isStory ? '1024x1536' : '1024x1024';
+function isVerticalStoryOrReelContent(
+  contentType: string,
+  designCardMode: 'post' | 'reel' = 'post',
+): boolean {
+  if (designCardMode === 'reel') return true;
+  const ct = contentType.toLowerCase();
+  return (
+    ct === 'story'
+    || ct === 'instagram_story'
+    || ct === 'reel'
+    || ct === 'instagram_reel'
+    || ct.includes('story')
+    || ct.includes('reel')
+  );
 }
 
-function aspectRatioFor(contentType: string) {
-  return contentType === 'story' || contentType.includes('story') ? '9:16' : '1:1';
+/**
+ * Request size for OpenAI images.generate / images.edit.
+ * gpt-image-2: native 4:5 feed / 9:16 story-reel (no post-crop).
+ * Legacy models: fixed enum sizes only (normalize with letterbox afterward).
+ */
+function sizeFor(
+  contentType: string,
+  model: string,
+  isDesignCard = false,
+  designCardMode: 'post' | 'reel' = 'post',
+): string {
+  const vertical = isVerticalStoryOrReelContent(contentType, designCardMode);
+  if (supportsFlexibleOpenAiImageSize(model)) {
+    if (isDesignCard || vertical) {
+      return vertical ? GPT_IMAGE_2_STORY_SIZE : GPT_IMAGE_2_FEED_SIZE;
+    }
+    return '1024x1024';
+  }
+  if (isDesignCard) {
+    // gpt-image-1 / 1.5 — portrait enum only; letterboxed to channel canvas post-gen.
+    return '1024x1536';
+  }
+  if (isDalleModel(model)) return vertical ? '1024x1536' : '1024x1024';
+  return vertical ? '1024x1536' : '1024x1024';
+}
+
+function aspectRatioFor(contentType: string, designCardMode: 'post' | 'reel' = 'post') {
+  return isVerticalStoryOrReelContent(contentType, designCardMode) ? '9:16' : '4:5';
 }
 
 function cleanTheme(value: string) {
@@ -599,7 +635,7 @@ function buildReferenceEditDirective(
       'PHOTO HERO ZONE (CRITICAL): keep the natural, recognizable venue photo zone — do NOT replace, blur, or globally recolor it.',
       'Scale the full gallery photo to fit — object-fit contain. Never crop hero food, faces, or products.',
       'DESIGN ZONE: branded graphics and text exactly as specified below.',
-      'SAFE ZONE (MANDATORY): The canvas will be center-cropped to a 9:16 vertical frame in post-production. All text, logos, and design elements must stay inside the central 76% of the width — keep minimum 12% margin from left and right edges, 8% from top edge, 15% from bottom edge (Instagram UI). Nothing may touch or be cut off at any edge.',
+      'SAFE ZONE (MANDATORY): Output is a native 9:16 Instagram Story/Reel canvas (1080×1920). Compose for the FULL frame — no post-production crop. Keep text/logos ≥8% from edges; top 12% and bottom 15% are Instagram UI danger zones for critical type.',
       'Apply headline, subtitle, shapes, and brand colors exactly as described.',
       '',
       basePrompt,
@@ -624,7 +660,7 @@ function buildReferenceEditDirective(
       'Brand colors belong on text and graphic blocks only — never as a full-image filter.',
       'If the layout uses a diagonal or split design, one zone stays the untouched photo; the other is a flat brand color block with headline text.',
       'Apply the text overlays, color blocks, typography, and CTA exactly as described.',
-      'SAFE ZONE (MANDATORY): Keep all text, logos, and design elements inside the frame with at least 8% margin from every edge. Prefer the central reading zone — never place critical type flush against the canvas border.',
+      'SAFE ZONE (MANDATORY): Output is a native Instagram feed 4:5 canvas (1080×1350). Compose for the FULL frame — no post-production cover-crop. Keep all text, logos, and design elements ≥8% from every edge.',
       'The final output is a complete designed social media graphic where the real photo is still clearly recognizable.',
       '',
       basePrompt,
@@ -995,8 +1031,6 @@ async function enhanceWithOpenAI(
     throw new Error(`Mekan fotoğrafı indirilemedi (${host}). Fotoğrafı Brand Hub → Assets bölümünden yükleyin.`);
   }
 
-  const size = sizeFor(contentType, model) as '1024x1024' | '1024x1536' | '1536x1024' | 'auto';
-
   // Enhance only — uses the configured model, never falls back to pure generation.
   const editModel = serverConfig.imageGen.editModel;
   const editedRaw = await openai.images.edit({
@@ -1004,7 +1038,7 @@ async function enhanceWithOpenAI(
     image: file,
     prompt: enhancePrompt.slice(0, 4000),
     n: 1,
-    size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024',
+    size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024' | 'auto',
     quality: openAiEditQuality(quality),
   } as Parameters<typeof openai.images.edit>[0]);
   const edited = editedRaw as { data?: Array<{ url?: string; b64_json?: string }> };
@@ -1103,12 +1137,16 @@ async function generateWithOpenAI(
           image: imageInput as Parameters<typeof openai.images.edit>[0]['image'],
           prompt: editPrompt,
           n: 1,
-          size: sizeFor(contentType, editModel, isDesignCard) as '1024x1024' | '1024x1536' | '1536x1024',
+          size: sizeFor(contentType, editModel, isDesignCard, designCardMode),
           quality: openAiEditQuality(quality),
           ...(isDesignCard && supportsOpenAiInputFidelity(editModel)
             ? { input_fidelity: 'high' as const }
             : {}),
-        } satisfies Parameters<typeof openai.images.edit>[0];
+        } as Parameters<typeof openai.images.edit>[0];
+        console.log(
+          `[generate-instagram-image] images.edit size=${String((editPayload as { size?: string }).size)}`
+          + ` contentType=${contentType} designCard=${isDesignCard} mode=${designCardMode}`,
+        );
         const editedRaw2 = await openai.images.edit(editPayload);
         const editedR = editedRaw2 as { data?: Array<{ url?: string; b64_json?: string }> };
         const ed = editedR.data?.[0];
@@ -1147,7 +1185,7 @@ async function generateWithOpenAI(
           model,
           prompt,
           n: 1,
-          size: sizeFor(contentType, model),
+          size: sizeFor(contentType, model, isDesignCard, designCardMode),
           quality: quality === 'high' ? 'hd' : 'standard',
           response_format: 'url',
         } as any)
@@ -1155,7 +1193,7 @@ async function generateWithOpenAI(
           model,
           prompt,
           n: 1,
-          size: sizeFor(contentType, model),
+          size: sizeFor(contentType, model, isDesignCard, designCardMode),
           quality: openAiEditQuality(quality),
           output_format: 'webp',
         } as any),
@@ -1607,9 +1645,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       generated = await generateWithOpenAI(prompt, contentType, scratchReferenceUrls, isDesignedCard, designCardMode, input.logoUrl, templateLayoutImageUrl);
     }
 
-    // Canvas contract: post → 4:5, story/reel → 9:16. GPT-image only renders
-    // 1024×1536 portrait, so crop generated (non-passthrough) frames onto the
-    // exact channel canvas before persisting.
+    // Canvas contract: post → 4:5, story/reel → 9:16.
+    // gpt-image-2 already emits native channel sizes; legacy 2:3 frames are
+    // letterboxed (never cover-cropped) onto the Instagram canvas.
     let finalImageUrl = generated.imageUrl;
     if (generated.provider !== 'original') {
       const { resolveTargetCanvas, normalizeGeneratedImageAspect } = await import('@/lib/design-canvas-aspect');

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveVisualSourceMode } from '@/lib/ai-visual-production-standard';
+import {
+  allowsTemplateGalleryPhotoFallback,
+  resolveVisualSourceMode,
+} from '@/lib/ai-visual-production-standard';
 import {
   buildVisualSourceModeFromFlags,
   buildVisualSourceModePatch,
@@ -47,6 +50,12 @@ describe('visual-source-ui-copy', () => {
       aiPhotoEnhance: true,
       aiCaptionDrivenVisual: true,
     }).visual_source_mode).toBe('ai_generated');
+  });
+
+  it('allowsTemplateGalleryPhotoFallback only for ai_generated', () => {
+    expect(allowsTemplateGalleryPhotoFallback('gallery_only')).toBe(false);
+    expect(allowsTemplateGalleryPhotoFallback('gallery_enhanced')).toBe(false);
+    expect(allowsTemplateGalleryPhotoFallback('ai_generated')).toBe(true);
   });
 
   it('resolveVisualSourceMode prefers production flags over stale mode label', () => {

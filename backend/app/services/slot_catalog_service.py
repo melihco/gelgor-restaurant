@@ -439,9 +439,18 @@ async def upsert_tenant_assignments(
             row.enabled = bool(item.get("enabled", True))
             row.priority = int(item.get("priority", row.priority))
             row.assignment_source = str(item.get("assignment_source", "operator"))
-            row.notes = item.get("notes")
+            if "notes" in item:
+                row.notes = item.get("notes")
+            if "customization" in item and item.get("customization") is not None:
+                pack = item.get("customization")
+                if not isinstance(pack, dict):
+                    raise ValueError(f"invalid_customization for {slot_key}: must be object")
+                row.customization = dict(pack)
             out.append(row)
         else:
+            customization = item.get("customization")
+            if customization is not None and not isinstance(customization, dict):
+                raise ValueError(f"invalid_customization for {slot_key}: must be object")
             row = TenantSlotAssignment(
                 workspace_id=workspace_id,
                 slot_key=slot_key,
@@ -449,6 +458,7 @@ async def upsert_tenant_assignments(
                 priority=int(item.get("priority", 100)),
                 assignment_source=str(item.get("assignment_source", "operator")),
                 notes=item.get("notes"),
+                customization=dict(customization or {}),
             )
             db.add(row)
             out.append(row)

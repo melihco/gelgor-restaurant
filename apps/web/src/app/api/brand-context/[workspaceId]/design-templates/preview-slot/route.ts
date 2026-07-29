@@ -28,6 +28,10 @@ import { distillBrandSoul } from '@/lib/fal-brand-input';
 import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
 import { invalidateDesignTemplateCache } from '@/lib/brand-design-template-matcher';
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
+import {
+  ensureSlotCreativeBriefsForAssignments,
+  persistSlotCreativeBriefsFromTemplates,
+} from '@/lib/slot-creative-library-persist';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600;
@@ -204,10 +208,19 @@ export async function POST(
     }
   }
 
+  const brandName = String(brandCtx.business_name ?? 'Brand');
+  const { byKey: slotCreativeByKey, assignments: slotAssignments } =
+    await ensureSlotCreativeBriefsForAssignments(workspaceId, {
+      brandName,
+      location: typeof brandCtx.location === 'string' ? brandCtx.location : undefined,
+      visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+      brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+    });
+
   const engineBase = {
     workspaceId,
     sector,
-    brandName: String(brandCtx.business_name ?? 'Brand'),
+    brandName,
     brandColors: { primary: tokens.primaryColor, accent: tokens.accentColor },
     logoUrl: typeof brandCtx.logo_url === 'string' ? brandCtx.logo_url : undefined,
     location: typeof brandCtx.location === 'string' ? brandCtx.location : undefined,
@@ -238,6 +251,9 @@ export async function POST(
     galleryPhotoUrls: gctx.photos,
     galleryAnalysis: gctx.meta,
     concurrency: 1,
+    slotCreativeByKey,
+    // Per-slot regenerate refreshes auto briefs; operator briefs stay locked.
+    forceReseedSlotCreative: true,
   };
 
   const variants: PreviewVariantResult[] = [];
@@ -375,6 +391,31 @@ export async function POST(
     if (persisted) invalidateDesignTemplateCache(workspaceId);
   }
 
+  let creativeBriefsPersisted = 0;
+  const briefSource = regenerateResult ?? (variants[0]
+    ? {
+      catalog_slot_key: catalogSlotKey,
+      design_spec: variants[0].design_spec,
+    }
+    : null);
+  if (briefSource) {
+    try {
+      creativeBriefsPersisted = await persistSlotCreativeBriefsFromTemplates(
+        workspaceId,
+        [{
+          catalog_slot_key: catalogSlotKey,
+          design_spec: briefSource.design_spec,
+        }],
+        slotAssignments,
+      );
+    } catch (err) {
+      console.warn(
+        `[preview-slot] slot creative persist skipped for ${catalogSlotKey}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   return NextResponse.json({
     workspaceId,
     catalog_slot_key: catalogSlotKey,
@@ -383,6 +424,7 @@ export async function POST(
     channel,
     variants,
     persisted,
+    creative_briefs_persisted: creativeBriefsPersisted,
     template: persistedTemplate,
     typography_confirmed: typographyConfirmed,
     production_settings: resolveFalTemplateProductionSettings(

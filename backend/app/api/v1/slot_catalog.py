@@ -366,6 +366,7 @@ async def list_tenant_slot_assignments(
                 priority=a.priority,
                 assignment_source=a.assignment_source,
                 notes=a.notes,
+                customization=dict(a.customization or {}),
                 slot=_slot_out(slot_row) if slot_row else None,
                 created_at=a.created_at,
                 updated_at=a.updated_at,
@@ -428,7 +429,7 @@ async def upsert_tenant_slot_assignments(
         rows = await svc.upsert_tenant_assignments(
             db,
             workspace_id,
-            [item.model_dump() for item in body.assignments],
+            [item.model_dump(exclude_unset=True) for item in body.assignments],
             validate_coverage=validate_coverage,
         )
         await db.commit()
@@ -441,6 +442,7 @@ async def upsert_tenant_slot_assignments(
                 priority=r.priority,
                 assignment_source=r.assignment_source,
                 notes=r.notes,
+                customization=dict(r.customization or {}),
                 created_at=r.created_at,
                 updated_at=r.updated_at,
             )

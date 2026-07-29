@@ -34,6 +34,7 @@ import {
   type BrandSlotFacilities,
 } from '@/lib/sector-slot-pack';
 import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaults';
+import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
 
 /** Soft penalty per prior use of the same catalog slot (reuse pass only). */
 const CATALOG_SLOT_REUSE_PENALTY = 22;
@@ -73,7 +74,7 @@ export interface ResolveBrandActiveSlotKeysInput {
   designTemplates?: Array<{
     id: string;
     catalog_slot_key?: string | null;
-    design_spec?: { catalogSlotKey?: string };
+    design_spec?: { catalogSlotKey?: string; slot_creative_brief?: unknown; [key: string]: unknown };
     status?: string;
   }>;
   tenantAssignments?: TenantSlotAssignment[];
@@ -91,12 +92,19 @@ function catalogKeyOfTemplate(template: {
     ?? null;
 }
 
+/**
+ * Index keyed shells that are hard-pin ready: active/approved + purpose brief.
+ * Matches `findCatalogKeyHardMatch` so coverage telemetry equals produce reality.
+ */
 function buildTemplateIndex(
   templates: ResolveBrandActiveSlotKeysInput['designTemplates'],
 ): Map<string, { id: string }> {
   const map = new Map<string, { id: string }>();
   for (const template of templates ?? []) {
-    if (template.status === 'archived') continue;
+    const status = String(template.status ?? 'active').toLowerCase();
+    if (status === 'archived' || status === 'draft') continue;
+    if (status !== 'active' && status !== 'approved') continue;
+    if (!hasTemplateSlotCreativeBrief(template.design_spec)) continue;
     const key = catalogKeyOfTemplate(template);
     if (key && !map.has(key)) {
       map.set(key, { id: template.id });
@@ -117,8 +125,15 @@ function slotFromDefinition(
   slot: ProductionSlotDefinition,
   templateByKey: Map<string, { id: string }>,
   priority: number,
+  customization?: Record<string, unknown> | null,
 ): BrandActiveSlot {
   const template = templateByKey.get(slot.slot_key);
+  const basePack = (slot.prompt_pack && typeof slot.prompt_pack === 'object'
+    ? slot.prompt_pack
+    : {}) as Record<string, unknown>;
+  const overlay = customization && typeof customization === 'object' && !Array.isArray(customization)
+    ? customization
+    : {};
   return {
     slotKey: slot.slot_key,
     labelTr: slot.label_tr,
@@ -132,9 +147,8 @@ function slotFromDefinition(
     enabled: true,
     hasTemplate: Boolean(template),
     templateId: template?.id ?? null,
-    promptPack: (slot.prompt_pack && typeof slot.prompt_pack === 'object'
-      ? slot.prompt_pack
-      : {}) as Record<string, unknown>,
+    // Brand overlay (creative brief) wins over sector pack keys of the same name.
+    promptPack: { ...basePack, ...overlay },
     matchSignals: (slot.match_signals && typeof slot.match_signals === 'object'
       ? slot.match_signals
       : {}) as Record<string, unknown>,
@@ -161,7 +175,12 @@ export function resolveBrandActiveSlotKeys(
       const slot = assignment.slot
         ?? sectorSlots.find((s) => s.slot_key === assignment.slot_key);
       if (!slot || slot.status !== 'active') continue;
-      slots.push(slotFromDefinition(slot, templateByKey, assignment.priority ?? slot.sort_order));
+      slots.push(slotFromDefinition(
+        slot,
+        templateByKey,
+        assignment.priority ?? slot.sort_order,
+        assignment.customization,
+      ));
     }
     slots.sort((a, b) => a.priority - b.priority || a.slotKey.localeCompare(b.slotKey));
     const enabledKeys = new Set(slots.map((s) => s.slotKey));

@@ -49,6 +49,21 @@ describe('template-locked overlay budget', () => {
     expect(fitted.subtitle?.length).toBeLessThanOrEqual('Misafir'.length);
   });
 
+  it('falls back to mission scene punch (not Cocktail) when long English headline cannot fit DJ Night zone', () => {
+    const fitted = fitMissionOverlayToTemplateBudget({
+      headline: 'Get ready for a sunset like no other!',
+      subtitle: 'Join us for a vibrant evening at Yula Bodrum.',
+      channel: 'feed_post',
+      designIntensity: 'designed',
+      sampleHeadline: 'DJ Night',
+      sampleSubtitle: 'Bu Gece',
+      showSubline: true,
+    });
+    expect(fitted.headline.length).toBeGreaterThan(0);
+    expect(fitted.headline.toLowerCase()).not.toMatch(/cocktail|kokteyl/);
+    expect(fitted.headline.toLowerCase()).toMatch(/sunset|glow|dj|night|altın|altin|saat/);
+  });
+
   it('drops subtitle when showSubline is false', () => {
     const budget = resolveTemplateOverlayCopyBudget({
       channel: 'feed_post',

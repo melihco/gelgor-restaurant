@@ -7,6 +7,20 @@ import {
   type BrandDesignTemplateRecord,
 } from '@/lib/brand-design-template-matcher';
 
+const PURPOSE_BRIEF = {
+  version: 1 as const,
+  creative_intent_tr: 'Brand×slot purpose shell for hard pin',
+  seed_source: 'auto_template_gen' as const,
+};
+
+function purposeSpec(extra: Record<string, unknown> = {}) {
+  return {
+    prompt: 'Brand design recipe for this catalog slot shell.',
+    slot_creative_brief: PURPOSE_BRIEF,
+    ...extra,
+  };
+}
+
 function tpl(
   overrides: Partial<BrandDesignTemplateRecord> & Pick<BrandDesignTemplateRecord, 'id' | 'template_type' | 'format'>,
 ): BrandDesignTemplateRecord {
@@ -87,6 +101,7 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
         template_type: 'event_special',
         format: 'story',
         catalog_slot_key: 'restaurant_cafe_event_announcement_story',
+        design_spec: purposeSpec(),
       }),
     ];
     const sel = selectBrandDesignTemplate(active, {
@@ -106,6 +121,7 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
         template_type: 'event_special',
         format: 'post',
         catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        design_spec: purposeSpec(),
       }),
       tpl({ id: 'other', template_type: 'campaign_announcement', format: 'post' }),
     ];
@@ -115,6 +131,7 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
         template_type: 'menu_highlight',
         format: 'post',
         catalog_slot_key: 'local_products_shop_harvest_post',
+        design_spec: purposeSpec(),
       }),
       tpl({ id: 'campaign', template_type: 'campaign_announcement', format: 'post' }),
     ];
@@ -128,6 +145,99 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
       format: 'post',
       catalogSlotKey: 'local_products_shop_harvest_post',
     })?.record.id).toBe('harvest');
+  });
+
+  it('does not hard-pin holiday/orphan keyed shells without purpose brief (beach_club + shop)', () => {
+    const beach = [
+      tpl({
+        id: 'holiday',
+        template_name: '29 Ekim Cumhuriyet Bayramı',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        design_spec: { prompt: 'Holiday poster recipe without purpose brief.' },
+      }),
+    ];
+    const shop = [
+      tpl({
+        id: 'orphan_harvest',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_post',
+        design_spec: { prompt: 'Orphan product shell without purpose brief.' },
+      }),
+    ];
+    expect(selectBrandDesignTemplate(beach, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_dj_night_teaser_post',
+    })).toBeNull();
+    expect(diagnoseCatalogHardPinMiss(beach, 'post', 'beach_club_dj_night_teaser_post').reason)
+      .toBe('purpose_brief_missing');
+    expect(selectBrandDesignTemplate(shop, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'local_products_shop_harvest_post',
+    })).toBeNull();
+    expect(diagnoseCatalogHardPinMiss(shop, 'post', 'local_products_shop_harvest_post').reason)
+      .toBe('purpose_brief_missing');
+  });
+
+  it('fail-closes purpose_brief_missing so foreign purpose shells cannot soft-hijack', () => {
+    const active = [
+      tpl({
+        id: 'orphan_private',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_private_event_post',
+        design_spec: { prompt: 'Orphan private event shell.' },
+      }),
+      tpl({
+        id: 'dj_purpose',
+        template_name: 'DJ gece teaser',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_private_event_post',
+      announcementType: 'event_teaser',
+    });
+    expect(sel).toBeNull();
+    expect(diagnoseCatalogHardPinMiss(active, 'post', 'beach_club_private_event_post').reason)
+      .toBe('purpose_brief_missing');
+  });
+
+  it('prefers purpose-brief shell over holiday keyed to the same catalog key', () => {
+    const active = [
+      tpl({
+        id: 'holiday',
+        template_name: '29 Ekim Cumhuriyet Bayramı',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        design_spec: { prompt: 'Holiday chrome.' },
+      }),
+      tpl({
+        id: 'dj_purpose',
+        template_name: 'DJ Night Teaser',
+        template_type: 'event_special',
+        format: 'post',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_dj_night_teaser_post',
+    });
+    expect(sel?.record.id).toBe('dj_purpose');
+    expect(sel?.matchQuality).toBe('hard');
   });
 
   it('Faz B: format-mismatch hard miss fails closed (no soft foreign template)', () => {
@@ -294,6 +404,7 @@ describe('selectBrandDesignTemplate — format gate', () => {
         template_type: 'menu_highlight',
         format: 'reel_cover',
         catalog_slot_key: 'beach_club_cocktail_craft_reel',
+        design_spec: purposeSpec(),
       }),
     ];
     const sel = selectBrandDesignTemplate(active, {

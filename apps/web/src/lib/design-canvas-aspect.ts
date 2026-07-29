@@ -2,10 +2,9 @@
  * Canvas aspect normalization — generated design images must match the format
  * they were produced for (post → 4:5, story/reel → 9:16).
  *
- * GPT-image models only support 1024×1024 / 1024×1536 / 1536×1024 canvases, so
- * portrait design cards come back as 2:3 regardless of the target channel.
- * Without normalization, feed posts render story-tall and stories/posts look
- * the same height in the library and production feed.
+ * gpt-image-2 can render native 4:5 / 9:16 sizes (edges ÷16) — prefer that so we
+ * never cover-crop faces/subjects. Legacy gpt-image-1 only emits 1024×1536 (2:3);
+ * for those frames we letterbox (contain) onto the channel canvas — never cover.
  */
 
 export interface TargetCanvas {
@@ -15,9 +14,9 @@ export interface TargetCanvas {
   ratio: number;
   label: '4:5' | '9:16';
   /**
-   * How to map GPT's 2:3 canvas onto the target:
-   * - cover: fill the frame (post default — true 4:5 feed, crops excess)
-   * - contain: letterbox (legacy; leaves bars that make posts look story-tall)
+   * How to map a mismatched-ratio source onto the target:
+   * - contain: letterbox (default — never crop hero subjects / type)
+   * - cover: fill the frame (legacy; crops excess — avoid for production)
    */
   fit?: 'cover' | 'contain';
 }
@@ -27,15 +26,27 @@ export const POST_CANVAS: TargetCanvas = {
   height: 1350,
   ratio: 1080 / 1350,
   label: '4:5',
-  fit: 'cover',
+  fit: 'contain',
 };
 export const STORY_CANVAS: TargetCanvas = {
   width: 1080,
   height: 1920,
   ratio: 1080 / 1920,
   label: '9:16',
-  fit: 'cover',
+  fit: 'contain',
 };
+
+/**
+ * gpt-image-2 native request sizes (both edges multiples of 16).
+ * Exact Instagram channel ratios — avoids 2:3 → 4:5/9:16 cover-crop.
+ */
+export const GPT_IMAGE_2_FEED_SIZE = '1088x1360'; // 4:5
+export const GPT_IMAGE_2_STORY_SIZE = '1152x2048'; // 9:16
+
+/** True when the OpenAI image model accepts arbitrary WIDTHxHEIGHT strings. */
+export function supportsFlexibleOpenAiImageSize(model: string): boolean {
+  return model.trim().toLowerCase().startsWith('gpt-image-2');
+}
 
 /** Aspect drift tolerance — below this the image is considered already correct. */
 const RATIO_TOLERANCE = 0.02;
@@ -99,11 +110,10 @@ export function canvasNeedsNormalization(
 }
 
 /**
- * Map a raw image onto the target canvas.
+ * Map a raw image onto the target canvas without cover-cropping content.
  *
- * Post (4:5): cover-fill so the frame is a real feed post — not a letterboxed
- * 2:3 story slab. Story/reel (9:16): cover-fill to true vertical.
- * GPT safe-zone prompts keep type inside the retained region.
+ * - Same aspect, wrong pixels → scale (`fill`) to exact Instagram dims.
+ * - Different aspect (legacy 2:3) → letterbox (`contain`) so faces/type stay whole.
  */
 export async function normalizeCanvasBuffer(
   buffer: Buffer,
@@ -112,8 +122,13 @@ export async function normalizeCanvasBuffer(
   const { default: sharp } = await import('sharp');
   const meta = await sharp(buffer).metadata();
   if (!meta.width || !meta.height) return null;
-  if (!canvasNeedsNormalization(meta.width, meta.height, target)) return null;
-  const fit = target.fit ?? 'cover';
+
+  const alreadyExact = meta.width === target.width && meta.height === target.height;
+  if (alreadyExact) return null;
+
+  const ratioMatches = !canvasNeedsNormalization(meta.width, meta.height, target);
+  // Same channel ratio: scale only. Mismatched (e.g. 2:3→4:5): letterbox — never cover.
+  const fit = ratioMatches ? 'fill' : (target.fit ?? 'contain');
   return sharp(buffer)
     .resize(target.width, target.height, {
       fit,
@@ -148,8 +163,8 @@ async function fetchImageBuffer(imageUrl: string): Promise<Buffer | null> {
 
 /**
  * Normalize a generated image URL (data: / http / internal path) onto the
- * target canvas. Returns a JPEG data URL when a crop was applied, or null when
- * the image already matches (or could not be read — caller keeps the original).
+ * target canvas. Returns a JPEG data URL when resized/letterboxed, or null when
+ * the image already matches exactly (or could not be read — caller keeps original).
  */
 export async function normalizeGeneratedImageAspect(
   imageUrl: string,

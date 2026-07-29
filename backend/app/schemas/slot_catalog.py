@@ -160,6 +160,7 @@ class TenantSlotAssignmentOut(BaseModel):
     priority: int
     assignment_source: str
     notes: str | None = None
+    customization: dict[str, Any] = Field(default_factory=dict)
     slot: ProductionSlotDefinitionOut | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -171,6 +172,8 @@ class TenantSlotAssignmentUpsert(BaseModel):
     priority: int = 100
     assignment_source: str = "operator"
     notes: str | None = None
+    # Brand×slot creative brief overlay; omit to leave existing customization unchanged.
+    customization: dict[str, Any] | None = None
 
 
 class BulkTenantSlotAssignmentRequest(BaseModel):

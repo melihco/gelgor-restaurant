@@ -68,11 +68,13 @@ export function summarizePromptPack(
   if (!pack || typeof pack !== 'object') return '';
   const parts: string[] = [];
   for (const key of [
+    'creative_intent_tr',
     'scene_hint',
     'sceneHint',
     'visual_direction',
     'visualDirection',
     'mood',
+    'daypart',
     'shot_type',
     'shotType',
     'require_premium_composition',

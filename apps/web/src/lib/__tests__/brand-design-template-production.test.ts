@@ -154,8 +154,30 @@ describe('pickTemplateReferenceUrls', () => {
       missionPhotoUrl: null,
       matched,
       brandReferenceImageUrls: [],
+      visualSourceMode: 'ai_generated',
     });
     expect(urls).toEqual(['https://cdn.example.com/gallery-a.jpg']);
+  });
+
+  it('does not fall back to template galleryRef under gallery_only / gallery_enhanced', () => {
+    expect(pickTemplateReferenceUrls({
+      missionPhotoUrl: null,
+      matched,
+      brandReferenceImageUrls: [],
+      visualSourceMode: 'gallery_only',
+    })).toEqual([]);
+    expect(pickTemplateReferenceUrls({
+      missionPhotoUrl: null,
+      matched,
+      brandReferenceImageUrls: [],
+      visualSourceMode: 'gallery_enhanced',
+    })).toEqual([]);
+    expect(pickTemplateReferenceUrls({
+      missionPhotoUrl: 'https://cdn.example.com/mission.jpg',
+      matched,
+      brandReferenceImageUrls: [],
+      visualSourceMode: 'gallery_only',
+    })).toEqual(['https://cdn.example.com/mission.jpg']);
   });
 });
 
@@ -274,6 +296,24 @@ describe('template replica prompt', () => {
     expect(prompt).toContain('Bold diagonal panel with neon headline block.');
     expect(prompt).toContain('NO SUBTITLE');
     expect(prompt).toContain('"Yeni sezon"');
+  });
+
+  it('rewrites sample headline word-order locks to mission headline', () => {
+    const prompt = buildTemplateReplicaPrompt(
+      {
+        prompt:
+          'ON-CANVAS TEXT CONTRACT\nHEADLINE: "DJ Night"\nHeadline word order (2 words, do not reorder or misspell): 1="DJ" · 2="Night"\nLayout stays.',
+        sampleHeadline: 'DJ Night',
+        sampleSubtitle: null,
+        forbiddenTexts: ['DJ Night'],
+        format: 'post',
+        templateName: 'DJ gece teaser',
+      },
+      { headline: 'Sunset Glow' },
+    );
+    expect(prompt).toContain('HEADLINE: "Sunset Glow"');
+    expect(prompt).toContain('1="Sunset" · 2="Glow"');
+    expect(prompt).not.toMatch(/1="DJ" · 2="Night"/);
   });
 });
 

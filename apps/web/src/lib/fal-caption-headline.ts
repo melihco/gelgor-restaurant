@@ -369,39 +369,62 @@ export function extractCaptionThemePunchline(input: {
   caption: string;
   maxWords?: number;
   maxLen?: number;
+  /** When set, prefer hooks that share theme with the mission/ideation headline. */
+  missionTitle?: string;
 }): string {
   const caption = input.caption.trim();
   if (caption.length < 12) return '';
   const maxLen = input.maxLen ?? FAL_FEED_OVERLAY_MAX_CHARS;
   const maxWords = input.maxWords ?? 3;
   const lower = caption.toLowerCase();
-  const looksEnglish = /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail)\b/i.test(caption)
-    && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe)/i.test(caption);
+  const missionLower = String(input.missionTitle ?? '').toLowerCase();
+  const looksEnglish = (
+    /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail|sunset|ready|night|glow)\b/i.test(caption)
+    || /\b(get|for|like|under|stars|music|dance)\b/i.test(caption)
+  ) && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe|gün\s*batım|altın\s*saat)/i.test(caption);
 
-  const themeHooks: Array<{ pattern: RegExp; tr: string; en: string }> = [
+  // Order matters for multi-theme captions (sunset+cocktails+DJ): mission-aligned
+  // scene hooks must beat generic product hooks so DJ photos don't get "Cocktail".
+  const themeHooks: Array<{ pattern: RegExp; tr: string; en: string; missionBoost?: RegExp }> = [
+    { pattern: /sunset|gün\s*batım|gun\s*batim|golden\s*hour|altın\s*saat/i, tr: 'Altın Saat', en: 'Sunset Glow', missionBoost: /sunset|batım|batim|golden|altın|altin/i },
+    { pattern: /\bdj\b|gece\s*perform|night\s*life|\bnightlife\b/i, tr: 'DJ Gecesi', en: 'DJ Night', missionBoost: /\bdj\b|gece|night|perform/i },
     { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
     { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
     { pattern: /vazgeçemiyor|bayılıyor|favorimiz|favori\s+lezzet/i, tr: 'Vazgeçilmez Lezzet', en: 'They Keep Coming Back' },
-    { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow' },
+    { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars', missionBoost: /\bdj\b|gece|night|star/i },
+    { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow', missionBoost: /kokteyl|cocktail|drink|içecek/i },
     { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
     { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
-    { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars' },
     { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
   ];
 
+  const scored: Array<{ candidate: string; score: number }> = [];
   for (const hook of themeHooks) {
     if (!hook.pattern.test(lower)) continue;
     const candidate = looksEnglish ? hook.en : hook.tr;
     const tight = tightenOverlayHeadline(candidate, maxLen, maxWords);
     if (
-      tight
-      && isMeaningfulFalOverlayText(tight)
-      && !isIncompleteOverlayPhrase(tight)
+      !tight
+      || !isMeaningfulFalOverlayText(tight)
+      || isIncompleteOverlayPhrase(tight)
     ) {
-      return tight;
+      continue;
     }
+    let score = 1;
+    if (missionLower && hook.missionBoost?.test(missionLower)) score += 5;
+    if (missionLower && hook.pattern.test(missionLower)) score += 3;
+    // Penalize drink punchlines when mission is clearly event/sunset/DJ.
+    if (
+      /kokteyl|cocktail/i.test(tight)
+      && /sunset|batım|batim|dj|gece|night|event|etkinlik/i.test(missionLower)
+      && !/kokteyl|cocktail|drink/i.test(missionLower)
+    ) {
+      score -= 4;
+    }
+    scored.push({ candidate: tight, score });
   }
-  return '';
+  scored.sort((a, b) => b.score - a.score);
+  return scored[0]?.candidate ?? '';
 }
 
 /**
@@ -419,7 +442,12 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
   const brandName = input.brandName.trim().toLowerCase();
 
   // Strategy 0: Theme punchline — caption-appropriate, never a cut sentence.
-  const themePunch = extractCaptionThemePunchline({ caption, maxLen, maxWords: 3 });
+  const themePunch = extractCaptionThemePunchline({
+    caption,
+    maxLen,
+    maxWords: 3,
+    missionTitle,
+  });
   if (
     themePunch
     && themePunch.toLowerCase() !== missionTitle.toLowerCase()
@@ -943,9 +971,12 @@ export function resolveOverlayHeadlineWordBudget(input: {
   const sample = String(input.sampleHeadline ?? '').trim();
   if (sample.length >= 2) {
     const sampleWords = sample.split(/\s+/).filter(Boolean).length;
-    // Type zone was composed for this sample — mission copy must match that footprint.
-    maxLen = Math.min(maxLen, sample.length);
-    maxWords = Math.min(maxWords, Math.max(1, sampleWords));
+    // Soft floor: tiny library samples ("DJ Night", 8/2) must not crush mission
+    // punchlines into empty / single stock TR words — type zone may grow slightly.
+    const MISSION_PUNCH_FLOOR_LEN = 18;
+    const MISSION_PUNCH_FLOOR_WORDS = 3;
+    maxLen = Math.min(maxLen, Math.max(sample.length, MISSION_PUNCH_FLOOR_LEN));
+    maxWords = Math.min(maxWords, Math.max(sampleWords, MISSION_PUNCH_FLOOR_WORDS));
   }
 
   return { maxWords, maxLen };
@@ -1029,9 +1060,61 @@ export function fitMissionOverlayToTemplateBudget(input: {
   if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
     headline = truncateAtWordBoundary(rawH, budget.headline.maxLen);
   }
-  // Never character-slice captions into incomplete phrases (e.g. ablative stubs).
+  // Tiny template samples ("DJ Night", ≤8 chars) often cannot hold a long English
+  // mission line. Prefer a mission-aligned scene punch with a soft floor, then the
+  // template sample itself — never an empty string that lets GPT invent "Cocktail".
   if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
-    headline = '';
+    const relaxedLen = Math.max(budget.headline.maxLen, 18);
+    const relaxedWords = Math.max(budget.headline.maxWords, 3);
+    const missionCompressed = tightenOverlayHeadline(rawH, relaxedLen, relaxedWords)
+      || truncateAtWordBoundary(rawH, relaxedLen);
+    if (
+      missionCompressed
+      && isMeaningfulFalOverlayText(missionCompressed)
+      && !isIncompleteOverlayPhrase(missionCompressed)
+    ) {
+      headline = missionCompressed;
+    }
+  }
+  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+    const relaxedLen = Math.max(budget.headline.maxLen, 18);
+    const relaxedWords = Math.max(budget.headline.maxWords, 3);
+    const scenePunch = extractCaptionThemePunchline({
+      caption: rawH,
+      missionTitle: rawH,
+      maxLen: relaxedLen,
+      maxWords: relaxedWords,
+    });
+    const sceneTight = scenePunch
+      ? tightenOverlayHeadline(scenePunch, relaxedLen, relaxedWords)
+        || truncateAtWordBoundary(scenePunch, relaxedLen)
+      : '';
+    // Reject single-word stock punches ("Serinletici") when mission had ≥2 words.
+    const sceneWords = sceneTight.split(/\s+/).filter(Boolean).length;
+    const rawWords = rawH.split(/\s+/).filter(Boolean).length;
+    if (
+      sceneTight
+      && isMeaningfulFalOverlayText(sceneTight)
+      && !isIncompleteOverlayPhrase(sceneTight)
+      && !(rawWords >= 2 && sceneWords < 2)
+    ) {
+      headline = sceneTight;
+    }
+  }
+  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+    const sampleH = String(input.sampleHeadline ?? '').trim();
+    if (
+      sampleH
+      && isMeaningfulFalOverlayText(sampleH)
+      && !isIncompleteOverlayPhrase(sampleH)
+    ) {
+      headline = sampleH;
+    }
+  }
+  // Last resort: keep a compressed mission fragment — never empty when input had text.
+  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+    const fallback = truncateAtWordBoundary(rawH, Math.max(budget.headline.maxLen, 18));
+    headline = (fallback && isMeaningfulFalOverlayText(fallback)) ? fallback : rawH.slice(0, 18).trim();
   }
 
   if (!budget.subtitle || !budget.showSubline) {

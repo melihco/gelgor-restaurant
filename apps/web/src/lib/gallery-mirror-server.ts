@@ -80,6 +80,54 @@ export function prioritizeTenantStoredGalleryUrls(
   return [...tenant, ...other];
 }
 
+/**
+ * Order the mission photo pool for visual_source_mode.
+ * gallery_only / gallery_enhanced: brand-site crawl (e.g. /galeri) first;
+ * tenant /api/media (often prior designed cards) last so Atmosfer-style bakes
+ * cannot steal DJ/product mission picks.
+ */
+export function orderGalleryUrlsForVisualSource(
+  urls: string[],
+  opts: {
+    visualSourceMode?: 'gallery_only' | 'gallery_enhanced' | 'ai_generated' | null;
+    brandDomain?: string | null;
+    workspaceId: string;
+  },
+): string[] {
+  const mode = opts.visualSourceMode ?? 'gallery_only';
+  if (mode === 'ai_generated') {
+    return prioritizeTenantStoredGalleryUrls(urls, opts.workspaceId);
+  }
+
+  const brandDomain = String(opts.brandDomain ?? '').replace(/^www\./, '').toLowerCase();
+  const isBrandDomainUrl = (u: string) => {
+    if (!brandDomain) return false;
+    try {
+      return new URL(u).hostname.replace(/^www\./, '').toLowerCase() === brandDomain;
+    } catch {
+      return false;
+    }
+  };
+  const isTenantMedia = (u: string) =>
+    isTenantStoredMediaPath(u, opts.workspaceId) || u.includes('/api/media');
+
+  const brandRaw: string[] = [];
+  const otherExternal: string[] = [];
+  const tenantMedia: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of urls) {
+    const u = raw.trim();
+    if (!u) continue;
+    const dedupKey = galleryUrlIdentityKey(u);
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    if (isTenantMedia(u)) tenantMedia.push(u);
+    else if (isBrandDomainUrl(u)) brandRaw.push(u);
+    else otherExternal.push(u);
+  }
+  return [...brandRaw, ...otherExternal, ...tenantMedia];
+}
+
 export async function mirrorGalleryPhotoToTenantStorageServer(
   workspaceId: string,
   sourceUrl: string,

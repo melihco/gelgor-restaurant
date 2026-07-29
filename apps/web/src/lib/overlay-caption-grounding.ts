@@ -44,6 +44,25 @@ function overlayTokens(text: string): string[] {
     .filter((w) => w.length >= 4 && !OVERLAY_STOP_TOKENS.has(w));
 }
 
+/** Simple stem so "sunset" matches "sunsets", "cocktail" ↔ "cocktails". */
+function stemOverlayToken(token: string): string {
+  const t = token.toLowerCase();
+  if (t.length >= 6 && t.endsWith('ies')) return `${t.slice(0, -3)}y`;
+  if (t.length >= 5 && t.endsWith('es') && !t.endsWith('ss')) return t.slice(0, -2);
+  if (t.length >= 5 && t.endsWith('s') && !t.endsWith('ss')) return t.slice(0, -1);
+  return t;
+}
+
+function captionContainsOverlayToken(captionNorm: string, token: string): boolean {
+  const cBlob = ` ${captionNorm} `;
+  if (cBlob.includes(` ${token} `) || captionNorm.includes(token)) return true;
+  const stem = stemOverlayToken(token);
+  if (stem !== token && (cBlob.includes(` ${stem} `) || captionNorm.includes(stem))) return true;
+  // Plural in caption, singular in headline (or reverse).
+  if (cBlob.includes(` ${stem}s `) || cBlob.includes(` ${stem}es `)) return true;
+  return false;
+}
+
 /** True when headline tokens substantially appear in the caption body. */
 export function overlayHeadlineGroundedInCaption(headline: string, caption: string): boolean {
   const h = normalizeOverlayCompare(headline);
@@ -54,8 +73,13 @@ export function overlayHeadlineGroundedInCaption(headline: string, caption: stri
   const hTokens = overlayTokens(headline);
   if (hTokens.length === 0) return false;
 
-  const cBlob = ` ${c} `;
-  const overlap = hTokens.filter((t) => cBlob.includes(` ${t} `) || c.includes(t));
+  const overlap = hTokens.filter((t) => captionContainsOverlayToken(c, t));
+  // One strong scene noun (sunset, dj, cocktail…) is enough when it clearly appears.
+  const strongScene = overlap.some((t) =>
+    /^(sunset|sunrise|golden|cocktail|kokteyl|dj|night|gece|event|etkinlik|beach|plaj)$/i.test(
+      stemOverlayToken(t),
+    ));
+  if (strongScene && overlap.length >= 1) return true;
   if (overlap.length >= Math.min(2, hTokens.length)) return true;
   return overlap.length / hTokens.length >= 0.5;
 }
@@ -167,6 +191,7 @@ export function rebiasUngroundedOverlayCopy(input: {
       caption,
       maxLen,
       maxWords: input.channel === 'reel' ? 3 : 3,
+      missionTitle: headline,
     });
     const resolved = resolveFalDisplayHeadline({
       caption,
@@ -175,8 +200,11 @@ export function rebiasUngroundedOverlayCopy(input: {
       cta: input.cta,
       maxLen,
     });
-    // Prefer theme punchline / product hook — never a truncated caption sentence.
-    const candidate = productHook ?? themePunch ?? resolved.headline;
+    // Prefer mission-aligned theme punchline; product hook only when mission is product-led.
+    const missionIsEventScene = /sunset|batım|batim|dj|gece|night|event|etkinlik|golden/i.test(headline);
+    const candidate = missionIsEventScene
+      ? (themePunch || resolved.headline || productHook)
+      : (productHook ?? themePunch ?? resolved.headline);
     const clamped = resolveFalProductionOverlayHeadline(
       candidate,
       [themePunch, resolved.headline, headline].filter(Boolean),

@@ -37,6 +37,10 @@ import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
+import {
+  allowsTemplateGalleryPhotoFallback,
+  resolveVisualSourceMode,
+} from '@/lib/ai-visual-production-standard';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import {
   areFalOverlayTextsRedundant,
@@ -107,6 +111,8 @@ export interface FalDesignedPostInput {
   bodyFont?: string;
   captionAwareHeadline?: boolean;
   logoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
+  /** Brand Hub theme — drives visual_source_mode (gallery_only / enhanced / ai). */
+  brandTheme?: Record<string, unknown> | null;
 }
 
 export interface FalDesignedPostResult {
@@ -173,17 +179,33 @@ export async function produceFalDesignedPost(
       binding?.brandColors,
     );
     const brandDirectives = binding?.brandDirectives ?? input.brandDirectives;
+    const visualSourceMode = resolveVisualSourceMode(
+      input.brandTheme as Record<string, unknown> | null | undefined,
+    );
     const logoUrl = binding?.logoUrl ?? input.logoUrl;
+    // Mission gallery is SSOT under gallery_only / gallery_enhanced — never prefer
+    // binding.referencePhotoUrl when it was a template galleryRef bake.
+    const missionPhoto =
+      input.referenceUrl && isUsableGalleryPhotoUrl(input.referenceUrl)
+        ? input.referenceUrl
+        : null;
+    const referenceImageUrls = pickTemplateReferenceUrls({
+      missionPhotoUrl: missionPhoto,
+      matched: binding?.matched ?? null,
+      brandReferenceImageUrls: input.brandReferenceImageUrls,
+      visualSourceMode,
+    });
     const referenceUrl =
-      binding?.referencePhotoUrl ?? input.referenceUrl;
+      referenceImageUrls[0]
+      ?? missionPhoto
+      ?? (allowsTemplateGalleryPhotoFallback(visualSourceMode)
+        && binding?.referencePhotoUrl
+        && isUsableGalleryPhotoUrl(binding.referencePhotoUrl)
+        ? binding.referencePhotoUrl
+        : null);
     const groundedGalleryRef = Boolean(
       referenceUrl && isUsableGalleryPhotoUrl(referenceUrl),
     );
-    const referenceImageUrls = pickTemplateReferenceUrls({
-      missionPhotoUrl: referenceUrl,
-      matched: binding?.matched ?? null,
-      brandReferenceImageUrls: input.brandReferenceImageUrls,
-    });
     assertTemplateStyleReference(binding, referenceImageUrls);
 
     // Primary engine — GPT-image design grounded on the real gallery photo.
@@ -328,12 +350,21 @@ export async function produceFalDesignedPost(
         break;
       }
       }
-      // Template-locked slots may fall through to the Ideogram engine composing on
-      // the same gallery photo — the brand shell is known, so grounding is preserved.
-      const templateLockedFallback = Boolean(
-        binding?.matched && groundedGalleryRef && serverConfig.fal.configured,
+      // Purpose-pinned shells (hard/soft): stay on gpt-image replica — never Ideogram redesign.
+      const purposePinned = Boolean(
+        binding?.matched
+        && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
       );
-      if (!imageUrl && input.requireGroundedGallery && !templateLockedFallback) {
+      if (!imageUrl && purposePinned) {
+        console.warn(
+          `[auto-produce] [fal-design] purpose-pinned "${binding?.matched?.templateName ?? '-'}" `
+          + `gpt-image exhausted — withholding (no Ideogram fall-through)`,
+        );
+        throw new Error(
+          'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
+        );
+      }
+      if (!imageUrl && input.requireGroundedGallery) {
         throw new Error(
           'Brand gallery design failed — could not compose on the matched venue photo (OpenAI API/billing).',
         );
@@ -346,12 +377,16 @@ export async function produceFalDesignedPost(
       );
     }
 
-    // Fallback engine — fal Ideogram V4 typography still. Grounded slots reach this
-    // only with a locked template + gallery photo (composition stays photo-grounded).
+    // Fallback engine — fal Ideogram V4 typography still. Never used for purpose-pinned
+    // hard/soft shells (those withhold above). Soft/format_fallback without pin may still use it.
     if (
       (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef))
       && !imageUrl
       && serverConfig.fal.configured
+      && !(
+        binding?.matched
+        && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft')
+      )
     ) {
       const still = await produceFalDesignedPostStill({
         workspaceId: input.workspaceId,
@@ -544,6 +579,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       brandColors: falBrand.brandColors,
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
+      visualSourceMode: resolveVisualSourceMode(
+        inputs.brandTheme as Record<string, unknown> | null | undefined,
+      ),
     });
     if (templateBinding.matched) {
       console.log(

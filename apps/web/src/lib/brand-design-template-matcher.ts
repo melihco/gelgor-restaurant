@@ -13,6 +13,7 @@ import {
   type BrandActiveSlotSet,
 } from '@/lib/brand-active-slot-resolver';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
+import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
 import type { TypographyVibe } from '@/types/brand-theme';
 
 export interface BrandDesignTemplateRecord {
@@ -95,7 +96,9 @@ export type CatalogHardPinMissReason =
   | 'empty_active_set'
   | 'missing_template'
   | 'format_mismatch'
-  | 'off_season';
+  | 'off_season'
+  /** Keyed shells exist but none carry brand×slot purpose brief — do not pin holiday/orphan chrome. */
+  | 'purpose_brief_missing';
 
 export interface CatalogHardPinMiss {
   reason: CatalogHardPinMissReason;
@@ -277,10 +280,17 @@ function scoreDesignTemplateRecord(
   // day poster can't hijack an ordinary event/teaser slot months early.
   if (isOffSeasonSpecialDay(record)) return 0;
 
+  const catalogKey = catalogKeyOf(record);
+  const purposeBrief = hasTemplateSlotCreativeBrief(record.design_spec);
+  // Keyed orphan/holiday chrome without purpose brief must not soft-win either.
+  if (catalogSlotKey && catalogKey === catalogSlotKey && !purposeBrief) return 0;
+
   const typeRank = candidates.indexOf(record.template_type);
 
-  const catalogKey = catalogKeyOf(record);
-  const catalogMatch = catalogSlotKey && catalogKey === catalogSlotKey ? 80 : 0;
+  // Catalog key alone is not enough — only purpose-brief shells get the hard boost.
+  const catalogMatch = catalogSlotKey && catalogKey === catalogSlotKey && purposeBrief
+    ? 80
+    : 0;
 
   const proximity = record.template_type === 'event_special'
     ? Math.max(0, specialDayProximityBonus(record))
@@ -288,6 +298,7 @@ function scoreDesignTemplateRecord(
   const hasPreview = Boolean(record.thumbnail_url);
   const hasRecipe = Boolean(record.design_spec?.prompt);
   const usageBoost = Math.min(5, Math.floor(Number(record.usage_count ?? 0) / 3));
+  const purposeBoost = purposeBrief ? 20 : 0;
 
   return (
     catalogMatch +
@@ -296,15 +307,15 @@ function scoreDesignTemplateRecord(
     (hasPreview ? 24 : 0) +
     (hasRecipe ? 4 : 0) +
     usageBoost +
-    proximity
+    proximity +
+    purposeBoost
   );
 }
 
 /**
  * 1A hard pin — the slot's own `catalog_slot_key` template wins outright when
- * its format is compatible. Bad data (e.g. a `post` template keyed to a `story`
- * slot) is rejected so it falls through to the soft path instead of silently
- * rendering the wrong shell.
+ * format is compatible AND the shell carries a brand×slot purpose brief.
+ * Keyed holiday/orphan chrome without `slot_creative_brief` must not hard-pin.
  */
 function findCatalogKeyHardMatch(
   active: BrandDesignTemplateRecord[],
@@ -317,6 +328,7 @@ function findCatalogKeyHardMatch(
     if (catalogKeyOf(record) !== catalogSlotKey) continue;
     if (!formats.includes(record.format)) continue;
     if (isOffSeasonSpecialDay(record)) continue;
+    if (!hasTemplateSlotCreativeBrief(record.design_spec)) continue;
     const score =
       (record.thumbnail_url ? 2 : 0) + (record.design_spec?.prompt ? 1 : 0);
     if (!best || score > best.score) best = { record, score };
@@ -351,7 +363,11 @@ export function diagnoseCatalogHardPinMiss(
   if (seasonOk.length === 0) {
     return { reason: 'off_season', catalogSlotKey: key, foundFormats };
   }
-  // Defensive — keyed + format + season should have been a hard match.
+  const purposeOk = seasonOk.filter((r) => hasTemplateSlotCreativeBrief(r.design_spec));
+  if (purposeOk.length === 0) {
+    return { reason: 'purpose_brief_missing', catalogSlotKey: key, foundFormats };
+  }
+  // Defensive — keyed + format + season + purpose should have been a hard match.
   return { reason: 'missing_template', catalogSlotKey: key, foundFormats };
 }
 
@@ -454,6 +470,9 @@ export function selectBrandDesignTemplate(
   //   allowSoftFallbackWhenHardMiss is explicitly true (migration/debug).
   if (catalogKey) {
     const miss = diagnoseCatalogHardPinMiss(active, opts.format, catalogKey);
+    // missing_template: under-provisioned tenant may soft-bind a same-format shell.
+    // purpose_brief_missing: keyed orphans exist — fail closed so a foreign purpose
+    // shell (e.g. DJ teaser) cannot soft-hijack another catalog slot.
     const softOk =
       miss.reason === 'missing_template'
       || opts.allowSoftFallbackWhenHardMiss === true;
@@ -576,6 +595,13 @@ async function fetchDesignTemplateList(
 export function invalidateDesignTemplateCache(workspaceId?: string): void {
   if (workspaceId) templateListCache.delete(workspaceId);
   else templateListCache.clear();
+}
+
+/** Public loader for produce coverage / brief stamp (uses the same TTL cache). */
+export async function loadWorkspaceDesignTemplates(
+  workspaceId: string,
+): Promise<BrandDesignTemplateRecord[]> {
+  return (await fetchDesignTemplateList(workspaceId)) ?? [];
 }
 
 /**

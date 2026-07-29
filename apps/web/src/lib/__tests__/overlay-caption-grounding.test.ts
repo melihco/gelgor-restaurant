@@ -64,4 +64,35 @@ describe('overlay-caption-grounding', () => {
     expect(result.headline.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan$/);
     expect(result.headline.toLowerCase()).toMatch(/kahvalt|serpme|keyfi|vazgeçilmez|lezzet|hasat/);
   });
+
+  it('grounds sunset headline against caption that says Sunsets (plural)', () => {
+    const caption =
+      'Sunsets, cocktails, and great music await you at Yula Bodrum! '
+      + 'See you on the dance floor!';
+    expect(
+      overlayHeadlineGroundedInCaption(
+        'Get ready for a sunset like no other!',
+        caption,
+      ),
+    ).toBe(true);
+  });
+
+  it('does not rebias sunset/DJ mission headline into Cocktail when caption mentions drinks', () => {
+    const caption =
+      'Sunsets, cocktails, and great music await you at Yula Bodrum! '
+      + 'Join us under the stars and experience the magic. See you on the dance floor!';
+    const result = rebiasUngroundedOverlayCopy({
+      headline: 'Get ready for a sunset like no other!',
+      subtitle: 'Join us for a vibrant evening at Yula Bodrum.',
+      caption,
+      brandName: 'Yula Bodrum',
+      businessType: 'beach_club',
+      channel: 'feed_post',
+    });
+    expect(result.headline.toLowerCase()).not.toMatch(/cocktail|kokteyl/);
+    expect(
+      result.rebased === false
+      || /sunset|glow|night|dj|star/i.test(result.headline),
+    ).toBe(true);
+  });
 });
