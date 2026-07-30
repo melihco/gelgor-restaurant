@@ -448,10 +448,11 @@ function resolveCopy(
     catalogSlotKey: preset.catalogSlotKey,
     templateType: preset.templateType,
     format: preset.format,
+    slotLabel: preset.name,
     showSubline: showSub,
     sector: input.sector,
   });
-  // Prefer slot-key punchline; fall back to tightened preset sample.
+  // Prefer slot-key / label punchline; fall back to tightened preset sample.
   const headline = slotCopy.headline
     || fitSlotPunchline(preset.sampleHeadline, 3, 28)
     || preset.sampleHeadline
@@ -565,8 +566,22 @@ export function resolveTemplatePurposeBrief(input: {
       rejectLook: 'event ticket stub, campaign price badge, formal corporate memo',
     };
   }
+  // Food / chef / dish jobs before campaign_announcement type catch-all
+  // (many restaurant slots are typed campaign_* but must read as menu heroes).
   if (
-    /campaign|offer|promo|kampanya|seasonal|sezon/.test(key)
+    /chef|şef|sef|signature|imza|menu|product|tabak|food|dish|kokteyl|cocktail|brunch|kahvalt|plating|farm.?to.?table|mevsim/.test(key)
+    || type === 'menu_highlight'
+    || useCase === 'product_highlight'
+  ) {
+    return {
+      jobLabel,
+      designJob:
+        'PRODUCT / MENU HERO: hero dish/drink photo window + short product punchline — appetite-led, warm hospitality craft, not event date masthead or price-stack flyer.',
+      rejectLook: 'event ticket date block, review quote layout, promo price badge spam, full-frame venue only',
+    };
+  }
+  if (
+    /campaign|offer|promo|kampanya|seasonal|sezon|happy.?hour|rezerv|book/.test(key)
     || type === 'campaign_announcement'
     || type === 'seasonal_promo'
     || useCase === 'campaign_offer'
@@ -574,16 +589,8 @@ export function resolveTemplatePurposeBrief(input: {
     return {
       jobLabel,
       designJob:
-        'CAMPAIGN / OFFER POSTER: clear offer hierarchy, urgency accents, brand-true promo craft — still boutique, never carnival sticker spam.',
+        'CAMPAIGN / OFFER POSTER: clear offer hierarchy, brand-true invite craft — boutique hospitality, never carnival sticker spam or generic "Özel Kampanya" flyer.',
       rejectLook: 'quiet daily story, guest-review quote card, formal hours notice',
-    };
-  }
-  if (/menu|product|tabak|food|dish|kokteyl|cocktail/.test(key) || type === 'menu_highlight' || useCase === 'product_highlight') {
-    return {
-      jobLabel,
-      designJob:
-        'PRODUCT / MENU HERO: hero dish/drink photo window + short product punchline — appetite-led, not event date masthead.',
-      rejectLook: 'event ticket date block, review quote layout, full-frame venue only',
     };
   }
   if (/venue|mekan|ambiance|atmosphere|havadan|aerial|showcase/.test(key) || type === 'venue_showcase') {

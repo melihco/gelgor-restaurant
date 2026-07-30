@@ -50,7 +50,10 @@ const SECTOR_CALENDAR_LAYOUT_OVERRIDES: Record<
   },
   restaurant_cafe: {
     product_reveal: { story: 'product_hero_card', post: 'split_feature_panel' },
-    offer_campaign: { story: 'campaign_hero_block', post: 'promo_price_stack' },
+    // Warm garden / hospitality — avoid hard promo_price_stack flyer language.
+    offer_campaign: { story: 'magazine_cover_drop', post: 'split_feature_panel' },
+    venue_showcase: { story: 'cinematic_full_bleed', post: 'cinematic_full_bleed' },
+    behind_the_scenes: { story: 'polaroid_memory', post: 'magazine_cover_drop' },
     social_proof: { story: 'frosted_quote_card', post: 'social_proof_banner' },
   },
   nightclub_lounge: {

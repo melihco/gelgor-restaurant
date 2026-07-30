@@ -99,4 +99,51 @@ describe('slot-sample-copy', () => {
     expect(wordCount(aerial.sampleHeadline)).toBeLessThanOrEqual(3);
     expect(aerial.sampleHeadline.length).toBeLessThanOrEqual(28);
   });
+
+  it('restaurant_cafe slots get food-specific punchlines — not Özel Kampanya / Daybed', () => {
+    const chef = resolveSlotSampleCopy({
+      catalogSlotKey: 'restaurant_cafe_chef_special_post',
+      templateType: 'campaign_announcement',
+      slotLabel: 'Şef özel',
+      sector: 'restaurant_cafe',
+    });
+    expect(chef.headline).toMatch(/Şef|Özel/i);
+    expect(chef.headline).not.toBe('Özel Kampanya');
+
+    const signature = resolveSlotSampleCopy({
+      catalogSlotKey: 'restaurant_cafe_signature_dish_post',
+      templateType: 'menu_highlight',
+      slotLabel: 'İmza tabak',
+      sector: 'restaurant_cafe',
+    });
+    expect(signature.headline).toMatch(/İmza|Tabak|Sofrada/i);
+    expect(signature.headline).not.toBe('Öne Çıkan');
+
+    const booking = resolveSlotSampleCopy({
+      catalogSlotKey: 'restaurant_cafe_weekend_booking_story',
+      templateType: 'campaign_announcement',
+      format: 'story',
+      sector: 'restaurant_cafe',
+    });
+    expect(booking.headline.toLowerCase()).not.toContain('daybed');
+    expect(booking.headline).toMatch(/Hafta|Rezerv/i);
+
+    const brunch = buildDesignPresetFromCatalogSlot(mockSlot({
+      slot_key: 'restaurant_cafe_brunch_offer_post',
+      sector_id: 'restaurant_cafe',
+      label_tr: 'Brunch teklifi',
+      design_template_type: 'campaign_announcement',
+    }));
+    expect(brunch.sampleHeadline).not.toBe('Özel Kampanya');
+    expect(wordCount(brunch.sampleHeadline)).toBeLessThanOrEqual(3);
+  });
+
+  it('beach daybed still maps to Daybed', () => {
+    const copy = resolveSlotSampleCopy({
+      catalogSlotKey: 'beach_club_daybed_booking_post',
+      templateType: 'campaign_announcement',
+      sector: 'beach_club',
+    });
+    expect(copy.headline).toBe('Daybed');
+  });
 });

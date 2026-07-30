@@ -262,7 +262,7 @@ async function callVisionCanvasValidator(
                   ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
                   : parsed.reason)
       : !subtitleValid
-        ? (hasEdgeClippedLeadingGlyph(detectedSubtitle, intendedSubtitle)
+        ? (hasEdgeClippedLeadingGlyph(detectedSubtitle, intendedSubtitle ?? '')
           ? `edge-clipped subtitle glyph (detected="${detectedSubtitle.slice(0, 30)}")`
           : `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`)
         : parsed.reason,

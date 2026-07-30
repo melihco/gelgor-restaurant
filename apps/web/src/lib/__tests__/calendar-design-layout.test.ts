@@ -45,6 +45,17 @@ describe('resolveCalendarDesignLayout', () => {
     expect(layout.source).toBe('sector_matrix:local_products_shop:product_reveal');
   });
 
+  it('restaurant_cafe offer_campaign avoids promo_price_stack flyer language', () => {
+    const layout = resolveCalendarDesignLayout({
+      announcementType: 'offer_campaign',
+      channel: 'post',
+      sector: 'restaurant_cafe',
+    });
+    expect(layout.canvaArchetypeId).toBe('split_feature_panel');
+    expect(layout.canvaArchetypeId).not.toBe('promo_price_stack');
+    expect(layout.source).toBe('sector_matrix:restaurant_cafe:offer_campaign');
+  });
+
   it('honors explicit design_layout_family from calendar row', () => {
     const layout = resolveCalendarDesignLayout({
       announcementType: 'event_teaser',

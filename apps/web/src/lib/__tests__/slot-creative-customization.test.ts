@@ -90,10 +90,10 @@ describe('resolveSlotCreativeForLibraryGen', () => {
     expect(shouldKeepExistingSlotCreative(brief)).toBe(true);
   });
 
-  it('reseeds auto briefs', () => {
-    const { brief, seeded } = resolveSlotCreativeForLibraryGen({
+  it('keeps auto briefs unless forceReseed', () => {
+    const kept = resolveSlotCreativeForLibraryGen({
       existing: {
-        creative_intent_tr: 'Eski auto',
+        creative_intent_tr: 'Datça bahçe kahvaltı shell',
         seed_source: 'auto_template_gen',
       },
       seed: {
@@ -104,8 +104,25 @@ describe('resolveSlotCreativeForLibraryGen', () => {
         format: 'story',
       },
     });
-    expect(seeded).toBe(true);
-    expect(brief.creative_intent_tr).toMatch(/gün batımı|golden hour/i);
+    expect(kept.seeded).toBe(false);
+    expect(kept.brief.creative_intent_tr).toContain('Datça');
+
+    const forced = resolveSlotCreativeForLibraryGen({
+      existing: {
+        creative_intent_tr: 'Eski auto',
+        seed_source: 'auto_template_gen',
+      },
+      forceReseed: true,
+      seed: {
+        brandName: 'Yula Bodrum',
+        slotName: 'Gün batımı story',
+        slotKey: 'beach_club_sunset_golden_story',
+        templateType: 'atmosphere',
+        format: 'story',
+      },
+    });
+    expect(forced.seeded).toBe(true);
+    expect(forced.brief.creative_intent_tr).toMatch(/gün batımı|golden hour/i);
   });
 });
 

@@ -98,14 +98,17 @@ export function parseSlotCreativeCustomization(
   };
 }
 
-/** Operator briefs win; auto may be refreshed. */
+/**
+ * Keep any usable brief unless force-reseed.
+ * Operator briefs always win; auto/onboarding briefs are also kept so library
+ * regen does not wipe place-specific intents already stamped on the tenant.
+ */
 export function shouldKeepExistingSlotCreative(
   existing: SlotCreativeCustomization | null | undefined,
   opts?: { force?: boolean },
 ): boolean {
   if (opts?.force) return false;
-  if (!existing?.creative_intent_tr?.trim()) return false;
-  return existing.seed_source === 'operator';
+  return Boolean(existing?.creative_intent_tr?.trim());
 }
 
 /**
@@ -249,10 +252,13 @@ export function formatSlotCreativeBriefPromptBlock(
 }
 
 /** True when a library template carries a usable brand×slot purpose brief. */
-export function hasTemplateSlotCreativeBrief(
-  designSpec: { slot_creative_brief?: unknown } | null | undefined,
-): boolean {
-  return parseSlotCreativeCustomization(designSpec?.slot_creative_brief) !== null;
+export function hasTemplateSlotCreativeBrief(designSpec: unknown): boolean {
+  if (!designSpec || typeof designSpec !== 'object' || Array.isArray(designSpec)) {
+    return false;
+  }
+  return parseSlotCreativeCustomization(
+    (designSpec as Record<string, unknown>).slot_creative_brief,
+  ) !== null;
 }
 
 /** Merge into assignment.customization JSON (preserve unknown keys). */

@@ -63,6 +63,8 @@ function sampleCopyForSlot(slot: ProductionSlotDefinition): {
     catalogSlotKey: slot.slot_key,
     templateType,
     format: slotFormatToDesignFormat(slot.format),
+    slotLabel: slot.label_tr,
+    sector: slot.sector_id,
   });
   if (fromSlot.headline) return fromSlot;
 

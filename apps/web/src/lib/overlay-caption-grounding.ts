@@ -206,8 +206,8 @@ export function rebiasUngroundedOverlayCopy(input: {
       ? (themePunch || resolved.headline || productHook)
       : (productHook ?? themePunch ?? resolved.headline);
     const clamped = resolveFalProductionOverlayHeadline(
-      candidate,
-      [themePunch, resolved.headline, headline].filter(Boolean),
+      candidate ?? '',
+      [themePunch, resolved.headline, headline].filter((v): v is string => Boolean(v)),
       input.channel,
     );
     if (
