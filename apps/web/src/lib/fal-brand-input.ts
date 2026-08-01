@@ -46,8 +46,33 @@ function readTypographyConfig(
 
 function readPostDefaults(
   theme: Record<string, unknown> | null | undefined,
-): BrandPostDesignDefaults | undefined {
-  return (theme?.post_design_defaults ?? theme?.postDesignDefaults) as BrandPostDesignDefaults | undefined;
+): Partial<BrandPostDesignDefaults> | undefined {
+  const raw = (theme?.post_design_defaults ?? theme?.postDesignDefaults) as
+    | (Partial<BrandPostDesignDefaults> & {
+        fontPreset?: BrandPostDesignDefaults['font_preset'];
+        textEffect?: BrandPostDesignDefaults['text_effect'];
+        logoPosition?: BrandPostDesignDefaults['logo_position'];
+        accentColor?: string;
+      })
+    | null
+    | undefined;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const font_preset = raw.font_preset ?? raw.fontPreset;
+  const text_effect = raw.text_effect ?? raw.textEffect;
+  const logo_position = raw.logo_position ?? raw.logoPosition;
+  const accent_color = raw.accent_color ?? raw.accentColor;
+  const default_template_id = raw.default_template_id ?? raw.defaultTemplateId;
+  // Only treat as present when operator saved at least one Hub field — do not invent 3D defaults.
+  if (!font_preset && !text_effect && !logo_position && !accent_color && !default_template_id) {
+    return undefined;
+  }
+  return {
+    ...(font_preset ? { font_preset } : {}),
+    ...(text_effect ? { text_effect } : {}),
+    ...(logo_position ? { logo_position } : {}),
+    ...(accent_color ? { accent_color } : {}),
+    ...(default_template_id ? { default_template_id } : {}),
+  };
 }
 
 function describeTextEffect(effect: BrandPostDesignDefaults['text_effect'] | undefined): string | undefined {
@@ -61,7 +86,25 @@ function describeTextEffect(effect: BrandPostDesignDefaults['text_effect'] | und
     case 'gradient_stack':
       return 'Typography direction: layered gradient typography with polished premium color transitions.';
     case 'soft_shadow':
-      return 'Typography direction: clean modern type with subtle shadow depth and elegant legibility.';
+      return 'Typography direction: soft readable type with gentle shadow depth — calm, not aggressive 3D poster energy.';
+    default:
+      return undefined;
+  }
+}
+
+/** Brand Hub "Yazı tipi" font_preset → fal prompt (SSOT with post_design_defaults). */
+function describeFontPreset(preset: BrandPostDesignDefaults['font_preset'] | undefined): string | undefined {
+  switch (preset) {
+    case 'poster_3d':
+      return 'FONT PRESET (brand Hub): bold condensed poster display (Anton/Archivo energy) — campaign headline weight.';
+    case 'sticker_pop':
+      return 'FONT PRESET (brand Hub): playful sticker/pop lettering (Bangers energy) — social and fun, not corporate.';
+    case 'condensed_impact':
+      return 'FONT PRESET (brand Hub): narrow high-impact display (Bebas energy) — strong announcement hierarchy.';
+    case 'elegant_serif':
+      return 'FONT PRESET (brand Hub): editorial serif display (Playfair energy) — restaurant/lifestyle magazine hierarchy.';
+    case 'clean_sans':
+      return 'FONT PRESET (brand Hub): clean sans display (Inter energy) — minimal and institutional restraint.';
     default:
       return undefined;
   }
@@ -337,7 +380,9 @@ export function resolveFalBrandInput(input: {
       bodyFont: slotTypography?.bodyFont,
       fontPersonality: slotTypography?.fontPersonality,
     }),
-    describeTextEffect(typographyConfig?.text_effect ?? postDefaults?.text_effect),
+    // Brand Hub "3D Poster / efekt" panel wins over Tipografi defaults when set.
+    describeFontPreset(postDefaults?.font_preset),
+    describeTextEffect(postDefaults?.text_effect ?? typographyConfig?.text_effect),
     describeLogoTreatment(resolveFalTemplateProductionSettings(themeRecord).logo_treatment),
     buildTemplateColorDirective({
       templateId,

@@ -719,7 +719,19 @@ def _merge_theme_dict_for_save(
         elif existing_lib.get("locked") and not incoming_lib.get("locked"):
             merged["template_library"] = {**existing_lib, **incoming_lib, "locked": True}
 
-    for key in ("announcement_templates", "mertcafe_instagram_accounts", "mertcafe_api_key"):
+    for key in (
+        "announcement_templates",
+        "mertcafe_instagram_accounts",
+        "mertcafe_api_key",
+        # Operator Hub panels — preserve when a partial theme PUT omits them
+        "post_design_defaults",
+        "product_showcase",
+        "production_engines",
+        "fal_template_production",
+        "typography_design",
+        "fal_design_intensity",
+        "slot_facilities",
+    ):
         if key in existing and key not in merged:
             merged[key] = existing[key]
 

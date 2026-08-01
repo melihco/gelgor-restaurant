@@ -127,6 +127,39 @@ describe('resolveFalBrandInput', () => {
   });
 });
 
+describe('resolveFalBrandInput brand Hub post_design_defaults', () => {
+  it('injects font_preset + text_effect directives from Hub settings (over typography_design effect)', () => {
+    const result = resolveFalBrandInput({
+      brandTheme: {
+        typography_design: {
+          vibe: 'handwritten',
+          text_effect: 'gradient_stack',
+          background_style: 'photo_overlay',
+          logo_treatment: 'watermark',
+        },
+        post_design_defaults: {
+          font_preset: 'elegant_serif',
+          text_effect: 'soft_shadow',
+          logo_position: 'bottom_right',
+        },
+      },
+      templateLibrary: LIBRARY,
+      librarySlotKey: 'event_story',
+      tokens: TOKENS,
+      sector: 'restaurant_cafe',
+      caption: 'Bahçe sofrası',
+      headline: 'Bahçe Sofrası',
+      format: 'post',
+    });
+
+    const joined = result.promptDirectives.join(' ');
+    expect(result.vibe).toBe('handwritten');
+    expect(joined).toContain('FONT PRESET (brand Hub): editorial serif');
+    expect(joined).toContain('soft readable type');
+    expect(joined).not.toContain('layered gradient typography');
+  });
+});
+
 describe('resolveFalProductionBrandColors', () => {
   it('always prefers live tenant tokens over stale template snapshots', () => {
     expect(

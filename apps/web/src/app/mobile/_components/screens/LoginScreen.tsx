@@ -79,9 +79,15 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
     setLoading(true);
     setError('');
     try {
+      // Drop stale JWT so a previous session cannot pollute login /me headers.
+      setSessionToken(null);
       clearSessionScopedQueries();
       const session = await apiClient.login({ email: email.trim(), password });
-      if (session.token) setSessionToken(session.token);
+      if (!session?.token) {
+        setError('Giriş yanıtı geçersiz. Lütfen tekrar deneyin.');
+        return;
+      }
+      setSessionToken(session.token);
       if (session.tenantId && session.officeId) setWorkspace(session.tenantId, session.officeId);
       const me = await apiClient.getCurrentUserSecurity();
       const tenantId = me.tenantId || session.tenantId;
@@ -91,6 +97,7 @@ export function LoginScreen({ onSignup }: LoginScreenProps) {
       }
       setUser(me);
     } catch (e: unknown) {
+      setSessionToken(null);
       setError(resolveLoginErrorMessage(toUserFriendlyApiError(e, 'Giriş yapılamadı.')));
     } finally {
       setLoading(false);

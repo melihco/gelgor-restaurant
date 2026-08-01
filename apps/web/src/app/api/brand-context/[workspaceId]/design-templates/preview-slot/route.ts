@@ -335,56 +335,51 @@ export async function POST(
   let persisted = false;
   let persistedTemplate: unknown = null;
 
-  if (body.persist && variants[0]?.thumbnail_url) {
+  if (body.persist && variants[0]?.thumbnail_url && regenerateResult) {
     const chosen = variants[0];
+    // Strip legacy special-day stamps — catalog venue slots (live music / DJ)
+    // must never keep "29 Ekim" occasion metadata after a Hub regenerate.
+    const {
+      specialDay: _specialDay,
+      special_day: _specialDaySnake,
+      occasion: _occasion,
+      ...restSpec
+    } = (chosen.design_spec ?? {}) as Record<string, unknown>;
     const designSpec = {
-      ...chosen.design_spec,
+      ...restSpec,
       catalogSlotKey: catalogSlotKey,
+      sampleHeadline: regenerateResult.design_spec?.sampleHeadline
+        ?? chosen.design_spec?.sampleHeadline,
       previewRegeneratedAt: new Date().toISOString(),
     };
 
-    if (body.template_id) {
-      const patchRes = await fetchCrewBackendJson(
-        `/api/v1/design-templates/${workspaceId}/${body.template_id}`,
-        {
-          workspaceId,
-          method: 'PATCH',
-          timeoutMs: 20_000,
-          body: {
+    // Bulk upsert archives every active row with this catalog_slot_key, then
+    // inserts one clean shell named after the slot (not Noel / 29 Ekim clones).
+    const createRes = await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
+      `/api/v1/design-templates/${workspaceId}/bulk`,
+      {
+        workspaceId,
+        method: 'POST',
+        timeoutMs: 20_000,
+        body: {
+          templates: [{
+            template_type: regenerateResult.template_type,
+            template_name: slot.label_tr,
+            format: regenerateResult.format,
             thumbnail_url: chosen.thumbnail_url,
+            catalog_slot_key: catalogSlotKey,
+            sector_category: sector,
+            locale: engineBase.locale,
             design_spec: designSpec,
-          },
+          }],
+          archive_existing: false,
         },
-      );
-      persisted = patchRes.ok;
-      persistedTemplate = patchRes.ok ? patchRes.data : null;
-    } else if (regenerateResult) {
-      const createRes = await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
-        `/api/v1/design-templates/${workspaceId}/bulk`,
-        {
-          workspaceId,
-          method: 'POST',
-          timeoutMs: 20_000,
-          body: {
-            templates: [{
-              template_type: regenerateResult.template_type,
-              template_name: slot.label_tr,
-              format: regenerateResult.format,
-              thumbnail_url: regenerateResult.thumbnail_url,
-              catalog_slot_key: catalogSlotKey,
-              sector_category: sector,
-              locale: engineBase.locale,
-              design_spec: designSpec,
-            }],
-            archive_existing: false,
-          },
-        },
-      );
-      persisted = createRes.ok;
-      persistedTemplate = createRes.ok && Array.isArray(createRes.data)
-        ? createRes.data[0]
-        : null;
-    }
+      },
+    );
+    persisted = createRes.ok;
+    persistedTemplate = createRes.ok && Array.isArray(createRes.data)
+      ? createRes.data[0]
+      : null;
 
     // Next production must bind the fresh thumbnail immediately — not the
     // 60s-stale cached list.

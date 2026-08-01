@@ -126,7 +126,9 @@ export function resolveSlotSampleCopy(input: {
     copy = pair('İmza Kokteyl', 'Menü');
   } else if (/dj|night|gece|party|event_ticket/.test(blob) && !/restaurant_cafe/.test(key)) {
     copy = pair('DJ Night', 'Bu Gece');
-  } else if (/event_announcement|etkinlik.?duyuru|live_music_event|private_event/.test(blob)) {
+  } else if (/live_music_event|canlı.?müzik|canli.?muzik/.test(blob)) {
+    copy = pair('Canlı Müzik', 'Bu Gece');
+  } else if (/event_announcement|etkinlik.?duyuru|private_event/.test(blob)) {
     copy = pair('Bu Gece', 'Etkinlik');
   } else if (/sunset|gün.?bat|golden/.test(blob)) {
     copy = pair('Gün Batımı', 'Altın Saat');

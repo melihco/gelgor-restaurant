@@ -146,4 +146,16 @@ describe('slot-sample-copy', () => {
     });
     expect(copy.headline).toBe('Daybed');
   });
+
+  it('live music event uses Canlı Müzik — not bayram/special-day copy', () => {
+    const copy = resolveSlotSampleCopy({
+      catalogSlotKey: 'beach_club_live_music_event_post',
+      templateType: 'event_special',
+      format: 'post',
+      slotLabel: 'Canlı müzik etkinlik',
+      sector: 'beach_club',
+    });
+    expect(copy.headline).toBe('Canlı Müzik');
+    expect(copy.headline).not.toMatch(/Bayram|Ekim|Noel/i);
+  });
 });

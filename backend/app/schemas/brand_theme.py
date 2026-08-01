@@ -143,10 +143,16 @@ class BrandTheme(BaseModel):
     fal_design_intensity: FalDesignIntensityConfig | None = None
     # Locked typography vibe for Fal designer (onboarding confirm gate)
     typography_design: dict | None = None
+    # Brand Hub → Yazı tipi & başlık stili (3D Poster / efekt / logo)
+    # font_preset, text_effect, logo_position — must survive theme PUT
+    post_design_defaults: dict | None = None
     # Parametric fal template gallery + production (Brand Hub → fal.ai)
     fal_template_production: dict | None = None
     # Facility hints — opt-out disables requires:* catalog slots at bootstrap
     slot_facilities: dict[str, bool] | None = None
+    # Optional Hub panels persisted as opaque JSON (must not be stripped on PUT)
+    product_showcase: dict | None = None
+    production_engines: dict | None = None
 
 
 # ── Request / Response wrappers ───────────────────────────────────────────────

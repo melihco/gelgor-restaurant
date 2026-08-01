@@ -41,6 +41,45 @@ function mockTemplate(overrides: Partial<BrandDesignTemplateRow> & Pick<BrandDes
 }
 
 describe('buildCatalogDesignGalleryRows', () => {
+  it('prefers non-special-day shell when catalog key has holiday clones', () => {
+    const slots = [
+      mockSlot({
+        slot_key: 'beach_club_live_music_event_post',
+        label_tr: 'Canlı müzik etkinlik',
+        design_template_type: 'event_special',
+      }),
+    ];
+    const templates = [
+      mockTemplate({
+        id: 't-bayram',
+        catalog_slot_key: 'beach_club_live_music_event_post',
+        template_name: '29 Ekim Cumhuriyet Bayramı',
+        template_type: 'event_special',
+        thumbnail_url: 'https://cdn.example/bayram.png',
+        created_at: '2026-07-28T10:00:00Z',
+        updated_at: '2026-07-28T10:00:00Z',
+        design_spec: {
+          specialDay: { name: '29 Ekim Cumhuriyet Bayramı', mmdd: '10-29', category: 'national' },
+          sampleHeadline: '29 Ekim Cumhuriyet Bayramı',
+        },
+      }),
+      mockTemplate({
+        id: 't-live',
+        catalog_slot_key: 'beach_club_live_music_event_post',
+        template_name: 'Canlı müzik etkinlik',
+        template_type: 'event_special',
+        thumbnail_url: 'https://cdn.example/live.png',
+        created_at: '2026-08-01T10:00:00Z',
+        updated_at: '2026-08-01T10:00:00Z',
+        design_spec: { sampleHeadline: 'Canlı Müzik' },
+      }),
+    ];
+
+    const rows = buildCatalogDesignGalleryRows({ slots, templates });
+    expect(rows[0]?.template?.id).toBe('t-live');
+    expect(galleryRowTitle(rows[0]!)).toBe('Canlı müzik etkinlik');
+  });
+
   it('matches template by catalog_slot_key first', () => {
     const slots = [
       mockSlot({ slot_key: 'beach_club_dj_post', label_tr: 'DJ Gecesi', design_template_type: 'campaign_announcement' }),

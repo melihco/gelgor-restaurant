@@ -37,6 +37,34 @@ function catalogKeyOf(template: BrandDesignTemplateRow): string | null {
   return template.catalog_slot_key ?? specKey ?? null;
 }
 
+/** True when design_spec was generated for a national/seasonal holiday clone. */
+export function isSpecialDayDesignTemplate(template: BrandDesignTemplateRow): boolean {
+  const spec = (template.design_spec && typeof template.design_spec === 'object'
+    ? template.design_spec
+    : {}) as Record<string, unknown>;
+  const special = spec.specialDay ?? spec.special_day;
+  return Boolean(special && typeof special === 'object');
+}
+
+/**
+ * When several active rows share a catalog_slot_key (legacy special-day fan-out),
+ * prefer a venue slot shell over holiday clones, then the newest update.
+ */
+export function pickBestTemplateForCatalogKey(
+  candidates: BrandDesignTemplateRow[],
+): BrandDesignTemplateRow | null {
+  if (!candidates.length) return null;
+  const score = (t: BrandDesignTemplateRow): number => {
+    let s = 0;
+    if (!isSpecialDayDesignTemplate(t)) s += 1_000;
+    if (t.thumbnail_url) s += 100;
+    const updated = Date.parse(String(t.updated_at ?? t.created_at ?? '')) || 0;
+    s += Math.min(updated / 1e12, 99);
+    return s;
+  };
+  return [...candidates].sort((a, b) => score(b) - score(a))[0] ?? null;
+}
+
 export function catalogGalleryFormatMatches(
   row: CatalogDesignGalleryRow,
   filter: CatalogGalleryFormatFilter,
@@ -105,14 +133,16 @@ export function buildCatalogDesignGalleryRows(input: {
   slotEnabledByKey?: Map<string, boolean>;
 }): CatalogDesignGalleryRow[] {
   const activeTemplates = input.templates.filter((t) => t.status !== 'archived');
-  const byCatalogKey = new Map<string, BrandDesignTemplateRow>();
+  const byCatalogKey = new Map<string, BrandDesignTemplateRow[]>();
   const byType = new Map<string, BrandDesignTemplateRow[]>();
   const claimedIds = new Set<string>();
 
   for (const template of activeTemplates) {
     const key = catalogKeyOf(template);
-    if (key && !byCatalogKey.has(key)) {
-      byCatalogKey.set(key, template);
+    if (key) {
+      const list = byCatalogKey.get(key) ?? [];
+      list.push(template);
+      byCatalogKey.set(key, list);
     }
     const typeList = byType.get(template.template_type) ?? [];
     typeList.push(template);
@@ -127,8 +157,9 @@ export function buildCatalogDesignGalleryRows(input: {
   // Pass 1 — catalog_slot_key wins over slot iteration order. Without this,
   // a post slot with the same design_template_type can steal a template that
   // was generated for a later story slot (e.g. beach_club_dj_event_story).
+  // Prefer non-holiday shells when legacy special-day fan-out left duplicates.
   for (const slot of input.slots) {
-    const catalogMatch = byCatalogKey.get(slot.slot_key);
+    const catalogMatch = pickBestTemplateForCatalogKey(byCatalogKey.get(slot.slot_key) ?? []);
     if (!catalogMatch || claimedIds.has(catalogMatch.id)) continue;
     matches.set(slot.slot_key, { template: catalogMatch, matchSource: 'catalog_key' });
     claimedIds.add(catalogMatch.id);

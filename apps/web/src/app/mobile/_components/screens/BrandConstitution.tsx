@@ -1121,12 +1121,14 @@ function TypographyDesignPanel({
   onSave: (next: BrandDesignTypographyConfig) => void;
 }) {
   const raw = (theme.typography_design ?? theme.typographyDesign ?? {}) as Partial<BrandDesignTypographyConfig>;
+  const postDefaults = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults>;
   const suggestedVibe = defaultTypographyVibeForSector(sector);
   const active: BrandDesignTypographyConfig = {
     vibe: raw.vibe ?? suggestedVibe,
-    text_effect: raw.text_effect ?? 'gradient_stack',
-    accent_color: raw.accent_color,
-    background_style: raw.background_style ?? 'gradient_mesh',
+    // Prefer Hub "3D/efekt" panel when Tipografi has no explicit effect yet
+    text_effect: raw.text_effect ?? postDefaults.text_effect ?? 'soft_shadow',
+    accent_color: raw.accent_color ?? postDefaults.accent_color,
+    background_style: raw.background_style ?? 'photo_overlay',
     logo_treatment: raw.logo_treatment ?? 'watermark',
   };
   const savePatch = (patch: Partial<BrandDesignTypographyConfig>) => onSave({ ...active, ...patch });
@@ -4443,6 +4445,13 @@ export function BrandConstitution() {
                 theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
                 onSave={async (next) => {
                   const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
+                  // Keep AI Tipografi text_effect in sync so fal production sees the same Hub choice.
+                  const prevTypo = (currentTheme.typography_design ?? currentTheme.typographyDesign ?? {}) as Record<string, unknown>;
+                  const syncedTypo = {
+                    ...prevTypo,
+                    text_effect: next.text_effect,
+                    accent_color: next.accent_color ?? prevTypo.accent_color,
+                  };
                   await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
@@ -4451,6 +4460,8 @@ export function BrandConstitution() {
                         ...currentTheme,
                         post_design_defaults: next,
                         postDesignDefaults: next,
+                        typography_design: syncedTypo,
+                        typographyDesign: syncedTypo,
                       },
                     }),
                   }).catch(() => {/* non-fatal */});
@@ -4468,6 +4479,8 @@ export function BrandConstitution() {
                 onSave={async (next) => {
                   const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
                   const confirmed = buildUserConfirmedTypographyPatch(next);
+                  // Preserve post_design_defaults on Tipografi-only saves (partial PUT safety).
+                  const postDefaults = currentTheme.post_design_defaults ?? currentTheme.postDesignDefaults;
                   await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
@@ -4476,6 +4489,9 @@ export function BrandConstitution() {
                         ...currentTheme,
                         typography_design: confirmed,
                         typographyDesign: confirmed,
+                        ...(postDefaults
+                          ? { post_design_defaults: postDefaults, postDesignDefaults: postDefaults }
+                          : {}),
                       },
                     }),
                   }).catch(() => {/* non-fatal */});
