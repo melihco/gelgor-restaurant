@@ -58,7 +58,7 @@ export function pickBestTemplateForCatalogKey(
     let s = 0;
     if (!isSpecialDayDesignTemplate(t)) s += 1_000;
     if (t.thumbnail_url) s += 100;
-    const updated = Date.parse(String(t.updated_at ?? t.created_at ?? '')) || 0;
+    const updated = Date.parse(String(t.updated_at ?? '')) || 0;
     s += Math.min(updated / 1e12, 99);
     return s;
   };
