@@ -1159,11 +1159,15 @@ function SignupStep({
 
     if (data.brandAnalysis) {
       setStatus('Firma profili kaydediliyor — markanı bir sonraki adımda doğrulayacaksın…');
-      await persistPythonAnalysisToProfile(data.brandAnalysis, data.authoritativeSector);
-      await fetch(`/api/brand-context/${tenantId}/hydrate-company-profile`, {
-        method: 'POST',
-        headers: getRequestContextHeaders(),
-      }).catch(() => null);
+      try {
+        await persistPythonAnalysisToProfile(data.brandAnalysis, data.authoritativeSector);
+        await fetch(`/api/brand-context/${tenantId}/hydrate-company-profile`, {
+          method: 'POST',
+          headers: getRequestContextHeaders(),
+        }).catch(() => null);
+      } catch (persistErr) {
+        console.warn('[onboarding] enriched profile persist failed', persistErr);
+      }
     }
 
     if (!res.ok || !data.ok) {
@@ -1191,10 +1195,37 @@ function SignupStep({
     );
   }
 
+  function signupFailureMessage(e: unknown): string {
+    const err = e as { status?: number; responseBody?: string; message?: string };
+    const status = typeof err?.status === 'number' ? err.status : undefined;
+    const body = String(err?.responseBody ?? err?.message ?? '');
+    let apiError = '';
+    try {
+      const parsed = JSON.parse(body) as { error?: string; message?: string; title?: string };
+      apiError = String(parsed.error || parsed.message || parsed.title || '').trim();
+    } catch {
+      apiError = '';
+    }
+    const msg = humanizeMobileServiceError(apiError || body, status);
+    if (status === 409 || /already exists/i.test(body) || /already exists/i.test(apiError)) {
+      return 'Bu e-posta zaten kayıtlı. Giriş yapmayı deneyin.';
+    }
+    if (status === 400) return apiError || 'Bilgiler geçersiz, tekrar kontrol edin.';
+    if (status === 503 || /unreachable|not_configured|backend/i.test(body)) {
+      return msg || 'Kayıt servisi şu an ulaşılamıyor. Birkaç saniye sonra tekrar deneyin.';
+    }
+    if (status === 0 || /timeout|timed out|failed to fetch|network/i.test(body)) {
+      return 'Bağlantı zaman aşımına uğradı. Tekrar deneyin — hesap oluşmuş olabilir, o zaman giriş yapın.';
+    }
+    if (msg && msg !== body && !msg.startsWith('{')) return msg;
+    return 'Kayıt başarısız. Lütfen tekrar deneyin.';
+  }
+
   async function handleSignup() {
     if (!email || !password || !company) { setError('Tüm alanlar zorunludur'); return; }
     if (password.length < 8) { setError('Şifre en az 8 karakter olmalı'); return; }
     setLoading(true); setError('');
+    let registeredTenantId: string | undefined;
     try {
       setStatus('Hesap oluşturuluyor...');
       const session = await apiClient.register({
@@ -1203,6 +1234,7 @@ function SignupStep({
         tenantName: company.trim(),
         displayName: name.trim() || company.trim(),
       });
+      registeredTenantId = session.tenantId;
 
       // Save token + workspace — but do NOT call setUser() yet.
       // If setUser() is called here, isAuthenticated becomes true and AppShell
@@ -1211,13 +1243,22 @@ function SignupStep({
       if (session.token) setSessionToken(session.token);
       if (session.tenantId && session.officeId) setWorkspace(session.tenantId, session.officeId);
 
-      // Always persist the minimum profile first. If later AI enrichment fails,
-      // Brand details must still show the signed-up company instead of blanks.
-      setStatus('Firma profili kaydediliyor...');
-      await apiClient.saveCompanyProfile(baselineProfile() as any);
+      // Post-register work must not surface as "kayıt başarısız" — account already exists.
+      try {
+        setStatus('Firma profili kaydediliyor...');
+        await apiClient.saveCompanyProfile(baselineProfile() as any);
+      } catch (profileErr) {
+        console.warn('[onboarding] baseline profile save failed after register', profileErr);
+        setStatus('Hesap hazır · Profil bir sonraki adımda tamamlanacak…');
+      }
 
       if (session.tenantId && (websiteUrl || igHandle || menuUrl || googleBusinessUrl)) {
-        await runDiscoveryBrandOnboarding(session.tenantId);
+        try {
+          await runDiscoveryBrandOnboarding(session.tenantId);
+        } catch (discoverErr) {
+          console.warn('[onboarding] discovery after signup failed', discoverErr);
+          setStatus('Hesap hazır · Marka doğrulamasında devam edin.');
+        }
       }
 
       // Auto-propose first welcome mission in the background. Strategist proposal
@@ -1240,19 +1281,10 @@ function SignupStep({
         // Non-blocking: Mission Hub can still trigger a weekly plan later.
       }
       onDone(company.trim(), session.tenantId);
-    } catch (e: any) {
-      const status = typeof e?.status === 'number' ? e.status : undefined;
-      const body = String(e?.responseBody ?? e?.message ?? '');
-      const msg = humanizeMobileServiceError(body, status);
-      setError(
-        status === 409 || msg.includes('409') || body.includes('already exists') ? 'Bu e-posta zaten kayıtlı.' :
-        status === 400 || msg.includes('400') ? 'Bilgiler geçersiz, tekrar kontrol edin.' :
-        msg.includes('Marka') || msg.includes('analiz') || msg.includes('kaynak') || msg.includes('anayasa')
-          ? msg
-          : msg && msg !== body
-            ? msg
-            : 'Kayıt başarısız. Lütfen tekrar deneyin.'
-      );
+    } catch (e: unknown) {
+      // Only register() failures land here now.
+      console.warn('[onboarding] register failed', e, { registeredTenantId });
+      setError(signupFailureMessage(e));
     } finally {
       setLoading(false);
       setStatus('');

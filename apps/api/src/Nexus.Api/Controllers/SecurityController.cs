@@ -95,8 +95,25 @@ public class SecurityController : ControllerBase
             _db.Users.Add(user);
         }
 
-        await ProvisionDefaultTrialSubscriptionIfMissingAsync(user.TenantId, cancellationToken);
-        await ProvisionDefaultBriefAndTaskAsync(user.TenantId, user.Id, cancellationToken);
+        try
+        {
+            await ProvisionDefaultTrialSubscriptionIfMissingAsync(user.TenantId, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Trial seed must never block signup — billing can attach later.
+            Console.Error.WriteLine($"[register] trial provision failed for {user.TenantId}: {ex.Message}");
+        }
+
+        try
+        {
+            await ProvisionDefaultBriefAndTaskAsync(user.TenantId, user.Id, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            // Default brief/task is convenience only; account creation must succeed.
+            Console.Error.WriteLine($"[register] default brief provision failed for {user.TenantId}: {ex.Message}");
+        }
 
         user.LastLoginAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(cancellationToken);

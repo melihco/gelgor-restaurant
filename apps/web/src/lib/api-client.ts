@@ -1415,7 +1415,8 @@ class ApiClient {
     return this.request('/api/security/register', {
       method: 'POST',
       body: JSON.stringify(data),
-      timeoutMs: 20_000,
+      // Live cold-start + tenant provision can exceed 20s; keep aligned with login.
+      timeoutMs: 60_000,
     });
   }
 
