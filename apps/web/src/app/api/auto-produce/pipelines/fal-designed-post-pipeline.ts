@@ -47,6 +47,9 @@ import {
   fitMissionOverlayToTemplateBudget,
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
+import { canShipCaptionDesignPost } from '@/lib/caption-design-post-coherence';
+import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
+import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { generateDesignedPostImage } from '../handlers/image-generators';
@@ -113,6 +116,8 @@ export interface FalDesignedPostInput {
   logoPlacement?: import('@/lib/fal-logo-placement').ResolvedFalLogoPlacement | null;
   /** Brand Hub theme — drives visual_source_mode (gallery_only / enhanced / ai). */
   brandTheme?: Record<string, unknown> | null;
+  /** Locked gallery photo meta — caption↔photo coherence before paint. */
+  galleryPhotoMeta?: GalleryPhotoMeta | null;
 }
 
 export interface FalDesignedPostResult {
@@ -239,10 +244,42 @@ export async function produceFalDesignedPost(
           + `"${overlayCopy.headline.slice(0, 36)}" → "${fitted.headline.slice(0, 36)}"`,
         );
       }
-      const canvasHeadline = fitted.headline;
+      let canvasHeadline = fitted.headline;
       const dedupedSubtitle = resolveSlotSublineForRender(fitted.subtitle, {
         matchedShowSubline: binding?.matched?.showSubline,
       });
+      // Caption → design → photo → overlay must all agree before GPT paints.
+      const coherence = canShipCaptionDesignPost({
+        caption: input.caption,
+        overlayHeadline: canvasHeadline,
+        brandName: input.brandName,
+        businessType: input.sector,
+        photoUrl: referenceUrl,
+        galleryMeta: input.galleryPhotoMeta,
+        designSampleHeadline: binding?.matched?.sampleHeadline,
+        designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
+      });
+      if (coherence.repaired && coherence.overlayHeadline) {
+        console.warn(
+          `[auto-produce] [fal-design] coherence repair: `
+          + `"${canvasHeadline.slice(0, 36)}" → "${coherence.overlayHeadline.slice(0, 36)}"`,
+        );
+        canvasHeadline = coherence.overlayHeadline;
+      }
+      if (!coherence.ok) {
+        console.warn(
+          `[auto-produce] [fal-design] coherence fail-closed (${coherence.breaks.join(',')}) `
+          + `— skip GPT designed post for "${input.caption.slice(0, 40)}"`,
+        );
+        return {
+          imageUrl: null,
+          falGrafikerScore: null,
+          falGrafikerPass: false,
+          falDesignEngine: null,
+          costDelta: 0,
+          failureReason: `caption_design_incoherent:${coherence.breaks.join('+')}`,
+        };
+      }
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
@@ -635,11 +672,24 @@ export const falDesignHandler: ProductionPipelineHandler = {
       );
     }
 
+    // Mission gallery is SSOT for coherence — same rule as produceFalDesignedPost.
+    const refForMeta =
+      inputs.referenceUrl && isUsableGalleryPhotoUrl(inputs.referenceUrl)
+        ? inputs.referenceUrl
+        : (templateBinding.referencePhotoUrl ?? inputs.referenceUrl);
+    const galleryAnalysis = (inputs.galleryAnalysis ?? {}) as Record<string, GalleryPhotoMeta>;
+    const galleryPhotoMeta = refForMeta
+      ? (galleryAnalysis[normalizeGalleryUrl(refForMeta)]
+        ?? Object.entries(galleryAnalysis).find(
+          ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(refForMeta),
+        )?.[1]
+        ?? null)
+      : null;
     const designed = await produceFalDesignedPost({
       isFalDesignPost: inputs.isFalDesignPost,
       existingImageUrl: state.imageUrl,
       workspaceId: inputs.workspaceId,
-      referenceUrl: templateBinding.referencePhotoUrl ?? inputs.referenceUrl,
+      referenceUrl: refForMeta,
       brandReferenceImageUrls: inputs.brandReferenceImageUrls,
       headline: inputs.headline,
       caption: inputs.caption,
@@ -678,6 +728,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       headingFont: inputs.falHeadingFont,
       bodyFont: inputs.falBodyFont,
       logoPlacement: inputs.falLogoPlacement,
+      galleryPhotoMeta,
     });
     if (designed) {
       if (designed.imageUrl != null) state.imageUrl = designed.imageUrl;

@@ -29,6 +29,11 @@ import {
   filterGalleryAnalysisKeys,
   parseBrandReferenceUrls,
 } from '@/lib/gallery-upload';
+import {
+  buildCatalogAwareGalleryMatchFields,
+  filterGalleryUrlsByPreferredAssetTypes,
+  isStrongIdeationCaption,
+} from '@/lib/catalog-slot-gallery';
 
 export interface ParsedIdea {
   headline?: string;
@@ -175,6 +180,10 @@ export function captionHasExplicitBeautyService(caption: string, headline: strin
 export type GalleryPickMatchExtras = {
   visualDirection?: string;
   strategicPurpose?: string;
+  /** Catalog slot key — library-parity preferredAssetTypes + keywords. */
+  catalogSlotKey?: string;
+  /** Sector for catalog slot resolution (defaults to businessType). */
+  sectorId?: string;
 };
 
 export function pickGalleryPhotoForIdea(
@@ -196,9 +205,19 @@ export function pickGalleryPhotoForIdea(
 ): string | null {
   if (!candidateUrls.length) return null;
 
-  const alignedSubjectKey = resolveGalleryMatchSubjectKey({
+  const catalogFields = buildCatalogAwareGalleryMatchFields({
     caption,
     headline,
+    catalogSlotKey: matchExtras?.catalogSlotKey,
+    sectorId: matchExtras?.sectorId ?? businessType,
+    seedHeadlineFromCatalog: true,
+  });
+  const matchCaption = catalogFields.caption || caption;
+  const matchHeadline = catalogFields.headline || headline;
+
+  const alignedSubjectKey = resolveGalleryMatchSubjectKey({
+    caption: matchCaption,
+    headline: matchHeadline,
     subjectKey,
   });
 
@@ -213,30 +232,55 @@ export function pickGalleryPhotoForIdea(
   const strategicPurpose = String(matchExtras?.strategicPurpose ?? '').trim() || undefined;
 
   const input = {
-    caption,
-    headline,
+    caption: matchCaption,
+    headline: matchHeadline,
     mood,
     contentType,
     businessType,
     ...(visualDirection ? { visualDirection } : {}),
     ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
+    ...(catalogFields.templateUseCase
+      ? { templateUseCase: catalogFields.templateUseCase }
+      : {}),
+    ...(catalogFields.preferredAssetTypes?.length
+      ? { preferredAssetTypes: catalogFields.preferredAssetTypes }
+      : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
-  const displayUrls = scopedCandidates;
+
+  // Thin captions: hard-prefer catalog asset types (same as pickGalleryPhotoForSlot / library).
+  const captionIsStrong = isStrongIdeationCaption(caption);
+  const preferredPool = !captionIsStrong && catalogFields.preferredAssetTypes?.length
+    ? filterGalleryUrlsByPreferredAssetTypes(
+      scopedCandidates,
+      galleryAnalysis,
+      catalogFields.preferredAssetTypes,
+    )
+    : [];
+  const candidatePools = preferredPool.length > 0
+    ? [preferredPool, scopedCandidates]
+    : [scopedCandidates];
+
   const pickOpts = tieBreakSeed != null ? { tieBreakSeed } : {};
 
-  const tryPick = (excludeUrls: string[], bestEffort = false): string | null => {
+  const tryPick = (
+    pool: string[],
+    excludeUrls: string[],
+    bestEffort = false,
+  ): string | null => {
+    if (!pool.length) return null;
+    const displayUrls = pool;
     const resolved = resolveBestGalleryUrl(
       input,
-      scopedCandidates,
+      pool,
       galleryAnalysis,
       agentUrl,
       { excludeUrls, displayUrls, ...pickOpts },
     );
     if (resolved) return resolved.url;
 
-    const match = matchPhotoToContent(input, scopedCandidates, galleryAnalysis, {
+    const match = matchPhotoToContent(input, pool, galleryAnalysis, {
       excludeUrls,
       displayUrls,
       bestEffort,
@@ -245,14 +289,22 @@ export function pickGalleryPhotoForIdea(
     return match?.url ?? null;
   };
 
+  const tryPools = (excludeUrls: string[], bestEffort = false): string | null => {
+    for (const pool of candidatePools) {
+      const hit = tryPick(pool, excludeUrls, bestEffort);
+      if (hit) return hit;
+    }
+    return null;
+  };
+
   if (productionStrict) {
-    return tryPick(typeExcludeUrls, false) ?? tryPick(batchExcludeUrls, false);
+    return tryPools(typeExcludeUrls, false) ?? tryPools(batchExcludeUrls, false);
   }
 
   return (
-    tryPick(typeExcludeUrls, false)
-    ?? tryPick(typeExcludeUrls, true)
-    ?? tryPick(batchExcludeUrls, true)
+    tryPools(typeExcludeUrls, false)
+    ?? tryPools(typeExcludeUrls, true)
+    ?? tryPools(batchExcludeUrls, true)
   );
 }
 
@@ -299,18 +351,37 @@ export async function pickGalleryPhotoForIdeaAsync(
     subjectKey,
     matchExtras,
   );
-  const alignedSubjectKey = resolveGalleryMatchSubjectKey({ caption, headline, subjectKey });
+  const catalogFields = buildCatalogAwareGalleryMatchFields({
+    caption,
+    headline,
+    catalogSlotKey: matchExtras?.catalogSlotKey,
+    sectorId: matchExtras?.sectorId ?? businessType,
+    seedHeadlineFromCatalog: true,
+  });
+  const matchCaption = catalogFields.caption || caption;
+  const matchHeadline = catalogFields.headline || headline;
+  const alignedSubjectKey = resolveGalleryMatchSubjectKey({
+    caption: matchCaption,
+    headline: matchHeadline,
+    subjectKey,
+  });
   const visualDirection = String(matchExtras?.visualDirection ?? '').trim() || undefined;
   const strategicPurpose = String(matchExtras?.strategicPurpose ?? '').trim() || undefined;
   const input = {
-    caption,
-    headline,
+    caption: matchCaption,
+    headline: matchHeadline,
     mood,
     contentType,
     businessType,
     ...(visualDirection ? { visualDirection } : {}),
     ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(alignedSubjectKey ? { subjectKey: alignedSubjectKey } : {}),
+    ...(catalogFields.templateUseCase
+      ? { templateUseCase: catalogFields.templateUseCase }
+      : {}),
+    ...(catalogFields.preferredAssetTypes?.length
+      ? { preferredAssetTypes: catalogFields.preferredAssetTypes }
+      : {}),
     ...(globalUsageCounts ? { globalUsageCounts } : {}),
   };
 
@@ -461,16 +532,31 @@ export function rematchGalleryAfterHardThemeConflict(input: {
   maxAttempts?: number;
   globalUsageCounts?: ReadonlyMap<string, number>;
   tieBreakSeed?: number;
+  /** Catalog-aware rematch (library parity). */
+  matchExtras?: GalleryPickMatchExtras;
 }): string | null {
   const rejected = new Set([normalizeGalleryUrl(input.rejectedUrl)]);
   const maxAttempts = Math.max(1, input.maxAttempts ?? 5);
-  const matchInput = {
+  const catalogFields = buildCatalogAwareGalleryMatchFields({
     caption: input.caption,
     headline: input.headline,
+    catalogSlotKey: input.matchExtras?.catalogSlotKey,
+    sectorId: input.matchExtras?.sectorId ?? input.businessType,
+    seedHeadlineFromCatalog: true,
+  });
+  const matchInput = {
+    caption: catalogFields.caption || input.caption,
+    headline: catalogFields.headline || input.headline,
     mood: input.mood,
     contentType: input.contentType,
     businessType: input.businessType,
     ...(input.subjectKey ? { subjectKey: input.subjectKey } : {}),
+    ...(catalogFields.templateUseCase
+      ? { templateUseCase: catalogFields.templateUseCase }
+      : {}),
+    ...(catalogFields.preferredAssetTypes?.length
+      ? { preferredAssetTypes: catalogFields.preferredAssetTypes }
+      : {}),
     ...(input.globalUsageCounts ? { globalUsageCounts: input.globalUsageCounts } : {}),
   };
 
@@ -494,6 +580,7 @@ export function rematchGalleryAfterHardThemeConflict(input: {
       input.tieBreakSeed != null ? input.tieBreakSeed + attempt + 1 : undefined,
       input.globalUsageCounts,
       input.subjectKey,
+      input.matchExtras,
     );
     if (!url) return null;
     const base = normalizeGalleryUrl(url);

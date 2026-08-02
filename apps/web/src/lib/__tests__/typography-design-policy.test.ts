@@ -44,6 +44,17 @@ describe('typography-design-policy', () => {
     expect(cfg.vibe).toBe('warm_coastal');
   });
 
+  it('prefers DNA vibe over sector-only defaults (no gradient_mesh invent)', () => {
+    const cfg = resolveSuggestedTypographyConfig(
+      {},
+      'restaurant_cafe',
+      'handwritten chalk, warm artisan organic garden',
+    );
+    expect(cfg.vibe).toBe('handwritten');
+    expect(cfg.background_style).toBe('photo_overlay');
+    expect(cfg.text_effect).not.toBe('gradient_stack');
+  });
+
   it('buildUserConfirmedTypographyPatch stamps source and timestamp', () => {
     const patch = buildUserConfirmedTypographyPatch({
       vibe: 'editorial_serif',

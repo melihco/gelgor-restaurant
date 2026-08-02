@@ -222,6 +222,51 @@ describe('production pickGalleryPhotoForSlot — caption SSOT + catalog', () => 
     expect(match.templateUseCase).toBeTruthy();
     expect(match.caption).toBe('Gün batımında terasta altın saat — deniz manzarası eşliğinde.');
   });
+
+  it('weak briefing headline seeds catalog sample for match input', () => {
+    const match = buildSlotGalleryMatchInput({
+      assignment: assignment('beach_club_dj_night_teaser_post'),
+      brandName: 'Aqua Club',
+      businessType: 'beach_club',
+      sectorId: 'beach_club',
+      catalogSlotKey: 'beach_club_dj_night_teaser_post',
+      ideationCaption: 'Bu gece',
+      ideationHeadline: 'Highlight the exclusivity and energy of the night',
+    });
+    expect(match.headline.toLowerCase()).not.toContain('highlight the');
+    expect(match.preferredAssetTypes?.length).toBeGreaterThan(0);
+  });
+});
+
+describe('pickGalleryPhotoForIdea — catalog extras (library parity)', () => {
+  it('thin caption + catalogSlotKey prefers event_photo like pickGalleryPhotoForSlot', async () => {
+    const { pickGalleryPhotoForIdea } = await import(
+      '@/app/api/auto-produce/caption-publish-resolver'
+    );
+    const meta = beachGallery();
+    const photos = [FOOD, DJ, VENUE];
+    const url = pickGalleryPhotoForIdea(
+      'Bu gece',
+      'DJ',
+      'energetic',
+      meta,
+      photos,
+      [],
+      [],
+      'instagram_post',
+      null,
+      'beach_club',
+      true,
+      1,
+      undefined,
+      undefined,
+      {
+        catalogSlotKey: 'beach_club_dj_night_teaser_post',
+        sectorId: 'beach_club',
+      },
+    );
+    expect(url).toBe(DJ);
+  });
 });
 
 describe('filterGalleryUrlsByPreferredAssetTypes', () => {

@@ -17,7 +17,7 @@ import {
   type PhotoMatchResult,
 } from '@/lib/gallery-photo-matcher';
 import {
-  blendCatalogMatchKeywords,
+  buildCatalogAwareGalleryMatchFields,
   filterGalleryUrlsByPreferredAssetTypes,
   isStrongIdeationCaption,
   resolveCatalogSlotGalleryHints,
@@ -34,6 +34,11 @@ import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestra
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from '@/lib/vision-text-guard';
 import { sanitizeProductionHeadline } from '@/lib/production-headline-quality';
+import {
+  isInternalStrategyBriefing,
+  isMeaningfulFalOverlayText,
+} from '@/lib/fal-caption-headline';
+import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 
 export type GalleryFirstCaptionSource = 'ideation_aligned' | 'gallery_meta' | 'gallery_gpt';
 
@@ -174,11 +179,38 @@ export function buildSlotGalleryMatchInput(input: {
     || [hint, brief, brandLine].filter(Boolean).join(' — ')
     || '';
   const captionIsStrong = isStrongIdeationCaption(caption);
+
+  // When ideation headline is briefing/meaningless, seed from catalog sample
+  // punchline (same short phrases the template library uses).
+  const headlineWeak = !headline
+    || !isMeaningfulFalOverlayText(headline)
+    || isInternalStrategyBriefing(headline);
+  const slotSample = headlineWeak && catalogSlotKey
+    ? resolveSlotSampleCopy({
+      catalogSlotKey,
+      templateType: catalogHints?.templateType,
+      sector: sectorId,
+      showSubline: false,
+    }).headline
+    : '';
+
   // Strong publish caption → ideation headline wins (hint must not override).
-  // Thin caption → visual_subject_hint / catalog sample may fill the gap.
+  // Thin caption / weak headline → catalog sample may fill the gap (library parity).
+  const seededHeadline = headlineWeak
+    ? (slotSample || catalogHints?.sampleHeadline || headline)
+    : headline;
   const syntheticHeadline = captionIsStrong
-    ? (headline || hint || catalogHints?.sampleHeadline || brief || input.brandName)
-    : (hint || headline || catalogHints?.sampleHeadline || brief || input.brandName);
+    ? (seededHeadline || hint || catalogHints?.sampleHeadline || brief || input.brandName)
+    : (hint || seededHeadline || catalogHints?.sampleHeadline || brief || input.brandName);
+
+  const catalogAware = buildCatalogAwareGalleryMatchFields({
+    caption: baseCaption,
+    headline: syntheticHeadline,
+    catalogSlotKey,
+    sectorId,
+    seedHeadlineFromCatalog: headlineWeak,
+  });
+
   // Resolve subject from ideation/brief only — catalog tokens like "teaser"
   // must not poison subject_key (e.g. teaser → tea).
   const subjectKey = resolveGalleryMatchSubjectKey({
@@ -186,15 +218,10 @@ export function buildSlotGalleryMatchInput(input: {
     headline: syntheticHeadline,
     subjectKey: String(input.subjectKey ?? '').trim() || undefined,
   });
-  const syntheticCaption = blendCatalogMatchKeywords({
-    caption: baseCaption,
-    matchKeywords: catalogHints?.matchKeywords,
-    sampleHeadline: catalogHints?.sampleHeadline,
-  }) || input.brandName;
 
   return {
-    caption: syntheticCaption,
-    headline: syntheticHeadline,
+    caption: catalogAware.caption || baseCaption || input.brandName,
+    headline: catalogAware.headline || syntheticHeadline,
     mood,
     contentType: formatToContentType(format),
     businessType: input.businessType,
@@ -204,11 +231,11 @@ export function buildSlotGalleryMatchInput(input: {
     ...(visualDirection ? { visualDirection } : {}),
     ...(strategicPurpose ? { strategicPurpose } : {}),
     ...(subjectKey ? { subjectKey } : {}),
-    ...(catalogHints?.templateType
-      ? { templateUseCase: catalogHints.templateType }
+    ...(catalogAware.templateUseCase
+      ? { templateUseCase: catalogAware.templateUseCase }
       : {}),
-    ...(catalogHints?.preferredAssetTypes?.length
-      ? { preferredAssetTypes: catalogHints.preferredAssetTypes }
+    ...(catalogAware.preferredAssetTypes?.length
+      ? { preferredAssetTypes: catalogAware.preferredAssetTypes }
       : {}),
   };
 }

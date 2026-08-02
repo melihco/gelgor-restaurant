@@ -36,7 +36,13 @@ _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}\b")
 
 
 def _brand_palette_hexes_from_ctx(ctx: Any) -> list[str]:
-    """Collect authoritative brand hex codes from kit + theme (F2.2)."""
+    """
+    Collect authoritative brand hex codes for production DNA.
+
+    Priority (high → low): vibe_profile.palette → brand_theme.palette →
+    brand_primary/accent columns. Stale column pastels must not override a
+    confirmed vibe/theme corporate palette.
+    """
     seen: set[str] = set()
     out: list[str] = []
 
@@ -50,47 +56,85 @@ def _brand_palette_hexes_from_ctx(ctx: Any) -> list[str]:
         seen.add(key)
         out.append(key)
 
-    for field in ("brand_primary_color", "brand_accent_color"):
-        _add(getattr(ctx, field, None))
+    vibe = getattr(ctx, "brand_vibe_profile", None)
+    if isinstance(vibe, dict):
+        vibe_palette = vibe.get("palette")
+        if isinstance(vibe_palette, dict):
+            for key in ("primary", "accent", "secondary"):
+                _add(vibe_palette.get(key))
 
     theme = getattr(ctx, "brand_theme", None)
     if isinstance(theme, dict):
         palette = theme.get("palette")
         if isinstance(palette, dict):
-            for key in ("primary", "accent", "secondary", "neutral", "shadow"):
+            for key in ("primary", "accent", "secondary"):
                 _add(palette.get(key))
+
+    for field in ("brand_primary_color", "brand_accent_color"):
+        _add(getattr(ctx, field, None))
 
     return out[:6]
 
 
 def ensure_visual_dna_palette_hex(visual_dna: str, hexes: list[str]) -> str:
     """
-    Inject brand kit hex codes into production visual_dna when missing (F2.2).
+    Inject / reconcile brand kit hex codes into production visual_dna (F2.2).
 
-    Prevents Fal color drift when Palette words are prose-only.
+    Prevents Fal color drift when Palette words are prose-only or still carry
+    stale pastel anchors that disagree with the authoritative kit.
     """
     dna = str(visual_dna or "").strip()
     if not hexes:
         return dna
 
-    if dna and any(h.lower() in dna.lower() for h in hexes):
+    auth = [h.upper() for h in hexes if _HEX_COLOR_RE.fullmatch(str(h).strip())]
+    if not auth:
         return dna
 
-    hex_line = " · ".join(hexes)
+    dna_hexes = {m.group(0).upper() for m in _HEX_COLOR_RE.finditer(dna)}
+    auth_set = set(auth)
+    # Authoritative hexes already present and no conflicting extras → keep.
+    if auth_set.issubset(dna_hexes) and not (dna_hexes - auth_set):
+        return dna
+    if auth_set.issubset(dna_hexes) and len(dna_hexes - auth_set) <= 2:
+        # Allow a couple of secondary hexes in prose; don't rewrite.
+        return dna
+
+    hex_line = " · ".join(auth)
+    brand_anchor = f"brand anchors {hex_line}"
+
     if not dna:
-        return f"Palette words: brand hex {hex_line}"
+        return f"Palette words: {brand_anchor}"
 
     lines = dna.split("\n")
     for idx, line in enumerate(lines):
         if line.strip().lower().startswith("palette words:"):
-            lines[idx] = f"{line.rstrip()} · brand hex: {hex_line}"
+            # Drop stale hex tokens, keep non-hex prose, append authoritative anchors.
+            prose = _HEX_COLOR_RE.sub("", line)
+            prose = re.sub(r"\s*[·•|,]+\s*", " · ", prose)
+            prose = re.sub(r"\s{2,}", " ", prose).strip(" ·:")
+            # Normalize leading label
+            if prose.lower().startswith("palette words"):
+                prose_body = prose.split(":", 1)[-1].strip(" ·")
+            else:
+                prose_body = prose
+            # Strip leftover "brand anchors/hex" crumbs
+            prose_body = re.sub(
+                r"(?i)\bbrand\s+(?:anchors?|hex)\b[:\s]*",
+                "",
+                prose_body,
+            ).strip(" ·")
+            if prose_body:
+                lines[idx] = f"Palette words: {prose_body} — {brand_anchor}"
+            else:
+                lines[idx] = f"Palette words: {brand_anchor}"
             return "\n".join(lines)
 
     insert_at = next(
         (i + 1 for i, line in enumerate(lines) if line.strip().lower().startswith("aesthetic:")),
         len(lines),
     )
-    lines.insert(insert_at, f"Palette words: brand hex {hex_line}")
+    lines.insert(insert_at, f"Palette words: {brand_anchor}")
     return "\n".join(lines)
 
 

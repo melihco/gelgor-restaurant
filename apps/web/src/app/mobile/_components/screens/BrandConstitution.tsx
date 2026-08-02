@@ -111,7 +111,14 @@ import {
 import { BrandProductionRepairCard } from '../BrandProductionRepairCard';
 import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
-import { buildUserConfirmedTypographyPatch } from '@/lib/typography-design-policy';
+import {
+  buildUserConfirmedTypographyPatch,
+  readTypographyDesignConfig,
+} from '@/lib/typography-design-policy';
+import {
+  hasSavedPostDesignDefaults,
+  resolvePostDesignDefaultsFromVibe,
+} from '@/lib/post-design-defaults-policy';
 import { BrandHubDashboard, buildBrandHubNavItems, ReadinessRing } from '../BrandHubDashboard';
 import { BrandVisionerGroup, BrandVisionerList, BrandVisionerNavRow } from '../BrandVisionerNavRow';
 import { MobileBrandNavbar } from '../MobileBrandNavbar';
@@ -884,14 +891,22 @@ function PostDesignDefaultsPanel({
   theme: Record<string, unknown>;
   onSave: (next: BrandPostDesignDefaults) => void;
 }) {
+  const saved = hasSavedPostDesignDefaults(theme);
+  const typoCfg = readTypographyDesignConfig(theme);
+  const suggested = resolvePostDesignDefaultsFromVibe(typoCfg?.vibe ?? 'retro_poster', {
+    accentColor: typoCfg?.accent_color,
+  });
   const raw = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults>;
-  const active: BrandPostDesignDefaults = {
-    font_preset: raw.font_preset ?? 'poster_3d',
-    text_effect: raw.text_effect ?? 'extrude_3d',
-    logo_position: raw.logo_position ?? 'top_left',
-    accent_color: raw.accent_color,
-    default_template_id: raw.default_template_id ?? raw.defaultTemplateId,
-  };
+  // Empty Hub must not pretend poster_3d / extrude_3d is selected — show DNA-aware suggestion only.
+  const active: BrandPostDesignDefaults = saved
+    ? {
+        font_preset: (raw.font_preset ?? raw.fontPreset ?? suggested.font_preset) as BrandPostDesignDefaults['font_preset'],
+        text_effect: (raw.text_effect ?? raw.textEffect ?? suggested.text_effect) as BrandPostDesignDefaults['text_effect'],
+        logo_position: (raw.logo_position ?? raw.logoPosition ?? suggested.logo_position) as BrandPostDesignDefaults['logo_position'],
+        accent_color: (raw.accent_color ?? raw.accentColor ?? suggested.accent_color) as string | undefined,
+        default_template_id: raw.default_template_id ?? raw.defaultTemplateId,
+      }
+    : { ...suggested, default_template_id: undefined };
   const savePatch = (patch: Partial<BrandPostDesignDefaults>) => onSave({ ...active, ...patch });
   const { data: postTemplates = [] } = useQuery<BrandPostTemplateSummary[]>({
     queryKey: ['brandPostTemplates', workspaceId],
@@ -961,13 +976,15 @@ function PostDesignDefaultsPanel({
           border: `0.5px solid ${t.accentBorder}`,
         }}>
           <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Aktif Marka Standardı
+            {saved ? 'Aktif Marka Standardı' : 'Önerilen · henüz kaydedilmedi'}
           </div>
           <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, lineHeight: 1.45 }}>
             {selectedFont.label} · {selectedEffect.label} · Logo: {selectedLogo.label}
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
-            Template: {selectedTemplate?.name ?? 'Otomatik'}
+            {saved
+              ? `Template: ${selectedTemplate?.name ?? 'Otomatik'}`
+              : 'Tipografi vibe’ından türetildi. Bir seçeneğe dokununca kaydedilir.'}
           </div>
         </div>
 
@@ -980,15 +997,15 @@ function PostDesignDefaultsPanel({
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           <ParameterOptionCard
             t={t}
-            active={!active.default_template_id}
+            active={saved && !active.default_template_id}
             label="Otomatik"
             desc="İçeriğe göre en uygun tasarım seçilsin"
-            functionText={!active.default_template_id ? 'Mission üretimi mevcut marka font/efekt standardını kullanır, sabit bir template zorlamaz.' : undefined}
+            functionText={saved && !active.default_template_id ? 'Mission üretimi mevcut marka font/efekt standardını kullanır, sabit bir template zorlamaz.' : undefined}
             onClick={() => savePatch({ default_template_id: undefined, defaultTemplateId: undefined })}
           />
           {postTemplates.slice(0, 7).map((tmpl) => {
             const spec = tmpl.layout_spec ?? {};
-            const isActive = active.default_template_id === tmpl.id;
+            const isActive = saved && active.default_template_id === tmpl.id;
             return (
               <ParameterOptionCard
                 key={tmpl.id}
@@ -1027,10 +1044,10 @@ function PostDesignDefaultsPanel({
             <ParameterOptionCard
               key={opt.id}
               t={t}
-              active={active.font_preset === opt.id}
+              active={saved && active.font_preset === opt.id}
               label={opt.label}
-              desc={opt.desc}
-              functionText={active.font_preset === opt.id ? opt.functionText : undefined}
+              desc={saved ? opt.desc : (opt.id === suggested.font_preset ? `${opt.desc} · önerilen` : opt.desc)}
+              functionText={saved && active.font_preset === opt.id ? opt.functionText : undefined}
               onClick={() => savePatch({ font_preset: opt.id })}
             />
           ))}
@@ -1047,10 +1064,10 @@ function PostDesignDefaultsPanel({
             <ParameterOptionCard
               key={opt.id}
               t={t}
-              active={active.text_effect === opt.id}
+              active={saved && active.text_effect === opt.id}
               label={opt.label}
-              desc={opt.desc}
-              functionText={active.text_effect === opt.id ? opt.functionText : undefined}
+              desc={saved ? opt.desc : (opt.id === suggested.text_effect ? `${opt.desc} · önerilen` : opt.desc)}
+              functionText={saved && active.text_effect === opt.id ? opt.functionText : undefined}
               onClick={() => savePatch({ text_effect: opt.id })}
             />
           ))}
@@ -1067,10 +1084,10 @@ function PostDesignDefaultsPanel({
             <ParameterOptionCard
               key={opt.id}
               t={t}
-              active={active.logo_position === opt.id}
+              active={saved && active.logo_position === opt.id}
               label={opt.label}
-              desc={opt.desc}
-              functionText={active.logo_position === opt.id ? opt.functionText : undefined}
+              desc={saved ? opt.desc : (opt.id === suggested.logo_position ? `${opt.desc} · önerilen` : opt.desc)}
+              functionText={saved && active.logo_position === opt.id ? opt.functionText : undefined}
               onClick={() => savePatch({ logo_position: opt.id })}
             />
           ))}

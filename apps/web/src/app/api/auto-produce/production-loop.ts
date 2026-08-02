@@ -12,6 +12,7 @@ import {
   shouldSkipProductionForWeakGallery,
 } from '@/lib/gpt-enhance-policy';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
+import { canShipCaptionDesignPost } from '@/lib/caption-design-post-coherence';
 import { serverConfig } from '@/lib/server-config';
 import { isPlayableVideoUrl } from '@/lib/fal-story-motion';
 import {
@@ -1557,11 +1558,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         (idea.visual_production_spec as { scene_hint?: string } | undefined)?.scene_hint ?? '',
       ).trim()
       || undefined;
+    const slotCatalogKey = String(
+      assignment.catalog_slot_key
+        ?? (ideaRecord.catalog_slot_key as string | undefined)
+        ?? '',
+    ).trim();
     activeGalleryMatchExtras = {
       ...(visualDirectionForMatch ? { visualDirection: visualDirectionForMatch } : {}),
       ...(String(strategicPurpose).trim()
         ? { strategicPurpose: String(strategicPurpose).trim() }
         : {}),
+      ...(slotCatalogKey ? { catalogSlotKey: slotCatalogKey } : {}),
+      sectorId: brandBusinessType,
     };
     const ideaPremiumComposition = extractPremiumComposition(idea);
     let treatmentLower = ((idea.treatment ?? idea.visual_production_spec?.treatment) || '').toLowerCase();
@@ -3127,6 +3135,117 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
         headline = aligned.headline;
         ideationHeadline = aligned.headline;
+      }
+    }
+
+    // Final chain gate: caption ↔ overlay ↔ photo must agree before paint.
+    if (usesFalDesignerTrackEarly && caption.trim().length >= 24) {
+      const lockedMeta = resolvedReferenceUrl
+        ? (galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
+          ?? Object.entries(galleryMeta).find(
+            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl!),
+          )?.[1])
+        : undefined;
+      const chain = canShipCaptionDesignPost({
+        caption,
+        overlayHeadline: headline,
+        brandName: resolvedBrandName,
+        businessType: brandBusinessType,
+        photoUrl: pickedFromBrandGallery ? resolvedReferenceUrl : null,
+        galleryMeta: lockedMeta,
+      });
+      if (chain.repaired && chain.overlayHeadline) {
+        console.warn(
+          `[auto-produce] coherence repair: "${headline.slice(0, 36)}" → "${chain.overlayHeadline.slice(0, 36)}"`,
+        );
+        headline = chain.overlayHeadline;
+        ideationHeadline = chain.overlayHeadline;
+      }
+      if (!chain.ok) {
+        // Photo broke after overlay settle — one rematch with final overlay text.
+        if (
+          chain.breaks.includes('photo_theme_conflict')
+          && resolvedReferenceUrl
+          && pickedFromBrandGallery
+        ) {
+          const rematchExclude = getMissionWideExcludeUrls(
+            galleryUsage,
+            batchUsedByType,
+            batchUsedGalleryMission,
+          );
+          const rematchedUrl = rematchGalleryAfterHardThemeConflict({
+            caption,
+            headline,
+            mood,
+            galleryAnalysis: galleryMeta,
+            candidateUrls: galleryPhotos,
+            excludeUrls: rematchExclude,
+            rejectedUrl: resolvedReferenceUrl,
+            contentType: postType,
+            businessType: brandBusinessType,
+            subjectKey: ideationSubjectKey,
+            maxAttempts: 5,
+            globalUsageCounts: globalGalleryUsageCounts,
+            tieBreakSeed: ideaIndex,
+            matchExtras: activeGalleryMatchExtras,
+          });
+          if (rematchedUrl) {
+            referenceUrl = rematchedUrl;
+            resolvedReferenceUrl = rematchedUrl;
+            galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
+            pickedFromBrandGallery = true;
+            photoMetaForCaption = galleryMeta[normalizeGalleryUrl(rematchedUrl)]
+              ?? Object.entries(galleryMeta).find(
+                ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
+              )?.[1];
+            const recheck = canShipCaptionDesignPost({
+              caption,
+              overlayHeadline: headline,
+              brandName: resolvedBrandName,
+              businessType: brandBusinessType,
+              photoUrl: rematchedUrl,
+              galleryMeta: photoMetaForCaption,
+            });
+            if (recheck.ok) {
+              console.warn(
+                `[auto-produce] coherence rematch ok → ${rematchedUrl.slice(0, 72)}`,
+              );
+            } else {
+              console.warn(
+                `[auto-produce] coherence fail-closed (${recheck.breaks.join(',')}) — skip "${headline.slice(0, 40)}"`,
+              );
+              results.push({
+                title: headline,
+                imageUrl: galleryPreviewUrl ?? '',
+                error: `Caption–tasarım–görsel tutarsız (${recheck.breaks.join(', ')})`,
+                slotKey,
+              });
+              continue;
+            }
+          } else {
+            console.warn(
+              `[auto-produce] coherence fail-closed (${chain.breaks.join(',')}) — skip "${headline.slice(0, 40)}"`,
+            );
+            results.push({
+              title: headline,
+              imageUrl: galleryPreviewUrl ?? '',
+              error: `Caption–tasarım–görsel tutarsız (${chain.breaks.join(', ')})`,
+              slotKey,
+            });
+            continue;
+          }
+        } else {
+          console.warn(
+            `[auto-produce] coherence fail-closed (${chain.breaks.join(',')}) — skip "${headline.slice(0, 40)}"`,
+          );
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: `Caption–tasarım–görsel tutarsız (${chain.breaks.join(', ')})`,
+            slotKey,
+          });
+          continue;
+        }
       }
     }
 

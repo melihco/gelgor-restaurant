@@ -626,5 +626,25 @@ export function resolveMissionFalDesignCopy(input: {
     }
   }
 
+  // Catalog slot sample punchline — same short phrases as template library.
+  const sample = String(input.sampleHeadline ?? '').trim();
+  if (
+    sample
+    && acceptPlannedOverlayLine(sample)
+    && (
+      !overlay.headline
+      || !isMeaningfulFalOverlayText(overlay.headline)
+      || isLabelStyleHeadline(overlay.headline)
+      || isSoullessMenuHourHeadline(overlay.headline)
+      || isMeaninglessBrandEchoHeadline(overlay.headline, brandName)
+    )
+  ) {
+    return lockToTemplate({
+      headline: sample,
+      subtitle: String(input.sampleSubtitle ?? '').trim() || undefined,
+      source: 'catalog_sample',
+    });
+  }
+
   return lockToTemplate({ ...overlay, source: 'ideation_locked' });
 }

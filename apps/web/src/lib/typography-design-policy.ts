@@ -5,11 +5,13 @@
  */
 
 import {
-  defaultTypographyVibeForSector,
   TYPOGRAPHY_VIBE_LABELS,
   type BrandDesignTypographyConfig,
   type TypographyVibe,
 } from '@/types/brand-theme';
+import { resolveTypographyDesign } from '@/lib/production-design-policy';
+import { resolvePostDesignDefaultsFromVibe } from '@/lib/post-design-defaults-policy';
+import type { BrandPostDesignDefaults } from '@/types/brand-theme';
 
 export const KNOWN_TYPOGRAPHY_VIBES = new Set<TypographyVibe>(
   Object.keys(TYPOGRAPHY_VIBE_LABELS) as TypographyVibe[],
@@ -57,21 +59,58 @@ export function isTypographyDesignConfirmed(
   return Boolean(cfg && isKnownTypographyVibe(cfg.vibe) && cfg.confirmed_at);
 }
 
+/**
+ * DNA-aware suggestion — same policy as Python PDP / production-design-policy.
+ * Never invents gradient_stack + gradient_mesh when DNA says warm/handwritten.
+ */
 export function resolveSuggestedTypographyConfig(
   theme: Record<string, unknown> | null | undefined,
   sector: string,
+  visualDna?: string | null,
 ): BrandDesignTypographyConfig {
   const raw = readTypographyDesignConfig(theme);
-  const suggestedVibe = defaultTypographyVibeForSector(sector);
+  const dna = typeof visualDna === 'string' && visualDna.trim()
+    ? visualDna
+    : typeof theme?.visual_dna === 'string'
+      ? theme.visual_dna
+      : typeof theme?.visualDna === 'string'
+        ? theme.visualDna
+        : '';
+  const palette = (theme?.palette && typeof theme.palette === 'object'
+    ? theme.palette
+    : {}) as Record<string, unknown>;
+  const accent = typeof (raw?.accent_color ?? palette.accent) === 'string'
+    ? String(raw?.accent_color ?? palette.accent)
+    : undefined;
+  const policy = resolveTypographyDesign({
+    sector,
+    visualDna: dna,
+    accentColor: accent,
+  });
+
   return {
-    vibe: isKnownTypographyVibe(raw?.vibe) ? raw!.vibe! : suggestedVibe,
-    text_effect: raw?.text_effect ?? 'gradient_stack',
-    accent_color: raw?.accent_color,
-    background_style: raw?.background_style ?? 'gradient_mesh',
-    logo_treatment: raw?.logo_treatment ?? 'watermark',
+    vibe: isKnownTypographyVibe(raw?.vibe) ? raw!.vibe! : policy.vibe,
+    text_effect: raw?.text_effect ?? policy.text_effect,
+    accent_color: raw?.accent_color ?? policy.accent_color,
+    background_style: raw?.background_style ?? policy.background_style,
+    logo_treatment: raw?.logo_treatment ?? policy.logo_treatment,
     source: raw?.source,
     confirmed_at: raw?.confirmed_at,
   };
+}
+
+/** Pair Hub post_design_defaults with a typography config (onboarding confirm). */
+export function resolvePostDesignDefaultsForTypography(
+  typography: Pick<BrandDesignTypographyConfig, 'vibe' | 'accent_color' | 'text_effect'>,
+): BrandPostDesignDefaults {
+  const mapped = resolvePostDesignDefaultsFromVibe(typography.vibe, {
+    accentColor: typography.accent_color,
+  });
+  // Prefer typography text_effect when already DNA-aligned (soft_shadow etc.).
+  if (typography.text_effect) {
+    return { ...mapped, text_effect: typography.text_effect };
+  }
+  return mapped;
 }
 
 export function buildUserConfirmedTypographyPatch(

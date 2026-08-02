@@ -31,6 +31,7 @@ import {
   TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
   buildUserConfirmedTypographyPatch,
   isTypographyDesignConfirmed,
+  resolvePostDesignDefaultsForTypography,
   resolveSuggestedTypographyConfig,
 } from '@/lib/typography-design-policy';
 import type { BrandDesignTypographyConfig, TypographyVibe } from '@/types/brand-theme';
@@ -1205,8 +1206,9 @@ function TypographyConfirmStep({
         }
         const ctx = ctxRes?.ok ? ((await ctxRes.json()) as Record<string, unknown>) : null;
         const sector = String(ctx?.business_type ?? ctx?.industry ?? 'general_business');
+        const visualDna = typeof ctx?.visual_dna === 'string' ? ctx.visual_dna : null;
         if (!cancelled) {
-          setConfig(resolveSuggestedTypographyConfig(theme, sector));
+          setConfig(resolveSuggestedTypographyConfig(theme, sector, visualDna));
           setLoading(false);
         }
       } catch {
@@ -1230,6 +1232,7 @@ function TypographyConfirmStep({
         'Content-Type': 'application/json',
       };
       const confirmed = buildUserConfirmedTypographyPatch(config);
+      const postDefaults = resolvePostDesignDefaultsForTypography(confirmed);
       const themeRes = await fetch(`/api/brand-context/${tenantId}/theme`, {
         headers: getRequestContextHeaders(),
         signal: AbortSignal.timeout(20_000),
@@ -1245,6 +1248,8 @@ function TypographyConfirmStep({
             ...currentTheme,
             typography_design: confirmed,
             typographyDesign: confirmed,
+            post_design_defaults: postDefaults,
+            postDesignDefaults: postDefaults,
           },
         }),
         signal: AbortSignal.timeout(30_000),

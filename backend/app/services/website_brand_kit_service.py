@@ -27,12 +27,21 @@ _FONT_SKIP = frozenset({
     "-apple-system", "ui-sans-serif", "ui-serif",
 })
 
-# Noise hex colors on the web
+# Noise hex colors on the web (+ chat/CTA platform greens that steal brand primary)
 _HEX_SKIP = frozenset({
     "#ffffff", "#fff", "#000000", "#000", "#111111", "#222222",
     "#333333", "#444444", "#555555", "#666666", "#777777", "#888888",
     "#999999", "#aaaaaa", "#bbbbbb", "#cccccc", "#dddddd", "#eeeeee",
     "#f5f5f5", "#fafafa", "#f8f8f8", "#e5e5e5", "#d1d5db",
+    # WhatsApp / chat CTAs — never brand palette
+    "#25d366", "#25d365", "#128c7e", "#075e54", "#34b7f1",
+    # Generic link / Bootstrap / Material CTA blues-greens
+    "#007bff", "#0d6efd", "#1877f2", "#1da1f2", "#00a884",
+    # CSS named pastels / neon deco — never corporate brand primary/accent kit
+    # (lightskyblue, hotpink, aqua, fuchsia, pure yellow…)
+    "#87ceeb", "#ff69b4", "#00bfff", "#00ffff", "#ff00ff", "#ffff00",
+    "#ff1493", "#00ced1", "#7fffd4", "#add8e6", "#ffb6c1", "#afeeee",
+    "#e0ffff", "#fafad2", "#f0e68c",
 })
 
 _CSS_VAR_COLOR_KEYS = re.compile(
@@ -242,10 +251,26 @@ def _is_cool_primary(hx: str) -> bool:
     return 0.08 < lum < 0.55 and sat > 0.15 and 175 <= hue <= 245
 
 
+def _is_pastel_noise(hx: str) -> bool:
+    """Reject candy pastels that LLMs / deco CSS invent as 'beach' colors."""
+    lum = _luminance(hx)
+    sat = _saturation(hx)
+    hue = _hue(hx)
+    # Very light + visibly colored = sticker pastel (lightskyblue, baby pink…).
+    if lum >= 0.70 and sat >= 0.35:
+        return True
+    # Hot pink / neon magenta family (hotpink #ff69b4 ≈ hue 330)
+    if sat >= 0.50 and lum >= 0.50 and (310 <= hue or hue <= 15):
+        return True
+    return False
+
+
 def _is_brand_primary(hx: str) -> bool:
     lum = _luminance(hx)
     sat = _saturation(hx)
     hue = _hue(hx)
+    if _is_pastel_noise(hx):
+        return False
     if lum > 0.62 and (hue < 35 or sat < 0.45):
         return False
     return 0.08 < lum < 0.72 and sat > 0.2
@@ -262,13 +287,15 @@ def _pick_palette(hexes: list[str]) -> tuple[str | None, str | None]:
     if not hexes:
         return None, None
     counts = Counter(hexes)
-    ranked = [hx for hx, _ in counts.most_common(16)]
+    ranked = [hx for hx, _ in counts.most_common(16) if not _is_pastel_noise(hx)]
+    if not ranked:
+        ranked = [hx for hx, _ in counts.most_common(16)]
 
     primary: str | None = None
     accent: str | None = None
 
     for hx in ranked:
-        if _is_cool_primary(hx):
+        if _is_cool_primary(hx) and not _is_pastel_noise(hx):
             primary = hx
             break
     if not primary:
@@ -280,35 +307,35 @@ def _pick_palette(hexes: list[str]) -> tuple[str | None, str | None]:
     for hx in ranked:
         if hx == primary:
             continue
-        if hx.lower() in ("#fbbf24", "#f5a623", "#ffc107"):
+        if hx.lower() in ("#fbbf24", "#f5a623", "#ffc107", "#f4a261"):
             accent = hx
             break
     if not accent:
         for hx in ranked:
             if hx == primary:
                 continue
-            if _is_warm_accent(hx):
+            if _is_warm_accent(hx) and not _is_pastel_noise(hx):
                 accent = hx
                 break
 
     if not accent:
         for hx in ranked:
-            if hx == primary:
+            if hx == primary or _is_pastel_noise(hx):
                 continue
-            if _saturation(hx) >= 0.4 and _luminance(hx) > 0.4:
+            if _saturation(hx) >= 0.4 and 0.35 < _luminance(hx) < 0.72:
                 accent = hx
                 break
 
     if not primary:
         for hx in ranked:
-            if _luminance(hx) < 0.75:
+            if _luminance(hx) < 0.72 and not _is_pastel_noise(hx):
                 primary = hx
                 break
     if not primary and ranked:
-        primary = ranked[0]
+        primary = next((hx for hx in ranked if not _is_pastel_noise(hx)), ranked[0])
     if not accent:
         for hx in ranked:
-            if hx != primary:
+            if hx != primary and not _is_pastel_noise(hx):
                 accent = hx
                 break
     if not accent and primary:

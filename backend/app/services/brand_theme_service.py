@@ -770,13 +770,27 @@ async def save_brand_theme(ctx: "BrandContext", theme: "BrandTheme | dict", db) 
         languages=getattr(ctx, "languages", None) or "tr",
     )
 
+    # Keep Hub / production column colors aligned with theme palette SSOT.
+    # Prevents stale pastel brand_primary_* from outranking vibe/theme in UI + DNA.
+    values: dict = {
+        "brand_theme": theme_dict,
+        "brand_theme_updated_at": datetime.now(timezone.utc),
+    }
+    palette = theme_dict.get("palette") if isinstance(theme_dict.get("palette"), dict) else {}
+    primary = str(palette.get("primary") or "").strip()
+    accent = str(palette.get("accent") or "").strip()
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", primary):
+        values["brand_primary_color"] = primary[:16]
+        ctx.brand_primary_color = primary[:16]
+    if re.fullmatch(r"#[0-9A-Fa-f]{6}", accent):
+        values["brand_accent_color"] = accent[:16]
+        ctx.brand_accent_color = accent[:16]
+
     await db.execute(
         update(BrandContext)
         .where(BrandContext.workspace_id == ctx.workspace_id)
         .execution_options(synchronize_session=False)
-        .values(
-            brand_theme=theme_dict,
-            brand_theme_updated_at=datetime.now(timezone.utc),
-        )
+        .values(**values)
     )
     await db.commit()
+    ctx.brand_theme = theme_dict

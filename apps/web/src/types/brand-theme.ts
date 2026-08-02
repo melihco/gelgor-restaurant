@@ -168,8 +168,10 @@ export function defaultTypographyVibeForSector(sector: string): TypographyVibe {
   if (s.includes('cafe') || s.includes('bakery') || s.includes('restaurant') || s.includes('food')) return 'retro_poster';
   if (s.includes('beauty') || s.includes('spa') || s.includes('wellness')) return 'handwritten';
   if (s.includes('fashion') || s.includes('retail') || s.includes('boutique')) return 'street_bold';
-  if (s.includes('hotel') || s.includes('resort')) return 'chrome_gradient';
-  if (s.includes('fine_dining') || s.includes('luxury')) return 'editorial_serif';
+  // Align with Python production_design_policy — chrome_gradient is not a hotel default.
+  if (s.includes('hotel') || s.includes('resort') || s.includes('fine_dining') || s.includes('luxury')) {
+    return 'editorial_serif';
+  }
   if (s.includes('tech') || s.includes('saas') || s.includes('agency')) return 'minimal_modern';
   return 'retro_poster';
 }

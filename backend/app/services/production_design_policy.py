@@ -182,6 +182,45 @@ def resolve_typography_design(
     return out
 
 
+def resolve_post_design_defaults_from_vibe(
+    vibe: str,
+    *,
+    accent_color: str | None = None,
+    text_effect: str | None = None,
+) -> dict[str, str]:
+    """Map typography vibe → Brand Hub post_design_defaults (font/effect/logo)."""
+    v = (vibe or "retro_poster").strip().lower()
+    font_preset = "elegant_serif"
+    effect = "soft_shadow"
+    logo_position = "bottom_right"
+    if v == "neon_glow":
+        font_preset, effect, logo_position = "condensed_impact", "neon_3d", "top_center"
+    elif v in ("bubble_3d", "street_bold"):
+        font_preset, effect, logo_position = "poster_3d", "extrude_3d", "top_left"
+    elif v == "minimal_modern":
+        font_preset, effect, logo_position = "clean_sans", "soft_shadow", "top_left"
+    elif v == "editorial_serif":
+        font_preset, effect, logo_position = "elegant_serif", "editorial_outline", "bottom_right"
+    elif v == "warm_coastal":
+        font_preset, effect, logo_position = "elegant_serif", "soft_shadow", "bottom_right"
+    elif v == "chrome_gradient":
+        font_preset, effect, logo_position = "condensed_impact", "gradient_stack", "top_left"
+    elif v == "retro_poster":
+        font_preset, effect, logo_position = "sticker_pop", "soft_shadow", "top_left"
+    elif v == "handwritten":
+        font_preset, effect, logo_position = "elegant_serif", "soft_shadow", "bottom_right"
+    if text_effect:
+        effect = text_effect
+    out: dict[str, str] = {
+        "font_preset": font_preset,
+        "text_effect": effect,
+        "logo_position": logo_position,
+    }
+    if accent_color:
+        out["accent_color"] = accent_color
+    return out
+
+
 def resolve_caption_voice_rules(sector: str, languages: str = "tr") -> list[str]:
     lang = (languages or "tr").split(",")[0].strip().lower()
     if is_premium_venue_sector(sector):
@@ -250,6 +289,19 @@ def apply_production_layers_to_theme_dict(
         merged["typography_design"] = merged_typo
     else:
         merged["typography_design"] = {**derived_typo, "source": "derived"}
+
+    # First-write Hub post design defaults from vibe when operator has not set them.
+    existing_post = merged.get("post_design_defaults")
+    if not isinstance(existing_post, dict) or not (
+        existing_post.get("font_preset") or existing_post.get("text_effect")
+    ):
+        typo_for_map = merged.get("typography_design") if isinstance(merged.get("typography_design"), dict) else derived_typo
+        merged["post_design_defaults"] = resolve_post_design_defaults_from_vibe(
+            str(typo_for_map.get("vibe") or derived_typo.get("vibe") or "retro_poster"),
+            accent_color=str(typo_for_map.get("accent_color") or accent or "") or None,
+            text_effect=str(typo_for_map.get("text_effect") or "") or None,
+        )
+
     merged["fal_design_intensity"] = resolve_fal_design_intensity(sector, density)
     merged["anti_patterns"] = list(dict.fromkeys([*existing_anti, *policy_anti, *guardrails]))[:12]
 

@@ -104,6 +104,66 @@ export function isStrongIdeationCaption(caption: string | null | undefined): boo
 }
 
 /**
+ * Build the same caption/headline/preferredAsset match fields the template library
+ * uses — shared by pickPhotoForPreset, pickGalleryPhotoForSlot, and
+ * pickGalleryPhotoForIdea (mission fallbacks).
+ */
+export function buildCatalogAwareGalleryMatchFields(input: {
+  caption: string;
+  headline: string;
+  catalogSlotKey?: string | null;
+  sectorId?: string | null;
+  /** Template library always blends slot keywords even for strong captions. */
+  forceBlend?: boolean;
+  /** When ideation headline is weak/briefing, seed from catalog sample. */
+  seedHeadlineFromCatalog?: boolean;
+}): {
+  caption: string;
+  headline: string;
+  preferredAssetTypes?: string[];
+  templateUseCase?: string;
+  sampleHeadline?: string;
+  matchKeywords?: string;
+} {
+  const caption = String(input.caption ?? '').trim();
+  const headline = String(input.headline ?? '').trim();
+  const hints = resolveCatalogSlotGalleryHints({
+    sectorId: input.sectorId,
+    catalogSlotKey: input.catalogSlotKey,
+  });
+  if (!hints) {
+    return { caption, headline };
+  }
+
+  let matchHeadline = headline;
+  if (input.seedHeadlineFromCatalog !== false) {
+    const weak =
+      !headline
+      || headline.length < 3
+      || /highlight the|göstereceğiz|tanıtımını|exclusive|strategy|brief/i.test(headline);
+    if (weak && hints.sampleHeadline) {
+      matchHeadline = hints.sampleHeadline;
+    }
+  }
+
+  const matchCaption = blendCatalogMatchKeywords({
+    caption,
+    matchKeywords: hints.matchKeywords,
+    sampleHeadline: hints.sampleHeadline,
+    forceBlend: input.forceBlend,
+  });
+
+  return {
+    caption: matchCaption || caption || hints.sampleHeadline,
+    headline: matchHeadline || hints.sampleHeadline || headline,
+    preferredAssetTypes: hints.preferredAssetTypes,
+    templateUseCase: hints.templateType,
+    sampleHeadline: hints.sampleHeadline,
+    matchKeywords: hints.matchKeywords,
+  };
+}
+
+/**
  * Blend catalog match keywords into an ideation caption without drowning it.
  * When caption is empty, fall back to sample headline + keywords (library parity).
  * When caption is already strong (publish SSOT), return it unchanged so slot

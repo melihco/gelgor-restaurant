@@ -75,7 +75,10 @@ import {
   type GalleryPhotoMeta,
   matchPhotoToContent,
 } from '@/lib/gallery-photo-matcher';
-import { filterGalleryUrlsByPreferredAssetTypes } from '@/lib/catalog-slot-gallery';
+import {
+  buildCatalogAwareGalleryMatchFields,
+  filterGalleryUrlsByPreferredAssetTypes,
+} from '@/lib/catalog-slot-gallery';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { generateDesignedPostImage } from '@/app/api/auto-produce/handlers/image-generators';
@@ -394,12 +397,24 @@ export function pickPhotoForPreset(
     ? [preferredPool, input.galleryPhotoUrls]
     : [input.galleryPhotoUrls];
 
-  const matchInput = {
-    caption: `${preset.sampleHeadline} ${preset.matchKeywords}`.trim(),
+  // Same catalog-aware match fields as mission pickGalleryPhotoForSlot / Idea.
+  const catalogAware = buildCatalogAwareGalleryMatchFields({
+    caption: '',
     headline: preset.sampleHeadline || preset.name,
+    catalogSlotKey: preset.catalogSlotKey ?? preset.id,
+    sectorId: input.sector,
+    forceBlend: true,
+    seedHeadlineFromCatalog: true,
+  });
+  const matchInput = {
+    caption: catalogAware.caption
+      || `${preset.sampleHeadline} ${preset.matchKeywords}`.trim(),
+    headline: catalogAware.headline || preset.sampleHeadline || preset.name,
     businessType: input.sector,
-    templateUseCase: preset.templateType,
-    preferredAssetTypes: preset.preferredAssetTypes,
+    templateUseCase: catalogAware.templateUseCase || preset.templateType,
+    preferredAssetTypes: catalogAware.preferredAssetTypes?.length
+      ? catalogAware.preferredAssetTypes
+      : preset.preferredAssetTypes,
   };
 
   for (const pool of tryPools) {

@@ -13,6 +13,7 @@ import {
 import {
   buildUserConfirmedTypographyPatch,
   isTypographyDesignConfirmed,
+  resolvePostDesignDefaultsForTypography,
   resolveSuggestedTypographyConfig,
 } from '@/lib/typography-design-policy';
 import { buildSectorSyncPatch, resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
@@ -373,8 +374,12 @@ export async function runCompleteBrandGaps(
           : { theme: null };
         const theme = themeJson.theme ?? {};
         if (!isTypographyDesignConfirmed(theme)) {
-          const suggested = resolveSuggestedTypographyConfig(theme, sector);
+          const dna = typeof (ctxRes.data as { visual_dna?: string } | undefined)?.visual_dna === 'string'
+            ? String((ctxRes.data as { visual_dna?: string }).visual_dna)
+            : null;
+          const suggested = resolveSuggestedTypographyConfig(theme, sector, dna);
           const confirmed = buildUserConfirmedTypographyPatch(suggested);
+          const postDefaults = resolvePostDesignDefaultsForTypography(confirmed);
           const putRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
             method: 'PUT',
             headers: {
@@ -386,6 +391,9 @@ export async function runCompleteBrandGaps(
               theme: {
                 ...theme,
                 typographyDesign: confirmed,
+                typography_design: confirmed,
+                postDesignDefaults: postDefaults,
+                post_design_defaults: postDefaults,
               },
             }),
             signal: AbortSignal.timeout(45_000),
@@ -484,8 +492,12 @@ export async function runCompleteBrandGaps(
           const theme = themeJson.theme ?? {};
           if (!isTypographyDesignConfirmed(theme)) {
             const sector = resolveAuthoritativeIndustry(afterCtx.data ?? {}) || 'general_business';
-            const suggested = resolveSuggestedTypographyConfig(theme, sector);
+            const dna = typeof afterCtx.data?.visual_dna === 'string'
+              ? String(afterCtx.data.visual_dna)
+              : null;
+            const suggested = resolveSuggestedTypographyConfig(theme, sector, dna);
             const confirmed = buildUserConfirmedTypographyPatch(suggested);
+            const postDefaults = resolvePostDesignDefaultsForTypography(confirmed);
             const putRes = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
               method: 'PUT',
               headers: {
@@ -497,6 +509,9 @@ export async function runCompleteBrandGaps(
                 theme: {
                   ...theme,
                   typographyDesign: confirmed,
+                  typography_design: confirmed,
+                  postDesignDefaults: postDefaults,
+                  post_design_defaults: postDefaults,
                 },
               }),
               signal: AbortSignal.timeout(45_000),

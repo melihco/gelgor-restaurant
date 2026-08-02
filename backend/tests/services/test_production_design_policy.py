@@ -6,6 +6,7 @@ from app.services.production_design_policy import (
     pillars_need_realignment,
     resolve_content_pillars,
     resolve_fal_design_intensity,
+    resolve_post_design_defaults_from_vibe,
     resolve_typography_design,
     resolve_typography_vibe,
     sector_anti_patterns,
@@ -89,3 +90,47 @@ def test_apply_production_layers_merges_into_theme_dict():
     assert out.get("fal_design_intensity", {}).get("story") == "photo_first"
     assert len(out.get("anti_patterns") or []) >= 3
     assert out.get("motion_profile", {}).get("locale") == "en"
+
+
+def test_handwritten_vibe_maps_to_elegant_soft_post_defaults():
+    post = resolve_post_design_defaults_from_vibe("handwritten")
+    assert post["font_preset"] == "elegant_serif"
+    assert post["text_effect"] == "soft_shadow"
+    assert post["logo_position"] == "bottom_right"
+
+
+def test_apply_production_layers_first_writes_post_design_defaults():
+    theme = {
+        "typography": {"text_overlay_density": "minimal"},
+        "palette": {"accent": "#4CAF50"},
+    }
+    out = apply_production_layers_to_theme_dict(
+        theme,
+        sector="restaurant_cafe",
+        visual_dna="warm artisan handwritten organic garden restaurant",
+        languages="tr",
+    )
+    typo = out["typography_design"]
+    assert typo["vibe"] == "handwritten"
+    post = out["post_design_defaults"]
+    assert post["font_preset"] == "elegant_serif"
+    assert post["text_effect"] == "soft_shadow"
+
+
+def test_apply_production_layers_preserves_existing_post_design_defaults():
+    theme = {
+        "typography": {"text_overlay_density": "minimal"},
+        "palette": {"accent": "#C4A484"},
+        "post_design_defaults": {
+            "font_preset": "poster_3d",
+            "text_effect": "extrude_3d",
+            "logo_position": "top_left",
+        },
+    }
+    out = apply_production_layers_to_theme_dict(
+        theme,
+        sector="beach_club",
+        visual_dna="warm coastal",
+        languages="tr",
+    )
+    assert out["post_design_defaults"]["font_preset"] == "poster_3d"

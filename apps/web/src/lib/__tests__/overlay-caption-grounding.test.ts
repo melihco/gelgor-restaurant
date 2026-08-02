@@ -77,6 +77,15 @@ describe('overlay-caption-grounding', () => {
     ).toBe(true);
   });
 
+  it('grounds short DJ punchline against Turkish DJ caption', () => {
+    expect(
+      overlayHeadlineGroundedInCaption(
+        'DJ Night',
+        'Bu gece DJ seti ve beach party — dans için sahilde buluşalım.',
+      ),
+    ).toBe(true);
+  });
+
   it('does not rebias sunset/DJ mission headline into Cocktail when caption mentions drinks', () => {
     const caption =
       'Sunsets, cocktails, and great music await you at Yula Bodrum! '

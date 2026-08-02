@@ -38,10 +38,18 @@ function normalizeOverlayCompare(text: string): string {
     .trim();
 }
 
+/** Short tokens that still carry scene identity (DJ Night ↔ “DJ seti”). */
+const SHORT_SCENE_TOKENS = new Set([
+  'dj', 'vip', 'spa', 'bar', 'sea', 'gun', 'set', 'bbq',
+]);
+
 function overlayTokens(text: string): string[] {
   return normalizeOverlayCompare(text)
     .split(/\s+/)
-    .filter((w) => w.length >= 4 && !OVERLAY_STOP_TOKENS.has(w));
+    .filter((w) =>
+      !OVERLAY_STOP_TOKENS.has(w)
+      && (w.length >= 4 || SHORT_SCENE_TOKENS.has(w)),
+    );
 }
 
 /** Simple stem so "sunset" matches "sunsets", "cocktail" ↔ "cocktails". */
