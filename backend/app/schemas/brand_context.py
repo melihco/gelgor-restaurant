@@ -208,6 +208,8 @@ class BrandAnalyzeRequest(BaseModel):
     google_business_url: str = ""
     menu_url: str = ""
     brand_name: str = ""
+    # Full analyze_brand() payload from pre-signup preview cache — skips Apify re-scrape.
+    cached_discovery: dict | None = None
 
 
 class ConfirmConstitutionRequest(BaseModel):

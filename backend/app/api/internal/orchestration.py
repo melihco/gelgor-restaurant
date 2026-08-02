@@ -387,6 +387,8 @@ async def analyze_brand_endpoint(request: BrandAnalysisRequest):
                 or result["instagram"].get("raw_fetch_ok", False)
                 or result["google_business"].get("raw_fetch_ok", False)
             ),
+            # Full analyze_brand payload for onboarding preview cache → persist without re-scrape.
+            "discovery": result,
         }
     except Exception as e:
         return {

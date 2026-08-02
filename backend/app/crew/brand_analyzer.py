@@ -1276,10 +1276,27 @@ async def analyze_brand(
             if google_business_url else _empty_dict()
         )
 
+        # Location / name for Tripadvisor + local posts — prefer live Google over empty profile
+        brand_name_for_ta = (
+            (profile.get("brand_name") or "").strip()
+            or (google_data.get("name") or "").strip()
+            or (instagram_data.get("full_name") or "").strip()
+        )
+        location_for_ta = (profile.get("location") or "").strip()
+        if not location_for_ta:
+            # Inline city extract from Google address (persist helper runs later)
+            _addr = (google_data.get("address") or google_data.get("street") or "").strip()
+            if _addr:
+                _parts = [p.strip() for p in _addr.replace("/", ",").split(",") if p.strip()]
+                location_for_ta = (_parts[-2] if len(_parts) >= 2 else _parts[-1])[:100] if _parts else ""
+        if not location_for_ta:
+            _bio = (instagram_data.get("bio") or "")
+            _pin = re.search(r"📍\s*([^\n#@]+)", _bio)
+            if _pin:
+                location_for_ta = _pin.group(1).strip().rstrip(".,")[:100]
+
         # Tripadvisor reviews — best effort, non-blocking
         tripadvisor_data: list[dict] = []
-        brand_name_for_ta = profile.get("brand_name") or google_data.get("name", "")
-        location_for_ta = profile.get("location", "")
         if brand_name_for_ta and location_for_ta:
             try:
                 tripadvisor_data = await fetch_tripadvisor_reviews(
@@ -1287,6 +1304,13 @@ async def analyze_brand(
                 )
             except Exception as _e:
                 logger.debug("tripadvisor_fetch_skipped", error=str(_e))
+        else:
+            logger.debug(
+                "tripadvisor_fetch_skipped",
+                reason="missing_name_or_location",
+                has_name=bool(brand_name_for_ta),
+                has_location=bool(location_for_ta),
+            )
 
         # Hyper-local Instagram posts — best effort, non-blocking
         location_posts_data: list[dict] = []
@@ -1470,6 +1494,9 @@ async def analyze_brand(
         "tripadvisor_reviews": tripadvisor_data,
         "location_posts": location_posts_data,
         "competitor_instagram_profiles": competitor_instagram_data,
+        # Pass inferred location so persist + competitor suggest don't wait on empty profile
+        "inferred_location": location_for_ta if "location_for_ta" in locals() else "",
+        "inferred_brand_name": brand_name_for_ta if "brand_name_for_ta" in locals() else "",
         "top_hashtags": instagram_data.get("top_hashtags", []),
         "inferred_tone": inferred_tone,
         "inferred_language": inferred_language,

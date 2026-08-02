@@ -17,6 +17,7 @@ import {
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import { summarizeTemplateRowsHardPinHealth } from '@/lib/catalog-template-coverage';
 import { brsCache } from '@/lib/server-ttl-cache';
+import { isBrandDnaProductionReady } from '@/lib/brand-gap-analysis';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -183,9 +184,16 @@ export async function GET(
   const briefsData = briefsRes.ok && briefsRes.data
     ? briefsRes.data
     : briefsFromContext(ctx);
-  const hasBrandDna = isNonEmptyObject(briefsData?.brand_dna)
-    || isNonEmptyObject(briefsData?.visual_dna)
-    || (typeof briefsData?.visual_dna === 'string' && (briefsData.visual_dna as string).length > 50);
+  const visualDnaStr = typeof briefsData?.visual_dna === 'string'
+    ? briefsData.visual_dna
+    : typeof ctx.visual_dna === 'string'
+      ? ctx.visual_dna
+      : null;
+  // length>50 alone is too weak — require non-sparse structured DNA or concrete visual DNA.
+  const hasBrandDna = isBrandDnaProductionReady(
+    briefsData?.brand_dna ?? ctx.brand_dna,
+    visualDnaStr,
+  );
 
   const inputs: BrandReadinessInputs = {
     constitutionConfirmedAt: ctx.brand_constitution_confirmed_at ?? null,

@@ -896,7 +896,14 @@ function PostDesignDefaultsPanel({
   const suggested = resolvePostDesignDefaultsFromVibe(typoCfg?.vibe ?? 'retro_poster', {
     accentColor: typoCfg?.accent_color,
   });
-  const raw = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults>;
+  // Theme JSON may store camelCase twins from older Hub writes — read both without widening the SSOT type.
+  const raw = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults> & {
+    fontPreset?: BrandPostDesignDefaults['font_preset'];
+    textEffect?: BrandPostDesignDefaults['text_effect'];
+    logoPosition?: BrandPostDesignDefaults['logo_position'];
+    accentColor?: string;
+    defaultTemplateId?: string;
+  };
   // Empty Hub must not pretend poster_3d / extrude_3d is selected — show DNA-aware suggestion only.
   const active: BrandPostDesignDefaults = saved
     ? {
@@ -3688,8 +3695,11 @@ export function BrandConstitution() {
     description:    'description',
     targetAudience: 'target_audience',
     brandTone:      'brand_tone',
+    visualStyle:    'visual_style',
     primaryFont:    'brand_font_family',
     logoUrl:        'logo_url',
+    websiteUrl:     'website_url',
+    instagramHandle:'instagram_handle',
   };
 
   function patchPythonBrandFields(body: Record<string, unknown>) {

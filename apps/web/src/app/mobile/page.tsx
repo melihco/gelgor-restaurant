@@ -492,10 +492,529 @@ const CSS = `
   .sa-mobile .onboarding-ambient {
     position: absolute;
     inset: 0;
+    overflow: hidden;
     background:
-      radial-gradient(ellipse 90% 55% at 50% -5%, rgba(77,112,136,0.14) 0%, transparent 58%),
-      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201,169,110,0.06) 0%, transparent 55%);
+      radial-gradient(ellipse 90% 55% at 50% -5%, rgba(77,112,136,0.16) 0%, transparent 58%),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(201,169,110,0.07) 0%, transparent 55%),
+      radial-gradient(ellipse 40% 28% at 8% 72%, rgba(90,130,160,0.08) 0%, transparent 60%);
     pointer-events: none;
+  }
+  .sa-mobile .onboarding-ambient-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(48px);
+    opacity: 0.55;
+    will-change: transform;
+  }
+  .sa-mobile .onboarding-ambient-orb--a {
+    width: 220px; height: 220px; top: -60px; left: 12%;
+    background: rgba(77,112,136,0.35);
+    animation: onboardingOrbDriftA 14s ease-in-out infinite;
+  }
+  .sa-mobile .onboarding-ambient-orb--b {
+    width: 180px; height: 180px; bottom: 8%; right: -40px;
+    background: rgba(200,168,106,0.18);
+    animation: onboardingOrbDriftB 18s ease-in-out infinite;
+  }
+  .sa-mobile .onboarding-ambient-orb--c {
+    width: 140px; height: 140px; top: 42%; left: -30px;
+    background: rgba(157,190,206,0.14);
+    animation: onboardingOrbDriftC 16s ease-in-out infinite;
+  }
+  @keyframes onboardingOrbDriftA {
+    0%,100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(18px, 22px) scale(1.08); }
+  }
+  @keyframes onboardingOrbDriftB {
+    0%,100% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(-22px, -14px) scale(1.12); }
+  }
+  @keyframes onboardingOrbDriftC {
+    0%,100% { transform: translate(0, 0); }
+    50% { transform: translate(14px, -18px); }
+  }
+
+  /* Persistent journey rail + stage enter — cohesive multi-step flow */
+  .sa-mobile .onboarding-flow {
+    position: relative;
+    height: 100dvh;
+    overflow: hidden;
+    background: #07090F;
+  }
+  .sa-mobile .onboarding-flow-stage {
+    height: 100dvh;
+    overflow: hidden;
+    animation: onboardingStageIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes onboardingStageIn {
+    from { opacity: 0; transform: translateY(18px) scale(0.985); filter: blur(4px); }
+    to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+  /* Chapter label — plain text + hairline, no pill/oval chrome */
+  .sa-mobile .sa-studio-index {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 40;
+    pointer-events: none;
+    display: flex;
+    justify-content: center;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 10px)
+      22px
+      0;
+    animation: onboardingProgressIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes onboardingProgressIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .sa-mobile .sa-studio-index-chip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .sa-mobile .sa-studio-index-chip-label {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: none;
+    color: rgba(234,241,246,0.88);
+  }
+  .sa-mobile .sa-studio-index-chip-meta {
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: rgba(200,168,106,0.8);
+  }
+  .sa-mobile .sa-studio-index-chip-track {
+    width: 48px;
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.1);
+    overflow: hidden;
+  }
+  .sa-mobile .sa-studio-index-chip-fill {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #8AABBD 0%, #C8A86A 100%);
+    transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* Room for plain chapter label */
+  .sa-mobile .onboarding-flow--with-rail .onboarding-header,
+  .sa-mobile .onboarding-flow--with-rail .onboarding-analyze-head,
+  .sa-mobile .onboarding-flow--with-rail .onboarding-results-head,
+  .sa-mobile .onboarding-flow--with-rail .signup-brand-band {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 44px) !important;
+  }
+  .sa-mobile .onboarding-flow--with-rail .onboarding-header--compact {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 40px) !important;
+  }
+  .sa-mobile .onboarding-flow--with-rail .onboarding-shell--discover .discover-main {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 48px);
+  }
+  .sa-mobile .onboarding-flow--with-rail .onboarding-welcome-body,
+  .sa-mobile .onboarding-flow--with-rail .onboarding-main {
+    padding-top: 4px;
+  }
+
+  /* ── Discover (Keşfet) — single-viewport composition ── */
+  .sa-mobile .onboarding-shell--discover {
+    justify-content: flex-start;
+    background:
+      radial-gradient(ellipse 90% 42% at 50% -6%, rgba(77,112,136,0.20) 0%, transparent 58%),
+      radial-gradient(ellipse 55% 28% at 80% 100%, rgba(200,168,106,0.06) 0%, transparent 50%),
+      #07090F;
+  }
+  .sa-mobile .onboarding-shell--discover .onboarding-chrome-hairline,
+  .sa-mobile .onboarding-shell--discover .onboarding-ambient-orb--c {
+    display: none;
+  }
+  .sa-mobile .discover-main {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden; /* fit viewport — no scroll when extras open */
+    padding: 8px 22px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    max-width: 420px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+  .sa-mobile .discover-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 0;
+    margin-bottom: 20px;
+    flex-shrink: 0;
+  }
+  .sa-mobile .discover-mark {
+    display: block;
+    width: 96px !important;
+    height: 96px !important;
+    max-width: none;
+    object-fit: contain;
+    border-radius: 0;
+    background: transparent !important;
+    /* Soft lift only — no dark plate halo */
+    filter: drop-shadow(0 8px 20px rgba(0,0,0,0.22));
+    margin: 8px 0 20px;
+    animation: loginBrandIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .sa-mobile .discover-hero-title {
+    margin: 0 0 8px;
+    font-size: 26px;
+    font-weight: 750;
+    letter-spacing: -0.038em;
+    line-height: 1.1;
+    color: #F7F8FA;
+  }
+  .sa-mobile .discover-hero-lead {
+    margin: 0;
+    max-width: 18em;
+    font-size: 13.5px;
+    line-height: 1.35;
+    color: rgba(160,170,185,0.72);
+  }
+  .sa-mobile .discover-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+    justify-content: flex-start;
+  }
+  .sa-mobile .discover-segment {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.055);
+    border: 1px solid rgba(255,255,255,0.05);
+    flex-shrink: 0;
+  }
+  .sa-mobile .discover-segment-btn {
+    min-height: 34px;
+    padding: 7px 10px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(226,232,240,0.5);
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 180ms ease, color 180ms ease, box-shadow 180ms ease;
+  }
+  .sa-mobile .discover-segment-btn.is-on {
+    background: rgba(255,255,255,0.13);
+    color: #F4F4F8;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+  /* Single glass panel — primary + extras as compact horizontal rows */
+  .sa-mobile .discover-panel {
+    border-radius: 16px;
+    background:
+      linear-gradient(165deg, rgba(255,255,255,0.07) 0%, rgba(255,255,255,0.03) 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.06),
+      0 12px 40px rgba(0,0,0,0.22);
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .sa-mobile .discover-hline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 46px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .sa-mobile .discover-hline-label {
+    flex: 0 0 78px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(157,190,206,0.78);
+    letter-spacing: -0.01em;
+  }
+  .sa-mobile .discover-hline-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    padding: 10px 0;
+    min-height: 44px;
+    color: #F4F4F8;
+    font-size: 16px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    text-align: right;
+    outline: none;
+    color-scheme: dark;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .sa-mobile .discover-hline-input::placeholder {
+    color: rgba(148,163,184,0.36);
+    font-weight: 400;
+  }
+  .sa-mobile .discover-hline-input:-webkit-autofill,
+  .sa-mobile .discover-hline-input:-webkit-autofill:hover,
+  .sa-mobile .discover-hline-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #121820 inset;
+    -webkit-text-fill-color: #F4F4F8;
+    caret-color: #F4F4F8;
+  }
+  .sa-mobile .discover-extras-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 14px;
+    border: none;
+    background: rgba(255,255,255,0.02);
+    color: rgba(200,168,106,0.92);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sa-mobile .discover-extras-chevron {
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid rgba(200,168,106,0.8);
+    border-bottom: 1.5px solid rgba(200,168,106,0.8);
+    transform: rotate(45deg);
+    transition: transform 200ms ease;
+    margin-right: 2px;
+  }
+  .sa-mobile .discover-extras-chevron.is-open {
+    transform: rotate(225deg);
+    margin-top: 3px;
+  }
+  .sa-mobile .discover-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(200,168,106,0.08);
+    border: 1px solid rgba(200,168,106,0.2);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .sa-mobile .discover-notice input {
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    flex-shrink: 0;
+    accent-color: #C8A86A;
+  }
+  .sa-mobile .discover-notice span {
+    font-size: 12px;
+    line-height: 1.35;
+    color: rgba(232,214,168,0.92);
+  }
+  .sa-mobile .discover-error {
+    margin: 0;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .sa-mobile .discover-dock {
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    padding:
+      8px
+      22px
+      max(12px, env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    background: linear-gradient(180deg, transparent 0%, rgba(7,9,15,0.92) 35%, #07090F 100%);
+  }
+  .sa-mobile .discover-dock .onboarding-cta {
+    width: 100%;
+    min-height: 50px;
+    border-radius: 14px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .sa-mobile .discover-dock-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin-top: 10px;
+    min-height: 36px;
+  }
+  .sa-mobile .discover-dock-note {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(148,163,184,0.5);
+  }
+  .sa-mobile .discover-login {
+    border: none;
+    background: transparent;
+    padding: 8px 4px;
+    min-height: 36px;
+    font-size: 13px;
+    font-weight: 650;
+    color: #9DBECE;
+    cursor: pointer;
+  }
+  .sa-mobile .discover-login:active { opacity: 0.75; }
+  /* Extras open: tighten header so 4 rows + dock fit without scroll */
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-top {
+    margin-bottom: 12px;
+  }
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-mark {
+    width: 64px !important;
+    height: 64px !important;
+    margin: 4px 0 14px;
+  }
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-hero-title {
+    font-size: 22px;
+    margin-bottom: 6px;
+  }
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-hero-lead {
+    font-size: 12.5px;
+  }
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-hline {
+    min-height: 42px;
+  }
+  .sa-mobile .onboarding-shell--discover.is-extras-open .discover-dock .onboarding-cta {
+    min-height: 48px;
+  }
+  @media (max-height: 720px) {
+    .sa-mobile .discover-top { margin-bottom: 12px; }
+    .sa-mobile .discover-hero-title { font-size: 22px; }
+    .sa-mobile .discover-mark {
+      width: 72px !important;
+      height: 72px !important;
+      margin: 4px 0 14px;
+    }
+    .sa-mobile .discover-hline { min-height: 42px; }
+    .sa-mobile .onboarding-shell--discover.is-extras-open .discover-hero-lead { display: none; }
+  }
+  @media (max-height: 640px) {
+    .sa-mobile .discover-hero-lead { display: none; }
+    .sa-mobile .discover-hline { min-height: 40px; }
+    .sa-mobile .discover-hline-input { font-size: 15px; min-height: 40px; }
+  }
+  .sa-mobile .onboarding-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 6px 12px 6px 10px;
+    border-radius: 999px;
+    background: rgba(138,171,189,0.10);
+    border: 1px solid rgba(138,171,189,0.22);
+    backdrop-filter: blur(8px);
+  }
+  .sa-mobile .onboarding-status-pill-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #8AABBD;
+    box-shadow: 0 0 10px rgba(138,171,189,0.45);
+    animation: onboardingPulseDot 1.8s ease-in-out infinite;
+  }
+  @keyframes onboardingPulseDot {
+    0%,100% { opacity: 0.7; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
+  .sa-mobile .onboarding-stagger > * {
+    animation: onboardingStaggerIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .sa-mobile .onboarding-stagger > *:nth-child(1) { animation-delay: 40ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(2) { animation-delay: 90ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(3) { animation-delay: 140ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(4) { animation-delay: 190ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(6) { animation-delay: 290ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(7) { animation-delay: 340ms; }
+  .sa-mobile .onboarding-stagger > *:nth-child(8) { animation-delay: 390ms; }
+  @keyframes onboardingStaggerIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .sa-mobile .onboarding-cta,
+  .sa-mobile .onboarding-primary-btn {
+    position: relative;
+    overflow: hidden;
+    transition: transform 180ms ease, box-shadow 220ms ease, filter 180ms ease;
+  }
+  .sa-mobile .onboarding-cta::after,
+  .sa-mobile .onboarding-primary-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.14) 50%, transparent 65%);
+    transform: translateX(-120%);
+    animation: onboardingCtaSheen 4.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+  @keyframes onboardingCtaSheen {
+    0%, 70%, 100% { transform: translateX(-120%); }
+    85% { transform: translateX(120%); }
+  }
+  .sa-mobile .onboarding-cta:active,
+  .sa-mobile .onboarding-primary-btn:active {
+    transform: scale(0.98);
+  }
+  .sa-mobile .onboarding-input {
+    transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  }
+  .sa-mobile .onboarding-input:focus {
+    box-shadow: 0 0 0 3px rgba(77,112,136,0.22);
+  }
+  .sa-mobile .onboarding-segment-btn {
+    transition: background 200ms ease, color 200ms ease, transform 160ms ease;
+  }
+  .sa-mobile .onboarding-segment-btn--on {
+    transform: translateY(-1px);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sa-mobile .onboarding-ambient-orb,
+    .sa-mobile .onboarding-flow-stage,
+    .sa-mobile .sa-studio-index,
+    .sa-mobile .onboarding-stagger > *,
+    .sa-mobile .discover-group--extras,
+    .sa-mobile .onboarding-status-pill-dot,
+    .sa-mobile .onboarding-cta::after,
+    .sa-mobile .onboarding-primary-btn::after {
+      animation: none !important;
+    }
+    .sa-mobile .sa-studio-index-chip-fill {
+      transition: none;
+    }
   }
   .sa-mobile .onboarding-header {
     position: relative;
@@ -655,7 +1174,7 @@ const CSS = `
     }
   }
 
-  /* ── Sign-up (URL step) — same language as login ── */
+  /* ── Sign-up — account step (Keşfet uses --discover) ── */
   .sa-mobile .onboarding-shell--signup {
     justify-content: flex-start;
   }
@@ -978,6 +1497,40 @@ const CSS = `
     transform: scale(0.99);
     background: #456678;
   }
+  .sa-mobile .onboarding-primary-btn {
+    width: 100%;
+    max-width: 360px;
+    min-height: 48px;
+    padding: 14px 18px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(160deg, #6A93AC 0%, #4D7088 45%, #2A4A60 100%);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    cursor: pointer;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.22),
+      0 6px 28px rgba(77,112,136,0.4);
+  }
+  .sa-mobile .onboarding-primary-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .sa-mobile .onboarding-cta-dock {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    padding: 12px 24px max(20px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent 0%, rgba(7,9,15,0.72) 28%, rgba(7,9,15,0.96) 100%);
+    backdrop-filter: blur(18px);
+    border-top: 0.5px solid rgba(255,255,255,0.06);
+    animation: onboardingProgressIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
   .sa-mobile .onboarding-note {
     margin: 0 0 8px;
     text-align: center;
@@ -1267,8 +1820,8 @@ const CSS = `
     justify-content: center;
     font-size: 14px;
     font-weight: 800;
-    color: #C4B5FD;
-    background: linear-gradient(135deg, rgba(77,112,136,0.25), rgba(90,130,160,0.22));
+    color: #9DBECE;
+    background: linear-gradient(135deg, rgba(77,112,136,0.28), rgba(90,130,160,0.22));
     border: 0.5px solid rgba(157,190,206,0.35);
   }
   .sa-mobile .onboarding-brand-meta-title {

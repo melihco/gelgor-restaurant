@@ -17,10 +17,70 @@ export function OnboardingChromeBackdrop({
       <div
         className={`onboarding-ambient${success ? ' onboarding-ambient--success' : ''}`}
         aria-hidden
-      />
+      >
+        <span className="onboarding-ambient-orb onboarding-ambient-orb--a" />
+        <span className="onboarding-ambient-orb onboarding-ambient-orb--b" />
+        <span className="onboarding-ambient-orb onboarding-ambient-orb--c" />
+      </div>
       {showMark && <div className="onboarding-chrome-mark" aria-hidden />}
       <div className="onboarding-chrome-hairline" aria-hidden />
     </>
+  );
+}
+
+/**
+ * Journey chapters — editorial index, not a SaaS wizard stepper.
+ * Labels are short studio chapter titles (shown one at a time).
+ */
+export const ONBOARDING_PHASES = [
+  { id: 'discover', label: 'Keşfet', whisper: 'Kaynakları oku', steps: ['url', 'analyzing', 'results'] },
+  { id: 'account', label: 'Hesap', whisper: 'Alanını aç', steps: ['signup'] },
+  { id: 'brand', label: 'Kimlik', whisper: 'Markayı kilitle', steps: ['brand_confirm', 'typography_confirm'] },
+  { id: 'gallery', label: 'Galeri', whisper: 'Görselleri bağla', steps: ['gallery_ready'] },
+  { id: 'templates', label: 'Atölye', whisper: 'Şablonları üret', steps: ['templates_showcase'] },
+  { id: 'ready', label: 'Sahne', whisper: 'Hazırsın', steps: ['welcome'] },
+] as const;
+
+export type OnboardingPhaseStep = (typeof ONBOARDING_PHASES)[number]['steps'][number];
+
+export function resolveOnboardingPhaseIndex(step: string): number {
+  const idx = ONBOARDING_PHASES.findIndex((p) =>
+    (p.steps as readonly string[]).includes(step),
+  );
+  return idx >= 0 ? idx : 0;
+}
+
+/**
+ * Compact chapter chip — native nav caption, not a wizard stepper.
+ */
+export function OnboardingProgressRail({
+  step,
+  visible = true,
+}: {
+  step: string;
+  visible?: boolean;
+}) {
+  if (!visible) return null;
+  const activeIdx = resolveOnboardingPhaseIndex(step);
+  const phase = ONBOARDING_PHASES[activeIdx]!;
+  const chapter = String(activeIdx + 1);
+  const total = String(ONBOARDING_PHASES.length);
+  const pct = Math.round(((activeIdx + 1) / ONBOARDING_PHASES.length) * 100);
+
+  return (
+    <div className="sa-studio-index" role="navigation" aria-label="Kurulum bölümü">
+      <div className="sa-studio-index-chip">
+        <span className="sa-studio-index-chip-label" aria-live="polite">
+          {phase.label}
+          <span className="sa-studio-index-chip-meta">
+            {chapter}/{total}
+          </span>
+        </span>
+        <div className="sa-studio-index-chip-track" aria-hidden>
+          <span className="sa-studio-index-chip-fill" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -76,20 +136,9 @@ export function OnboardingStepDot({ state }: { state: StepState }) {
 
 export function OnboardingStatusPill({ children }: { children: ReactNode }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-      <div
-        style={{
-          width: 7,
-          height: 7,
-          borderRadius: '50%',
-          background: SA_ONBOARDING.done,
-          boxShadow: `0 0 10px ${SA_ONBOARDING.doneBg}`,
-        }}
-      />
-      <span
-        className="sa-chrome-eyebrow"
-        style={{ margin: 0, color: SA_ONBOARDING.doneBright }}
-      >
+    <div className="onboarding-status-pill">
+      <span className="onboarding-status-pill-dot" aria-hidden />
+      <span className="sa-chrome-eyebrow" style={{ margin: 0, color: SA_ONBOARDING.doneBright }}>
         {children}
       </span>
     </div>

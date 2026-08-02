@@ -13,6 +13,10 @@ import {
   getDefaultEnhanceLevel,
 } from './sector-production-profile';
 
+/**
+ * @deprecated Pilot UUID branches are forbidden in production paths.
+ * Kept only so old scripts/imports don't break — never use for behaviour.
+ */
 export const KACTA_TENANT_ID = '5feb36f7-def7-4b4a-834f-353457de57bf';
 
 /** @deprecated Use getSectorProfile(sector).hasPhysicalVenue instead. */
@@ -33,8 +37,9 @@ export function isAgencyServiceSector(sector: string): boolean {
   return profile.defaultVisualSubject === 'digital_ui' || profile.sectorId === 'agency_services';
 }
 
-export function isPilotAgencyTenant(tenantId: string): boolean {
-  return tenantId === KACTA_TENANT_ID;
+/** @deprecated No production behaviour may branch on tenant UUID. Always false. */
+export function isPilotAgencyTenant(_tenantId: string): boolean {
+  return false;
 }
 
 /**
@@ -42,9 +47,11 @@ export function isPilotAgencyTenant(tenantId: string): boolean {
  *
  * Priority order (high → low):
  *   1. Explicit user opt-out (ai_photo_enhance === false) — always wins
- *   2. Pilot / locked-library / physical-venue force-on
+ *   2. Locked-library / physical-venue / digital-UI sector force-on
  *   3. Sector profile defaults (galleryReliability, adaptiveScene, etc.)
  *   4. Stored brand_theme values
+ *
+ * Multi-tenant: never branch on tenant UUID — only sector + library lock.
  */
 export function applyAgencyProductionThemeDefaults(
   theme: Record<string, unknown> | null,
@@ -63,19 +70,20 @@ export function applyAgencyProductionThemeDefaults(
   }
 
   const profile = getSectorProfile(input.sector);
-  const pilot = isPilotAgencyTenant(input.tenantId);
   const locked = Boolean(input.templateLibrary.locked);
   const nonVenue = isNonVenueSectorProfile(input.sector);
   const physicalVenue = profile.hasPhysicalVenue;
+  const digitalUi = profile.defaultVisualSubject === 'digital_ui'
+    || profile.sectorId === 'agency_services';
 
-  if (pilot) reasons.push('pilot_tenant_kacta');
   if (locked) reasons.push('template_library_locked');
   if (nonVenue) reasons.push('non_venue_saas');
   if (physicalVenue) reasons.push(`physical_venue_sector:${profile.sectorId}`);
+  if (digitalUi) reasons.push(`digital_ui_sector:${profile.sectorId}`);
 
   // ── Non-venue / SaaS path ─────────────────────────────────────────────────
   // Digital brands: Remotion + digital UI; never force GPT venue enhance.
-  if (nonVenue && (pilot || locked)) {
+  if (nonVenue && (locked || digitalUi)) {
     const base = { ...normalized };
     base.ai_photo_enhance = false;
     if (!base.ai_visual_subject || base.ai_visual_subject === 'auto') {
@@ -90,7 +98,7 @@ export function applyAgencyProductionThemeDefaults(
   }
 
   // ── Physical venue / service path ─────────────────────────────────────────
-  const shouldForce = (pilot || locked || physicalVenue) && !nonVenue;
+  const shouldForce = (locked || physicalVenue) && !nonVenue;
   if (!shouldForce) {
     return { theme: normalized, forced: false, reasons: [] };
   }

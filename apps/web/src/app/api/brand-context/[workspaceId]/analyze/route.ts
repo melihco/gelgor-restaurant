@@ -44,12 +44,19 @@ export async function POST(
   const { workspaceId } = await params;
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
+  const cachedDiscovery = (body.cached_discovery ?? body.cachedDiscovery) as
+    | Record<string, unknown>
+    | null
+    | undefined;
   const normalized = {
     website_url: String(body.website_url ?? body.websiteUrl ?? '').trim(),
     instagram_handle: String(body.instagram_handle ?? body.instagramHandle ?? '').trim(),
     google_business_url: String(body.google_business_url ?? body.googleBusinessUrl ?? '').trim(),
     menu_url: String(body.menu_url ?? body.menuUrl ?? '').trim(),
     brand_name: String(body.brand_name ?? body.brandName ?? body.companyName ?? '').trim(),
+    ...(cachedDiscovery && typeof cachedDiscovery === 'object'
+      ? { cached_discovery: cachedDiscovery }
+      : {}),
   };
 
   const upstream = await fetchCrewBackendJson<Record<string, unknown>>(
@@ -72,7 +79,8 @@ export async function POST(
   let analyzeData = asAnalyzePayload(upstream.data);
 
   const onboardingAnalyze = request.headers.get('x-onboarding-analyze') === '1';
-  const skipCdnMirror = onboardingAnalyze || request.headers.get('x-skip-cdn-mirror') === '1';
+  // Only skip when explicitly requested — onboarding must mirror CDN→R2 so gallery/DNA don't rot.
+  const skipCdnMirror = request.headers.get('x-skip-cdn-mirror') === '1';
 
   // After analysis: mirror Instagram CDN image URLs to R2 so they don't expire
   try {

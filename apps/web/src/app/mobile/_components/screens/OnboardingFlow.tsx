@@ -1,13 +1,6 @@
 'use client';
 /**
- * ONBOARDING FLOW — Brand Analysis → Sign Up → Package → Welcome
- *
- * Step 1: URL input (website, optional instagram)
- * Step 2: Live brand analysis animation (real API)
- * Step 3: Brand intelligence results preview
- * Step 4: Create account (sign up)
- * Step 5: Package selection
- * Step 6: Welcome + brand constitution confirmed
+ * ONBOARDING FLOW — Discover → Sign up → Confirm brand → Typography → Gallery → Templates → Welcome
  */
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../auth-store';
@@ -17,11 +10,16 @@ import { getRequestContextHeaders } from '@/lib/runtime-config';
 import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
-import { SmartAgencyLogo } from '@/components/brand/SmartAgencyLogo';
+import Image from 'next/image';
+import {
+  SMART_AGENCY_MARK_TRANSPARENT_SRC,
+  SmartAgencyLogo,
+} from '@/components/brand/SmartAgencyLogo';
 import { StoryNavigation } from '../StoryNavigation';
 import {
   OnboardingChromeBackdrop,
   OnboardingPreviewIcon,
+  OnboardingProgressRail,
   OnboardingStatusPill,
   OnboardingStepDot,
   OnboardingSuccessMark,
@@ -30,14 +28,52 @@ import { SA_ONBOARDING } from '../sa-chrome';
 import {
   TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
   buildUserConfirmedTypographyPatch,
-  isTypographyDesignConfirmed,
   resolvePostDesignDefaultsForTypography,
   resolveSuggestedTypographyConfig,
 } from '@/lib/typography-design-policy';
 import type { BrandDesignTypographyConfig, TypographyVibe } from '@/types/brand-theme';
+import {
+  BRAND_TONE_PRESETS,
+  pythonToneToPreset,
+  type BrandTonePreset,
+} from '@/lib/sync-company-profile-from-python';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
+import { serviceProfileCategoryForSector } from '@/lib/canonical-sector';
 
 // ─── Types ────────────────────────────────────────────────────────────
-type Step = 'url' | 'analyzing' | 'results' | 'signup' | 'typography_confirm' | 'templates_showcase' | 'welcome';
+type Step =
+  | 'url'
+  | 'analyzing'
+  | 'results'
+  | 'signup'
+  | 'brand_confirm'
+  | 'typography_confirm'
+  | 'gallery_ready'
+  | 'templates_showcase'
+  | 'welcome';
+
+type DiscoveryResultWithCache = BrandDiscoveryResult & { previewCacheKey?: string };
+
+const ONBOARDING_SECTORS: { id: string; label: string }[] = [
+  { id: 'beach_club', label: 'Beach club' },
+  { id: 'restaurant_cafe', label: 'Restoran / cafe' },
+  { id: 'hotel_resort', label: 'Otel / resort' },
+  { id: 'local_products_shop', label: 'Yöresel ürün' },
+  { id: 'pub', label: 'Bar / pub' },
+  { id: 'beauty_wellness', label: 'Güzellik / wellness' },
+  { id: 'coffee_shop', label: 'Kahve' },
+  { id: 'fashion_retail', label: 'Moda / retail' },
+  { id: 'event_management', label: 'Etkinlik' },
+  { id: 'general_business', label: 'Diğer' },
+];
+
+const TONE_LABELS: Record<BrandTonePreset, string> = {
+  professional: 'Profesyonel',
+  friendly: 'Samimi',
+  energetic: 'Enerjik',
+  luxury: 'Premium',
+  casual: 'Rahat',
+};
 
 interface ShowcaseTemplate {
   id: string;
@@ -117,61 +153,99 @@ function extractDomain(url: string): string {
 }
 
 // ─── URL Step ─────────────────────────────────────────────────────────
-function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUrl: string) => void; onLogin: () => void }) {
-  const [url, setUrl]     = useState('');
-  const [ig, setIg]       = useState('');
+function UrlStep({
+  onNext,
+  onLogin,
+}: {
+  onNext: (url: string, ig: string, menuUrl: string, googleBusinessUrl: string) => void;
+  onLogin: () => void;
+}) {
+  const [url, setUrl] = useState('');
+  const [ig, setIg] = useState('');
   const [menuUrl, setMenuUrl] = useState('');
+  const [googleBusinessUrl, setGoogleBusinessUrl] = useState('');
   const [error, setError] = useState('');
-  const [mode, setMode]   = useState<'web' | 'social'>('web');
+  const [mode, setMode] = useState<'web' | 'social'>('web');
+  const [igOnlyAck, setIgOnlyAck] = useState(false);
+  const [extrasOpen, setExtrasOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 400); }, [mode]);
+  useEffect(() => {
+    const t = setTimeout(() => inputRef.current?.focus(), 420);
+    return () => clearTimeout(t);
+  }, [mode]);
 
   function handleSubmit() {
     const cleanIg = stripHandle(ig);
+    const normalizedGoogle = googleBusinessUrl.trim() ? normalizeUrl(googleBusinessUrl) : '';
+    if (normalizedGoogle) {
+      try { new URL(normalizedGoogle); } catch { setError('Geçerli bir Google Business linki girin'); return; }
+    }
     if (mode === 'social') {
-      if (!cleanIg) { setError('Instagram kullanıcı adınızı girin'); return; }
-      onNext('', cleanIg, '');
+      if (!cleanIg && !normalizedGoogle) { setError('Instagram veya Google Business girin'); return; }
+      const optionalWeb = url.trim() ? normalizeUrl(url) : '';
+      if (optionalWeb) {
+        try { new URL(optionalWeb); } catch { setError('Geçerli bir web sitesi URL\'i girin'); return; }
+      }
+      if (!optionalWeb && !igOnlyAck) {
+        setError('Web sitesi olmadan devam için aşağıdaki uyarıyı onaylayın.');
+        setExtrasOpen(true);
+        return;
+      }
+      onNext(optionalWeb, cleanIg, '', normalizedGoogle);
       return;
     }
     const normalized = normalizeUrl(url);
     const normalizedMenu = menuUrl.trim() ? normalizeUrl(menuUrl) : '';
-    if (!normalized && !cleanIg && !normalizedMenu) { setError('Web sitesi URL\'i, menü linki veya Instagram handle\'ı girin'); return; }
+    if (!normalized && !cleanIg && !normalizedMenu && !normalizedGoogle) {
+      setError('Web sitesi, menü, Instagram veya Google Business girin');
+      return;
+    }
     if (normalized) {
       try { new URL(normalized); } catch { setError('Geçerli bir URL girin (örn: siteniz.com)'); return; }
     }
     if (normalizedMenu) {
       try { new URL(normalizedMenu); } catch { setError('Geçerli bir menü linki girin'); return; }
     }
-    onNext(normalized, cleanIg, normalizedMenu);
+    onNext(normalized, cleanIg, normalizedMenu, normalizedGoogle);
   }
 
-  const hasWebInput = url.trim().length > 0;
-  const hasIgInput  = ig.trim().length > 0;
-  const hasMenuInput = menuUrl.trim().length > 0;
+  const primaryFilled = mode === 'web' ? url.trim().length > 0 : ig.trim().length > 0;
+  const extrasCount = [
+    mode === 'web' ? menuUrl.trim() : url.trim(),
+    mode === 'web' ? ig.trim() : '',
+    googleBusinessUrl.trim(),
+  ].filter(Boolean).length;
 
   return (
-    <div className="onboarding-shell onboarding-shell--signup">
+    <div
+      className={`onboarding-shell onboarding-shell--discover${extrasOpen ? ' is-extras-open' : ''}`}
+    >
       <OnboardingChromeBackdrop showMark={false} />
 
-      <header className="signup-brand-band">
-        <SmartAgencyLogo variant="full" priority className="signup-logo" />
-      </header>
-
-      <main className="signup-main">
-        <div className="signup-intro">
-          <h1 className="signup-title">Markanızı tanıyalım</h1>
-          <p className="signup-lead">
-            Web siteniz ve Instagram’dan marka kimliğinizi çıkarıyoruz.
+      <main className="discover-main">
+        <header className="discover-top">
+          <Image
+            src={SMART_AGENCY_MARK_TRANSPARENT_SRC}
+            alt="SmartAgency"
+            width={1024}
+            height={1024}
+            priority
+            className="discover-mark"
+          />
+          <h1 className="discover-hero-title">Markanı tanıyalım</h1>
+          <p className="discover-hero-lead">
+            Web veya Instagram’dan kimliğini çıkarıyoruz.
           </p>
-        </div>
+        </header>
 
         <form
-          className="signup-form"
+          id="discover-form"
+          className="discover-form"
           onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}
           noValidate
         >
-          <div className="onboarding-segment signup-segment" role="tablist" aria-label="Kaynak">
+          <div className="discover-segment" role="tablist" aria-label="Ana kaynak">
             {([
               { key: 'web' as const, label: 'Web sitesi' },
               { key: 'social' as const, label: 'Instagram' },
@@ -181,107 +255,163 @@ function UrlStep({ onNext, onLogin }: { onNext: (url: string, ig: string, menuUr
                 type="button"
                 role="tab"
                 aria-selected={mode === opt.key}
-                onClick={() => { setMode(opt.key); setError(''); }}
-                className={`onboarding-segment-btn${mode === opt.key ? ' onboarding-segment-btn--on' : ''}`}
+                onClick={() => {
+                  setMode(opt.key);
+                  setError('');
+                  setIgOnlyAck(false);
+                }}
+                className={`discover-segment-btn${mode === opt.key ? ' is-on' : ''}`}
               >
                 {opt.label}
               </button>
             ))}
           </div>
 
-          {mode === 'web' ? (
-            <div className="onboarding-fields signup-fields">
-              <label className="onboarding-field">
-                <span className="onboarding-field-label">Web siteniz</span>
-                <input
-                  ref={inputRef}
-                  value={url}
-                  onChange={(e) => { setUrl(e.target.value); setError(''); }}
-                  placeholder="siteniz.com"
-                  type="url"
-                  inputMode="url"
-                  autoComplete="url"
-                  enterKeyHint="next"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={`onboarding-input${hasWebInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
-                />
-              </label>
-              <label className="onboarding-field">
-                <span className="onboarding-field-label onboarding-field-label--muted">Menü linki · opsiyonel</span>
-                <input
-                  value={menuUrl}
-                  onChange={(e) => { setMenuUrl(e.target.value); setError(''); }}
-                  placeholder="menu.siteniz.com"
-                  type="url"
-                  inputMode="url"
-                  enterKeyHint="next"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={`onboarding-input${hasMenuInput ? ' onboarding-input--filled' : ''}`}
-                />
-              </label>
-              <label className="onboarding-field">
-                <span className="onboarding-field-label onboarding-field-label--muted">Instagram · opsiyonel</span>
-                <input
-                  value={ig}
-                  onChange={(e) => { setIg(e.target.value); setError(''); }}
-                  placeholder="@markaniz"
-                  inputMode="text"
-                  enterKeyHint="go"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}`}
-                />
-              </label>
-            </div>
-          ) : (
-            <div className="onboarding-fields signup-fields">
-              <label className="onboarding-field">
-                <span className="onboarding-field-label">Instagram kullanıcı adı</span>
-                <input
-                  ref={inputRef}
-                  value={ig}
-                  onChange={(e) => { setIg(e.target.value); setError(''); }}
-                  placeholder="markaniz"
-                  inputMode="text"
-                  enterKeyHint="go"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  className={`onboarding-input${hasIgInput ? ' onboarding-input--filled' : ''}${error ? ' onboarding-input--error' : ''}`}
-                />
-              </label>
-            </div>
+          <div className="discover-panel">
+            <label className="discover-hline">
+              <span className="discover-hline-label">
+                {mode === 'web' ? 'Web' : 'Instagram'}
+              </span>
+              <input
+                ref={inputRef}
+                value={mode === 'web' ? url : ig}
+                onChange={(e) => {
+                  if (mode === 'web') setUrl(e.target.value);
+                  else setIg(e.target.value);
+                  setError('');
+                }}
+                placeholder={mode === 'web' ? 'siteniz.com' : '@markaniz'}
+                type={mode === 'web' ? 'url' : 'text'}
+                inputMode={mode === 'web' ? 'url' : 'text'}
+                autoComplete={mode === 'web' ? 'url' : 'username'}
+                enterKeyHint="go"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className={`discover-hline-input${primaryFilled ? ' is-filled' : ''}`}
+              />
+            </label>
+
+            {extrasOpen && (
+              <>
+                {mode === 'web' ? (
+                  <>
+                    <label className="discover-hline">
+                      <span className="discover-hline-label">Menü</span>
+                      <input
+                        value={menuUrl}
+                        onChange={(e) => { setMenuUrl(e.target.value); setError(''); }}
+                        placeholder="menu.siteniz.com"
+                        type="url"
+                        inputMode="url"
+                        enterKeyHint="next"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        className="discover-hline-input"
+                      />
+                    </label>
+                    <label className="discover-hline">
+                      <span className="discover-hline-label">Instagram</span>
+                      <input
+                        value={ig}
+                        onChange={(e) => { setIg(e.target.value); setError(''); }}
+                        placeholder="@markaniz"
+                        inputMode="text"
+                        enterKeyHint="next"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        className="discover-hline-input"
+                      />
+                    </label>
+                  </>
+                ) : (
+                  <label className="discover-hline">
+                    <span className="discover-hline-label">Web</span>
+                    <input
+                      value={url}
+                      onChange={(e) => { setUrl(e.target.value); setError(''); setIgOnlyAck(false); }}
+                      placeholder="siteniz.com · önerilir"
+                      type="url"
+                      inputMode="url"
+                      enterKeyHint="next"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      className="discover-hline-input"
+                    />
+                  </label>
+                )}
+                <label className="discover-hline">
+                  <span className="discover-hline-label">Google</span>
+                  <input
+                    value={googleBusinessUrl}
+                    onChange={(e) => { setGoogleBusinessUrl(e.target.value); setError(''); }}
+                    placeholder="maps / g.page linki"
+                    type="url"
+                    inputMode="url"
+                    enterKeyHint="go"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    className="discover-hline-input"
+                  />
+                </label>
+              </>
+            )}
+
+            <button
+              type="button"
+              className="discover-extras-row"
+              aria-expanded={extrasOpen}
+              onClick={() => setExtrasOpen((v) => !v)}
+            >
+              <span>
+                {extrasOpen
+                  ? 'Daha az'
+                  : extrasCount > 0
+                    ? `Ek kaynaklar · ${extrasCount}`
+                    : 'Menü, Google ekle'}
+              </span>
+              <span className={`discover-extras-chevron${extrasOpen ? ' is-open' : ''}`} aria-hidden />
+            </button>
+          </div>
+
+          {mode === 'social' && extrasOpen && !url.trim() && (
+            <label className="discover-notice">
+              <input
+                type="checkbox"
+                checked={igOnlyAck}
+                onChange={(e) => { setIgOnlyAck(e.target.checked); setError(''); }}
+              />
+              <span>Web olmadan devam — kalite riskini kabul ediyorum</span>
+            </label>
           )}
 
-          {error && <p className="onboarding-error signup-error">{error}</p>}
-
-          <div className="signup-actions">
-            <button type="submit" className="onboarding-cta">
-              Analizi başlat
-            </button>
-            <p className="onboarding-note">Marka analizi genelde 2–4 dakika sürer.</p>
-          </div>
+          {error && <p className="onboarding-error discover-error">{error}</p>}
         </form>
       </main>
 
-      <footer className="signup-footer">
-        <button type="button" onClick={onLogin} className="onboarding-login-link">
-          Zaten hesabınız var mı? <span>Giriş yap</span>
+      <footer className="discover-dock">
+        <button type="submit" form="discover-form" className="onboarding-cta">
+          Analizi başlat
         </button>
+        <div className="discover-dock-meta">
+          <span className="discover-dock-note">2–4 dk</span>
+          <button type="button" onClick={onLogin} className="discover-login">
+            Giriş yap
+          </button>
+        </div>
       </footer>
     </div>
   );
 }
 
 // ─── Analysis Step ─────────────────────────────────────────────────────
-function AnalyzingStep({ url, ig, menuUrl, onDone }: {
-  url: string; ig: string; menuUrl: string;
-  onDone: (result: BrandDiscoveryResult | null) => void;
+function AnalyzingStep({ url, ig, menuUrl, googleBusinessUrl, onDone }: {
+  url: string; ig: string; menuUrl: string; googleBusinessUrl: string;
+  onDone: (result: DiscoveryResultWithCache | null) => void;
 }) {
   const baseSteps = getAnalysisSteps(url, ig);
   const [steps, setSteps] = useState<AnalysisStep[]>(
@@ -289,10 +419,10 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
   );
   const [currentIdx, setCurrentIdx] = useState(0);
   const [progress, setProgress] = useState(0);
-  const [apiResult, setApiResult] = useState<BrandDiscoveryResult | null>(null);
+  const [apiResult, setApiResult] = useState<DiscoveryResultWithCache | null>(null);
   const [apiSettled, setApiSettled] = useState(false);
   const doneRef = useRef(false);
-  const apiResultRef = useRef<BrandDiscoveryResult | null>(null);
+  const apiResultRef = useRef<DiscoveryResultWithCache | null>(null);
 
   // Pre-signup preview: full Python analyze (no auth / no DB persist)
   useEffect(() => {
@@ -305,13 +435,14 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
         websiteUrl: url,
         instagramHandle: ig || undefined,
         menuUrl: menuUrl || undefined,
+        googleBusinessUrl: googleBusinessUrl || undefined,
       }),
     })
       .then(async (res) => {
         const json = await res.json().catch(() => null);
         if (cancelled) return;
         if (res.ok && json?.success !== false) {
-          const result = json as BrandDiscoveryResult;
+          const result = json as DiscoveryResultWithCache;
           apiResultRef.current = result;
           setApiResult(result);
         } else {
@@ -329,7 +460,7 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
         if (!cancelled) setApiSettled(true);
       });
     return () => { cancelled = true; };
-  }, [url, ig, menuUrl]);
+  }, [url, ig, menuUrl, googleBusinessUrl]);
 
   // Animate steps sequentially; finish only after API settles (or min animation time)
   useEffect(() => {
@@ -372,41 +503,51 @@ function AnalyzingStep({ url, ig, menuUrl, onDone }: {
         </p>
       </div>
 
-      {/* Progress ring */}
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '28px 0 20px' }}>
-        <div style={{ position: 'relative', width: 100, height: 100 }}>
-          <svg width="100" height="100" style={{ transform: 'rotate(-90deg)' }}>
-            <circle cx="50" cy="50" r="42" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="6" />
-            <circle cx="50" cy="50" r="42" fill="none" stroke="#4D7088" strokeWidth="6"
-              strokeDasharray={`${(progress / 100) * 264} 264`} strokeLinecap="round"
-              style={{ transition: 'stroke-dasharray 800ms ease', filter: 'drop-shadow(0 0 8px rgba(77,112,136,0.6))' }} />
+      {/* Progress ring — immersive ritual */}
+      <div className="onboarding-analyze-ring" style={{ display: 'flex', justifyContent: 'center', padding: '24px 0 18px' }}>
+        <div style={{ position: 'relative', width: 112, height: 112 }}>
+          <div className="onboarding-setup-shimmer" aria-hidden style={{ inset: -8 }} />
+          <svg width="112" height="112" style={{ transform: 'rotate(-90deg)', position: 'relative', zIndex: 1 }}>
+            <circle cx="56" cy="56" r="46" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="5" />
+            <circle cx="56" cy="56" r="46" fill="none" stroke="url(#analyzeGrad)" strokeWidth="5"
+              strokeDasharray={`${(progress / 100) * 289} 289`} strokeLinecap="round"
+              style={{ transition: 'stroke-dasharray 700ms cubic-bezier(0.22,1,0.36,1)', filter: 'drop-shadow(0 0 10px rgba(157,190,206,0.45))' }} />
+            <defs>
+              <linearGradient id="analyzeGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#4D7088" />
+                <stop offset="55%" stopColor="#9DBECE" />
+                <stop offset="100%" stopColor="#C8A86A" />
+              </linearGradient>
+            </defs>
           </svg>
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-            <div style={{ fontSize: 22, fontWeight: 800, color: '#9DBECE', fontVariantNumeric: 'tabular-nums' }}>{progress}%</div>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 2 }}>
+            <div style={{ fontSize: 24, fontWeight: 800, color: '#EAF1F6', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.03em' }}>{progress}%</div>
+            <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'rgba(157,190,206,0.55)', marginTop: 2 }}>analiz</div>
           </div>
         </div>
       </div>
 
       {/* Steps list */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 28px 24px' }}>
-        {steps.map((step, i) => (
-          <div key={step.id} style={{
+        {steps.map((stepItem, i) => (
+          <div key={stepItem.id} style={{
             display: 'flex', gap: 14, alignItems: 'flex-start',
             padding: '12px 0',
             borderBottom: i < steps.length - 1 ? '0.5px solid rgba(255,255,255,0.05)' : 'none',
-            opacity: step.done ? 1 : step.active ? 1 : 0.35,
-            transition: 'opacity 300ms',
+            opacity: stepItem.done ? 1 : stepItem.active ? 1 : 0.35,
+            transition: 'opacity 300ms, transform 300ms',
+            transform: stepItem.active ? 'translateX(2px)' : 'none',
           }}>
             <OnboardingStepDot
-              state={step.done ? 'done' : step.active ? 'active' : 'idle'}
+              state={stepItem.done ? 'done' : stepItem.active ? 'active' : 'idle'}
             />
 
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: step.active ? 700 : 500, color: step.done ? SA_ONBOARDING.doneBright : step.active ? '#F4F4F8' : 'rgba(148,163,184,0.5)', marginBottom: 2, transition: 'color 300ms' }}>
-                {step.label}
+              <div style={{ fontSize: 14, fontWeight: stepItem.active ? 700 : 500, color: stepItem.done ? SA_ONBOARDING.doneBright : stepItem.active ? '#F4F4F8' : 'rgba(148,163,184,0.5)', marginBottom: 2, transition: 'color 300ms' }}>
+                {stepItem.label}
               </div>
-              {(step.done || step.active) && (
-                <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.45)', lineHeight: 1.4 }}>{step.detail}</div>
+              {(stepItem.done || stepItem.active) && (
+                <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.45)', lineHeight: 1.4 }}>{stepItem.detail}</div>
               )}
             </div>
           </div>
@@ -431,7 +572,20 @@ function ResultsStep({ result, url, ig, onNext }: {
   // ── Resolve data from real API or generate sensible fallbacks ──
   const report  = (result?.report ?? {}) as Partial<BrandIntelligenceReport>;
   const profile = result?.profile;
-  const hasReal = !!result?.success;
+  const hasSignals = Boolean(
+    report.brandName || report.industry || report.brandTone || report.contentPillars?.length || profile?.brandName,
+  );
+  const hasReal = hasSignals;
+  const limitedPreview = Boolean(
+    result
+    && (
+      result.fetchOk === false
+      || (
+        (result as { confidence?: number }).confidence != null
+        && Number((result as { confidence?: number }).confidence) < 50
+      )
+    ),
+  );
 
   const brandName = profile?.brandName ?? report.brandName ?? domain;
   const industry  = profile?.industry  ?? report.industry  ?? 'İşletme';
@@ -441,8 +595,15 @@ function ResultsStep({ result, url, ig, onNext }: {
   const pillars   = (report.contentPillars ?? []).slice(0, 4);
   const goals     = (report.primaryGoals   ?? []).slice(0, 3);
   const summary   = (report as any).websiteSummary as string | undefined;
-  const confidence= Math.min((result as any)?.confidence ?? (hasReal ? 82 : 0), 100);
+  const rawConfidence = Number(
+    (result as { confidence?: number } | null)?.confidence
+      ?? profile?.discoveryConfidence
+      ?? 0,
+  );
+  // Never invent a high score — missing confidence means unknown, show 0 / hide boast copy
+  const confidence = Number.isFinite(rawConfidence) ? Math.min(Math.max(rawConfidence, 0), 100) : 0;
   const channels  = (report.preferredChannels ?? []).slice(0, 3);
+  const resultMessage = typeof result?.message === 'string' ? result.message : '';
 
   // Fallback preview cards when API data is absent
   const fallbackCards = !hasReal ? [
@@ -474,7 +635,7 @@ function ResultsStep({ result, url, ig, onNext }: {
       <div className="onboarding-results-head">
         <OnboardingLogoMark compact />
         <OnboardingStatusPill>
-          {hasReal ? 'Analiz Tamamlandı' : 'Ön Tarama Tamamlandı'}
+          {limitedPreview ? 'Sınırlı Önizleme' : hasReal ? 'Analiz Tamamlandı' : 'Ön Tarama Tamamlandı'}
         </OnboardingStatusPill>
 
         <h1 style={{ fontSize: 28, fontWeight: 800, color: '#F4F4F8', letterSpacing: '-0.03em', lineHeight: 1.15, marginBottom: 6 }}>
@@ -500,39 +661,52 @@ function ResultsStep({ result, url, ig, onNext }: {
       </div>
 
       {/* Scrollable results */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 24px', paddingBottom: 120 }}>
+      <div className="onboarding-stagger" style={{ flex: 1, overflowY: 'auto', padding: '4px 24px', paddingBottom: 120 }}>
 
-        {/* AI Confidence Score (only when real data) */}
-        {hasReal && (
+        {/* AI Confidence Score — honest source-based score only */}
+        {hasReal && confidence > 0 && (
           <div style={{ ...cardStyle, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ position: 'relative', width: 54, height: 54, flexShrink: 0 }}>
               <svg width="54" height="54" style={{ transform: 'rotate(-90deg)' }}>
                 <circle cx="27" cy="27" r="21" fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="5" />
-                <circle cx="27" cy="27" r="21" fill="none" stroke="#4D7088" strokeWidth="5"
+                <circle cx="27" cy="27" r="21" fill="none" stroke={confidence >= 60 ? '#4D7088' : '#B45309'} strokeWidth="5"
                   strokeDasharray={`${(confidence / 100) * 132} 132`} strokeLinecap="round"
-                  style={{ filter: 'drop-shadow(0 0 5px rgba(77,112,136,0.5))' }} />
+                  style={{ filter: confidence >= 60 ? 'drop-shadow(0 0 5px rgba(77,112,136,0.5))' : 'none' }} />
               </svg>
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: '#9DBECE', fontVariantNumeric: 'tabular-nums' }}>
-                {confidence}
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 800, color: confidence >= 60 ? '#9DBECE' : '#FBBF24', fontVariantNumeric: 'tabular-nums' }}>
+                {Math.round(confidence)}
               </div>
             </div>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#F4F4F8', marginBottom: 3 }}>AI Güven Skoru</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#F4F4F8', marginBottom: 3 }}>Kaynak Güveni</div>
               <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)' }}>
-                {confidence >= 80 ? 'Marka veriniz oldukça güçlü' : confidence >= 60 ? 'Marka profiliniz tespit edildi' : 'Temel marka verileri alındı'}
+                {confidence >= 80
+                  ? 'Birden fazla kaynak doğrulandı'
+                  : confidence >= 60
+                    ? 'Temel kaynaklar okundu'
+                    : 'Sınırlı kaynak — kayıt sonrası derin analiz önerilir'}
               </div>
+              {resultMessage && limitedPreview && (
+                <div style={{ fontSize: 11, color: 'rgba(251,191,36,0.85)', marginTop: 4, lineHeight: 1.4 }}>
+                  {resultMessage}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* Pre-auth info card */}
-        {!hasReal && (
+        {/* Pre-auth / weak-source info card */}
+        {(!hasReal || limitedPreview) && (
           <div style={{ ...cardStyle, marginBottom: 12, background: 'rgba(77,112,136,0.08)', border: '0.5px solid rgba(77,112,136,0.22)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
             <OnboardingPreviewIcon name="info" />
             <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 4 }}>Tam analiz için kayıt gerekli</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 4 }}>
+                {limitedPreview ? 'Daha güçlü analiz için web / Google ekleyin' : 'Tam analiz için kayıt gerekli'}
+              </div>
               <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.55)', lineHeight: 1.55 }}>
-                Hesap oluşturduktan sonra AI ekibiniz {domain} sitesini derinlemesine analiz ederek marka profilinizi otomatik hazırlayacak.
+                {limitedPreview
+                  ? 'Instagram tek başına kota veya private hesapta yetersiz kalabilir. Kayıt sonrası web sitesi ve Google Business ekleyerek marka DNA’sını güçlendirebilirsiniz.'
+                  : `Hesap oluşturduktan sonra AI ekibiniz ${domain} için marka profilinizi derinlemesine hazırlayacak.`}
               </div>
             </div>
           </div>
@@ -639,10 +813,10 @@ function ResultsStep({ result, url, ig, onNext }: {
         </div>
       </div>
 
-      {/* CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 24px', paddingBottom: 'max(20px,env(safe-area-inset-bottom))', background: 'rgba(4,4,10,0.96)', backdropFilter: 'blur(24px)', borderTop: '0.5px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onNext} style={{ width: '100%', padding: '18px', borderRadius: 18, background: 'linear-gradient(135deg,#4D7088,#5A82A0)', border: 'none', color: '#fff', fontSize: 16, fontWeight: 800, letterSpacing: '-0.01em', boxShadow: '0 6px 32px rgba(77,112,136,0.45)', cursor: 'pointer' }}>
-          Hesap Oluştur & Tam Analizi Gör →
+      {/* CTA dock */}
+      <div className="onboarding-cta-dock">
+        <button type="button" onClick={onNext} className="onboarding-cta">
+          Hesap oluştur & devam et
         </button>
       </div>
     </div>
@@ -754,12 +928,21 @@ function SetupProgressOverlay({ brandName, status }: { brandName: string; status
 }
 
 // ─── Sign Up Step ──────────────────────────────────────────────────────
-function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult, onDone }: {
+function SignupStep({
+  brandName,
+  websiteUrl,
+  igHandle,
+  menuUrl,
+  googleBusinessUrl,
+  discoveryResult,
+  onDone,
+}: {
   brandName: string;
   websiteUrl: string;
   igHandle: string;
   menuUrl: string;
-  discoveryResult: BrandDiscoveryResult | null;
+  googleBusinessUrl: string;
+  discoveryResult: DiscoveryResultWithCache | null;
   onDone: (companyName: string, tenantId?: string) => void;
 }) {
   const { setWorkspace } = useWorkspaceStore();
@@ -789,6 +972,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       description: '',
       defaultApprovalMode: 'SuggestAndWait',
       instagramHandle: igHandle || undefined,
+      googleBusinessUrl: googleBusinessUrl || undefined,
       contentNeeds: '[]',
       riskRules: '{}',
       customerVisibleSummary: `${company.trim()} için onboarding başlatıldı. Web sitesi ve görsel analiz sonuçları hazırlanıyor.`,
@@ -926,7 +1110,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       websiteUrl: websiteUrl || String(ctx.website_url || ''),
       description: productionDescription || analysis.website_summary || String(ctx.description || ''),
       instagramHandle: igHandle || String(ctx.instagram_handle || '') || undefined,
-      googleBusinessUrl: String(ctx.google_business_url || '') || undefined,
+      googleBusinessUrl: googleBusinessUrl || String(ctx.google_business_url || '') || undefined,
       contentNeeds: JSON.stringify(pillars),
       riskRules: JSON.stringify(riskRules),
       discoveryConfidence: analysis.confidence ?? (ctx.discovery_confidence as number | null) ?? null,
@@ -939,12 +1123,13 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
     } as any);
   }
 
-  async function runFullBrandOnboarding(tenantId: string) {
-    if (!websiteUrl && !igHandle && !menuUrl) {
-      throw new Error('Marka analizi için web sitesi, menü linki veya Instagram gerekli.');
+  async function runDiscoveryBrandOnboarding(tenantId: string) {
+    if (!websiteUrl && !igHandle && !menuUrl && !googleBusinessUrl) {
+      throw new Error('Marka analizi için web sitesi, menü, Google Business veya Instagram gerekli.');
     }
 
-    setStatus('Derin marka analizi: web, Instagram, galeri ve anayasa (1–3 dk)...');
+    setStatus('Marka keşfi: web, Instagram, Google ve galeri (1–3 dk)…');
+    const previewCacheKey = discoveryResult?.previewCacheKey;
     const res = await fetch('/api/onboarding/deep-brand-setup', {
       method: 'POST',
       headers: {
@@ -957,13 +1142,15 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
         websiteUrl: websiteUrl || undefined,
         instagramHandle: igHandle || undefined,
         menuUrl: menuUrl || undefined,
+        googleBusinessUrl: googleBusinessUrl || undefined,
+        previewCacheKey: previewCacheKey || undefined,
+        phase: 'discovery',
       }),
     });
 
     const data = await res.json().catch(() => ({})) as {
       ok?: boolean;
       errors?: string[];
-      productionReady?: boolean;
       authoritativeSector?: string;
       brandAnalysis?: Awaited<ReturnType<typeof apiClient.analyzeBrandContext>>;
       gallery?: { analyzed?: number; usable?: number; calibration?: { matched: number; tested: number } };
@@ -971,7 +1158,7 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
     };
 
     if (data.brandAnalysis) {
-      setStatus('Firma profili ve marka hafızası kaydediliyor...');
+      setStatus('Firma profili kaydediliyor — markanı bir sonraki adımda doğrulayacaksın…');
       await persistPythonAnalysisToProfile(data.brandAnalysis, data.authoritativeSector);
       await fetch(`/api/brand-context/${tenantId}/hydrate-company-profile`, {
         method: 'POST',
@@ -981,38 +1168,27 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
 
     if (!res.ok || !data.ok) {
       const stepFail = data.steps?.find((s) => !s.ok);
-      console.warn('[onboarding] deep brand setup incomplete', {
+      console.warn('[onboarding] discovery setup incomplete', {
         status: res.status,
         error: data.errors?.[0],
         step: stepFail,
+        cache: previewCacheKey ? 'sent' : 'none',
       });
       setStatus(
         data.brandAnalysis
-          ? 'Marka profili kaydedildi · Gelişmiş ayarlar arka planda tamamlanacak.'
-          : 'Temel marka profili kaydedildi · Analizi Marka Ayarlarından tamamlayabilirsiniz.',
+          ? 'Marka profili kaydedildi · Doğrulama adımında tamamlayabilirsiniz.'
+          : 'Temel profil kaydedildi · Marka doğrulamasında devam edin.',
       );
       return;
     }
 
-    const cal = data.gallery?.calibration;
-    const galleryLine = cal && cal.tested > 0
-      ? `Galeri: ${data.gallery?.analyzed ?? 0} görsel · caption eşleşme ${cal.matched}/${cal.tested}`
-      : `Galeri: ${data.gallery?.analyzed ?? 0} görsel etiketlendi`;
-
-    if (data.productionReady) {
-      setStatus(
-        `${galleryLine} · Üretim hazır: story şablonları, AI görsel ayarları ve galeri mirror kayıtlı.`,
-      );
-    } else {
-      const failed = data.steps?.find(
-        (s) => !s.ok && ['theme_derive', 'template_library_lock', 'ai_production_defaults', 'gallery_provision'].includes(s.id),
-      );
-      setStatus(
-        failed
-          ? `${galleryLine} · Kısmi kurulum (${failed.id}) — Marka Ayarlarından tamamlayın.`
-          : `${galleryLine} · Marka analizi tamamlandı.`,
-      );
-    }
+    const cacheHit = data.steps?.some((s) => s.id === 'preview_cache_hit' && s.ok);
+    const galleryLine = `Galeri: ${data.gallery?.analyzed ?? 0} görsel`;
+    setStatus(
+      cacheHit
+        ? `${galleryLine} · Önizleme önbelleğinden yüklendi · Markanı doğrula.`
+        : `${galleryLine} · Keşif tamam · Markanı doğrula.`,
+    );
   }
 
   async function handleSignup() {
@@ -1040,8 +1216,8 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
       setStatus('Firma profili kaydediliyor...');
       await apiClient.saveCompanyProfile(baselineProfile() as any);
 
-      if (session.tenantId && (websiteUrl || igHandle || menuUrl)) {
-        await runFullBrandOnboarding(session.tenantId);
+      if (session.tenantId && (websiteUrl || igHandle || menuUrl || googleBusinessUrl)) {
+        await runDiscoveryBrandOnboarding(session.tenantId);
       }
 
       // Auto-propose first welcome mission in the background. Strategist proposal
@@ -1160,7 +1336,493 @@ function SignupStep({ brandName, websiteUrl, igHandle, menuUrl, discoveryResult,
   );
 }
 
-// ─── Welcome Step ──────────────────────────────────────────────────────
+function extractHexColor(raw: unknown, fallback: string): string {
+  const m = String(raw ?? '').match(/#[0-9a-fA-F]{3,8}/);
+  return m?.[0] ?? fallback;
+}
+
+// ─── Brand confirm (before constitution locks production) ───────────────
+function BrandConfirmStep({
+  brandName,
+  tenantId,
+  onDone,
+}: {
+  brandName: string;
+  tenantId: string;
+  onDone: (confirmedName: string) => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [name, setName] = useState(brandName);
+  const [sector, setSector] = useState('general_business');
+  const [tone, setTone] = useState<BrandTonePreset>('friendly');
+  const [primary, setPrimary] = useState('#1a1a1a');
+  const [accent, setAccent] = useState('#4f8ef7');
+  const profileRef = useRef<Awaited<ReturnType<typeof apiClient.getCompanyProfile>> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const headers = getRequestContextHeaders();
+        const [ctxRes, profile] = await Promise.all([
+          fetch(`/api/brand-context/${tenantId}`, { headers, signal: AbortSignal.timeout(20_000) }).catch(() => null),
+          apiClient.getCompanyProfile(tenantId).catch(() => null),
+        ]);
+        const ctx = ctxRes?.ok ? ((await ctxRes.json()) as Record<string, unknown>) : {};
+        if (cancelled) return;
+        if (profile) profileRef.current = profile;
+        const nextName = String(profile?.brandName || ctx.business_name || brandName).trim() || brandName;
+        const nextSector = normalizeSectorId(
+          String(profile?.industry || ctx.business_type || 'general_business'),
+        );
+        const nextTone = pythonToneToPreset(String(profile?.brandTone || ctx.brand_tone || 'friendly'));
+        const nextPrimary = extractHexColor(
+          ctx.brand_primary_color || profile?.brandColors,
+          '#1a1a1a',
+        );
+        const nextAccent = extractHexColor(
+          ctx.brand_accent_color || profile?.accentColors || String(profile?.brandColors || '').split(/[,\s]+/)[1],
+          '#4f8ef7',
+        );
+        setName(nextName);
+        setSector(nextSector);
+        setTone(nextTone);
+        setPrimary(nextPrimary);
+        setAccent(nextAccent);
+        setLoading(false);
+      } catch {
+        if (!cancelled) {
+          setError('Marka bilgileri yüklenemedi.');
+          setLoading(false);
+        }
+      }
+    }
+    void load();
+    return () => { cancelled = true; };
+  }, [tenantId, brandName]);
+
+  async function handleConfirm() {
+    if (submitting) return;
+    const cleanName = name.trim();
+    if (!cleanName) { setError('Marka adı zorunlu'); return; }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const headers = {
+        ...getRequestContextHeaders(),
+        'Content-Type': 'application/json',
+      };
+      const existing = profileRef.current;
+      await apiClient.saveCompanyProfile({
+        brandName: cleanName,
+        industry: sector,
+        location: existing?.location ?? '',
+        brandTone: tone,
+        targetAudience: existing?.targetAudience ?? '',
+        visualStyle: existing?.visualStyle ?? '',
+        campaignGoals: existing?.campaignGoals ?? '',
+        competitors: existing?.competitors ?? '',
+        customRules: existing?.customRules ?? '',
+        languages: existing?.languages ?? 'tr',
+        logoUrl: existing?.logoUrl ?? '',
+        websiteUrl: existing?.websiteUrl ?? '',
+        description: existing?.description ?? '',
+        defaultApprovalMode: existing?.defaultApprovalMode ?? 'SuggestAndWait',
+        instagramHandle: existing?.instagramHandle ?? '',
+        googleBusinessUrl: existing?.googleBusinessUrl ?? '',
+        primaryFont: existing?.primaryFont ?? '',
+        secondaryFont: existing?.secondaryFont ?? '',
+        brandColors: `${primary}, ${accent}`,
+        accentColors: accent,
+        socialTemplateStyle: existing?.socialTemplateStyle ?? '',
+        platformProfiles: existing?.platformProfiles ?? '[]',
+        contentNeeds: existing?.contentNeeds ?? '[]',
+        operatingCapabilities: existing?.operatingCapabilities ?? '[]',
+        galleryPolicy: existing?.galleryPolicy ?? '{}',
+        templateFamilies: existing?.templateFamilies ?? '[]',
+        riskRules: existing?.riskRules ?? '{}',
+        customerVisibleSummary: existing?.customerVisibleSummary ?? '',
+        systemIntelligence: existing?.systemIntelligence ?? '',
+        discoveryConfidence: existing?.discoveryConfidence ?? null,
+      });
+
+      await fetch(`/api/brand-context-data/${tenantId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          business_name: cleanName,
+          business_type: sector,
+          brand_tone: tone,
+          brand_primary_color: primary,
+          brand_accent_color: accent,
+          brand_service_profile: {
+            category: serviceProfileCategoryForSector(sector) || sector,
+            source: 'manual_override',
+            category_confidence: 1,
+            category_reason: 'Onboarding marka doğrulama',
+          },
+        }),
+        signal: AbortSignal.timeout(30_000),
+      }).catch(() => null);
+
+      const finRes = await fetch('/api/onboarding/deep-brand-setup', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tenantId,
+          companyName: cleanName,
+          phase: 'finalize',
+        }),
+        signal: AbortSignal.timeout(290_000),
+      });
+      const finData = await finRes.json().catch(() => ({})) as { ok?: boolean; errors?: string[] };
+      if (!finRes.ok || finData.ok === false) {
+        console.warn('[onboarding] finalize incomplete', finData.errors);
+      }
+      onDone(cleanName);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Doğrulama kaydedilemedi.');
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="onboarding-shell">
+        <OnboardingChromeBackdrop />
+        <main className="onboarding-welcome-body">
+          <div className="onboarding-setup-shimmer" aria-hidden />
+          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Markanı doğrula</h1>
+          <p className="onboarding-lead" style={{ maxWidth: 300 }}>
+            Keşif sonuçları hazırlanıyor…
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="onboarding-shell">
+      <OnboardingChromeBackdrop />
+      <OnboardingLogoHeader compact />
+      <main className="onboarding-main onboarding-signup-main onboarding-stagger" style={{ paddingBottom: 28 }}>
+        <h1 className="onboarding-title onboarding-title--step">Markanı doğrula</h1>
+        <p className="onboarding-lead onboarding-lead--step">
+          Üretim kilidi açılmadan önce isim, sektör, ton ve renkleri onayla.
+        </p>
+
+        <div className="onboarding-fields">
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">Marka adı</span>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className={`onboarding-input${name.trim() ? ' onboarding-input--filled' : ''}`}
+              autoComplete="organization"
+              enterKeyHint="next"
+            />
+          </label>
+
+          <label className="onboarding-field">
+            <span className="onboarding-field-label">Sektör</span>
+            <select
+              value={sector}
+              onChange={(e) => setSector(e.target.value)}
+              className="onboarding-input onboarding-input--filled"
+              style={{ fontSize: 16, minHeight: 44 }}
+            >
+              {ONBOARDING_SECTORS.map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+              {!ONBOARDING_SECTORS.some((s) => s.id === sector) && (
+                <option value={sector}>{sector}</option>
+              )}
+            </select>
+          </label>
+
+          <div className="onboarding-field">
+            <span className="onboarding-field-label">Marka tonu</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              {BRAND_TONE_PRESETS.map((t) => {
+                const on = tone === t;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTone(t)}
+                    style={{
+                      minHeight: 44,
+                      padding: '8px 14px',
+                      borderRadius: 12,
+                      border: on ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.14)',
+                      background: on ? 'rgba(157,190,206,0.16)' : 'rgba(255,255,255,0.05)',
+                      color: '#fff',
+                      fontSize: 14,
+                      fontWeight: 600,
+                    }}
+                  >
+                    {TONE_LABELS[t]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">Ana renk</span>
+              <input
+                type="color"
+                value={primary}
+                onChange={(e) => setPrimary(e.target.value)}
+                style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
+              />
+            </label>
+            <label className="onboarding-field">
+              <span className="onboarding-field-label">Vurgu</span>
+              <input
+                type="color"
+                value={accent}
+                onChange={(e) => setAccent(e.target.value)}
+                style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
+              />
+            </label>
+          </div>
+        </div>
+
+        {error && <p className="onboarding-error">{error}</p>}
+
+        <div className="onboarding-actions">
+          <button
+            type="button"
+            className="onboarding-cta"
+            disabled={submitting}
+            onClick={() => void handleConfirm()}
+          >
+            {submitting ? 'Üretim kilidi açılıyor…' : 'Doğrula ve devam et'}
+          </button>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+const MIN_GALLERY_PHOTOS = 3;
+
+// ─── Gallery gate before template showcase ─────────────────────────────
+function GalleryReadyStep({
+  brandName,
+  tenantId,
+  onDone,
+}: {
+  brandName: string;
+  tenantId: string;
+  onDone: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [photoCount, setPhotoCount] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function refreshCount() {
+    const headers = getRequestContextHeaders();
+    const [ctxRes, analysisRes] = await Promise.all([
+      fetch(`/api/brand-context/${tenantId}`, { headers, signal: AbortSignal.timeout(20_000) }).catch(() => null),
+      fetch(`/api/brand-context/${tenantId}/gallery-analysis`, { headers, signal: AbortSignal.timeout(20_000) }).catch(() => null),
+    ]);
+    const ctx = ctxRes?.ok ? ((await ctxRes.json()) as Record<string, unknown>) : {};
+    let refs: string[] = [];
+    const raw = ctx.reference_image_urls;
+    if (Array.isArray(raw)) refs = raw.map(String);
+    else if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (Array.isArray(parsed)) refs = parsed.map(String);
+      } catch { /* ignore */ }
+    }
+    const analysisKeys = analysisRes?.ok
+      ? Object.keys((await analysisRes.json().catch(() => ({}))) as Record<string, unknown>)
+      : [];
+    const count = Math.max(refs.filter((u) => u.startsWith('http') || u.includes('/api/media')).length, analysisKeys.length);
+    setPhotoCount(count);
+    return count;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function boot() {
+      try {
+        // Website/IG refs may already exist — provision before gating on upload.
+        await fetch(`/api/brand-context/${tenantId}/provision-gallery`, {
+          method: 'POST',
+          headers: {
+            ...getRequestContextHeaders(),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ analyze: true, allowSynthetic: false }),
+          signal: AbortSignal.timeout(120_000),
+        }).catch(() => null);
+        const count = await refreshCount();
+        if (cancelled) return;
+        setLoading(false);
+        if (count >= MIN_GALLERY_PHOTOS) {
+          void generateTemplates();
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void boot();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only gate
+  }, [tenantId]);
+
+  async function generateTemplates() {
+    if (generating) return;
+    setGenerating(true);
+    setError(null);
+    setStatus('Marka şablonları üretiliyor…');
+    try {
+      const headers = {
+        ...getRequestContextHeaders(),
+        'Content-Type': 'application/json',
+      };
+      // Re-provision in case website-only refs arrived late
+      await fetch(`/api/brand-context/${tenantId}/provision-gallery`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ analyze: true, allowSynthetic: false }),
+        signal: AbortSignal.timeout(120_000),
+      }).catch(() => null);
+
+      const genRes = await fetch(`/api/brand-context/${tenantId}/generate-design-templates`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ locale: 'tr' }),
+        signal: AbortSignal.timeout(290_000),
+      });
+      if (!genRes.ok) {
+        const err = (await genRes.json().catch(() => ({}))) as { message?: string };
+        throw new Error(err.message || 'Marka şablonları üretilemedi.');
+      }
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Şablon üretimi başarısız.');
+      setGenerating(false);
+      setStatus('');
+    }
+  }
+
+  async function handleUpload(files: FileList | null) {
+    if (!files?.length || uploading) return;
+    setUploading(true);
+    setError(null);
+    setStatus(`${files.length} fotoğraf yükleniyor…`);
+    try {
+      const formData = new FormData();
+      for (const file of Array.from(files)) formData.append('file', file);
+      const res = await fetch(`/api/brand-context/${tenantId}/gallery-upload`, {
+        method: 'POST',
+        headers: getRequestContextHeaders(),
+        body: formData,
+      });
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; uploaded?: number };
+      if (!res.ok) throw new Error(data.error || `Yükleme başarısız (${res.status})`);
+      const count = await refreshCount();
+      setStatus(`✓ ${data.uploaded ?? files.length} fotoğraf yüklendi (${count} toplam)`);
+      if (count >= MIN_GALLERY_PHOTOS) {
+        await generateTemplates();
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Yükleme hatası');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }
+
+  if (loading || (generating && photoCount >= MIN_GALLERY_PHOTOS && !error)) {
+    return (
+      <div className="onboarding-shell">
+        <OnboardingChromeBackdrop />
+        <main className="onboarding-welcome-body">
+          <div className="onboarding-setup-shimmer" aria-hidden />
+          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
+            {generating ? 'Şablonlar hazırlanıyor' : 'Galeri kontrol ediliyor'}
+          </h1>
+          <p className="onboarding-lead" style={{ maxWidth: 300 }}>
+            {status || `${brandName} için görseller toplanıyor…`}
+          </p>
+        </main>
+      </div>
+    );
+  }
+
+  const ready = photoCount >= MIN_GALLERY_PHOTOS;
+
+  return (
+    <div className="onboarding-shell">
+      <OnboardingChromeBackdrop />
+      <OnboardingLogoHeader compact />
+      <main className="onboarding-welcome-body" style={{ paddingBottom: 28 }}>
+        <h1 className="onboarding-title" style={{ marginBottom: 8 }}>Fotoğraflarını ekle</h1>
+        <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 16 }}>
+          Şablon vitrini için en az {MIN_GALLERY_PHOTOS} gerçek fotoğraf gerekir.
+          Şu an: {photoCount} / {MIN_GALLERY_PHOTOS}
+        </p>
+
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic,.heic,.jpg,.jpeg,.png,.webp"
+          multiple
+          hidden
+          onChange={(e) => void handleUpload(e.target.files)}
+        />
+
+        <button
+          type="button"
+          className="onboarding-primary-btn"
+          disabled={uploading || generating}
+          onClick={() => fileRef.current?.click()}
+          style={{ marginBottom: 12, minHeight: 44 }}
+        >
+          {uploading ? 'Yükleniyor…' : 'Fotoğraf yükle'}
+        </button>
+
+        {ready && (
+          <button
+            type="button"
+            className="onboarding-cta"
+            disabled={generating}
+            onClick={() => void generateTemplates()}
+          >
+            {generating ? 'Şablonlar üretiliyor…' : 'Şablonları oluştur'}
+          </button>
+        )}
+
+        {!ready && (
+          <p className="onboarding-note" style={{ marginTop: 12 }}>
+            Mekan / ürün fotoğrafları yükle — Instagram CDN linkleri yerine kalıcı galeri gerekir.
+          </p>
+        )}
+
+        {error && (
+          <p className="onboarding-lead" style={{ color: '#fca5a5', marginTop: 12 }}>{error}</p>
+        )}
+        {status && !error && (
+          <p className="onboarding-lead" style={{ marginTop: 12 }}>{status}</p>
+        )}
+      </main>
+    </div>
+  );
+}
+
 // ─── Templates Showcase Step ───────────────────────────────────────────
 const TEMPLATE_TYPE_DESCRIPTIONS: Record<string, string> = {
   campaign_announcement: 'Kampanyalarınızı duyururken bu tasarım kullanılır.',
@@ -1186,28 +1848,47 @@ function TypographyConfirmStep({
 }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [config, setConfig] = useState<BrandDesignTypographyConfig | null>(null);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [primary, setPrimary] = useState('#1a1a1a');
+  const [accent, setAccent] = useState('#4f8ef7');
+  const [neutral, setNeutral] = useState('#f5f5f5');
+  const [shadow, setShadow] = useState('#111111');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const themeRef = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
         const headers = getRequestContextHeaders();
-        const [themeRes, ctxRes] = await Promise.all([
+        const [themeRes, ctxRes, profile] = await Promise.all([
           fetch(`/api/brand-context/${tenantId}/theme`, { headers, signal: AbortSignal.timeout(20_000) }),
           fetch(`/api/brand-context/${tenantId}`, { headers, signal: AbortSignal.timeout(20_000) }).catch(() => null),
+          apiClient.getCompanyProfile(tenantId).catch(() => null),
         ]);
         const themeJson = themeRes.ok ? ((await themeRes.json()) as { theme?: Record<string, unknown> }) : {};
         const theme = themeJson.theme ?? {};
-        if (isTypographyDesignConfirmed(theme)) {
-          onDone();
-          return;
-        }
+        themeRef.current = theme;
         const ctx = ctxRes?.ok ? ((await ctxRes.json()) as Record<string, unknown>) : null;
         const sector = String(ctx?.business_type ?? ctx?.industry ?? 'general_business');
         const visualDna = typeof ctx?.visual_dna === 'string' ? ctx.visual_dna : null;
+        const palette = (theme.palette && typeof theme.palette === 'object'
+          ? theme.palette
+          : {}) as Record<string, unknown>;
+        const nextLogo = String(ctx?.logo_url || profile?.logoUrl || '').trim();
+        const nextPrimary = extractHexColor(ctx?.brand_primary_color || palette.primary || profile?.brandColors, '#1a1a1a');
+        const nextAccent = extractHexColor(ctx?.brand_accent_color || palette.accent || profile?.accentColors, '#4f8ef7');
+        const nextNeutral = extractHexColor(palette.neutral, '#f5f5f5');
+        const nextShadow = extractHexColor(palette.shadow, '#111111');
         if (!cancelled) {
+          setLogoUrl(nextLogo);
+          setPrimary(nextPrimary);
+          setAccent(nextAccent);
+          setNeutral(nextNeutral);
+          setShadow(nextShadow);
           setConfig(resolveSuggestedTypographyConfig(theme, sector, visualDna));
           setLoading(false);
         }
@@ -1220,7 +1901,35 @@ function TypographyConfirmStep({
     }
     void load();
     return () => { cancelled = true; };
-  }, [tenantId, onDone]);
+  }, [tenantId]);
+
+  async function handleLogoUpload(file: File | null) {
+    if (!file || uploadingLogo) return;
+    setUploadingLogo(true);
+    setError(null);
+    try {
+      const reader = new FileReader();
+      const dataUrl = await new Promise<string>((res, rej) => {
+        reader.onload = () => res(String(reader.result));
+        reader.onerror = () => rej(new Error('Dosya okunamadı'));
+        reader.readAsDataURL(file);
+      });
+      const uploadRes = await fetch('/api/upload-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getRequestContextHeaders() },
+        body: JSON.stringify({ dataUrl, mimeType: file.type || 'image/png' }),
+      });
+      if (!uploadRes.ok) throw new Error('Logo yüklenemedi');
+      const { imageUrl } = (await uploadRes.json()) as { imageUrl?: string };
+      if (!imageUrl) throw new Error('Logo URL alınamadı');
+      setLogoUrl(imageUrl);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Logo yüklenemedi');
+    } finally {
+      setUploadingLogo(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  }
 
   async function handleConfirm() {
     if (!config || submitting) return;
@@ -1231,14 +1940,15 @@ function TypographyConfirmStep({
         ...getRequestContextHeaders(),
         'Content-Type': 'application/json',
       };
-      const confirmed = buildUserConfirmedTypographyPatch(config);
-      const postDefaults = resolvePostDesignDefaultsForTypography(confirmed);
-      const themeRes = await fetch(`/api/brand-context/${tenantId}/theme`, {
-        headers: getRequestContextHeaders(),
-        signal: AbortSignal.timeout(20_000),
+      const confirmed = buildUserConfirmedTypographyPatch({
+        ...config,
+        accent_color: accent,
       });
-      const themeJson = themeRes.ok ? ((await themeRes.json()) as { theme?: Record<string, unknown> }) : {};
-      const currentTheme = themeJson.theme ?? {};
+      const postDefaults = resolvePostDesignDefaultsForTypography(confirmed);
+      const currentTheme = themeRef.current;
+      const prevPalette = (currentTheme.palette && typeof currentTheme.palette === 'object'
+        ? currentTheme.palette
+        : {}) as Record<string, unknown>;
 
       const putRes = await fetch(`/api/brand-context/${tenantId}/theme`, {
         method: 'PUT',
@@ -1250,22 +1960,43 @@ function TypographyConfirmStep({
             typographyDesign: confirmed,
             post_design_defaults: postDefaults,
             postDesignDefaults: postDefaults,
+            palette: {
+              ...prevPalette,
+              primary,
+              accent,
+              neutral,
+              shadow,
+            },
+            creative_identity_confirmed_at: new Date().toISOString(),
           },
         }),
         signal: AbortSignal.timeout(30_000),
       });
-      if (!putRes.ok) throw new Error('Tipografi stili kaydedilemedi.');
+      if (!putRes.ok) throw new Error('Görsel kimlik kaydedilemedi.');
 
-      const genRes = await fetch(`/api/brand-context/${tenantId}/generate-design-templates`, {
-        method: 'POST',
+      await fetch(`/api/brand-context-data/${tenantId}`, {
+        method: 'PATCH',
         headers,
-        body: JSON.stringify({ locale: 'tr' }),
-        signal: AbortSignal.timeout(290_000),
-      });
-      if (!genRes.ok) {
-        const err = (await genRes.json().catch(() => ({}))) as { message?: string };
-        throw new Error(err.message || 'Marka şablonları üretilemedi.');
+        body: JSON.stringify({
+          ...(logoUrl ? { logo_url: logoUrl } : {}),
+          brand_primary_color: primary,
+          brand_accent_color: accent,
+        }),
+        signal: AbortSignal.timeout(20_000),
+      }).catch(() => null);
+
+      if (logoUrl) {
+        try {
+          const existing = await apiClient.getCompanyProfile(tenantId);
+          await apiClient.saveCompanyProfile({
+            ...existing,
+            logoUrl,
+            brandColors: `${primary}, ${accent}`,
+            accentColors: accent,
+          } as Parameters<typeof apiClient.saveCompanyProfile>[0]);
+        } catch { /* non-fatal */ }
       }
+
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Bir hata oluştu.');
@@ -1279,9 +2010,9 @@ function TypographyConfirmStep({
         <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
-          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Tipografi stiliniz</h1>
+          <h1 className="onboarding-title" style={{ marginBottom: 10 }}>Görsel kimliğiniz</h1>
           <p className="onboarding-lead" style={{ maxWidth: 300 }}>
-            {brandName} için önerilen yazı stili hazırlanıyor…
+            {brandName} için logo, renk ve vibe hazırlanıyor…
           </p>
         </main>
       </div>
@@ -1292,7 +2023,7 @@ function TypographyConfirmStep({
     return (
       <div className="onboarding-shell">
         <main className="onboarding-welcome-body">
-          <p className="onboarding-lead">{error ?? 'Tipografi yüklenemedi.'}</p>
+          <p className="onboarding-lead">{error ?? 'Görsel kimlik yüklenemedi.'}</p>
           <button type="button" className="onboarding-primary-btn" onClick={onDone}>
             Devam et
           </button>
@@ -1305,48 +2036,161 @@ function TypographyConfirmStep({
     <div className="onboarding-shell">
       <OnboardingChromeBackdrop />
       <OnboardingLogoHeader compact />
-      <main className="onboarding-welcome-body" style={{ paddingBottom: 24 }}>
-        <h1 className="onboarding-title" style={{ marginBottom: 8 }}>Yazı stilinizi seçin</h1>
-        <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 20 }}>
-          {brandName} için tüm AI tasarımları bu tipografi kimliğine kilitlenecek.
-          Sektörünüze uygun öneriyi onaylayın veya değiştirin.
+      <main className="onboarding-welcome-body onboarding-stagger" style={{ paddingBottom: 28, overflowY: 'auto', alignItems: 'stretch' }}>
+        <h1 className="onboarding-title" style={{ marginBottom: 8, textAlign: 'left' }}>Görsel kimliğini onayla</h1>
+        <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 18, textAlign: 'left' }}>
+          Logo, palet ve tipografi vibe — tüm AI tasarımları buna kilitlenir.
         </p>
 
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 10,
-          width: '100%',
-          maxWidth: 360,
-          marginBottom: 20,
-        }}
-        >
-          {TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.map((opt) => {
-            const active = config.vibe === opt.id;
-            return (
+        {/* Logo */}
+        <div style={{ width: '100%', maxWidth: 360, marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Logo
+          </div>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: 14,
+            borderRadius: 16,
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.10)',
+          }}
+          >
+            <div style={{
+              width: 64,
+              height: 64,
+              borderRadius: 14,
+              background: neutral,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+              flexShrink: 0,
+            }}
+            >
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+              ) : (
+                <span style={{ fontSize: 11, color: 'rgba(15,23,42,0.45)', textAlign: 'center', padding: 6 }}>Logo yok</span>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input
+                ref={logoInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                hidden
+                onChange={(e) => void handleLogoUpload(e.target.files?.[0] ?? null)}
+              />
               <button
-                key={opt.id}
                 type="button"
-                onClick={() => setConfig({ ...config, vibe: opt.id as TypographyVibe })}
+                onClick={() => logoInputRef.current?.click()}
+                disabled={uploadingLogo}
                 style={{
-                  textAlign: 'left',
-                  padding: '12px 14px',
-                  borderRadius: 14,
-                  border: active ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.12)',
-                  background: active ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.05)',
+                  minHeight: 44,
+                  width: '100%',
+                  borderRadius: 12,
+                  border: '1px solid rgba(255,255,255,0.16)',
+                  background: 'rgba(255,255,255,0.06)',
                   color: '#fff',
-                  cursor: 'pointer',
+                  fontSize: 14,
+                  fontWeight: 600,
                 }}
               >
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-                  {opt.emoji} {opt.label}
-                </div>
-                <div style={{ fontSize: 11, color: 'rgba(226,232,240,0.72)', lineHeight: 1.35 }}>
-                  {opt.desc}
-                </div>
+                {uploadingLogo ? 'Yükleniyor…' : logoUrl ? 'Logoyu değiştir' : 'Logo yükle'}
               </button>
-            );
-          })}
+              <p style={{ margin: '6px 0 0', fontSize: 11, color: 'rgba(148,163,184,0.55)' }}>
+                PNG / SVG tercih edilir · şeffaf arka plan
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Palette */}
+        <div style={{ width: '100%', maxWidth: 360, marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Renk paleti
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+          }}
+          >
+            {([
+              { label: 'Ana', value: primary, set: setPrimary },
+              { label: 'Vurgu', value: accent, set: setAccent },
+              { label: 'Nötr', value: neutral, set: setNeutral },
+              { label: 'Gölge', value: shadow, set: setShadow },
+            ] as const).map((c) => (
+              <label key={c.label} className="onboarding-field" style={{ margin: 0 }}>
+                <span className="onboarding-field-label">{c.label}</span>
+                <input
+                  type="color"
+                  value={c.value}
+                  onChange={(e) => c.set(e.target.value)}
+                  style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
+                />
+              </label>
+            ))}
+          </div>
+          <div style={{
+            marginTop: 10,
+            height: 36,
+            borderRadius: 12,
+            overflow: 'hidden',
+            display: 'grid',
+            gridTemplateColumns: '2fr 1.4fr 1fr 0.8fr',
+          }}
+          >
+            <div style={{ background: primary }} />
+            <div style={{ background: accent }} />
+            <div style={{ background: neutral }} />
+            <div style={{ background: shadow }} />
+          </div>
+        </div>
+
+        {/* Vibe */}
+        <div style={{ width: '100%', maxWidth: 360, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Tipografi vibe
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 10,
+          }}
+          >
+            {TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.map((opt) => {
+              const active = config.vibe === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setConfig({ ...config, vibe: opt.id as TypographyVibe })}
+                  style={{
+                    textAlign: 'left',
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    border: active ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.12)',
+                    background: active ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.05)',
+                    color: '#fff',
+                    cursor: 'pointer',
+                    minHeight: 44,
+                  }}
+                >
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
+                    {opt.emoji} {opt.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'rgba(226,232,240,0.72)', lineHeight: 1.35 }}>
+                    {opt.desc}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {error && (
@@ -1358,10 +2202,10 @@ function TypographyConfirmStep({
         <button
           type="button"
           className="onboarding-primary-btn"
-          disabled={submitting}
+          disabled={submitting || uploadingLogo}
           onClick={() => void handleConfirm()}
         >
-          {submitting ? 'Şablonlar üretiliyor…' : 'Onayla ve devam et'}
+          {submitting ? 'Kaydediliyor…' : 'Kimliği onayla ve devam et'}
         </button>
       </main>
     </div>
@@ -1538,7 +2382,7 @@ function WelcomeStep({
       <OnboardingChromeBackdrop success />
       <OnboardingLogoHeader compact />
 
-      <main className="onboarding-welcome-body">
+      <main className="onboarding-welcome-body onboarding-stagger">
         <OnboardingSuccessMark />
 
         <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
@@ -1605,71 +2449,101 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [igHandle, setIgHandle]     = useState('');
   const [menuUrl, setMenuUrl]       = useState('');
-  const [result, setResult]         = useState<BrandDiscoveryResult | null>(null);
+  const [googleBusinessUrl, setGoogleBusinessUrl] = useState('');
+  const [result, setResult]         = useState<DiscoveryResultWithCache | null>(null);
   const [signupBrandName, setSignupBrandName] = useState('');
   const [tenantId, setTenantId]     = useState('');
 
   const discoveredBrandName = result?.profile?.brandName ?? result?.report?.brandName ?? (websiteUrl ? extractDomain(websiteUrl) : igHandle ? `@${igHandle}` : 'Markanız');
   const brandName = signupBrandName || discoveredBrandName;
 
-  // Slide transition
-  const slideStyle: React.CSSProperties = { animation: 'slideUp 300ms cubic-bezier(0.34,1.1,0.64,1) both', height: '100dvh', overflow: 'hidden' };
+  // Immersive analyze/setup — thin journey context only (no phase labels crowding the ritual)
+  const railVisible = step !== 'analyzing';
+  const flowClass = `onboarding-flow${railVisible ? ' onboarding-flow--with-rail' : ''}`;
 
   return (
-    <div key={step} style={slideStyle}>
-      {step === 'url' && (
-        <UrlStep
-          onNext={(url, ig, menu) => { setWebsiteUrl(url); setIgHandle(ig); setMenuUrl(menu); setStep('analyzing'); }}
-          onLogin={onLogin}
-        />
-      )}
-      {step === 'analyzing' && (
-        <AnalyzingStep
-          url={websiteUrl}
-          ig={igHandle}
-          menuUrl={menuUrl}
-          onDone={(res) => { setResult(res); setStep('results'); }}
-        />
-      )}
-      {step === 'results' && (
-        <ResultsStep result={result} url={websiteUrl} ig={igHandle} onNext={() => setStep('signup')} />
-      )}
-      {step === 'signup' && (
-        <SignupStep
-          brandName={brandName}
-          websiteUrl={websiteUrl}
-          igHandle={igHandle}
-          menuUrl={menuUrl}
-          discoveryResult={result}
-          onDone={(companyName, newTenantId) => {
-            setSignupBrandName(companyName);
-            if (newTenantId) setTenantId(newTenantId);
-            setStep(newTenantId ? 'typography_confirm' : 'welcome');
-          }}
-        />
-      )}
-      {step === 'typography_confirm' && tenantId && (
-        <TypographyConfirmStep
-          brandName={signupBrandName || brandName}
-          tenantId={tenantId}
-          onDone={() => setStep('templates_showcase')}
-        />
-      )}
-      {step === 'templates_showcase' && (
-        <TemplatesShowcaseStep
-          brandName={brandName}
-          tenantId={tenantId}
-          onDone={() => setStep('welcome')}
-        />
-      )}
-      {step === 'welcome' && (
-        <WelcomeStep
-          brandName={brandName}
-          websiteUrl={websiteUrl}
-          igHandle={igHandle}
-          onDone={onComplete}
-        />
-      )}
+    <div className={flowClass}>
+      <OnboardingProgressRail step={step} visible={railVisible} />
+      <div key={step} className="onboarding-flow-stage">
+        {step === 'url' && (
+          <UrlStep
+            onNext={(url, ig, menu, google) => {
+              setWebsiteUrl(url);
+              setIgHandle(ig);
+              setMenuUrl(menu);
+              setGoogleBusinessUrl(google);
+              setStep('analyzing');
+            }}
+            onLogin={onLogin}
+          />
+        )}
+        {step === 'analyzing' && (
+          <AnalyzingStep
+            url={websiteUrl}
+            ig={igHandle}
+            menuUrl={menuUrl}
+            googleBusinessUrl={googleBusinessUrl}
+            onDone={(res) => { setResult(res); setStep('results'); }}
+          />
+        )}
+        {step === 'results' && (
+          <ResultsStep result={result} url={websiteUrl} ig={igHandle} onNext={() => setStep('signup')} />
+        )}
+        {step === 'signup' && (
+          <SignupStep
+            brandName={brandName}
+            websiteUrl={websiteUrl}
+            igHandle={igHandle}
+            menuUrl={menuUrl}
+            googleBusinessUrl={googleBusinessUrl}
+            discoveryResult={result}
+            onDone={(companyName, newTenantId) => {
+              setSignupBrandName(companyName);
+              if (newTenantId) setTenantId(newTenantId);
+              setStep(newTenantId ? 'brand_confirm' : 'welcome');
+            }}
+          />
+        )}
+        {step === 'brand_confirm' && tenantId && (
+          <BrandConfirmStep
+            brandName={signupBrandName || brandName}
+            tenantId={tenantId}
+            onDone={(confirmedName) => {
+              setSignupBrandName(confirmedName);
+              setStep('typography_confirm');
+            }}
+          />
+        )}
+        {step === 'typography_confirm' && tenantId && (
+          <TypographyConfirmStep
+            brandName={signupBrandName || brandName}
+            tenantId={tenantId}
+            onDone={() => setStep('gallery_ready')}
+          />
+        )}
+        {step === 'gallery_ready' && tenantId && (
+          <GalleryReadyStep
+            brandName={signupBrandName || brandName}
+            tenantId={tenantId}
+            onDone={() => setStep('templates_showcase')}
+          />
+        )}
+        {step === 'templates_showcase' && (
+          <TemplatesShowcaseStep
+            brandName={brandName}
+            tenantId={tenantId}
+            onDone={() => setStep('welcome')}
+          />
+        )}
+        {step === 'welcome' && (
+          <WelcomeStep
+            brandName={brandName}
+            websiteUrl={websiteUrl}
+            igHandle={igHandle}
+            onDone={onComplete}
+          />
+        )}
+      </div>
     </div>
   );
 }

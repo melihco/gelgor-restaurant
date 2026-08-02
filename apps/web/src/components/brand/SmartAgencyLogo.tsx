@@ -5,6 +5,8 @@ import { cn } from '@/lib/utils';
 
 /** Icon-only square mark — nav, favicon, OG/Twitter/WhatsApp chip */
 export const SMART_AGENCY_MARK_SRC = '/smartagency-mark.png';
+/** Knockout mark (no baked black plate) — dark UI / onboarding */
+export const SMART_AGENCY_MARK_TRANSPARENT_SRC = '/smartagency-mark-transparent.png';
 /** 1024² master — PWA / share previews */
 export const SMART_AGENCY_ICON_SRC = '/smartagency-icon.png';
 /** Icon + SmartAgency wordmark — geniş header, splash, login */

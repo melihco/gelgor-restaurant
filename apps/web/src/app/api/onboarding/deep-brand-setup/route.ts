@@ -19,6 +19,11 @@ export async function POST(req: NextRequest) {
   const googleBusinessUrl = String(body.googleBusinessUrl ?? '').trim();
 
   const menuUrl = String(body.menuUrl ?? body.menu_url ?? '').trim();
+  const previewCacheKey = String(body.previewCacheKey ?? body.preview_cache_key ?? '').trim();
+  const phaseRaw = String(body.phase ?? 'full').trim();
+  const phase = (phaseRaw === 'discovery' || phaseRaw === 'finalize' || phaseRaw === 'full')
+    ? phaseRaw
+    : 'full';
 
   if (!tenantId) {
     return NextResponse.json({ error: 'tenantId required' }, { status: 400 });
@@ -39,6 +44,8 @@ export async function POST(req: NextRequest) {
     googleBusinessUrl: googleBusinessUrl || undefined,
     menuUrl: menuUrl || undefined,
     headers: buildTenantForwardHeaders(req),
+    phase,
+    previewCacheKey: previewCacheKey || undefined,
   });
 
   return NextResponse.json(result, { status: result.ok ? 200 : 422 });

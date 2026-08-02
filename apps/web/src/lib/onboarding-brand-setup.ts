@@ -15,6 +15,9 @@ import { ensureSectorReelMotionInTheme } from '@/lib/sector-reel-motion-standard
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
+import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
+
+export type DeepBrandSetupPhase = 'discovery' | 'finalize' | 'full';
 
 export interface DeepBrandSetupInput {
   origin: string;
@@ -25,6 +28,14 @@ export interface DeepBrandSetupInput {
   googleBusinessUrl?: string;
   menuUrl?: string;
   headers?: Record<string, string>;
+  /**
+   * discovery — analyze→visual_dna (no constitution)
+   * finalize — constitution→production ready (after user brand confirm)
+   * full — legacy one-shot (auto-constitution)
+   */
+  phase?: DeepBrandSetupPhase;
+  /** Pre-signup preview cache key — persist without second Apify scrape. */
+  previewCacheKey?: string;
 }
 
 export interface DeepBrandSetupStep {
@@ -101,6 +112,24 @@ async function finalizeProductionReadiness(
   library.locked = true;
 
   const themeWithReelMotion = ensureSectorReelMotionInTheme(currentTheme, sector);
+  // First-write fal_template_production + intensity so day-0 production isn't
+  // left on runtime-only fallbacks (P2 onboarding gap).
+  const ftpResolved = resolveFalTemplateProductionSettings(themeWithReelMotion);
+  const existingFtp = (themeWithReelMotion.fal_template_production
+    ?? themeWithReelMotion.falTemplateProduction) as Record<string, unknown> | undefined;
+  const hasFtpIntensity = Boolean(
+    existingFtp
+    && typeof existingFtp === 'object'
+    && existingFtp.intensity
+    && typeof existingFtp.intensity === 'object',
+  );
+  const existingIntensity = (themeWithReelMotion.fal_design_intensity
+    ?? themeWithReelMotion.falDesignIntensity) as Record<string, unknown> | undefined;
+  const hasIntensity = Boolean(
+    existingIntensity
+    && typeof existingIntensity === 'object'
+    && (existingIntensity.post || existingIntensity.story || existingIntensity.reel),
+  );
 
   const themePut = await fetch(`${origin}/api/brand-context/${tenantId}/theme`, {
     method: 'PUT',
@@ -109,6 +138,8 @@ async function finalizeProductionReadiness(
       theme: {
         ...themeWithReelMotion,
         template_library: { ...library, locked: true },
+        fal_template_production: hasFtpIntensity ? existingFtp : ftpResolved,
+        fal_design_intensity: hasIntensity ? existingIntensity : ftpResolved.intensity,
       },
     }),
     signal: AbortSignal.timeout(45_000),
@@ -117,6 +148,14 @@ async function finalizeProductionReadiness(
     id: 'template_library_lock',
     ok: themePut.ok,
     detail: themePut.ok ? `5 slot locked (${library.kitId})` : `HTTP ${themePut.status}`,
+  });
+
+  out.push({
+    id: 'fal_template_production_seed',
+    ok: themePut.ok,
+    detail: themePut.ok
+      ? (hasFtpIntensity ? 'ftp_preserved' : 'ftp_seeded')
+      : `HTTP ${themePut.status}`,
   });
 
   out.push({
@@ -302,6 +341,8 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     googleBusinessUrl = '',
     menuUrl = '',
     headers = {},
+    phase = 'full',
+    previewCacheKey = '',
   } = input;
 
   const steps: DeepBrandSetupStep[] = [];
@@ -309,8 +350,23 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   let brandAnalysis: PythonBrandAnalyzeResponse | null = null;
   let constitutionConfirmed = false;
   let brandDnaRichness: string | null = null;
+  let earlyProvisionRes: { ok: boolean; error?: string; data?: { usableCount?: number } | null } = {
+    ok: false,
+  };
+  let galleryStats = { usable: 0, analyzed: 0, complete: false };
+  let calibration: { tested: number; matched: number } | undefined;
+  let authoritativeSector = 'general_business';
 
-  if (!websiteUrl && !instagramHandle && !menuUrl) {
+  if (phase === 'finalize') {
+    return runDeepBrandFinalize({
+      origin,
+      tenantId,
+      companyName,
+      headers,
+    });
+  }
+
+  if (!websiteUrl && !instagramHandle && !menuUrl && !googleBusinessUrl) {
     return {
       ok: false,
       steps,
@@ -319,11 +375,22 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       constitutionConfirmed: false,
       brandDnaRichness: null,
       productionReady: false,
-      errors: ['Web sitesi, menü linki veya Instagram gerekli.'],
+      errors: ['Web sitesi, menü linki, Google Business veya Instagram gerekli.'],
     };
   }
 
-  // 1. Full brand discovery + Python persist
+  // 1. Brand discovery + Python persist (prefer preview cache — no second Apify scrape)
+  let cachedDiscovery: Record<string, unknown> | null = null;
+  if (previewCacheKey) {
+    const { loadOnboardingPreviewDiscovery } = await import('@/lib/onboarding-preview-cache');
+    cachedDiscovery = await loadOnboardingPreviewDiscovery(previewCacheKey);
+    if (cachedDiscovery) {
+      steps.push({ id: 'preview_cache_hit', ok: true, detail: previewCacheKey.slice(0, 16) });
+    } else {
+      steps.push({ id: 'preview_cache_miss', ok: false, detail: 'fallback_live_analyze' });
+    }
+  }
+
   const analyzeRes = await postJson<PythonBrandAnalyzeResponse>(
     `${origin}/api/brand-context/${tenantId}/analyze`,
     {
@@ -332,8 +399,10 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       google_business_url: googleBusinessUrl,
       menu_url: menuUrl,
       brand_name: companyName,
+      ...(cachedDiscovery ? { cached_discovery: cachedDiscovery } : {}),
     },
-    { ...headers, 'X-Onboarding-Analyze': '1', 'X-Skip-Cdn-Mirror': '1' },
+    // Mirror CDN→R2 during onboarding (do not skip).
+    { ...headers, 'X-Onboarding-Analyze': '1' },
     280_000,
   );
 
@@ -377,12 +446,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   steps.push({ id: 'brand_kit', ok: true });
 
   // 2b. Vision analysis on real gallery URLs only — do not inject Unsplash when website was provided.
-  const refUrlsFromAnalysis = (() => {
-    const raw = brandAnalysis?.reference_image_urls;
-    if (Array.isArray(raw)) return raw.filter((u): u is string => typeof u === 'string');
-    return [];
-  })();
-  const earlyProvisionRes = await postJson<{ provisioned?: number; usableCount?: number }>(
+  earlyProvisionRes = await postJson<{ provisioned?: number; usableCount?: number }>(
     `${origin}/api/brand-context/${tenantId}/provision-gallery`,
     { analyze: true, allowSynthetic: false },
     headers,
@@ -397,8 +461,8 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
       : earlyProvisionRes.error,
   });
 
-  // 3. Deep gallery vision (hero + standard batches) — now uses CDN URLs
-  const galleryStats = await runGalleryCoverage(origin, tenantId, headers);
+  // 3. Deep gallery vision (hero + standard batches) — R2-mirrored URLs preferred
+  galleryStats = await runGalleryCoverage(origin, tenantId, headers);
   steps.push({
     id: 'gallery_coverage',
     ok: galleryStats.complete || galleryStats.analyzed >= 8,
@@ -419,7 +483,6 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     /* non-fatal */
   }
 
-  let calibration: { tested: number; matched: number } | undefined;
   if (Object.keys(galleryMap).length > 0) {
     calibration = await calibrateCaptionMatching(
       origin,
@@ -448,7 +511,23 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     detail: visualsRes?.ok ? 'ok' : 'skipped',
   });
 
-  // 6a. Confirm constitution first (fast — no GPT wait)
+  // discovery phase stops here — user confirms brand before constitution locks production
+  if (phase === 'discovery') {
+    authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
+    return {
+      ok: errors.length === 0 && Boolean(brandAnalysis?.success),
+      steps,
+      brandAnalysis,
+      gallery: { ...galleryStats, calibration },
+      constitutionConfirmed: false,
+      brandDnaRichness: null,
+      productionReady: false,
+      errors,
+      authoritativeSector,
+    };
+  }
+
+  // 6a. Confirm constitution (full phase — auto; finalize phase uses runDeepBrandFinalize)
   const confirmRes = await postJson<{ brand_constitution_confirmed_at?: string }>(
     `${origin}/api/brand-context/${tenantId}/confirm-constitution`,
     { auto_confirmed: true, synthesize_dna: false },
@@ -464,7 +543,7 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
   steps.push({ id: 'constitution', ok: constitutionConfirmed });
 
   // 6c. Validated service profile — authoritative sector for template kit + prompts
-  let authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
+  authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
   if (constitutionConfirmed) {
     const spRes = await fetchCrewBackendJson<Record<string, unknown>>(
       `/api/v1/brand-context/${tenantId}/service-profile/derive`,
@@ -600,6 +679,177 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     steps,
     brandAnalysis,
     gallery: { ...galleryStats, calibration },
+    constitutionConfirmed,
+    brandDnaRichness,
+    productionReady,
+    errors,
+    authoritativeSector,
+  };
+}
+
+/** After user confirms name/sector/tone/colors — lock constitution + production readiness. */
+async function runDeepBrandFinalize(input: {
+  origin: string;
+  tenantId: string;
+  companyName: string;
+  headers: Record<string, string>;
+}): Promise<DeepBrandSetupResult> {
+  const { origin, tenantId, companyName, headers } = input;
+  const steps: DeepBrandSetupStep[] = [];
+  const errors: string[] = [];
+  let brandDnaRichness: string | null = null;
+  let brandAnalysis: PythonBrandAnalyzeResponse | null = null;
+
+  try {
+    const ctxRes = await fetch(`${origin}/api/brand-context/${tenantId}`, {
+      headers,
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (ctxRes.ok) {
+      const ctx = (await ctxRes.json()) as Record<string, unknown>;
+      brandAnalysis = {
+        success: true,
+        confidence: Number(ctx.discovery_confidence ?? 70),
+        inferred_industry: String(ctx.business_type ?? ''),
+        inferred_tone: String(ctx.brand_tone ?? ''),
+        website_summary: String(ctx.website_summary ?? ctx.description ?? ''),
+        brand_context: ctx,
+      } as PythonBrandAnalyzeResponse;
+    }
+  } catch {
+    /* non-fatal */
+  }
+
+  const confirmRes = await postJson<{ brand_constitution_confirmed_at?: string }>(
+    `${origin}/api/brand-context/${tenantId}/confirm-constitution`,
+    { auto_confirmed: false, synthesize_dna: false },
+    headers,
+    45_000,
+  );
+  const constitutionConfirmed = Boolean(confirmRes.ok);
+  if (!confirmRes.ok) {
+    errors.push(confirmRes.error || 'Marka anayasası onaylanamadı');
+  }
+  steps.push({
+    id: 'constitution',
+    ok: constitutionConfirmed,
+    detail: constitutionConfirmed ? 'user_confirmed' : confirmRes.error,
+  });
+
+  let authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
+  if (constitutionConfirmed) {
+    const spRes = await fetchCrewBackendJson<Record<string, unknown>>(
+      `/api/v1/brand-context/${tenantId}/service-profile/derive`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 90_000 },
+    );
+    steps.push({
+      id: 'service_profile',
+      ok: spRes.ok,
+      detail: spRes.ok
+        ? String((spRes.data?.brand_service_profile as Record<string, unknown> | undefined)?.category ?? 'derived')
+        : spRes.error ?? `HTTP ${spRes.status}`,
+    });
+    if (spRes.ok && spRes.data) {
+      const resolved = resolveAuthoritativeIndustry(spRes.data);
+      if (resolved) authoritativeSector = resolved;
+    }
+
+    const calRes = await fetchCrewBackendJson<{ industry_type?: string }>(
+      `/api/v1/brand-context/${tenantId}/industry-intelligence`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 120_000 },
+    );
+    steps.push({
+      id: 'industry_calendar',
+      ok: calRes.ok,
+      detail: calRes.ok ? 'calendar refreshed' : calRes.error ?? `HTTP ${calRes.status}`,
+    });
+
+    const { runVisualIdentityEnrich } = await import('@/lib/visual-identity-enrich');
+    const vibeEnrich = await runVisualIdentityEnrich(tenantId, headers, { timeoutMs: 240_000 });
+    steps.push({
+      id: 'visual_identity_enrich',
+      ok: vibeEnrich.ok,
+      detail: vibeEnrich.detail,
+    });
+
+    const pdpRes = await fetchCrewBackendJson<{
+      ok?: boolean;
+      profile?: { source?: string; sector?: string };
+    }>(
+      `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 180_000 },
+    );
+    steps.push({
+      id: 'production_design_profile',
+      ok: pdpRes.ok,
+      detail: pdpRes.ok
+        ? `${pdpRes.data?.profile?.source ?? 'derived'} · ${pdpRes.data?.profile?.sector ?? authoritativeSector}`
+        : pdpRes.error ?? `HTTP ${pdpRes.status}`,
+    });
+    if (!pdpRes.ok) {
+      errors.push(`Üretim tasarım profili: ${pdpRes.error ?? pdpRes.status}`);
+    }
+
+    if (pdpRes.ok || vibeEnrich.ok) {
+      const themeRes = await postJson<{ ok?: boolean; source?: string }>(
+        `${origin}/api/brand-context/${tenantId}/theme/derive`,
+        {},
+        headers,
+        90_000,
+      );
+      steps.push({
+        id: 'theme_derive_after_vibe',
+        ok: themeRes.ok,
+        detail: themeRes.ok
+          ? (themeRes.data?.source ?? 'derived')
+          : (themeRes.error ?? 'theme_derive_failed'),
+      });
+    }
+  }
+
+  const dnaRes = await postJson<{ data_richness?: string }>(
+    `${origin}/api/brand-context/${tenantId}/brand-dna`,
+    {},
+    headers,
+    120_000,
+  );
+  if (dnaRes.ok) {
+    brandDnaRichness = dnaRes.data?.data_richness ?? 'ok';
+    steps.push({ id: 'brand_dna', ok: true, detail: brandDnaRichness });
+  } else {
+    steps.push({
+      id: 'brand_dna',
+      ok: false,
+      detail: dnaRes.error || `HTTP ${dnaRes.status}`,
+    });
+  }
+
+  const productionSteps = constitutionConfirmed
+    ? await finalizeProductionReadiness(origin, tenantId, authoritativeSector, headers)
+    : [];
+  steps.push(...productionSteps);
+  const productionCritical = new Set([
+    'theme_derive',
+    'template_library_lock',
+    'reel_motion_standard_seed',
+    'ai_production_defaults',
+    'production_design_profile',
+  ]);
+  const productionReady = productionSteps.length > 0
+    && productionSteps.filter((s) => productionCritical.has(s.id)).every((s) => s.ok);
+
+  steps.push({
+    id: 'design_templates',
+    ok: productionReady,
+    detail: productionReady ? 'deferred_until_typography_confirm' : 'production_not_ready',
+  });
+
+  void companyName;
+  return {
+    ok: errors.length === 0 && constitutionConfirmed,
+    steps,
+    brandAnalysis,
+    gallery: { usable: 0, analyzed: 0, complete: false },
     constitutionConfirmed,
     brandDnaRichness,
     productionReady,

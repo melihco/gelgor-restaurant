@@ -105,24 +105,93 @@ export function isCorruptedBrandDescription(description: string | null | undefin
   return GENERIC_DESCRIPTION_MARKERS.some((m) => lower.includes(m));
 }
 
-function brandDnaRichness(brandDna: unknown, visualDna?: string | null): string | null {
-  if (brandDna) {
-    let data: Record<string, unknown> | null = null;
-    if (typeof brandDna === 'string') {
-      try {
-        data = JSON.parse(brandDna) as Record<string, unknown>;
-      } catch {
-        data = null;
-      }
-    } else if (typeof brandDna === 'object') {
-      data = brandDna as Record<string, unknown>;
+const GENERIC_DNA_MARKERS = [
+  'quality experience',
+  'premium brand',
+  'authentic venue photography',
+  'local audience focus',
+  'build awareness and drive',
+  'run brand analysis first',
+  'generic stock',
+  'local competitor',
+  'consistent brand presence',
+];
+
+const CONCRETE_DNA_TOKENS = [
+  /#[0-9a-f]{3,8}/i,
+  /\b(warm|cool|golden|amber|terracotta|navy|cream|linen|stone|wood|marble|neon|chrome)\b/i,
+  /\b(sunset|golden hour|candle|ambient|backlit|soft light|harsh sun)\b/i,
+  /\b(serif|sans|handwritten|editorial|poster|overlay)\b/i,
+  /\b(beach|cocktail|olive|mezze|spa|boutique|terrace|pool|dj)\b/i,
+  /\b(rustic|minimal|luxury|playful|coastal|industrial)\b/i,
+];
+
+function parseBrandDnaObject(brandDna: unknown): Record<string, unknown> | null {
+  if (!brandDna) return null;
+  if (typeof brandDna === 'string') {
+    try {
+      const parsed = JSON.parse(brandDna) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
     }
-    const richness = typeof data?.data_richness === 'string' ? data.data_richness : null;
+  }
+  if (typeof brandDna === 'object' && !Array.isArray(brandDna)) {
+    return brandDna as Record<string, unknown>;
+  }
+  return null;
+}
+
+function visualDnaLooksGeneric(text: string): boolean {
+  const lower = text.toLowerCase();
+  const hits = GENERIC_DNA_MARKERS.filter((m) => lower.includes(m)).length;
+  if (hits >= 2) return true;
+  const concrete = CONCRETE_DNA_TOKENS.filter((re) => re.test(text)).length;
+  // Short + no concrete tokens → generic filler
+  if (text.trim().length < 160 && concrete === 0) return true;
+  return false;
+}
+
+/**
+ * DNA richness for gaps / readiness.
+ * Rejects: empty, explicit sparse, or short generic visual_dna (length>50 alone is not enough).
+ */
+export function brandDnaRichness(brandDna: unknown, visualDna?: string | null): string | null {
+  const data = parseBrandDnaObject(brandDna);
+  if (data) {
+    const richness = typeof data.data_richness === 'string'
+      ? data.data_richness.trim().toLowerCase()
+      : '';
+    if (richness === 'sparse') return 'sparse';
+    if (richness === 'rich' || richness === 'moderate') return richness;
+    // Structured DNA without score — require substance beyond minimal template
+    const essence = String(data.brand_essence ?? '').trim();
+    const doList = Array.isArray(data.content_do_list) ? data.content_do_list : [];
+    if (essence.length >= 40 && doList.length >= 2 && !visualDnaLooksGeneric(essence)) {
+      return 'moderate';
+    }
     if (richness) return richness;
   }
-  // Align with BRS: production visual_dna satisfies the DNA gate when JSON brand_dna is empty.
-  if (typeof visualDna === 'string' && visualDna.trim().length > 50) return 'ok';
+
+  if (typeof visualDna === 'string') {
+    const text = visualDna.trim();
+    if (text.length < 120) return null;
+    if (visualDnaLooksGeneric(text)) return 'sparse';
+    const concrete = CONCRETE_DNA_TOKENS.filter((re) => re.test(text)).length;
+    if (concrete >= 2 && text.length >= 160) return 'ok';
+    if (concrete >= 1 && text.length >= 220) return 'ok';
+    return 'sparse';
+  }
+
   return null;
+}
+
+/** True when DNA is strong enough for production / BRS brand_dna check. */
+export function isBrandDnaProductionReady(brandDna: unknown, visualDna?: string | null): boolean {
+  const richness = brandDnaRichness(brandDna, visualDna);
+  return Boolean(richness && richness !== 'sparse');
 }
 
 /** BRS checklist items that mirror a canonical gap id — avoid double-counting in UI. */

@@ -302,7 +302,26 @@ def apply_production_layers_to_theme_dict(
             text_effect=str(typo_for_map.get("text_effect") or "") or None,
         )
 
-    merged["fal_design_intensity"] = resolve_fal_design_intensity(sector, density)
+    intensity = resolve_fal_design_intensity(sector, density)
+    merged["fal_design_intensity"] = intensity
+
+    # First-write fal_template_production so onboarding day-0 isn't runtime-only.
+    existing_ftp = merged.get("fal_template_production")
+    typo_for_ftp = (
+        merged.get("typography_design")
+        if isinstance(merged.get("typography_design"), dict)
+        else derived_typo
+    )
+    if not isinstance(existing_ftp, dict) or not isinstance(existing_ftp.get("intensity"), dict):
+        merged["fal_template_production"] = {
+            "intensity": intensity,
+            "background_style": str(typo_for_ftp.get("background_style") or "photo_overlay"),
+            "prefer_gallery_photo": True,
+            "logo_treatment": str(typo_for_ftp.get("logo_treatment") or "watermark"),
+            "preview_cap": 10,
+            "concurrency": 2,
+        }
+
     merged["anti_patterns"] = list(dict.fromkeys([*existing_anti, *policy_anti, *guardrails]))[:12]
 
     voice = resolve_caption_voice_rules(sector, languages)

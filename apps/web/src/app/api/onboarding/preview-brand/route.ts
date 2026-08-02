@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
 import { serverConfig } from '@/lib/server-config';
+import {
+  buildPreviewCacheKey,
+  storeOnboardingPreviewDiscovery,
+} from '@/lib/onboarding-preview-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 180;
@@ -95,17 +99,44 @@ export async function POST(request: NextRequest) {
     const report = mapReport(reportRaw, inferredTone, topHashtags);
     const fetchOk = Boolean(data.fetch_ok);
 
-    const result: BrandDiscoveryResult = {
-      success: Boolean(data.success ?? fetchOk),
-      message: fetchOk
-        ? 'Marka analizi tamamlandı.'
-        : 'Sınırlı veri ile önizleme oluşturuldu.',
+    // Cache full discovery for post-signup persist (skip second Apify scrape).
+    let previewCacheKey: string | undefined;
+    const discovery = (data.discovery && typeof data.discovery === 'object')
+      ? (data.discovery as Record<string, unknown>)
+      : null;
+    if (discovery) {
+      previewCacheKey = buildPreviewCacheKey({
+        websiteUrl,
+        instagramHandle,
+        googleBusinessUrl,
+        menuUrl,
+      });
+      await storeOnboardingPreviewDiscovery(previewCacheKey, discovery).catch((err) => {
+        console.warn('[preview-brand] cache store failed:', err);
+        previewCacheKey = undefined;
+      });
+    }
+
+    const websiteOk = Boolean((discovery?.website as Record<string, unknown> | undefined)?.raw_fetch_ok);
+    const igOk = Boolean((discovery?.instagram as Record<string, unknown> | undefined)?.raw_fetch_ok);
+    const googleOk = Boolean((discovery?.google_business as Record<string, unknown> | undefined)?.raw_fetch_ok);
+    const sourcesOk = Number(websiteOk) + Number(igOk) + Number(googleOk);
+    // Honest score: same formula as Python persist (30 + 20×sources), never inflate to 82.
+    const confidence = fetchOk ? Math.min(90, 30 + sourcesOk * 20) : Math.max(15, 10 + sourcesOk * 10);
+    const limited = !fetchOk || sourcesOk <= 1;
+    const inferredLocation = str(discovery?.inferred_location);
+
+    const result: BrandDiscoveryResult & { previewCacheKey?: string; confidence?: number } = {
+      success: Boolean(data.success) && fetchOk,
+      message: limited
+        ? 'Sınırlı veri ile önizleme — web sitesi veya Google Business eklemek kaliteyi yükseltir.'
+        : 'Marka analizi tamamlandı.',
       report,
       profile: {
         id: '',
         brandName: report.brandName || str(data.website_title),
         industry: report.industry,
-        location: '',
+        location: inferredLocation,
         brandTone: report.brandTone,
         targetAudience: report.targetAudience.join(', '),
         visualStyle: report.visualStyle,
@@ -133,12 +164,14 @@ export async function POST(request: NextRequest) {
         riskRules: JSON.stringify(report.riskRules),
         customerVisibleSummary: report.websiteSummary,
         systemIntelligence: '',
-        discoveryConfidence: fetchOk ? 70 : 35,
+        discoveryConfidence: confidence,
       },
       analysisText: str(data.analysis_text),
       inferredLanguage: str(data.inferred_language) || 'tr',
       fetchOk,
+      confidence,
       analyzedAt: new Date().toISOString(),
+      ...(previewCacheKey ? { previewCacheKey } : {}),
     };
 
     return NextResponse.json(result);

@@ -137,8 +137,15 @@ export function buildCompanyProfilePatchFromPython(
   if (!str(profile.brandName) && str(py.business_name)) {
     patch.brandName = str(py.business_name).slice(0, 200);
   }
-  if (!str(profile.competitors) && str(py.competitors)) {
-    patch.competitors = str(py.competitors).slice(0, 500);
+  if (!str(profile.competitors)) {
+    if (str(py.competitors)) {
+      patch.competitors = str(py.competitors).slice(0, 500);
+    } else {
+      const suggested = parseJsonList(py.suggested_competitors);
+      if (suggested.length) {
+        patch.competitors = suggested.slice(0, 6).join(', ').slice(0, 500);
+      }
+    }
   }
   if (!str(profile.contentNeeds)) {
     const pillars = parseJsonList(py.content_pillars);

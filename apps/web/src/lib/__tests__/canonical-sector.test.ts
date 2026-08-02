@@ -77,6 +77,27 @@ describe('canonical sector sync', () => {
     expect(shouldRefreshIndustryFromPython(profile, py)).toBe(false);
   });
 
+  it('overwrites Walters-class wrong SPECIFIC industry when Python corrected', () => {
+    const profile = { industry: 'fashion_retail' };
+    const py = { business_type: 'coffee_shop' };
+    expect(shouldRefreshIndustryFromPython(profile, py)).toBe(true);
+    const patch = buildCompanyProfilePatchFromPython(profile, py);
+    expect(patch?.industry).toBe('coffee_shop');
+  });
+
+  it('does not overwrite user-confirmed sector when SP is manual_override', () => {
+    const profile = { industry: 'coffee_shop' };
+    const py = {
+      business_type: 'fashion_retail',
+      brand_service_profile: {
+        category: 'fashion_retail',
+        source: 'manual_override',
+        category_confidence: 1,
+      },
+    };
+    expect(shouldRefreshIndustryFromPython(profile, py)).toBe(false);
+  });
+
   it('syncs Meon-style Nexus human label to Python wedding_event', () => {
     // Human label must not already normalize to wedding_event (e.g. "Etkinlik & Organizasyon" does).
     const profile = { industry: 'Düğün Planlama' };

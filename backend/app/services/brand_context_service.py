@@ -1417,6 +1417,8 @@ async def persist_discovery_result(
             # New specific sectors — always preferred over generic labels
             "fashion_retail", "jewelry_accessories", "bakery_patisserie",
             "cafe_bakery", "fitness", "barber_salon", "nightclub_lounge",
+            # Food & drink must be SPECIFIC so fashion↔coffee remaps can stick (Walters-class)
+            "coffee_shop", "restaurant_cafe", "hospitality",
         }
         ALLOW_CORRECTIVE_REMAPS = {
             # Stale restaurant/cafe label → more accurate re-analysis result
@@ -1429,11 +1431,21 @@ async def persist_discovery_result(
             ("restaurant_cafe", "jewelry_accessories"),
             ("restaurant_cafe", "bakery_patisserie"),
             ("restaurant_cafe", "fitness"),
+            ("restaurant_cafe", "coffee_shop"),
             # Coffee shop misidentified — stale
             ("coffee_shop", "agency_services"),
             ("coffee_shop", "beauty_wellness"),
             ("coffee_shop", "fashion_retail"),
             ("coffee_shop", "jewelry_accessories"),
+            ("coffee_shop", "restaurant_cafe"),
+            # Fashion mis-tag → food/drink (Walters-class)
+            ("fashion_retail", "coffee_shop"),
+            ("fashion_retail", "restaurant_cafe"),
+            ("fashion_retail", "cafe_bakery"),
+            ("fashion_retail", "bakery_patisserie"),
+            ("fashion_retail", "beauty_wellness"),
+            ("fashion_retail", "local_products_shop"),
+            ("fashion_retail", "beach_club"),
             # Other stale general labels
             ("hospitality_entertainment", "agency_services"),
             ("local_service_business", "agency_services"),
@@ -1443,6 +1455,7 @@ async def persist_discovery_result(
             ("local_service_business", "jewelry_accessories"),
             ("local_service_business", "bakery_patisserie"),
             ("local_service_business", "fitness"),
+            ("local_service_business", "coffee_shop"),
             ("beach_club", "agency_services"),
             ("general_business", "beauty_wellness"),
             ("general_business", "healthcare_clinic"),
@@ -1451,6 +1464,8 @@ async def persist_discovery_result(
             ("general_business", "jewelry_accessories"),
             ("general_business", "bakery_patisserie"),
             ("general_business", "fitness"),
+            ("general_business", "coffee_shop"),
+            ("general_business", "restaurant_cafe"),
         }
         # Additionally: if business name contains strong sector signals and current is generic/wrong,
         # force a name-signal override for key sectors.
@@ -1520,7 +1535,10 @@ async def persist_discovery_result(
 
     # location — extract from Instagram bio (📍 pattern) or Google Business address
     if not ctx.location or ctx.location in ("Türkiye", "Turkey", ""):
-        inferred_location = _extract_location_from_sources(instagram, google)
+        inferred_location = (
+            str(analysis_result.get("inferred_location") or "").strip()
+            or _extract_location_from_sources(instagram, google)
+        )
         if inferred_location:
             ctx.location = inferred_location
             logger.info("location_inferred", workspace_id=str(ctx.workspace_id), location=inferred_location)

@@ -169,17 +169,32 @@ export function shouldRefreshIndustryFromPython(
   const authNorm = normalizeSectorId(authoritative);
   if (currentNorm === authNorm) return false;
 
+  const sp = parseServiceProfile(py.brand_service_profile);
+  const spSource = sp && typeof sp.source === 'string' ? sp.source.trim() : '';
+  // Operator/user locked sector in Python — only fill empty/weak Nexus.
+  if (spSource === 'manual_override') {
+    const current = str(profile.industry).toLowerCase();
+    return !current || WEAK_INDUSTRY_VALUES.has(current);
+  }
+
   const current = str(profile.industry).toLowerCase();
   if (!current || WEAK_INDUSTRY_VALUES.has(current)) return true;
 
-  const sp = parseServiceProfile(py.brand_service_profile);
   const category = sp && typeof sp.category === 'string' ? sp.category.trim() : '';
   const confidence = Number(sp?.category_confidence ?? 0);
   if (category && confidence >= 0.55) return true;
 
-  // Align Nexus human labels / stale values with Python business_type SSOT.
+  // Align Nexus human labels / stale SPECIFIC values with Python business_type SSOT
+  // (Walters-class: fashion_retail stuck while Python corrected to coffee_shop).
   const pyBusinessNorm = normalizeSectorId(str(py.business_type));
-  if (pyBusinessNorm && pyBusinessNorm === authNorm) return true;
+  if (pyBusinessNorm && pyBusinessNorm === authNorm && pyBusinessNorm !== currentNorm) {
+    return true;
+  }
+
+  // Human / freeform industry labels that don't normalize to the playbook slug.
+  if (current && currentNorm !== current.replace(/\s+/g, '_').toLowerCase() && currentNorm !== authNorm) {
+    return true;
+  }
 
   return false;
 }

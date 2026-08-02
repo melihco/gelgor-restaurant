@@ -401,7 +401,7 @@ export function pickPhotoForPreset(
   const catalogAware = buildCatalogAwareGalleryMatchFields({
     caption: '',
     headline: preset.sampleHeadline || preset.name,
-    catalogSlotKey: preset.catalogSlotKey ?? preset.id,
+    catalogSlotKey: preset.catalogSlotKey ?? preset.templateType,
     sectorId: input.sector,
     forceBlend: true,
     seedHeadlineFromCatalog: true,

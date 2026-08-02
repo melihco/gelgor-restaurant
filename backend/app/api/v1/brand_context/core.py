@@ -281,13 +281,21 @@ async def analyze_brand_context(
 
     try:
         brand_name = (body.brand_name or "").strip()
-        result = await analyze_brand(
-            website_url=body.website_url,
-            instagram_handle=body.instagram_handle,
-            google_business_url=body.google_business_url,
-            menu_url=body.menu_url or "",
-            company_profile={"brand_name": brand_name} if brand_name else {},
-        )
+        cached = body.cached_discovery if isinstance(body.cached_discovery, dict) else None
+        if cached and (cached.get("report") or cached.get("website") or cached.get("instagram")):
+            logger.info(
+                "brand_analyze_using_preview_cache",
+                workspace_id=str(workspace_id),
+            )
+            result = cached
+        else:
+            result = await analyze_brand(
+                website_url=body.website_url,
+                instagram_handle=body.instagram_handle,
+                google_business_url=body.google_business_url,
+                menu_url=body.menu_url or "",
+                company_profile={"brand_name": brand_name} if brand_name else {},
+            )
     except Exception as exc:
         logger.error("brand_analyze_failed", workspace_id=str(workspace_id), error=str(exc))
         raise HTTPException(500, f"Brand analysis pipeline failed: {exc}") from exc
@@ -365,31 +373,71 @@ async def analyze_brand_context(
 
     import asyncio as _asyncio
 
-    # Auto-suggest competitors via Perplexity if none configured yet
+    # Competitor suggestions — await briefly so first analyze isn't empty; finish in background if slow
     if not getattr(ctx, "competitors", None) and not getattr(ctx, "suggested_competitors", None):
-        async def _suggest_competitors() -> None:
+        suggest_name = (
+            (ctx.business_name or "").strip()
+            or str(result.get("inferred_brand_name") or "").strip()
+            or str((google_data or {}).get("name") or "").strip()
+        )
+        suggest_location = (
+            (getattr(ctx, "location", None) or "").strip()
+            or str(result.get("inferred_location") or "").strip()
+        )
+        if suggest_name:
             try:
-                from app.database import async_session_factory
-                suggestions = await _discover_competitor_suggestions(
-                    brand_name=ctx.business_name,
-                    business_type=getattr(ctx, "business_type", "") or "business",
-                    location=getattr(ctx, "location", "") or "",
-                    perplexity_api_key=settings.perplexity_api_key or "",
-                    perplexity_model=settings.perplexity_model or "sonar",
-                    openai_api_key=settings.openai_api_key or "",
+                suggestions = await _asyncio.wait_for(
+                    _discover_competitor_suggestions(
+                        brand_name=suggest_name,
+                        business_type=getattr(ctx, "business_type", "") or "business",
+                        location=suggest_location,
+                        perplexity_api_key=settings.perplexity_api_key or "",
+                        perplexity_model=settings.perplexity_model or "sonar",
+                        openai_api_key=settings.openai_api_key or "",
+                    ),
+                    timeout=18.0,
                 )
                 if suggestions:
-                    async with async_session_factory() as bg_db:
-                        bg_ctx = await brand_context_service.get_brand_context(bg_db, workspace_id)
-                        if bg_ctx:
-                            import json as _json
-                            bg_ctx.suggested_competitors = _json.dumps(suggestions, ensure_ascii=False)
-                            await bg_db.commit()
-                            logger.info("suggested_competitors_saved", workspace_id=str(workspace_id), count=len(suggestions))
+                    import json as _json
+                    ctx.suggested_competitors = _json.dumps(suggestions, ensure_ascii=False)
+                    # Seed competitors so hydrate / market intel see a real list on first analyze
+                    if not (ctx.competitors or "").strip():
+                        ctx.competitors = ", ".join(suggestions[:5])
+                    await db.flush()
+                    logger.info(
+                        "suggested_competitors_saved",
+                        workspace_id=str(workspace_id),
+                        count=len(suggestions),
+                    )
+            except _asyncio.TimeoutError:
+                logger.info("suggested_competitors_timeout", workspace_id=str(workspace_id))
+
+                async def _suggest_competitors_bg() -> None:
+                    try:
+                        from app.database import async_session_factory
+                        suggestions = await _discover_competitor_suggestions(
+                            brand_name=suggest_name,
+                            business_type=getattr(ctx, "business_type", "") or "business",
+                            location=suggest_location,
+                            perplexity_api_key=settings.perplexity_api_key or "",
+                            perplexity_model=settings.perplexity_model or "sonar",
+                            openai_api_key=settings.openai_api_key or "",
+                        )
+                        if suggestions:
+                            async with async_session_factory() as bg_db:
+                                bg_ctx = await brand_context_service.get_brand_context(bg_db, workspace_id)
+                                if bg_ctx and not getattr(bg_ctx, "suggested_competitors", None):
+                                    import json as _json
+                                    bg_ctx.suggested_competitors = _json.dumps(suggestions, ensure_ascii=False)
+                                    if not (bg_ctx.competitors or "").strip():
+                                        bg_ctx.competitors = ", ".join(suggestions[:5])
+                                    await bg_db.commit()
+                    except Exception as exc:
+                        logger.warning("suggested_competitors_failed", workspace_id=str(workspace_id), error=str(exc))
+
+                _asyncio.create_task(_suggest_competitors_bg())
             except Exception as exc:
                 logger.warning("suggested_competitors_failed", workspace_id=str(workspace_id), error=str(exc))
-
-        _asyncio.create_task(_suggest_competitors())
 
     # Auto-trigger competitor analysis in background if competitors are configured
     competitors_raw = getattr(ctx, "competitors", None) or ""
