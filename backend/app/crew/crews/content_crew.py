@@ -380,7 +380,26 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
         if not isinstance(cfc, dict) or not any(
             isinstance(v, str) and v.strip() for v in cfc.values()
         ):
-            headline = str(item.get("headline") or item.get("concept_title") or item.get("title") or "").strip()
+            # Prefer marketing `headline` over planning labels (concept_title "Yaz sezonu").
+            candidates = [
+                str(item.get("headline") or "").strip(),
+                str(item.get("tagline") or "").strip().strip('"“”\'«»'),
+                str(item.get("concept_title") or item.get("title") or "").strip(),
+            ]
+            headline = ""
+            for cand in candidates:
+                if not cand:
+                    continue
+                low = cand.lower()
+                # Skip slot/season planning labels — production would paint nonsense.
+                if re.search(r"\b(story|reel|post|carousel)\s*$", low):
+                    continue
+                if re.search(r"^(yaz|kış|kis|ilkbahar|sonbahar)\s+sezon", low):
+                    continue
+                if "serisi" in low and len(cand.split()) <= 5:
+                    continue
+                headline = cand
+                break
             if not headline:
                 # Derive a short headline from the caption's first words (stories
                 # often omit an explicit headline but ICS/Canva still need one).
@@ -388,13 +407,14 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
                 words = caption.split()
                 headline = " ".join(words[:6]).rstrip(".,!?:;") if words else ""
             cta = str(item.get("cta") or "").strip()
-            subtitle = str(item.get("strategic_purpose") or "").strip()
+            # Never put internal strategic_purpose on the canvas as subtitle.
+            subtitle = str(item.get("subline") or item.get("tagline") or "").strip().strip('"“”\'«»')
             synthesised: dict[str, str] = {}
             if headline:
                 synthesised["headline"] = headline[:_CANVA_HEADLINE_MAX]
             if cta:
                 synthesised["cta"] = cta[:_CANVA_CTA_MAX]
-            if subtitle:
+            if subtitle and subtitle.lower() != headline.lower():
                 synthesised["subtitle"] = subtitle[:_CANVA_SUBTITLE_MAX]
             if synthesised:
                 item["canva_field_copy"] = synthesised

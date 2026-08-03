@@ -220,6 +220,8 @@ function finalizeMissionOverlay(input: {
     caption: input.caption,
     channel: input.channel,
     lockIdeationCopy: input.lockIdeationCopy,
+    // Agent/mission-planned lines stay verbatim — do not theme-rewrite to caption.
+    preservePlannedHeadline: input.lockIdeationCopy === true,
     brandName: input.brandName,
     businessType: input.businessType,
   });
@@ -246,9 +248,10 @@ function finalizeMissionOverlay(input: {
     cta: input.cta,
   });
 
-  // Story/reel: if caption yields a more on-tone hook, prefer it over a flat promo title.
+  // Story/reel tone polish — never replace a locked agent/mission headline.
   if (
-    (input.channel === 'story' || input.channel === 'reel')
+    input.lockIdeationCopy !== true
+    && (input.channel === 'story' || input.channel === 'reel')
     && input.brandTone?.trim()
     && input.caption.trim().length >= 24
   ) {
@@ -333,7 +336,8 @@ function extractMissionTagline(idea: FalDesignCopyIdea): string {
 
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: mission tagline → canva/text_layers → caption punchline → ideation title.
+ * Priority: mission tagline → canva/text_layers → agent headline →
+ * caption punchline (rescue) → ideation title → catalog sample.
  */
 export function resolveMissionFalDesignCopy(input: {
   idea: FalDesignCopyIdea;
@@ -466,7 +470,52 @@ export function resolveMissionFalDesignCopy(input: {
     }
   }
 
-  // 3) Caption-aligned short punchline (never long first-sentence dumps).
+  // 2b) Agent root marketing headline / ideation overlay — before caption slices.
+  // Keeps idea-specific punchlines when canva was empty or label-synthesised.
+  const agentMarketingLines = [
+    unwrapQuotedOverlayLine(String(input.idea.headline ?? '').trim()),
+    unwrapQuotedOverlayLine(input.ideationHeadline.trim()),
+  ].filter(Boolean);
+  for (const agentLine of agentMarketingLines) {
+    if (!isPublishableOverlayLine(agentLine, brandName, captionLoc)) continue;
+    if (
+      extracted.headline
+      && unwrapQuotedOverlayLine(extracted.headline).toLowerCase() === agentLine.toLowerCase()
+    ) {
+      continue; // already rejected via canva path
+    }
+    const headline = resolvePlannedOverlayLine(
+      agentLine,
+      [],
+      channel,
+      input.designIntensity,
+      input.sampleHeadline,
+    );
+    if (!headline || !acceptPlannedOverlayLine(headline)) continue;
+    const subtitleRaw = input.cta || String(input.idea.subline ?? '').trim();
+    const subtitle = subtitleRaw
+      && !areFalOverlayTextsRedundant(headline, subtitleRaw)
+      && isPublishableOverlayLine(subtitleRaw, brandName, captionLoc)
+      ? resolvePlannedOverlayLine(
+        subtitleRaw,
+        [headline],
+        channel,
+        input.designIntensity,
+        input.sampleHeadline,
+      ) || undefined
+      : resolveFalSubtitle({
+        caption,
+        headline,
+        cta: input.cta,
+      }) ?? undefined;
+    return lockToTemplate({
+      headline,
+      subtitle,
+      source: 'agent_headline',
+    });
+  }
+
+  // 3) Caption-aligned short punchline — rescue only when agent overlay is weak.
   if (caption.length >= 24) {
     const punch = extractCaptionAlignedPunchline({
       caption,

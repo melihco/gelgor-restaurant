@@ -120,10 +120,9 @@ export function firstStr(rec: Record<string, unknown>, ...keys: string[]): strin
 }
 
 /**
- * Planning title from mission ideation — matches Mission Hub cards and feeds
- * Remotion stories, posters, and feed overlay copy (not caption CTA hooks).
- * Prefers `concept_title` / `idea_title` over `headline` because agents often
- * put the marketing hook in concept_title and a shorter caption fragment in headline.
+ * Planning title from mission ideation — Mission Hub cards / calendar labels.
+ * Prefers `concept_title` for planning identity (may be a series label).
+ * For on-canvas paint use {@link resolveIdeationOverlayHeadline}.
  */
 export function resolveIdeationHeadline(rec: Record<string, unknown>): string {
   // strategic_purpose is internal agent briefing — never use as display headline.
@@ -165,6 +164,56 @@ export function resolveIdeationTagline(rec: Record<string, unknown>): string {
     || (typeof fromEvent === 'string' ? fromEvent.trim() : '')
     || fromCanva;
   return unwrapIdeationQuote(raw);
+}
+
+/** Light planning-label detector (no circular import into quality module). */
+function looksLikePlanningOverlayLabel(line: string): boolean {
+  const t = line.trim().toLowerCase();
+  if (!t) return true;
+  if (/\b(story|reel|post|carousel)\s*$/i.test(t)) return true;
+  if (/^(yaz|kış|kis|ilkbahar|sonbahar)\s+sezon/i.test(t)) return true;
+  if (/^(gündüz|gece)\s+plaj/i.test(t)) return true;
+  if (/\bserisi\b/i.test(t) && t.split(/\s+/).length <= 5) return true;
+  return false;
+}
+
+/**
+ * Idea-specific on-canvas marketing line for designed production.
+ * Prefers agent overlay fields (`canva_field_copy`, root `headline`, tagline)
+ * over planning `concept_title` labels so painted text stays punchy and coherent
+ * with the idea — not a season/slot label or a caption fragment.
+ */
+export function resolveIdeationOverlayHeadline(rec: Record<string, unknown>): string {
+  const canva = (rec.canva_field_copy ?? rec.canvaFieldCopy) as Record<string, unknown> | undefined;
+  const fromCanva = canva
+    ? firstStr(canva, 'headline', 'title', 'heading')
+    : '';
+  const vps = (rec.visual_production_spec ?? rec.visualProductionSpec) as
+    | Record<string, unknown>
+    | undefined;
+  const layers = (vps?.text_layers ?? vps?.textLayers) as Record<string, unknown> | undefined;
+  const fromLayers = layers
+    ? firstStr(layers, 'title', 'headline', 'heading')
+    : '';
+  const tagline = resolveIdeationTagline(rec);
+  const marketing = firstStr(rec, 'headline', 'hook');
+  const planning = firstStr(
+    rec,
+    'concept_title',
+    'conceptTitle',
+    'idea_title',
+    'ideaTitle',
+    'title',
+  );
+
+  const ranked = [fromCanva, fromLayers, tagline, marketing, planning]
+    .map(unwrapIdeationQuote)
+    .filter(Boolean);
+
+  for (const clean of ranked) {
+    if (!looksLikePlanningOverlayLabel(clean)) return clean;
+  }
+  return ranked[0] ?? '';
 }
 
 /**

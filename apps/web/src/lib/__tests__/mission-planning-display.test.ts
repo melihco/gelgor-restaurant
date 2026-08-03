@@ -4,7 +4,10 @@ import {
   buildMissionPlanningDisplayIdeas,
   buildMissionProductionIdeas,
 } from '@/lib/mission-production-plan';
-import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import {
+  resolveIdeationHeadline,
+  resolveIdeationOverlayHeadline,
+} from '@/lib/production-idea-parse';
 import { countPlanningNodeResults } from '@/lib/mission-pipeline-transparency';
 
 const singleIdeaNode = {
@@ -26,6 +29,31 @@ describe('resolveIdeationHeadline', () => {
       concept_title: 'Dive into OUR SUNSET RITUAL!!',
       headline: 'Join us for a taste',
     })).toBe('Dive into OUR SUNSET RITUAL!!');
+  });
+});
+
+describe('resolveIdeationOverlayHeadline', () => {
+  it('prefers marketing headline over planning concept_title', () => {
+    expect(resolveIdeationOverlayHeadline({
+      concept_title: 'Yaz sezonu',
+      headline: 'Sıcak gecelerde buluşalım',
+    })).toBe('Sıcak gecelerde buluşalım');
+  });
+
+  it('skips label-style canva headline in favor of root marketing line', () => {
+    expect(resolveIdeationOverlayHeadline({
+      concept_title: 'DJ gecesi story',
+      headline: 'Yıldızların altında dans',
+      canva_field_copy: { headline: 'DJ gecesi story' },
+    })).toBe('Yıldızların altında dans');
+  });
+
+  it('uses canva marketing headline when publishable', () => {
+    expect(resolveIdeationOverlayHeadline({
+      concept_title: 'Haftalık vitrin',
+      headline: 'Haftalık vitrin',
+      canva_field_copy: { headline: 'Doğal lezzetleri keşfet' },
+    })).toBe('Doğal lezzetleri keşfet');
   });
 });
 

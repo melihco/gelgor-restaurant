@@ -193,6 +193,48 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.headline.toLowerCase()).toMatch(/hasat|zeytin|tadım|erken/);
   });
 
+  it('prefers agent marketing headline over caption slice when canva is a season label', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Yaz sezonu',
+        headline: 'Sıcak gecelerde buluşalım',
+        canva_field_copy: { headline: 'Yaz sezonu' },
+        caption_draft:
+          'Bu yaz sıcak geceleri DJ performanslarıyla renklendiriyoruz! 15 Temmuz\'da buluşalım!',
+      },
+      ideationHeadline: 'Sıcak gecelerde buluşalım',
+      caption:
+        'Bu yaz sıcak geceleri DJ performanslarıyla renklendiriyoruz! 15 Temmuz\'da buluşalım!',
+      brandName: 'Scorpios Bodrum',
+      channel: 'feed_post',
+      businessType: 'beach_club',
+      designIntensity: 'balanced',
+    });
+    expect(result.source).toBe('agent_headline');
+    expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak/);
+    expect(result.headline.toLowerCase()).not.toMatch(/sezon|yaz sezon/);
+  });
+
+  it('keeps agent headline for beach_club and local_products (multi-tenant)', () => {
+    for (const businessType of ['beach_club', 'local_products_shop'] as const) {
+      const result = resolveMissionFalDesignCopy({
+        idea: {
+          concept_title: 'Haftalık vitrin',
+          headline: 'Erken hasat tadımı',
+          caption_draft: 'Erken hasat zeytinyağımızı atölyede tadın. Sınırlı stok.',
+        },
+        ideationHeadline: 'Erken hasat tadımı',
+        caption: 'Erken hasat zeytinyağımızı atölyede tadın. Sınırlı stok.',
+        brandName: businessType === 'beach_club' ? 'Yula' : 'Karaman Datça',
+        channel: 'feed_post',
+        businessType,
+        designIntensity: 'balanced',
+      });
+      expect(result.source).toBe('agent_headline');
+      expect(result.headline.toLowerCase()).toMatch(/hasat|tadım/);
+    }
+  });
+
   it('derives overlay from caption when ideation is a season label', () => {
     const result = resolveMissionFalDesignCopy({
       idea: { headline: 'Gündüz plaj/havuz' },

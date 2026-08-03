@@ -228,7 +228,10 @@ import {
 import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
 import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
-import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import {
+  resolveIdeationHeadline,
+  resolveIdeationOverlayHeadline,
+} from '@/lib/production-idea-parse';
 import {
   buildArtifactListTitle,
   hasPublishableIdeationHeadline,
@@ -1198,15 +1201,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const ideaId = missionId ? `${missionId}-${resolvedIdeaIndex}` : randomUUID();
     let caption = getField(idea, 'caption_draft', 'caption');
     const originalIdeationCaption = caption;
-    const rawIdeationHeadline = resolveIdeationHeadline(idea as Record<string, unknown>);
-    let ideationHeadline = rawIdeationHeadline;
-    let headline = rawIdeationHeadline;
-
+    const rawPlanningHeadline = resolveIdeationHeadline(idea as Record<string, unknown>);
+    const rawOverlayHeadline = resolveIdeationOverlayHeadline(idea as Record<string, unknown>);
     const isFalDesignedPostSlotForHeadline =
       isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
       || assignment.slot_role === 'designed_typography'
       || assignment.slot_role === 'fal_designed_post';
+    // Designed slots seed from agent overlay fields; hub planning keeps concept_title.
+    const rawIdeationHeadline = isFalDesignedPostSlotForHeadline
+      ? (rawOverlayHeadline || rawPlanningHeadline)
+      : rawPlanningHeadline;
+    let ideationHeadline = rawIdeationHeadline;
+    let headline = rawIdeationHeadline;
+
     const isTypographyDesignSlot = assignment.slot_role === 'designed_typography';
     let slotVisualDesignCard: MissionVisualDesignCard | null = null;
     let slotVisualDesignCardIndex: number | null = null;
@@ -1236,11 +1244,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const vdcHeadline = String(
       slotVisualDesignCard?.headline ?? slotVisualDesignCard?.concept_title ?? '',
     ).trim();
-    /** Prefer mission design-card headline as on-canvas overlay for fal/designed slots. */
+    const agentOverlayLooksPublishable = Boolean(
+      rawOverlayHeadline
+      && !isMeaninglessBrandEchoHeadline(rawOverlayHeadline, resolvedBrandName)
+      && !isLabelStyleHeadline(rawOverlayHeadline)
+      && !isIncompleteOverlayPhrase(rawOverlayHeadline),
+    );
+    /** Design-card overlay only when agent idea copy is weak/missing. */
     let visualDesignCardOverlayApplied = Boolean(
       isFalDesignedPostSlotForHeadline
       && vdcHeadline
-      && isUsableVisualDesignCardHeadline(vdcHeadline, resolvedBrandName),
+      && isUsableVisualDesignCardHeadline(vdcHeadline, resolvedBrandName)
+      && !agentOverlayLooksPublishable,
     );
 
     if (
@@ -1273,7 +1288,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ideationHeadline = enforceDisplayHeadline(rawIdeationHeadline, 72);
       headline = ideationHeadline;
     }
-    // Designed slots: card headline is the on-canvas SSOT when usable (even if ideation is “good”).
+    // Designed slots: card headline fills in only when agent overlay was not publishable.
     if (visualDesignCardOverlayApplied && vdcHeadline) {
       const cardOverlay = enforceDisplayHeadline(vdcHeadline, 72);
       if (cardOverlay) {
@@ -1284,8 +1299,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
     /** Ideation marketing hook — preserved for feed metadata; never overwritten by gallery vision. */
-    const storedIdeationHeadline = rawIdeationHeadline
-      ? enforceDisplayHeadline(rawIdeationHeadline, 72)
+    const storedIdeationHeadline = (rawOverlayHeadline || rawPlanningHeadline)
+      ? enforceDisplayHeadline(rawOverlayHeadline || rawPlanningHeadline, 72)
       : headline;
     /** Gallery scorer uses the ideation hook, not caption-derived overlay fragments. */
     const galleryMatchHeadline = storedIdeationHeadline || ideationHeadline;
