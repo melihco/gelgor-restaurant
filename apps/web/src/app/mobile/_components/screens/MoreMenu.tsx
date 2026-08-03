@@ -62,7 +62,7 @@ export function MoreMenuPanel({
   flushTop = false,
 }: {
   horizontalPadding?: number;
-  /** When true, no top padding — sits flush under BrandHub (Chatbot → İçerik Planı). */
+  /** When true, no top padding — sits flush under BrandHub (assistant → Menü). */
   flushTop?: boolean;
 }) {
   const { t } = useTheme();
@@ -148,7 +148,7 @@ export function MoreMenuPanel({
         <div
           key={group.title || group.items[0]?.label || `group-${groupIdx}`}
           style={{
-            /* flushTop: continue hub list with same 6px rhythm (Chatbot → İçerik Planı) */
+            /* flushTop: continue Marka hub list (assistant section → Menü) */
             padding: `${flushTop && groupIdx === 0 ? 6 : 16}px ${horizontalPadding}px 0`,
           }}
         >

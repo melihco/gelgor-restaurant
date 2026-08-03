@@ -9,7 +9,7 @@ import { MobileBrandNavbar } from './MobileBrandNavbar';
 import { BrandVisionerNavRow } from './BrandVisionerNavRow';
 import { SaMenuIndex } from './SaMenuIndex';
 
-type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
+type BrandTab = 'identity' | 'content' | 'design' | 'gallery' | 'strategy' | 'chatbot';
 
 type NavStatus = 'done' | 'warn' | 'neutral';
 
@@ -62,6 +62,14 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
           <rect x="3.2" y="5.2" width="17.6" height="13.6" rx="2.8" />
           <circle cx="8.4" cy="10" r="1.6" />
           <path d="M4 16.5 8.8 11.9l3.6 3.4 3.1-2.4 4.5 4.1" />
+        </svg>
+      );
+    case 'strategy':
+      return (
+        <svg {...common}>
+          <rect x="4" y="4" width="5.5" height="16" rx="1.4" />
+          <rect x="11.2" y="8" width="5.5" height="12" rx="1.4" />
+          <rect x="18.4" y="6" width="1.6" height="14" rx="0.8" />
         </svg>
       );
     case 'chatbot':
@@ -134,6 +142,7 @@ export function ReadinessRing({ score, accent, track, size = 54 }: {
   );
 }
 
+/** Production brand modules only — never include chatbot (messaging path). */
 export function buildBrandHubNavItems(input: {
   constitutionConfirmedAt: string | null | undefined;
   pillarsCount: number;
@@ -141,7 +150,8 @@ export function buildBrandHubNavItems(input: {
   pprReady: boolean;
   pprScore: number;
   photoCount: number;
-  hasChatbot: boolean;
+  /** @deprecated Ignored — chatbot is not a production module. Kept for call-site compat. */
+  hasChatbot?: boolean;
   channelsConnected: boolean;
 }): BrandHubNavItem[] {
   const contentDone = input.pillarsCount >= 2 && input.ctasCount >= 1;
@@ -180,15 +190,35 @@ export function buildBrandHubNavItems(input: {
       status: galleryDone ? 'done' : 'warn',
       completion: Math.min(1, input.photoCount / 8),
     },
-    {
-      key: 'chatbot',
-      target: 'chatbot',
-      label: 'Asistan',
-      accent: SA_STUDIO_ACCENTS.chatbot,
-      status: input.hasChatbot ? 'done' : 'neutral',
-      completion: input.hasChatbot ? 1 : 0.18,
-    },
   ];
+}
+
+/** Ideation strategy — campaign / competitors / special days (not production engines). */
+export function buildBrandHubStrategyNavItem(input: {
+  goalsFilled: boolean;
+  competitorCount: number;
+}): BrandHubNavItem {
+  const filled = input.goalsFilled || input.competitorCount > 0;
+  return {
+    key: 'strategy',
+    target: 'strategy',
+    label: 'Strateji',
+    accent: SA_STUDIO_ACCENTS.strategy,
+    status: filled ? 'done' : 'neutral',
+    completion: filled ? 1 : 0.22,
+  };
+}
+
+/** Messaging / Mertcafe assistant — separate from feed & design production. */
+export function buildBrandHubAssistantNavItem(hasChatbot: boolean): BrandHubNavItem {
+  return {
+    key: 'chatbot',
+    target: 'chatbot',
+    label: 'Müşteri Asistanı',
+    accent: SA_STUDIO_ACCENTS.chatbot,
+    status: hasChatbot ? 'done' : 'neutral',
+    completion: hasChatbot ? 1 : 0.18,
+  };
 }
 
 export interface BrandHubDashboardProps {
@@ -203,7 +233,12 @@ export interface BrandHubDashboardProps {
   brandAccent?: string | null;
   industryLabel?: string | null;
   locationLabel?: string | null;
+  /** Feed / design production modules (Kimlik → Galeri). */
   navItems: BrandHubNavItem[];
+  /** Campaign / competitors / special days — outside production modules. */
+  strategyItem?: BrandHubNavItem | null;
+  /** Optional messaging assistant row — rendered outside production modules. */
+  assistantItem?: BrandHubNavItem | null;
   constitutionConfirmedAt: string | null | undefined;
   confirmingConstitution: boolean;
   constitutionConfirmError: string | null;
@@ -229,6 +264,8 @@ export function BrandHubDashboard({
   industryLabel,
   locationLabel,
   navItems,
+  strategyItem = null,
+  assistantItem = null,
   constitutionConfirmedAt,
   confirmingConstitution,
   constitutionConfirmError,
@@ -238,7 +275,7 @@ export function BrandHubDashboard({
   pprScore,
   statusBanners,
 }: BrandHubDashboardProps) {
-  // Peer product modules — Kimlik / İçerik DNA / Görünüm / Galeri / Asistan (max depth 3).
+  // Production modules only — Kimlik / İçerik DNA / Görünüm / Galeri.
   const hubItems = navItems;
 
   return (
@@ -472,6 +509,9 @@ export function BrandHubDashboard({
         </button>
       )}
 
+      <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
+        Üretim
+      </div>
       <SaMenuIndex>
         {hubItems.map((item) => (
           <div key={item.key} className="sa-menu-index__slot">
@@ -483,6 +523,58 @@ export function BrandHubDashboard({
           </div>
         ))}
       </SaMenuIndex>
+
+      {strategyItem ? (
+        <div style={{ marginTop: 22 }}>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 6 }}>
+            Strateji
+          </div>
+          <p style={{
+            margin: '0 0 10px',
+            fontSize: 12,
+            lineHeight: 1.4,
+            color: t.textMuted,
+          }}
+          >
+            Kampanya, rakip ve özel gün bağlamı — galeri / fal üretim ayarı değildir.
+          </p>
+          <SaMenuIndex>
+            <div className="sa-menu-index__slot">
+              <BrandHubTile
+                item={strategyItem}
+                t={t}
+                onOpen={(tab) => onOpenSection(tab)}
+              />
+            </div>
+          </SaMenuIndex>
+        </div>
+      ) : null}
+
+      {assistantItem ? (
+        <div style={{ marginTop: 22 }}>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 6 }}>
+            Müşteri kanalları
+          </div>
+          <p style={{
+            margin: '0 0 10px',
+            fontSize: 12,
+            lineHeight: 1.4,
+            color: t.textMuted,
+          }}
+          >
+            Instagram DM / sohbet asistanı — feed ve tasarım üretimini etkilemez.
+          </p>
+          <SaMenuIndex>
+            <div className="sa-menu-index__slot">
+              <BrandHubTile
+                item={assistantItem}
+                t={t}
+                onOpen={(tab) => onOpenSection(tab)}
+              />
+            </div>
+          </SaMenuIndex>
+        </div>
+      ) : null}
       </div>
     </div>
   );

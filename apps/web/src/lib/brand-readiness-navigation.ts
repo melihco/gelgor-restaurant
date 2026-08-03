@@ -4,12 +4,16 @@
  */
 import { brandReadinessFixToBrandTab } from '@/lib/brand-readiness';
 
-export type BrandConstitutionTab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
+export type BrandConstitutionTab = 'identity' | 'content' | 'design' | 'gallery' | 'strategy' | 'chatbot';
 export type BrandIdentityGroup = 'basics' | 'channels' | 'about';
-/** Canonical leaves + legacy aliases (normalized in BrandConstitution). */
+/** Canonical content DNA leaves + legacy aliases (normalized in BrandConstitution). */
 export type BrandContentGroup =
-  | 'story' | 'goals' | 'special' | 'competitors'
-  | 'about' | 'voice' | 'audience' | 'strategy';
+  | 'story' | 'goals'
+  | 'about' | 'voice' | 'audience'
+  /** @deprecated Moved to strategy tab — still accepted on deep-links. */
+  | 'special' | 'competitors' | 'strategy';
+/** Strategy leaves (non-production ideation context). */
+export type BrandStrategyGroup = 'campaign' | 'competitors' | 'special';
 export type BrandDesignGroup =
   | 'style' | 'templates' | 'production'
   | 'colors' | 'engines' | 'dna' | 'rules';
@@ -19,6 +23,7 @@ export interface BrandReadinessNavTarget {
   tab: BrandConstitutionTab;
   identityGroup?: BrandIdentityGroup | null;
   contentGroup?: BrandContentGroup | null;
+  strategyGroup?: BrandStrategyGroup | null;
   designGroup?: BrandDesignGroup | null;
   galleryGroup?: BrandGalleryGroup | null;
   /** DOM anchor via data-brand-form */

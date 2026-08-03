@@ -253,6 +253,21 @@ export function BrandChatbotProfileCard({
 
       {chatGroup === null && (
         <>
+          <div style={{
+            marginBottom: 14,
+            padding: '12px 14px',
+            borderRadius: 14,
+            border: `0.5px solid ${t.separator}`,
+            background: t.isDark ? 'rgba(157,190,206,0.08)' : 'rgba(77,112,136,0.06)',
+          }}
+          >
+            <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
+              Müşteri sohbet asistanı
+            </div>
+            <p style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.45, color: t.textMuted }}>
+              Instagram DM ve Mertcafe yanıtları için. Feed post / story / tasarım üretim ayarlarını değiştirmez.
+            </p>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {CHAT_GROUPS.map((g) => (
               <button
@@ -291,7 +306,7 @@ export function BrandChatbotProfileCard({
           style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
         >
           <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
-          Asistan · <span style={{ color: t.textPrimary }}>{activeChatGroup?.label}</span>
+          Müşteri Asistanı · <span style={{ color: t.textPrimary }}>{activeChatGroup?.label}</span>
         </button>
       )}
 

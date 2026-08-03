@@ -77,7 +77,6 @@ import {
   resolveBrandReadinessNav,
   type BrandGalleryGroup,
 } from '@/lib/brand-readiness-navigation';
-import { isCanvaEnabledClient } from '@/lib/canva-config';
 import { isDebugUiMode } from '../mobile-client-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
@@ -119,7 +118,13 @@ import {
   hasSavedPostDesignDefaults,
   resolvePostDesignDefaultsFromVibe,
 } from '@/lib/post-design-defaults-policy';
-import { BrandHubDashboard, buildBrandHubNavItems, ReadinessRing } from '../BrandHubDashboard';
+import {
+  BrandHubDashboard,
+  buildBrandHubAssistantNavItem,
+  buildBrandHubNavItems,
+  buildBrandHubStrategyNavItem,
+  ReadinessRing,
+} from '../BrandHubDashboard';
 import { BrandVisionerGroup, BrandVisionerList, BrandVisionerNavRow } from '../BrandVisionerNavRow';
 import { MobileBrandNavbar } from '../MobileBrandNavbar';
 import { SA_CHROME, SA_STUDIO_ACCENTS } from '../sa-chrome';
@@ -189,20 +194,36 @@ const DESIGN_GROUP_MISSIONS: Record<string, string> = {
   rules: 'Üretim sınırları ve onay akışı.',
 };
 
-/** Canonical content leaves (+ legacy deep-link aliases). */
+/** Canonical content DNA leaves (+ legacy deep-link aliases). */
 type ContentGroup =
-  | 'story' | 'goals' | 'special' | 'competitors'
-  | 'about' | 'voice' | 'audience' | 'strategy';
+  | 'story' | 'goals'
+  | 'about' | 'voice' | 'audience'
+  /** @deprecated → strategy tab */
+  | 'special' | 'competitors' | 'strategy';
+
+/** Strategy leaves — campaign / competitors / special days (not production). */
+type StrategyGroup = 'campaign' | 'competitors' | 'special';
 
 /** Canonical design leaves (+ legacy deep-link aliases). */
 type DesignGroup =
   | 'style' | 'templates' | 'production'
   | 'colors' | 'engines' | 'dna' | 'rules';
 
+function isStrategyLeaf(g: string | null | undefined): g is StrategyGroup | 'strategy' {
+  return g === 'campaign' || g === 'competitors' || g === 'special' || g === 'strategy';
+}
+
+function normalizeStrategyGroup(g: StrategyGroup | 'strategy' | null): StrategyGroup | null {
+  if (!g) return null;
+  if (g === 'strategy') return 'campaign';
+  return g;
+}
+
 function normalizeContentGroup(g: ContentGroup | null): ContentGroup | null {
   if (!g) return null;
+  if (isStrategyLeaf(g)) return null;
   if (g === 'about' || g === 'voice') return 'story';
-  if (g === 'audience' || g === 'strategy') return 'goals';
+  if (g === 'audience') return 'goals';
   return g;
 }
 
@@ -217,7 +238,7 @@ function isContentStory(g: ContentGroup | null): boolean {
   return g === 'story' || g === 'about' || g === 'voice';
 }
 function isContentGoals(g: ContentGroup | null): boolean {
-  return g === 'goals' || g === 'audience' || g === 'strategy';
+  return g === 'goals' || g === 'audience';
 }
 function isDesignStyle(g: DesignGroup | null): boolean {
   return g === 'style' || g === 'colors' || g === 'dna';
@@ -390,6 +411,7 @@ function SectionIcon({ name, color, size = 22 }: { name: string; color: string; 
       );
     case 'goals':
     case 'audience':
+    case 'campaign':
       return (
         <svg {...common}>
           <circle cx="9" cy="8.5" r="2.6" />
@@ -880,16 +902,39 @@ function CollapsibleGroup({
   );
 }
 
+const TYPOGRAPHY_VIBE_OPTIONS: Array<{ id: TypographyVibe; label: string; desc: string; emoji: string }> = [
+  { id: 'bubble_3d', label: 'Balon 3D', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli', emoji: '🫧' },
+  { id: 'chrome_gradient', label: 'Krom Gradient', desc: 'Metalik yansıma, premium lüks', emoji: '✨' },
+  { id: 'neon_glow', label: 'Neon Parlama', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
+  { id: 'editorial_serif', label: 'Editöryal Serif', desc: 'Dergi stili, dramatik boyut', emoji: '📰' },
+  { id: 'street_bold', label: 'Sokak Kalın', desc: 'Kentsel, sıkıştırılmış, güçlü', emoji: '🏋️' },
+  { id: 'handwritten', label: 'El Yazısı', desc: 'Fırça kaligrafi, doğal sıcaklık', emoji: '✍️' },
+  { id: 'retro_poster', label: 'Retro Poster', desc: 'Vintage poster yazısı, nostalji', emoji: '🎨' },
+  { id: 'minimal_modern', label: 'Minimal Modern', desc: 'Ultra-temiz sans, İsviçre tasarım', emoji: '◻️' },
+];
+
+const BACKGROUND_STYLE_OPTIONS: Array<{ id: BrandDesignTypographyConfig['background_style']; label: string }> = [
+  { id: 'gradient_mesh', label: 'Gradient Mesh' },
+  { id: 'photo_overlay', label: 'Fotoğraf Üzeri' },
+  { id: 'solid_brand', label: 'Düz Marka Rengi' },
+  { id: 'transparent', label: 'Transparan' },
+];
+
+
 function PostDesignDefaultsPanel({
   t,
   workspaceId,
   theme,
+  sector,
   onSave,
+  onSaveTypography,
 }: {
   t: T;
   workspaceId?: string | null;
   theme: Record<string, unknown>;
+  sector: string;
   onSave: (next: BrandPostDesignDefaults) => void;
+  onSaveTypography: (next: BrandDesignTypographyConfig) => void;
 }) {
   const saved = hasSavedPostDesignDefaults(theme);
   const typoCfg = readTypographyDesignConfig(theme);
@@ -915,6 +960,20 @@ function PostDesignDefaultsPanel({
       }
     : { ...suggested, default_template_id: undefined };
   const savePatch = (patch: Partial<BrandPostDesignDefaults>) => onSave({ ...active, ...patch });
+
+  const typoRaw = (theme.typography_design ?? theme.typographyDesign ?? {}) as Partial<BrandDesignTypographyConfig>;
+  const suggestedVibe = defaultTypographyVibeForSector(sector);
+  const activeTypo: BrandDesignTypographyConfig = {
+    vibe: typoRaw.vibe ?? suggestedVibe,
+    text_effect: typoRaw.text_effect ?? active.text_effect ?? 'soft_shadow',
+    accent_color: typoRaw.accent_color ?? active.accent_color,
+    background_style: typoRaw.background_style ?? 'photo_overlay',
+    logo_treatment: typoRaw.logo_treatment ?? 'watermark',
+  };
+  const saveTypoPatch = (patch: Partial<BrandDesignTypographyConfig>) => {
+    onSaveTypography({ ...activeTypo, ...patch });
+  };
+
   const { data: postTemplates = [] } = useQuery<BrandPostTemplateSummary[]>({
     queryKey: ['brandPostTemplates', workspaceId],
     queryFn: async () => {
@@ -973,7 +1032,7 @@ function PostDesignDefaultsPanel({
   } as const;
 
   return (
-    <SCard t={t} title="Post Tasarım Standardı" accent={t.accent}>
+    <SCard t={t} title="Yazı & başlık" accent={t.accent}>
       <div style={{ padding: 14 }}>
         <div style={{
           borderRadius: 18,
@@ -989,6 +1048,9 @@ function PostDesignDefaultsPanel({
             {selectedFont.label} · {selectedEffect.label} · Logo: {selectedLogo.label}
           </div>
           <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, marginTop: 6 }}>
+            {TYPOGRAPHY_VIBE_LABELS[activeTypo.vibe].emoji}{' '}
+            {TYPOGRAPHY_VIBE_LABELS[activeTypo.vibe].tr}
+            {' · '}
             {saved
               ? `Template: ${selectedTemplate?.name ?? 'Otomatik'}`
               : 'Tipografi vibe’ından türetildi. Bir seçeneğe dokununca kaydedilir.'}
@@ -1086,7 +1148,7 @@ function PostDesignDefaultsPanel({
           subtitle="Gerçek logo dosyasının güvenli yerleşimi"
           onHelp={() => setHelpTopic('logo')}
         />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           {POST_LOGO_OPTIONS.map((opt) => (
             <ParameterOptionCard
               key={opt.id}
@@ -1099,6 +1161,47 @@ function PostDesignDefaultsPanel({
             />
           ))}
         </div>
+
+        {/* AI typography layers — same card; separate theme key (typography_design). */}
+        <div data-brand-form="theme-layers">
+          <ParameterGroupHeader
+            t={t}
+            title="AI Tipografi Stili"
+            subtitle="Fal / tasarım postlarında kullanılan vibe imzası"
+            onHelp={() => {}}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+            {TYPOGRAPHY_VIBE_OPTIONS.map((opt) => (
+              <ParameterOptionCard
+                key={opt.id}
+                t={t}
+                active={activeTypo.vibe === opt.id}
+                label={`${opt.emoji} ${opt.label}`}
+                desc={opt.desc}
+                onClick={() => saveTypoPatch({ vibe: opt.id })}
+              />
+            ))}
+          </div>
+
+          <ParameterGroupHeader
+            t={t}
+            title="Arka Plan Stili"
+            subtitle="Tasarım postlarının arka plan tipi"
+            onHelp={() => {}}
+          />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {BACKGROUND_STYLE_OPTIONS.map((opt) => (
+              <ParameterOptionCard
+                key={opt.id}
+                t={t}
+                active={activeTypo.background_style === opt.id}
+                label={opt.label}
+                desc=""
+                onClick={() => saveTypoPatch({ background_style: opt.id })}
+              />
+            ))}
+          </div>
+        </div>
       </div>
       {helpTopic && (
         <ParameterHelpModal
@@ -1109,110 +1212,6 @@ function PostDesignDefaultsPanel({
           onClose={() => setHelpTopic(null)}
         />
       )}
-    </SCard>
-  );
-}
-
-// ─── Typography Design Panel ─────────────────────────────────────────────
-
-const TYPOGRAPHY_VIBE_OPTIONS: Array<{ id: TypographyVibe; label: string; desc: string; emoji: string }> = [
-  { id: 'bubble_3d', label: 'Balon 3D', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli', emoji: '🫧' },
-  { id: 'chrome_gradient', label: 'Krom Gradient', desc: 'Metalik yansıma, premium lüks', emoji: '✨' },
-  { id: 'neon_glow', label: 'Neon Parlama', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
-  { id: 'editorial_serif', label: 'Editöryal Serif', desc: 'Dergi stili, dramatik boyut', emoji: '📰' },
-  { id: 'street_bold', label: 'Sokak Kalın', desc: 'Kentsel, sıkıştırılmış, güçlü', emoji: '🏋️' },
-  { id: 'handwritten', label: 'El Yazısı', desc: 'Fırça kaligrafi, doğal sıcaklık', emoji: '✍️' },
-  { id: 'retro_poster', label: 'Retro Poster', desc: 'Vintage poster yazısı, nostalji', emoji: '🎨' },
-  { id: 'minimal_modern', label: 'Minimal Modern', desc: 'Ultra-temiz sans, İsviçre tasarım', emoji: '◻️' },
-];
-
-const BACKGROUND_STYLE_OPTIONS: Array<{ id: BrandDesignTypographyConfig['background_style']; label: string }> = [
-  { id: 'gradient_mesh', label: 'Gradient Mesh' },
-  { id: 'photo_overlay', label: 'Fotoğraf Üzeri' },
-  { id: 'solid_brand', label: 'Düz Marka Rengi' },
-  { id: 'transparent', label: 'Transparan' },
-];
-
-function TypographyDesignPanel({
-  t,
-  theme,
-  sector,
-  onSave,
-}: {
-  t: T;
-  theme: Record<string, unknown>;
-  sector: string;
-  onSave: (next: BrandDesignTypographyConfig) => void;
-}) {
-  const raw = (theme.typography_design ?? theme.typographyDesign ?? {}) as Partial<BrandDesignTypographyConfig>;
-  const postDefaults = (theme.post_design_defaults ?? theme.postDesignDefaults ?? {}) as Partial<BrandPostDesignDefaults>;
-  const suggestedVibe = defaultTypographyVibeForSector(sector);
-  const active: BrandDesignTypographyConfig = {
-    vibe: raw.vibe ?? suggestedVibe,
-    // Prefer Hub "3D/efekt" panel when Tipografi has no explicit effect yet
-    text_effect: raw.text_effect ?? postDefaults.text_effect ?? 'soft_shadow',
-    accent_color: raw.accent_color ?? postDefaults.accent_color,
-    background_style: raw.background_style ?? 'photo_overlay',
-    logo_treatment: raw.logo_treatment ?? 'watermark',
-  };
-  const savePatch = (patch: Partial<BrandDesignTypographyConfig>) => onSave({ ...active, ...patch });
-
-  return (
-    <SCard t={t} title="AI Tipografi Tasarımı" accent={t.accent}>
-      <div style={{ padding: 14 }}>
-        <div style={{
-          borderRadius: 18,
-          padding: 14,
-          marginBottom: 14,
-          background: t.isDark ? 'rgba(120,80,200,0.10)' : 'rgba(120,80,200,0.06)',
-          border: `0.5px solid ${t.accentBorder}`,
-        }}>
-          <div style={{ fontSize: 11, color: t.accent, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
-            Aktif Tipografi Stili
-          </div>
-          <div style={{ fontSize: 13, color: t.textPrimary, fontWeight: 700, lineHeight: 1.45 }}>
-            {TYPOGRAPHY_VIBE_LABELS[active.vibe].emoji} {TYPOGRAPHY_VIBE_LABELS[active.vibe].tr} · {active.background_style}
-          </div>
-        </div>
-
-        <ParameterGroupHeader
-          t={t}
-          title="Tipografi Stili"
-          subtitle="AI tasarım postlarında kullanılacak yazı efekti"
-          onHelp={() => {}}
-        />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-          {TYPOGRAPHY_VIBE_OPTIONS.map((opt) => (
-            <ParameterOptionCard
-              key={opt.id}
-              t={t}
-              active={active.vibe === opt.id}
-              label={`${opt.emoji} ${opt.label}`}
-              desc={opt.desc}
-              onClick={() => savePatch({ vibe: opt.id })}
-            />
-          ))}
-        </div>
-
-        <ParameterGroupHeader
-          t={t}
-          title="Arka Plan Stili"
-          subtitle="Tasarım postlarının arka plan tipi"
-          onHelp={() => {}}
-        />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {BACKGROUND_STYLE_OPTIONS.map((opt) => (
-            <ParameterOptionCard
-              key={opt.id}
-              t={t}
-              active={active.background_style === opt.id}
-              label={opt.label}
-              desc=""
-              onClick={() => savePatch({ background_style: opt.id })}
-            />
-          ))}
-        </div>
-      </div>
     </SCard>
   );
 }
@@ -1249,7 +1248,7 @@ function TagChip({ text, color, t }: { text: string; color: string; t: T }) {
   );
 }
 
-type Tab = 'identity' | 'content' | 'design' | 'gallery' | 'chatbot';
+type Tab = 'identity' | 'content' | 'design' | 'gallery' | 'strategy' | 'chatbot';
 
 // ─── Brand Kit Tab ───────────────────────────────────────────────────────────
 
@@ -1906,67 +1905,6 @@ function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
               <span style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4 }}>{p}</span>
             </div>
           ))}
-        </SCard>
-      )}
-
-      {/* Layout preview */}
-      {!loading && tenantId && (
-        <SCard t={t} title="Layout Önizleme" accent={t.accent}>
-          <div style={{
-            borderRadius: 12, overflow: 'hidden',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.18)',
-            maxWidth: 240, margin: '0 auto',
-          }}>
-            {/* Mock feed card */}
-            <div style={{
-              width: '100%', aspectRatio: '1',
-              background: displayPalette.primary,
-              position: 'relative',
-              display: 'flex', flexDirection: 'column', justifyContent: 'center',
-              alignItems: 'center',
-              padding: 16,
-            }}>
-              <div style={{
-                position: 'absolute', inset: 0,
-                background: `linear-gradient(to top, ${displayPalette.shadow ?? '#000000'}cc 0%, transparent 55%)`,
-              }} />
-              <div style={{
-                position: 'absolute', left: '12%', right: '12%', top: '38%',
-                height: 2, background: displayPalette.accent, opacity: 0.75,
-              }} />
-              <div style={{
-                position: 'absolute', left: '12%', right: '12%', top: '58%',
-                height: 2, background: displayPalette.accent, opacity: 0.75,
-              }} />
-              <div style={{ position: 'relative', textAlign: 'center', marginBottom: 8 }}>
-                <div style={{
-                  fontFamily: `'${headingFontDisplay}', serif`,
-                  fontSize: 20, fontWeight: 600,
-                  color: headlineColorDisplay,
-                  lineHeight: 1.15,
-                  textShadow: '0 2px 12px rgba(0,0,0,0.45)',
-                }}>
-                  Marka Başlığı
-                </div>
-              </div>
-              <div style={{ position: 'relative' }}>
-                <div style={{
-                  fontSize: 9, letterSpacing: '0.1em', textTransform: 'uppercase',
-                  color: displayPalette.accent, fontWeight: 600, marginBottom: 4,
-                }}>
-                  {typography ? (typography.personality as string)?.split(',')[0] ?? '' : ''}
-                </div>
-                <div style={{
-                  display: 'inline-block',
-                  padding: '4px 12px', borderRadius: 20,
-                  background: displayPalette.accent,
-                  color: '#fff', fontSize: 9, fontWeight: 700,
-                }}>
-                  Keşfet →
-                </div>
-              </div>
-            </div>
-          </div>
         </SCard>
       )}
 
@@ -2835,11 +2773,16 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
             </div>
           )}
 
-          {/* Palette */}
+          {/* Palette — read-only source summary; edit production colors in Renk Paleti */}
           {result.palette && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Palet</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+                Palet (kaynak özeti)
+              </div>
+              <div style={{ fontSize: 11, color: t.textTertiary, marginBottom: 8, lineHeight: 1.4 }}>
+                Üretim renklerini Stil & DNA → Renk Paleti’nden düzenleyin.
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, opacity: 0.9 }}>
                 {swatch(result.palette.primary, 'ana renk')}
                 {swatch(result.palette.accent, 'vurgu')}
                 {swatch(result.palette.neutral, 'nötr')}
@@ -3107,17 +3050,40 @@ export function BrandConstitution() {
   const [view, setView] = useState<'dashboard' | 'section'>('dashboard');
   const [designGroup, setDesignGroup] = useState<DesignGroup | null>(null);
   const [contentGroup, setContentGroup] = useState<ContentGroup | null>(null);
+  const [strategyGroup, setStrategyGroup] = useState<StrategyGroup | null>(null);
   const [identityGroup, setIdentityGroup] = useState<IdentityGroup | null>(null);
   const [saved, setSaved] = useState(false);
 
   const openSection = React.useCallback((
     next: Tab,
-    opts?: { identityGroup?: IdentityGroup | null; contentGroup?: ContentGroup | null; designGroup?: DesignGroup | null },
+    opts?: {
+      identityGroup?: IdentityGroup | null;
+      contentGroup?: ContentGroup | null;
+      strategyGroup?: StrategyGroup | null;
+      designGroup?: DesignGroup | null;
+    },
   ) => {
+    const rawContent = opts?.contentGroup ?? null;
+    // Legacy deep-links under İçerik DNA → Strateji tab
+    if (next === 'content' && isStrategyLeaf(rawContent)) {
+      setTab('strategy');
+      setView('section');
+      setStrategyGroup(normalizeStrategyGroup(rawContent));
+      setContentGroup(null);
+      setDesignGroup(null);
+      setIdentityGroup(null);
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+      return;
+    }
     setTab(next);
     setView('section');
     setDesignGroup(normalizeDesignGroup(opts?.designGroup ?? null));
-    setContentGroup(normalizeContentGroup(opts?.contentGroup ?? null));
+    setContentGroup(normalizeContentGroup(rawContent));
+    setStrategyGroup(
+      next === 'strategy'
+        ? normalizeStrategyGroup(opts?.strategyGroup ?? null)
+        : null,
+    );
     setIdentityGroup(opts?.identityGroup ?? null);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
@@ -3128,7 +3094,20 @@ export function BrandConstitution() {
   }, []);
 
   const openContentGroup = React.useCallback((g: ContentGroup | null) => {
+    if (isStrategyLeaf(g)) {
+      setTab('strategy');
+      setView('section');
+      setStrategyGroup(normalizeStrategyGroup(g));
+      setContentGroup(null);
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+      return;
+    }
     setContentGroup(normalizeContentGroup(g));
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, []);
+
+  const openStrategyGroup = React.useCallback((g: StrategyGroup | null) => {
+    setStrategyGroup(normalizeStrategyGroup(g));
     if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
   }, []);
 
@@ -3179,6 +3158,7 @@ export function BrandConstitution() {
     setView('dashboard');
     setDesignGroup(null);
     setContentGroup(null);
+    setStrategyGroup(null);
     setIdentityGroup(null);
     setGalleryInitialGroup(null);
     setFocusAnchor(null);
@@ -3191,14 +3171,22 @@ export function BrandConstitution() {
     if (target) {
       // Legacy identity/about deep-links → İçerik DNA → Hikaye & Ses
       const aboutFromIdentity = target.identityGroup === 'about' && !target.contentGroup;
-      setTab(aboutFromIdentity ? 'content' : target.tab);
+      const rawContent = aboutFromIdentity
+        ? 'story' as const
+        : ((target.contentGroup as ContentGroup | null | undefined) ?? null);
+      const strategyFromContent = isStrategyLeaf(rawContent)
+        ? normalizeStrategyGroup(rawContent)
+        : normalizeStrategyGroup((target.strategyGroup as StrategyGroup | null | undefined) ?? null);
+      const nextTab: Tab = aboutFromIdentity
+        ? 'content'
+        : strategyFromContent
+          ? 'strategy'
+          : (target.tab as Tab);
+      setTab(nextTab);
       setView('section');
       setDesignGroup(normalizeDesignGroup((target.designGroup as DesignGroup | null | undefined) ?? null));
-      setContentGroup(
-        normalizeContentGroup(
-          aboutFromIdentity ? 'story' : ((target.contentGroup as ContentGroup | null | undefined) ?? null),
-        ),
-      );
+      setContentGroup(strategyFromContent ? null : normalizeContentGroup(rawContent));
+      setStrategyGroup(strategyFromContent);
       setIdentityGroup(aboutFromIdentity ? null : (target.identityGroup ?? null));
       if (target.galleryGroup) setGalleryInitialGroup(target.galleryGroup);
       setFocusAnchor(aboutFromIdentity ? 'brand-about' : target.anchor);
@@ -3209,6 +3197,7 @@ export function BrandConstitution() {
         setView('section');
         setDesignGroup(null);
         setContentGroup(null);
+        setStrategyGroup(null);
         setIdentityGroup(null);
       }
     }
@@ -3220,7 +3209,7 @@ export function BrandConstitution() {
     focusBrandReadinessAnchor(focusAnchor, 480);
     const timer = window.setTimeout(() => setFocusAnchor(null), 3000);
     return () => window.clearTimeout(timer);
-  }, [focusAnchor, tab, designGroup, contentGroup, identityGroup, galleryInitialGroup]);
+  }, [focusAnchor, tab, designGroup, contentGroup, strategyGroup, identityGroup, galleryInitialGroup]);
 
   const { data: profile, isLoading } = useQuery({
     queryKey: ['company-profile', tenantId],
@@ -3266,18 +3255,12 @@ export function BrandConstitution() {
     enabled: Boolean(tenantId),
   });
 
-  const { data: templates = [] } = useQuery({
-    queryKey: ['canva-templates'],
-    queryFn: async () => { try { return await apiClient.getCanvaTemplateAssignments({ includeDisabled: false }); } catch { return []; } },
-    staleTime: 120_000,
-    enabled: isCanvaEnabledClient(),
-  });
-
   const { data: metaCampaigns = [] } = useQuery({
     queryKey: ['meta-campaigns', tenantId],
     queryFn: () => apiClient.getMetaCampaigns(tenantId),
     staleTime: 2 * 60_000,
-    enabled: Boolean(tenantId),
+    // Debug-only Marka Analiz surface — Ads live under Menü → Reklamlar for customers.
+    enabled: Boolean(tenantId) && debugUi,
   });
 
   // One-time backfill: push .NET profile fields into Python brand_context so
@@ -3824,7 +3807,8 @@ export function BrandConstitution() {
     { id: 'content', label: 'İçerik DNA' },
     { id: 'design', label: 'Görünüm' },
     { id: 'gallery', label: 'Galeri' },
-    { id: 'chatbot', label: 'Asistan' },
+    { id: 'strategy', label: 'Strateji' },
+    { id: 'chatbot', label: 'Müşteri Asistanı' },
   ];
   const constitutionConfirmedAt = (pyCtx as { brand_constitution_confirmed_at?: string | null } | undefined)
     ?.brand_constitution_confirmed_at;
@@ -3867,9 +3851,9 @@ export function BrandConstitution() {
     pprReady,
     pprScore,
     photoCount,
-    hasChatbot,
     channelsConnected,
   });
+  const HUB_ASSISTANT_ITEM = buildBrandHubAssistantNavItem(hasChatbot);
 
   const DESIGN_GROUPS: { key: DesignGroup; label: string; hint: string; accent: string }[] = [
     { key: 'style', label: 'Stil & DNA', hint: 'Palet, tipografi, vibe DNA', accent: '#C79A4B' },
@@ -3895,8 +3879,13 @@ export function BrandConstitution() {
   const goalsFilled = Boolean(String(p.campaignGoals || (pyCtx as any)?.campaign_goals || '').trim());
   const competitorsRaw = String(p.competitors || (pyCtx as any)?.competitors || '');
   const competitorCount = competitorsRaw ? competitorsRaw.split(',').map((s) => s.trim()).filter(Boolean).length : 0;
+  const HUB_STRATEGY_ITEM = buildBrandHubStrategyNavItem({
+    goalsFilled,
+    competitorCount,
+  });
 
   const descriptionFilled = Boolean(String(descriptionDisplay || '').trim());
+  /** Production content DNA only — strategy leaves live under Strateji. */
   const CONTENT_GROUPS: { key: ContentGroup; label: string; hint: string; accent: string }[] = [
     {
       key: 'story',
@@ -3906,14 +3895,12 @@ export function BrandConstitution() {
     },
     {
       key: 'goals',
-      label: 'Hedef & Strateji',
-      hint: audienceFilled && goalsFilled
+      label: 'Kitle & Sütunlar',
+      hint: audienceFilled
         ? `${pillarsCount} sütun · ${ctasCount} CTA`
-        : 'Kitle, hedefler, sütunlar ve CTA',
+        : 'Hedef kitle, içerik sütunları ve CTA',
       accent: '#4FB597',
     },
-    { key: 'special', label: 'Özel Günler', hint: 'Tatiller, sektör günleri, zamanlı şablonlar', accent: '#A985E0' },
-    { key: 'competitors', label: 'Rakipler', hint: competitorCount > 0 ? `${competitorCount} rakip tanımlı` : 'Rakip ekle veya AI önerisi al', accent: '#E08A6B' },
   ];
   const activeContentGroup = CONTENT_GROUPS.find((g) => g.key === contentGroup)
     ?? (isContentStory(contentGroup)
@@ -3922,15 +3909,37 @@ export function BrandConstitution() {
         ? CONTENT_GROUPS[1]
         : undefined);
 
+  const STRATEGY_GROUPS: { key: StrategyGroup; label: string; hint: string; accent: string }[] = [
+    {
+      key: 'campaign',
+      label: 'Kampanya hedefleri',
+      hint: goalsFilled ? 'Hedefler tanımlı' : 'Ne başarmak istiyoruz',
+      accent: '#4FB597',
+    },
+    {
+      key: 'competitors',
+      label: 'Rakipler',
+      hint: competitorCount > 0 ? `${competitorCount} rakip tanımlı` : 'Rakip ekle veya AI önerisi al',
+      accent: '#E08A6B',
+    },
+    {
+      key: 'special',
+      label: 'Özel Günler',
+      hint: 'Tatiller, sektör günleri, zamanlı şablonlar',
+      accent: '#A985E0',
+    },
+  ];
+  const activeStrategyGroup = STRATEGY_GROUPS.find((g) => g.key === strategyGroup);
+
   /** Top-level section only — subgroup titles live in VisionerSubNav. */
   const sectionEyebrow = (() => {
     if (tab === 'identity') return 'Kimlik';
     if (tab === 'content') return 'İçerik DNA';
     if (tab === 'design') return 'Görünüm';
     if (tab === 'gallery') return 'Galeri';
-    if (tab === 'chatbot') return 'Asistan';
-    return HUB_NAV_ITEMS.find((n) => n.target === tab)?.label
-      ?? TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
+    if (tab === 'strategy') return 'Strateji';
+    if (tab === 'chatbot') return 'Müşteri Asistanı';
+    return TABS.find((tb) => tb.id === tab)?.label ?? 'Marka';
   })();
 
   const monogram = (brandNameDisplay || 'B').split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
@@ -3999,6 +4008,8 @@ export function BrandConstitution() {
             industryLabel={industryDisplay || null}
             locationLabel={locationDisplay || null}
             navItems={HUB_NAV_ITEMS}
+            strategyItem={HUB_STRATEGY_ITEM}
+            assistantItem={HUB_ASSISTANT_ITEM}
             constitutionConfirmedAt={constitutionConfirmedAt}
             confirmingConstitution={confirmingConstitution}
             constitutionConfirmError={constitutionConfirmError}
@@ -4008,7 +4019,7 @@ export function BrandConstitution() {
             pprScore={pprScore}
             statusBanners={sharedStatusBanners}
           />
-          {/* Menü — aynı full-width list rows as hub nav (no grid cards). */}
+          {/* Menü — continues after production + assistant sections. */}
           <div style={{ marginTop: 0 }}>
             <MoreMenuPanel horizontalPadding={18} flushTop />
           </div>
@@ -4067,6 +4078,7 @@ export function BrandConstitution() {
       <div style={{ padding: '10px 18px 0' }}>
         {!(
           (tab === 'content' && contentGroup !== null)
+          || (tab === 'strategy' && strategyGroup !== null)
           || (tab === 'design' && designGroup !== null)
           || (tab === 'identity' && identityGroup !== null)
         ) && (
@@ -4324,16 +4336,6 @@ export function BrandConstitution() {
                 rows={5}
               />
             </ContentStudioPanel>
-            <ContentStudioPanel t={t} eyebrow="Kampanya hedefleri">
-              <ContentStudioProseField
-                t={t}
-                label="Ne başarmak istiyoruz"
-                value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''}
-                onSave={save('campaignGoals')}
-                hint="Rezervasyon, farkındalık, etkinlik…"
-                rows={5}
-              />
-            </ContentStudioPanel>
             {tenantId && (
               <ContentStudioPanel t={t} eyebrow="Sütunlar & CTA">
                 <div data-brand-form="content-pillars">
@@ -4353,7 +4355,58 @@ export function BrandConstitution() {
           </ContentStudioShell>
         )}
 
-        {tab === 'content' && contentGroup === 'special' && tenantId && (
+        {/* Strategy group index — campaign / competitors / special days */}
+        {tab === 'strategy' && strategyGroup === null && (
+          <BrandVisionerList>
+            <p style={{
+              margin: '0 4px 12px',
+              fontSize: 12,
+              lineHeight: 1.4,
+              color: t.textMuted,
+            }}
+            >
+              Ideation bağlamı — feed / galeri / fal üretim ayarı değildir.
+            </p>
+            {STRATEGY_GROUPS.map((g) => (
+              <BrandVisionerGroup key={g.key}>
+                <BrandVisionerNavRow
+                  t={t}
+                  label={g.label}
+                  hint={g.hint}
+                  accent={g.accent}
+                  icon={<SectionIcon name={g.key} color={g.accent} size={18} />}
+                  onClick={() => openStrategyGroup(g.key)}
+                />
+              </BrandVisionerGroup>
+            ))}
+          </BrandVisionerList>
+        )}
+
+        {tab === 'strategy' && strategyGroup !== null && activeStrategyGroup && (
+          <VisionerSubNav
+            t={t}
+            parentLabel="Strateji"
+            title={activeStrategyGroup.label}
+            onBack={() => openStrategyGroup(null)}
+          />
+        )}
+
+        {tab === 'strategy' && strategyGroup === 'campaign' && (
+          <ContentStudioShell t={t} brandPrimary={brandPrimary}>
+            <ContentStudioPanel t={t} eyebrow="Kampanya hedefleri">
+              <ContentStudioProseField
+                t={t}
+                label="Ne başarmak istiyoruz"
+                value={p.campaignGoals || (pyCtx as any)?.campaign_goals || ''}
+                onSave={save('campaignGoals')}
+                hint="Rezervasyon, farkındalık, etkinlik…"
+                rows={5}
+              />
+            </ContentStudioPanel>
+          </ContentStudioShell>
+        )}
+
+        {tab === 'strategy' && strategyGroup === 'special' && tenantId && (
           <ContentStudioShell t={t} brandPrimary={brandPrimary}>
             <ContentStudioPanel t={t} eyebrow="Özel günler">
               <BrandSpecialDaysPanel tenantId={tenantId} t={t} />
@@ -4368,7 +4421,7 @@ export function BrandConstitution() {
           </ContentStudioShell>
         )}
 
-        {tab === 'content' && contentGroup === 'competitors' && (() => {
+        {tab === 'strategy' && strategyGroup === 'competitors' && (() => {
           const confirmedRaw = p.competitors || (pyCtx as any)?.competitors || '';
           const confirmed: string[] = confirmedRaw
             ? confirmedRaw.split(',').map((s: string) => s.trim()).filter(Boolean)
@@ -4424,13 +4477,36 @@ export function BrandConstitution() {
           />
         )}
 
-        {tab === 'design' && isDesignStyle(designGroup) && (
-          <>
+        {tab === 'design' && isDesignStyle(designGroup) && (() => {
+          const visualDna = String((pyCtx as any)?.visual_dna || '').trim();
+          const visualStyleText = String(p.visualStyle || (pyCtx as any)?.visual_style || '').trim();
+          const summary = visualDna || visualStyleText;
+          return (
             <SCard t={t} title="Görsel Dil">
-              <Field t={t} label="Görsel Stil" value={p.visualStyle || (pyCtx as any)?.visual_style || ''} onSave={save('visualStyle')} multiline hint="örn: minimal, luxury, cinematic..." />
+              {debugUi ? (
+                <Field
+                  t={t}
+                  label="Görsel Stil"
+                  value={visualStyleText}
+                  onSave={save('visualStyle')}
+                  multiline
+                  hint="örn: minimal, luxury, cinematic..."
+                />
+              ) : (
+                <div>
+                  <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: summary ? t.textSecondary : t.textMuted }}>
+                    {summary
+                      ? (summary.length > 280 ? `${summary.slice(0, 280)}…` : summary)
+                      : 'Henüz görsel dil özeti yok — aşağıdaki Marka DNA’dan çıkarılabilir.'}
+                  </p>
+                  <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.4, color: t.textTertiary }}>
+                    Üretim paleti ve yazı standardı aşağıdaki panellerden yönetilir.
+                  </p>
+                </div>
+              )}
             </SCard>
-          </>
-        )}
+          );
+        })()}
 
         {tab === 'design' && designGroup === 'templates' && (
           <div
@@ -4461,8 +4537,8 @@ export function BrandConstitution() {
           <div data-brand-fix="brand-theme">
             <CollapsibleGroup
               t={t}
-              title="Yazı tipi & başlık stili"
-              subtitle="Başlık fontu, 3D/efekt, logo konumu, tipografi vibe'ı ve ana/ikincil fontlar"
+              title="Yazı & başlık"
+              subtitle="Post font/efekt/logo · AI tipografi vibe · arka plan — tek yüzey"
               defaultOpen
             >
             {tenantId && (
@@ -4470,6 +4546,7 @@ export function BrandConstitution() {
                 t={t}
                 workspaceId={tenantId}
                 theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
+                sector={normalizeSectorId(p.sector || (pyCtx as any)?.business_type || '')}
                 onSave={async (next) => {
                   const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
                   // Keep AI Tipografi text_effect in sync so fal production sees the same Hub choice.
@@ -4494,19 +4571,9 @@ export function BrandConstitution() {
                   }).catch(() => {/* non-fatal */});
                   queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
                 }}
-              />
-            )}
-
-            {tenantId && (
-              <div data-brand-fix="theme-layers">
-              <TypographyDesignPanel
-                t={t}
-                theme={(brandThemePayload?.theme ?? {}) as Record<string, unknown>}
-                sector={normalizeSectorId(p.sector || (pyCtx as any)?.business_type || '')}
-                onSave={async (next) => {
+                onSaveTypography={async (next) => {
                   const currentTheme = (brandThemePayload?.theme ?? {}) as Record<string, unknown>;
                   const confirmed = buildUserConfirmedTypographyPatch(next);
-                  // Preserve post_design_defaults on Tipografi-only saves (partial PUT safety).
                   const postDefaults = currentTheme.post_design_defaults ?? currentTheme.postDesignDefaults;
                   await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
                     method: 'PUT',
@@ -4525,29 +4592,49 @@ export function BrandConstitution() {
                   queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
                 }}
               />
-              </div>
             )}
 
-            <SCard t={t} title="Tipografi">
-              <Field t={t} label="Ana Font"
-                value={String(
-                  p.primaryFont
-                  || (pyCtx as any)?.brand_font_family
-                  || ((brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined)?.heading_font
-                  || '',
-                )}
-                onSave={save('primaryFont')} hint="örn: Nunito, Playfair Display" />
-              <Field t={t} label="İkincil Font"
-                value={String(
-                  p.secondaryFont
-                  || ((brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined)?.body_font
-                  || '',
-                )}
-                onSave={save('secondaryFont')} hint="örn: Lato, Inter" />
-            </SCard>
+            {(() => {
+              const themeTy = (brandThemePayload?.theme as Record<string, unknown> | undefined)?.typography as Record<string, string> | undefined;
+              const heading = String(
+                p.primaryFont
+                || (pyCtx as any)?.brand_font_family
+                || themeTy?.heading_font
+                || themeTy?.headingFont
+                || '',
+              ).trim();
+              const body = String(
+                p.secondaryFont
+                || themeTy?.body_font
+                || themeTy?.bodyFont
+                || '',
+              ).trim();
+              return (
+                <SCard t={t} title="Font özeti">
+                  <InfoRow t={t} label="Başlık" value={heading || 'Yazı karakteri preset’inden'} />
+                  <InfoRow t={t} label="Gövde" value={body || 'Sistem varsayılanı'} />
+                  <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.4, color: t.textTertiary }}>
+                    Üretimde öncelik Yazı Karakteri preset’idir. Serbest font adı yalnızca operatör debug’da.
+                  </p>
+                  {debugUi && (
+                    <div style={{ marginTop: 12 }}>
+                      <Field t={t} label="Ana Font"
+                        value={heading}
+                        onSave={save('primaryFont')} hint="örn: Nunito, Playfair Display" />
+                      <Field t={t} label="İkincil Font"
+                        value={body}
+                        onSave={save('secondaryFont')} hint="örn: Lato, Inter" />
+                    </div>
+                  )}
+                </SCard>
+              );
+            })()}
             </CollapsibleGroup>
 
             <SCard t={t} title="Renk Paleti" accent={t.accent}>
+              <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.4, color: t.textMuted }}>
+                Üretim renk SSOT’u — vibe çıkarımındaki palet yalnızca kaynak özetidir.
+              </p>
               <BrandColorPalettePicker
                 tenantId={tenantId!}
                 sector={industrySlug || industryDisplay}
@@ -4577,8 +4664,8 @@ export function BrandConstitution() {
           <div data-brand-fix="brand-dna-analyze">
             <CollapsibleGroup
               t={t}
-              title="Marka DNA & görsel dil"
-              subtitle="Marka karakterini özetleyen görsel DNA ve vibe analizi"
+              title="Marka DNA"
+              subtitle="Vibe çıkarımı — üretim paleti Renk Paleti’nde düzenlenir"
               defaultOpen
             >
             <VibeDnaTab t={t} tenantId={tenantId} pyCtx={pyCtx} queryClient={queryClient} />
@@ -4591,9 +4678,7 @@ export function BrandConstitution() {
             <CollapsibleGroup
               t={t}
               title="Kurallar & yetenekler"
-              subtitle={debugUi
-                ? 'Özel kurallar, risk sınırları, işletme yetenekleri ve Canva şablonları'
-                : 'Özel kurallar, risk sınırları ve işletme yetenekleri'}
+              subtitle="Özel kurallar, risk sınırları ve işletme yetenekleri"
               defaultOpen
             >
             <SCard t={t} title="Özel Kurallar" accent={t.warning}>
@@ -4659,22 +4744,6 @@ export function BrandConstitution() {
                     </div>
                   ))}
                 </div>
-              </SCard>
-            )}
-
-            {debugUi && templates.length > 0 && (
-              <SCard t={t} title={`Canva Şablonları (${templates.length})`}>
-                {(templates as any[]).slice(0, 8).map((tmpl, i) => (
-                  <div key={tmpl.id ?? i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 0', borderBottom: i < templates.length - 1 ? `0.5px solid ${t.separator}` : 'none' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary, marginBottom: 2 }}>{tmpl.title ?? `Şablon ${i + 1}`}</div>
-                      {tmpl.contentKinds?.length > 0 && <div style={{ fontSize: 11, color: t.textMuted }}>{tmpl.contentKinds.slice(0, 2).join(', ')}</div>}
-                    </div>
-                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 20, background: tmpl.enabled ? t.successDim : (t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'), color: tmpl.enabled ? t.success : t.textMuted, fontWeight: 600 }}>
-                      {tmpl.enabled ? 'Aktif' : 'Pasif'}
-                    </span>
-                  </div>
-                ))}
               </SCard>
             )}
             </CollapsibleGroup>
@@ -5201,10 +5270,6 @@ export function BrandConstitution() {
                 />
               </SCard>
             )}
-
-            <SCard t={t} title="Sosyal Medya Şablon Stili">
-              <Field t={t} label="Şablon Stili" value={p.socialTemplateStyle ?? ''} onSave={save('socialTemplateStyle')} multiline />
-            </SCard>
 
             {(p as any).setupCompletedAt && (
               <SCard t={t} title="Kurulum Bilgisi">

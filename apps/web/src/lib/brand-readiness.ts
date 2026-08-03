@@ -120,7 +120,7 @@ export interface BrandReadinessInputs {
 /** Map BRS fix hints to Brand Constitution tab ids (6-tab layout). */
 export function brandReadinessFixToBrandTab(
   fix: string | undefined,
-): 'identity' | 'content' | 'design' | 'gallery' | 'chatbot' | null {
+): 'identity' | 'content' | 'design' | 'gallery' | 'strategy' | 'chatbot' | null {
   switch (fix) {
     case 'brand-constitution':
       return 'identity';

@@ -31,6 +31,7 @@ export const SA_STUDIO_ACCENTS = {
   content: SA_CHROME.steel400,
   design: SA_CHROME.warmGold,
   gallery: '#5BB8CC',
+  strategy: '#4FB597',
   chatbot: '#9DBECE',
   channels: SA_CHROME.steel500,
 } as const;
