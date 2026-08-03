@@ -16,6 +16,19 @@ using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using System.Security.Claims;
 
+// Render/Railway Linux containers share a low inotify budget. Default host builder
+// watches appsettings*.json via FileSystemWatcher and can crash boot with:
+// "configured user limit (128) on the number of inotify instances has been reached".
+// Disable reload-on-change before CreateBuilder (env can also set this in Docker).
+if (!string.Equals(
+        Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"),
+        "Development",
+        StringComparison.OrdinalIgnoreCase))
+{
+    Environment.SetEnvironmentVariable("DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE", "false");
+    Environment.SetEnvironmentVariable("DOTNET_USE_POLLING_FILE_WATCHER", "1");
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var configuration = builder.Configuration;

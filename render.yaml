@@ -127,6 +127,11 @@ services:
           property: hostport
       - key: RateLimit__PermitLimit
         value: "480"
+      # Avoid Linux inotify exhaustion on small Render instances (boot crash).
+      - key: DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE
+        value: "false"
+      - key: DOTNET_USE_POLLING_FILE_WATCHER
+        value: "1"
       - key: FRONTEND_BASE_URL
         fromService:
           name: smartagency-web

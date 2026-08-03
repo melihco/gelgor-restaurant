@@ -23,7 +23,11 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
-# Railway injects PORT at runtime; ASP.NET Core 8 binds to PORT when ASPNETCORE_URLS is unset.
-ENV ASPNETCORE_ENVIRONMENT=Production
+# Railway/Render inject PORT at runtime; ASP.NET Core 8 binds to PORT when ASPNETCORE_URLS is unset.
+ENV ASPNETCORE_ENVIRONMENT=Production \
+    # Containers often hit Linux inotify caps (128). Disable appsettings reload watchers
+    # and fall back to polling so WebApplication.CreateBuilder does not crash at boot.
+    DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false \
+    DOTNET_USE_POLLING_FILE_WATCHER=1
 
 ENTRYPOINT ["dotnet", "Nexus.Api.dll"]
