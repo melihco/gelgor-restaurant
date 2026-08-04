@@ -459,19 +459,6 @@ const CSS = `
     font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
     color: #F2F2F6;
   }
-  /* Onboarding/login watermark — bottom wordmark, subtle brand anchor */
-  .sa-mobile .onboarding-chrome-mark {
-    position: absolute;
-    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-    left: 5px;
-    right: 5px;
-    aspect-ratio: 525 / 123;
-    opacity: 0.035;
-    pointer-events: none;
-    z-index: 0;
-    background: url('/smartagency-logo.png') center / contain no-repeat;
-    filter: saturate(0.85) contrast(1.05);
-  }
   .sa-mobile .onboarding-chrome-hairline {
     position: absolute;
     top: 0;

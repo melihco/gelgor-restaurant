@@ -6,10 +6,9 @@ import { SA_ONBOARDING } from './sa-chrome';
 /** Shared backdrop for login + onboarding — matches SaChromeShell language. */
 export function OnboardingChromeBackdrop({
   success = false,
-  showMark = true,
 }: {
   success?: boolean;
-  /** Bottom wordmark watermark — off on login so footer copy stays clean. */
+  /** @deprecated Bottom watermark removed — kept for call-site compat. */
   showMark?: boolean;
 }) {
   return (
@@ -22,7 +21,6 @@ export function OnboardingChromeBackdrop({
         <span className="onboarding-ambient-orb onboarding-ambient-orb--b" />
         <span className="onboarding-ambient-orb onboarding-ambient-orb--c" />
       </div>
-      {showMark && <div className="onboarding-chrome-mark" aria-hidden />}
       <div className="onboarding-chrome-hairline" aria-hidden />
     </>
   );
