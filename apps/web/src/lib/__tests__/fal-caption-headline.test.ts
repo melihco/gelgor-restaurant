@@ -25,6 +25,8 @@ import {
   detectOverlayLocale,
   containsFalCanvasMetaLeak,
   isFalCanvasMetaOnlyHeadline,
+  isBareGenericOverlayCta,
+  fitMissionOverlayToTemplateBudget,
 } from '../fal-caption-headline';
 import { resolveFalCanvasChannel } from '../fal-designer-production';
 
@@ -399,6 +401,35 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     // Complete phrases must still pass.
     expect(isIncompleteOverlayPhrase('Ferahlatan Kokteyller')).toBe(false);
     expect(isIncompleteOverlayPhrase('Lezzet dolu bir gün sizi bekliyor!')).toBe(false);
+  });
+
+  it('rejects live feed stubs: infinitive tails and short accusative clamps', () => {
+    expect(isIncompleteOverlayPhrase('Müşterilerimiz sürekli geri dönmek')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Yazın tadını')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Yazın tazeliğini lezzetini')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Müşterilerimiz sürekli geri dönmek')).toBe(false);
+    expect(isMeaningfulFalOverlayText('Yazın tadını')).toBe(false);
+    // Complete verb-final / noun punches still pass.
+    expect(isIncompleteOverlayPhrase('Yazın tadını çıkarın')).toBe(false);
+    expect(isIncompleteOverlayPhrase('DJ Performansı')).toBe(false);
+  });
+
+  it('rejects bare Detaylar-style overlay CTAs', () => {
+    expect(isBareGenericOverlayCta('Detaylar')).toBe(true);
+    expect(isBareGenericOverlayCta('Learn more')).toBe(true);
+    expect(isBareGenericOverlayCta('Yerini ayırt')).toBe(false);
+    const fitted = fitMissionOverlayToTemplateBudget({
+      headline: 'Yazın tadını çıkarın birlikte',
+      subtitle: 'Detaylar',
+      channel: 'feed_post',
+      designIntensity: 'photo_first',
+      sampleHeadline: 'Yaz Lezzeti',
+      sampleSubtitle: 'Detaylar',
+      showSubline: true,
+    });
+    expect(fitted.subtitle).toBeUndefined();
+    expect(fitted.headline.length).toBeGreaterThan(0);
+    expect(isIncompleteOverlayPhrase(fitted.headline)).toBe(false);
   });
 
   it('corrects misplaced apostrophes in plural suffixes', () => {

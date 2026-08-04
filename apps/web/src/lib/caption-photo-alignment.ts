@@ -14,8 +14,9 @@ const FOOD_CAPTION_HINTS = [
   'seafood', 'fish', 'shrimp', 'lobster', 'oyster', 'platter', 'dish', 'menu',
   'cuisine', 'meal', 'dining', 'chef', 'kitchen', 'flavor', 'flavour', 'taste the',
   'ocean', 'bounty', 'mediterranean', 'aegean', 'fresh catch', 'savor', 'savour',
-  'yemek', 'balık', 'balik', 'deniz', 'ürünü', 'urunu', 'meze', 'tabak', 'menü',
-  'menu', 'gastronomi', 'lezzet',
+  'yemek', 'balık', 'balik', 'deniz ürün', 'deniz urun', 'ürünü', 'urunu',
+  'ürünler', 'urunler', 'meze', 'tabak', 'menü', 'menu', 'gastronomi', 'lezzet',
+  'deniz', // keep last among TR food stems — pairs with ürün* for seafood captions
 ];
 
 const EVENT_PHOTO_HINTS = [
@@ -71,6 +72,24 @@ const FOOD_PHOTO_HINTS = [
   'kitchen', 'yemek', 'tabak', 'balık', 'deniz', 'platter', 'serving', 'dessert',
   'pasta', 'steak', 'sushi', 'soup', 'bowl', 'gazpacho', 'meze',
   'breakfast', 'brunch', 'kahvaltı', 'kahvalti',
+];
+
+/**
+ * Empty venue / décor / lounge-only frames — no plated food, no nightlife subject.
+ * Soft ambiance affinity often boosts these for beach_club; they must not ship
+ * under food or DJ captions.
+ */
+const EMPTY_VENUE_PHOTO_HINTS = [
+  'interior', 'seating', 'booth', 'lounge', 'lounger', 'sunbed', 'sun bed',
+  'sun lounger', 'umbrella', 'closed umbrella', 'empty terrace', 'empty venue',
+  'ambiance', 'ambience', 'furniture', 'şezlong', 'sezlong', 'şezlonglar',
+  'patio', 'deck chairs', 'beach chairs',
+];
+
+const DECOR_ONLY_PHOTO_HINTS = [
+  'lamp', 'tiffany', 'vase', 'jar', 'decor', 'décor', 'ornament', 'still life',
+  'still-life', 'ceramic', 'shelf detail', 'wall art', 'interior detail',
+  'decorative', 'pedestal', 'stained glass', 'stained-glass',
 ];
 
 /** Penalty at/above this is a hard veto — photo must never ship for that caption. */
@@ -218,10 +237,22 @@ export function themeConflictNeedsAiJudge(
   const photoLash = textHits(photo, BEAUTY_LASH_PHOTO);
   const photoHair = textHits(photo, BEAUTY_HAIR_PHOTO);
 
+  const photoEmptyVenue = textHits(photo, EMPTY_VENUE_PHOTO_HINTS);
+  const photoDecorOnly = textHits(photo, DECOR_ONLY_PHOTO_HINTS);
+
   if (captionNightlife >= 1 && photoFood >= 1) return true;
   if (captionFood >= 2 && photoNightlifeHard >= 1) return true;
   if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) return true;
   if (captionNightlife >= 1 && photoDrink >= 1 && photoNightlifeHard === 0) return true;
+  if (
+    (captionNightlife >= 1 || captionFood >= 2 || captionDrink >= 1)
+    && (photoEmptyVenue >= 1 || photoDecorOnly >= 1)
+    && photoFood === 0
+    && photoNightlifeHard === 0
+    && (photoDrink === 0 || photoDecorOnly >= 1)
+  ) {
+    return true;
+  }
   if (captionNail >= 1 && (photoLash >= 1 || photoHair >= 1) && photoNail === 0) return true;
   if (captionLash >= 1 && (photoNail >= 1 || photoHair >= 1) && photoLash === 0) return true;
   if (captionHair >= 2 && (photoNail >= 1 || photoLash >= 1) && photoHair === 0) return true;
@@ -231,9 +262,9 @@ export function themeConflictNeedsAiJudge(
 /**
  * Deterministic conflict scoring.
  *
- * Hard vetoes are ONLY for unambiguous nightlife ↔ plated-food swaps.
- * Drink/cocktail/beauty gray cases stay soft (< HARD) — the AI gallery judge
- * owns those rejects (no nested keyword exception ladders).
+ * Hard vetoes: nightlife ↔ plated-food, and food/drink/nightlife ↔ empty
+ * venue / décor-only frames. Beauty gray cases stay soft (< HARD) — the AI
+ * gallery judge owns those rejects.
  */
 export function captionPhotoConflictPenalty(
   captionText: string,
@@ -249,12 +280,35 @@ export function captionPhotoConflictPenalty(
   const photoNightlifeHard = textHits(photo, NIGHTLIFE_HARD_PHOTO_HINTS);
   const photoMeat = textHits(photo, MEAT_FOOD_PHOTO_HINTS);
 
+  const photoEmptyVenue = textHits(photo, EMPTY_VENUE_PHOTO_HINTS);
+  const photoDecorOnly = textHits(photo, DECOR_ONLY_PHOTO_HINTS);
+  // Décor still-lifes often mention "glass jar" — bare glass/bottle must not
+  // count as cocktail proof that cancels the empty/décor hard veto.
+  const emptyOrDecorOnly =
+    (photoEmptyVenue >= 1 || photoDecorOnly >= 1)
+    && photoFood === 0
+    && photoNightlifeHard === 0
+    && (photoDrink === 0 || photoDecorOnly >= 1);
+
   // ── Hard (clear nightlife ↔ plated food) — category, not a campaign scene ─
   if (captionNightlife >= 1 && photoFood >= 1 && photoNightlifeHard === 0) {
     return captionNightlife >= 2 ? 80 : 72;
   }
   if (captionFood >= 2 && photoNightlifeHard >= 1 && photoFood === 0) {
     return 64;
+  }
+  // Empty lounge / décor still-life under food, drink, or nightlife copy.
+  if (captionNightlife >= 1 && emptyOrDecorOnly) {
+    return captionNightlife >= 2 ? 78 : 70;
+  }
+  if (captionFood >= 2 && emptyOrDecorOnly) {
+    return 68;
+  }
+  if (captionDrink >= 1 && emptyOrDecorOnly && photoDecorOnly >= 1) {
+    return 62;
+  }
+  if (captionDrink >= 1 && emptyOrDecorOnly && photoEmptyVenue >= 1 && photoDrink === 0) {
+    return 62;
   }
 
   // ── Soft (AI judge owns hard reject) ─────────────────────────────────────
@@ -270,14 +324,6 @@ export function captionPhotoConflictPenalty(
   }
   if (captionFood >= 2 && photoDrink >= 2 && photoFood === 0) {
     soft = Math.max(soft, 26);
-  }
-
-  const emptyVenue =
-    (photo.includes('interior') || photo.includes('seating') || photo.includes('booth')
-      || photo.includes('lounge') || photo.includes('restaurant'))
-    && photoFood === 0;
-  if (captionFood >= 2 && emptyVenue) {
-    soft = Math.max(soft, 18);
   }
 
   const captionNail = textHits(caption, BEAUTY_NAIL_CAPTION);

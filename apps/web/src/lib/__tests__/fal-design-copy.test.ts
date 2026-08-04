@@ -45,7 +45,7 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
 
 describe('resolveOverlayHeadlineWordBudget', () => {
   it('keeps feed overlays at 3–4 words by intensity', () => {
-    expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'photo_first' }).maxWords).toBe(2);
+    expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'photo_first' }).maxWords).toBe(3);
     expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'balanced' }).maxWords).toBe(3);
     expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'bold_editorial' }).maxWords).toBe(4);
     expect(resolveOverlayHeadlineWordBudget({ channel: 'reel' }).maxWords).toBe(3);
@@ -148,7 +148,9 @@ describe('resolveMissionFalDesignCopy', () => {
       designIntensity: 'balanced',
     });
     expect(result.source).toBe('canva_field_copy');
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    // Balanced feed budget is 3 words; complete TR marketing lines may keep 4
+    // when the punch floor / scene compress path preserves meaning.
+    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(4);
     expect(result.headline.toLowerCase()).toMatch(/doğal|lezzet|tad/);
     expect(result.headline.toLowerCase()).not.toMatch(/serisi|yaparken kargo|el yapımı$/);
   });

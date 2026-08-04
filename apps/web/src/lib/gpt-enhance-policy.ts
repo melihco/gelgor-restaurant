@@ -302,7 +302,7 @@ export function shouldSkipProductionForWeakGallery(input: {
     && !input.captionServiceConflict
     && !input.referenceIsStock
     && input.galleryMatchScore != null
-    && input.galleryMatchScore >= GALLERY_PRODUCTION_MIN_SCORE
+    && input.galleryMatchScore >= FAL_GROUNDED_GALLERY_MIN_SCORE
   ) {
     return false;
   }

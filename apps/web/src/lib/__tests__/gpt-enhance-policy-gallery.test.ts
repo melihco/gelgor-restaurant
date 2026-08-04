@@ -57,7 +57,7 @@ describe('Fal grounded weak-gallery gate', () => {
     ).toBe(true);
   });
 
-  it('allows near-floor Fal grounded gallery matches without service conflict', () => {
+  it('skips Fal grounded gallery matches below the grounded GIS floor (55)', () => {
     expect(
       shouldSkipProductionForWeakGallery({
         ...base,
@@ -66,7 +66,7 @@ describe('Fal grounded weak-gallery gate', () => {
         mediaFallback: 'block',
         falGroundedPipeline: true,
       }),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('does not skip Fal when gallery clears the grounded floor', () => {

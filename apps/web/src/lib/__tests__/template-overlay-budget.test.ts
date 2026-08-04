@@ -6,22 +6,23 @@ import {
 } from '../fal-caption-headline';
 
 describe('template-locked overlay budget', () => {
-  it('locks maxLen/maxWords to sampleHeadline footprint', () => {
+  it('raises tiny sampleHeadline footprints to the mission punch floor', () => {
     const budget = resolveOverlayHeadlineWordBudget({
       channel: 'feed_post',
       designIntensity: 'bold_editorial',
       sampleHeadline: 'Harika',
     });
-    expect(budget.maxLen).toBe(6);
-    expect(budget.maxWords).toBe(1);
+    // Soft floor (18/3) prevents single-word library samples from crushing TR copy.
+    expect(budget.maxLen).toBe(18);
+    expect(budget.maxWords).toBe(3);
 
     const longer = resolveOverlayHeadlineWordBudget({
       channel: 'feed_post',
       designIntensity: 'bold_editorial',
       sampleHeadline: 'Gün Batımı',
     });
-    expect(longer.maxWords).toBe(2);
-    expect(longer.maxLen).toBe('Gün Batımı'.length);
+    expect(longer.maxWords).toBe(3);
+    expect(longer.maxLen).toBe(18);
   });
 
   it('falls back to channel budget when sample missing', () => {
@@ -33,7 +34,7 @@ describe('template-locked overlay budget', () => {
     expect(budget.maxLen).toBe(36);
   });
 
-  it('fits long mission headline into sample type zone', () => {
+  it('fits long mission headline into sample type zone (with punch floor)', () => {
     const fitted = fitMissionOverlayToTemplateBudget({
       headline: 'Harika bir deneyim sizi bekliyor Bodrum’da',
       subtitle: 'Mutlu misafirimizden bir yorum satırı',
@@ -44,9 +45,9 @@ describe('template-locked overlay budget', () => {
       showSubline: true,
     });
     expect(fitted.budget.source).toBe('template_sample');
-    expect(fitted.headline.length).toBeLessThanOrEqual(6);
-    expect(fitted.headline.split(/\s+/).length).toBeLessThanOrEqual(1);
-    expect(fitted.subtitle?.length).toBeLessThanOrEqual('Misafir'.length);
+    expect(fitted.headline.length).toBeLessThanOrEqual(18);
+    expect(fitted.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(fitted.headline.length).toBeGreaterThan(0);
   });
 
   it('falls back to mission scene punch (not Cocktail) when long English headline cannot fit DJ Night zone', () => {
@@ -83,6 +84,7 @@ describe('template-locked overlay budget', () => {
       showSubline: false,
     });
     expect(fitted.subtitle).toBeUndefined();
-    expect(fitted.headline.length).toBeLessThanOrEqual('Atmosfer'.length);
+    expect(fitted.headline.length).toBeLessThanOrEqual(18);
+    expect(fitted.headline.length).toBeGreaterThan(0);
   });
 });

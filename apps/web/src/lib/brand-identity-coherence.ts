@@ -144,3 +144,66 @@ export function resolveCoherentLogoUrl(
   if (shouldPreferBrandContextIdentity(profile, brandCtx) && ctxLogo) return ctxLogo;
   return profileLogo || ctxLogo;
 }
+
+function namesLooselyMatch(a: string, b: string): boolean {
+  const na = a.toLocaleLowerCase('tr-TR');
+  const nb = b.toLocaleLowerCase('tr-TR');
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+  const ta = na.split(/[\s\-–|]+/).filter((t) => t.length >= 3);
+  const tb = new Set(nb.split(/[\s\-–|]+/).filter((t) => t.length >= 3));
+  return ta.some((t) => tb.has(t));
+}
+
+/**
+ * True when CompanyProfile.customerVisibleSummary names a different brand
+ * than the active workspace (e.g. "Meon Wedding için onboarding…" on Sarnıç).
+ */
+export function isForeignBrandCustomerSummary(
+  summary: string | null | undefined,
+  brandName: string,
+  brandCtx?: Record<string, unknown> | null,
+): boolean {
+  const s = str(summary);
+  if (!s) return false;
+
+  const anchors = [
+    cleanBrandName(brandName),
+    cleanBrandName(str(brandCtx?.business_name ?? brandCtx?.businessName)),
+  ].filter(Boolean);
+  if (!anchors.length) return false;
+
+  const namedLead =
+    s.match(/^(.+?)\s+için\s+(?:onboarding\s+başlatıldı|sektör)\b/i)?.[1]
+    ?? s.match(/^(.+?)\s+için\s+/i)?.[1];
+  if (namedLead) {
+    const named = cleanBrandName(namedLead);
+    if (named && !anchors.some((a) => namesLooselyMatch(named, a))) {
+      return true;
+    }
+  }
+
+  // Summary never mentions this brand, but clearly names another proper noun brand.
+  const mentionsOwn = anchors.some((a) => namesLooselyMatch(s, a) || s.toLocaleLowerCase('tr-TR').includes(
+    a.toLocaleLowerCase('tr-TR').split(/\s+/)[0] ?? a,
+  ));
+  if (mentionsOwn) return false;
+  if (isCrossTenantPollutionName(namedLead ? cleanBrandName(namedLead) : '', brandCtx)) return true;
+  return false;
+}
+
+/** Safe summary for UI — drops cross-tenant stubs, falls back to website_summary. */
+export function resolveCustomerVisibleSummary(
+  summary: string | null | undefined,
+  brandName: string,
+  brandCtx?: Record<string, unknown> | null,
+): string {
+  const raw = str(summary);
+  if (raw && !isForeignBrandCustomerSummary(raw, brandName, brandCtx)) return raw;
+
+  const fromCtx = str(brandCtx?.website_summary ?? brandCtx?.websiteSummary);
+  if (fromCtx) return fromCtx.length > 280 ? `${fromCtx.slice(0, 277).trimEnd()}…` : fromCtx;
+
+  return '';
+}

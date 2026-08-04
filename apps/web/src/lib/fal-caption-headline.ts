@@ -769,6 +769,10 @@ export function isRenderedOverlayTextIncomplete(detected: string | undefined | n
   const t = detected.trim();
   if (DANGLING_TAIL_RX.test(t)) return true;
   if (INCOMPLETE_MODIFIER_TAIL_RX.test(t)) return true;
+  // Morphology stubs only — do not use full isIncompleteOverlayPhrase (length < 4
+  // rejects intentional short punches like "DJ").
+  if (INCOMPLETE_TR_INFINITIVE_TAIL_RX.test(t)) return true;
+  if (INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX.test(t)) return true;
   if (isInternalStrategyBriefing(t)) return true;
   if (STRATEGY_BRIEFING_START_RX.test(t)) return true;
   return false;
@@ -780,11 +784,19 @@ const INCOMPLETE_TR_POSSESSIVE_TAIL_RX =
 
 /**
  * Possessive-accusative object left dangling at phrase end — "Mutfaktaki aşçılarımızı",
- * "taze malzemelerimizi". Turkish is verb-final (SOV): a headline that ENDS with a
- * possessive-accusative object lost its verb to truncation — always incomplete.
+ * "taze malzemelerimizi", "Yazın tadını", "tazeliğini lezzetini".
+ * Turkish is verb-final (SOV): a headline that ENDS with an accusative object lost
+ * its verb to truncation — always incomplete.
  */
 const INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX =
-  /\b[\p{L}']+(ımızı|imizi|umuzu|ümüzü|larımızı|lerimizi|larimizi|lerimizi)\s*$/iu;
+  /\b[\p{L}']+(ımızı|imizi|umuzu|ümüzü|larımızı|lerimizi|larimizi|lerimizi|ını|ini|unu|ünü)\s*$/iu;
+
+/**
+ * Infinitive left dangling — "Müşterilerimiz sürekli geri dönmek" (verb phrase cut
+ * before "için can atıyor"). Marketing overlays never end on bare -mek/-mak.
+ */
+const INCOMPLETE_TR_INFINITIVE_TAIL_RX =
+  /\b[\p{L}']+(mek|mak)\s*$/iu;
 
 /** Mid-campaign fragment — "Ürünlerde geçerli yaz" (season word left dangling). */
 const INCOMPLETE_TR_SEASON_CTA_TAIL_RX =
@@ -822,6 +834,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_ACCUSATIVE_OBJECT_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_INFINITIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_ABLATIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_WHILE_CLAUSE_RX.test(clean)) return true;
@@ -958,7 +971,9 @@ export function resolveOverlayHeadlineWordBudget(input: {
     intensity === 'photo_first'
     || intensity === 'elegant_light'
   ) {
-    maxWords = 2;
+    // 3 words keeps Turkish SOV phrases complete ("DJ Performansı", "Yaz Lezzetleri");
+    // a 2-word clamp truncates captions into stubs like "Yazın tadını".
+    maxWords = 3;
   } else if (intensity === 'balanced') {
     maxWords = 3;
   } else if (intensity === 'designed' || intensity === 'bold_editorial') {
@@ -976,7 +991,12 @@ export function resolveOverlayHeadlineWordBudget(input: {
     const MISSION_PUNCH_FLOOR_LEN = 18;
     const MISSION_PUNCH_FLOOR_WORDS = 3;
     maxLen = Math.min(maxLen, Math.max(sample.length, MISSION_PUNCH_FLOOR_LEN));
-    maxWords = Math.min(maxWords, Math.max(sampleWords, MISSION_PUNCH_FLOOR_WORDS));
+    // Raise (never lower) the intensity budget toward the mission punch floor when
+    // the sample is tiny — Math.min(photo_first=3, floor=3) stays complete.
+    maxWords = Math.min(
+      Math.max(maxWords, MISSION_PUNCH_FLOOR_WORDS),
+      Math.max(sampleWords, MISSION_PUNCH_FLOOR_WORDS),
+    );
   }
 
   return { maxWords, maxLen };
@@ -1111,10 +1131,17 @@ export function fitMissionOverlayToTemplateBudget(input: {
       headline = sampleH;
     }
   }
-  // Last resort: keep a compressed mission fragment — never empty when input had text.
+  // Last resort: prefer empty over mid-word / incomplete junk ("doy...", "Yazın tadını").
+  // Downstream fal/GPT paths invent less harmfully than shipping a truncated stub.
   if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
     const fallback = truncateAtWordBoundary(rawH, Math.max(budget.headline.maxLen, 18));
-    headline = (fallback && isMeaningfulFalOverlayText(fallback)) ? fallback : rawH.slice(0, 18).trim();
+    headline = (
+      fallback
+      && isMeaningfulFalOverlayText(fallback)
+      && !isIncompleteOverlayPhrase(fallback)
+    )
+      ? fallback
+      : '';
   }
 
   if (!budget.subtitle || !budget.showSubline) {
@@ -1122,7 +1149,12 @@ export function fitMissionOverlayToTemplateBudget(input: {
   }
 
   const rawS = correctTurkishSpelling(sanitizeFalOverlayText(String(input.subtitle ?? '')));
-  if (!rawS || areFalOverlayTextsRedundant(headline, rawS)) {
+  if (
+    !rawS
+    || areFalOverlayTextsRedundant(headline, rawS)
+    || isGenericRetailOverlayCta(rawS, rawH)
+    || isBareGenericOverlayCta(rawS)
+  ) {
     return { headline, budget };
   }
   let subtitle = tightenOverlayHeadline(
@@ -1133,8 +1165,14 @@ export function fitMissionOverlayToTemplateBudget(input: {
   if (!subtitle) {
     subtitle = truncateAtWordBoundary(rawS, budget.subtitle.maxLen);
   }
-  if (!subtitle) {
-    subtitle = rawS.slice(0, budget.subtitle.maxLen).trim();
+  // Never mid-slice a subtitle — incomplete / generic CTAs ("Detaylar") drop entirely.
+  if (
+    !subtitle
+    || isIncompleteOverlayPhrase(subtitle)
+    || isBareGenericOverlayCta(subtitle)
+    || isGenericRetailOverlayCta(subtitle, rawH)
+  ) {
+    return { headline, budget };
   }
   // Template sample zones are often 1 short word (e.g. "Misafir") — skip the
   // general ≥8-char meaningfulness gate when locked to sample footprint.
@@ -1149,6 +1187,15 @@ export function fitMissionOverlayToTemplateBudget(input: {
     return { headline, budget };
   }
   return { headline, subtitle, budget };
+}
+
+/** Lone CTA stubs that add no scene meaning on canvas. */
+export function isBareGenericOverlayCta(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text).toLocaleLowerCase('tr-TR');
+  if (!clean) return false;
+  return /^(detaylar|detayları|detaylari|learn more|see more|see details|daha fazla|daha\s+fazla|click here|buraya tıkla|buraya tikla)$/i.test(
+    clean,
+  );
 }
 
 /** Tighten any channel overlay to a complete ≤N-word phrase. */
@@ -1574,13 +1621,14 @@ export function resolveFalSubtitle(input: {
     }
   }
 
-  // Fallback to CTA if it's meaningful
+  // Fallback to CTA if it's meaningful (never bare "Detaylar" / "Learn more")
   if (input.cta) {
     const ctaClean = sanitizeFalOverlayText(input.cta.trim());
     if (ctaClean.length >= 6 && ctaClean.length <= maxLen
       && !ctaClean.toLowerCase().includes(headlineLower)
       && !areFalOverlayTextsRedundant(input.headline, ctaClean)
       && isMeaningfulFalOverlayText(ctaClean)
+      && !isBareGenericOverlayCta(ctaClean)
       && !isGenericRetailOverlayCta(ctaClean, caption)) {
       return ctaClean;
     }

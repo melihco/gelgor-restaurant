@@ -37,7 +37,12 @@ import {
   resolveBrandTonePreset,
 } from '@/lib/sync-company-profile-from-python';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
-import { resolveCoherentLogoUrl, isCrossTenantPollutionName } from '@/lib/brand-identity-coherence';
+import {
+  resolveCoherentLogoUrl,
+  isCrossTenantPollutionName,
+  resolveCustomerVisibleSummary,
+  isForeignBrandCustomerSummary,
+} from '@/lib/brand-identity-coherence';
 import {
   resolveTenantCanonicalSector,
   serviceProfileCategoryForSector,
@@ -3300,8 +3305,26 @@ export function BrandConstitution() {
 
   // Mutation to save profile
   const saveMutation = useMutation({
-    mutationFn: (data: Partial<SaveCompanyProfileRequest>) =>
-      apiClient.saveCompanyProfile({ ...(profile as any), ...data } as SaveCompanyProfileRequest),
+    mutationFn: (data: Partial<SaveCompanyProfileRequest>) => {
+      const merged = { ...(profile as any), ...data } as SaveCompanyProfileRequest;
+      const brandName = String(merged.brandName || '').trim();
+      // Never re-persist a summary that names another tenant (partial saves spread old fields).
+      if (
+        brandName
+        && isForeignBrandCustomerSummary(
+          merged.customerVisibleSummary,
+          brandName,
+          pyCtx as Record<string, unknown> | undefined,
+        )
+      ) {
+        merged.customerVisibleSummary = resolveCustomerVisibleSummary(
+          '',
+          brandName,
+          pyCtx as Record<string, unknown> | undefined,
+        );
+      }
+      return apiClient.saveCompanyProfile(merged);
+    },
     onSuccess: async (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['company-profile', tenantId] });
       const name = String(variables.brandName || '').trim();
@@ -4759,9 +4782,14 @@ export function BrandConstitution() {
             >
             <SCard t={t} title="AI Değerlendirmesi" accent={t.accent}>
               <InfoRow t={t} label="Tamamlanma Skoru" value={`${score}%`} color={t.accent} />
-              {(p as any).customerVisibleSummary && (
-                <InfoRow t={t} label="Özet" value={(p as any).customerVisibleSummary} />
-              )}
+              {(() => {
+                const summary = resolveCustomerVisibleSummary(
+                  (p as any).customerVisibleSummary,
+                  brandNameDisplay,
+                  pyCtx as Record<string, unknown> | undefined,
+                );
+                return summary ? <InfoRow t={t} label="Özet" value={summary} /> : null;
+              })()}
               {(p as any).brandAnalyzedAt && (
                 <InfoRow t={t} label="Son Analiz" value={new Date((p as any).brandAnalyzedAt).toLocaleString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })} />
               )}

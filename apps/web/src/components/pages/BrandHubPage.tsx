@@ -40,6 +40,7 @@ import Input from '@/tailadmin/components/form/input/InputField';
 import TextArea from '@/tailadmin/components/form/input/TextArea';
 import Button from '@/tailadmin/components/ui/button/Button';
 import { BrandCompleteGapsButton } from '@/components/brand/BrandCompleteGapsButton';
+import { resolveCustomerVisibleSummary } from '@/lib/brand-identity-coherence';
 import type {
   CanvaAspectRatio,
   CanvaContentKind,
@@ -1087,12 +1088,20 @@ export default function BrandHubPage() {
               </span>
             )}
           </div>
-          {companyProfile?.customerVisibleSummary && (
+          {(() => {
+            const summary = resolveCustomerVisibleSummary(
+              companyProfile?.customerVisibleSummary,
+              companyProfile?.brandName || '',
+              brandContextRow as Record<string, unknown> | undefined,
+            );
+            if (!summary) return null;
+            return (
             <div className="rounded-xl border border-emerald-200/40 bg-emerald-50/50 p-3 text-sm text-emerald-900 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200">
               <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">Özet</p>
-              <p className="mt-1 leading-relaxed">{companyProfile.customerVisibleSummary}</p>
+              <p className="mt-1 leading-relaxed">{summary}</p>
             </div>
-          )}
+            );
+          })()}
           {companyProfile?.brandAnalysis ? (
             <details className="group rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]">
               <summary className="cursor-pointer select-none px-4 py-3 text-xs font-semibold text-gray-800 dark:text-white/90">

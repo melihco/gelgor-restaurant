@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   isCrossTenantPollutionName,
+  isForeignBrandCustomerSummary,
   resolveCoherentBrandName,
   resolveCoherentLogoUrl,
+  resolveCustomerVisibleSummary,
   shouldPreferBrandContextIdentity,
 } from '@/lib/brand-identity-coherence';
 import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
@@ -54,5 +56,22 @@ describe('brand-identity-coherence', () => {
     expect(ctx.instagramFollowers).toBe(12500);
     expect(ctx.instagramFollowing).toBe(420);
     expect(ctx.instagramPostsCount).toBe(890);
+  });
+
+  it('detects Meon onboarding stub on Sarnıç as foreign customer summary', () => {
+    const sarnicCtx = {
+      business_name: 'Sarnıç Beach',
+      website_url: 'https://www.sarnicbeach.com/',
+      instagram_handle: 'sarnicbeach',
+      website_summary: 'Bitez’de beach club — Sarnıç Beach.',
+    };
+    const polluted = 'Meon Wedding için onboarding başlatıldı. Web sitesi ve görsel analiz sonuçları hazırlanıyor.';
+    expect(isForeignBrandCustomerSummary(polluted, 'Sarnıç Beach', sarnicCtx)).toBe(true);
+    expect(resolveCustomerVisibleSummary(polluted, 'Sarnıç Beach', sarnicCtx)).toMatch(/Sarnıç|Bitez/i);
+    expect(isForeignBrandCustomerSummary(
+      'Sarnıç Beach için onboarding başlatıldı. Web sitesi ve görsel analiz sonuçları hazırlanıyor.',
+      'Sarnıç Beach',
+      sarnicCtx,
+    )).toBe(false);
   });
 });

@@ -1435,14 +1435,27 @@ function scorePhotoForContent(
   // ── Business type affinity (soft signal) ─────────────────────────────────
   // Boost photos whose tags align with the brand's business type; penalise
   // clearly mismatched photos (e.g. a gym equipment photo for a restaurant).
-  // This only matters when caption semantics alone don't disambiguate well.
+  // Under strict subject captions (food/DJ/drink), skip ambiance-only prefer
+  // hits (lounge/interior) so empty-venue frames cannot outrank subject proof.
+  // Subject-aligned prefer hits (nightlife, food, cocktail) still get +12.
   if (input.businessType) {
     const affinity = resolveBusinessAffinity(input.businessType);
     if (affinity) {
       const photoText = searchable;
-      const preferHit = affinity.prefer.some(p => photoText.includes(p));
+      const preferHits = affinity.prefer.filter(p => photoText.includes(p));
+      const preferHit = preferHits.length > 0;
       const avoidHit = affinity.avoid.some(a => photoText.includes(a));
-      if (preferHit) { score += 12; reasons.push(`businessType prefer`); }
+      const strictSubjectCaption = captionRequiresStrictGalleryMatch(
+        input.caption ?? '',
+        input.headline ?? '',
+      );
+      const AMBIANCE_PREFER_RX = /lounge|interior|ambiance|ambience|seating|terrace|atmosphere|venue|décor|decor|furniture/i;
+      const preferIsAmbianceOnly =
+        preferHit && preferHits.every((p) => AMBIANCE_PREFER_RX.test(p));
+      if (preferHit && !(strictSubjectCaption && preferIsAmbianceOnly)) {
+        score += 12;
+        reasons.push(`businessType prefer`);
+      }
       if (avoidHit && !preferHit) { score -= 18; reasons.push(`businessType mismatch`); }
     }
   }

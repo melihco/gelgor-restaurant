@@ -125,6 +125,33 @@ describe('captionPhotoConflictPenalty — nightlife vs food', () => {
     ).toBe(true);
   });
 
+  it('hard-vetoes DJ caption against décor-only interior (lamp / still-life)', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Hafta sonu bize katıl! Bitez’de en iyi DJ’ler ile doyasıya eğleneceksin.',
+        'interior decorative tiffany lamp ceramic pedestal glass jar shelf still life',
+      ),
+    ).toBe(true);
+  });
+
+  it('hard-vetoes seafood caption against empty loungers / closed umbrellas', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Yazın tadını çıkarmak için yeni deniz ürünlerimizde %20 indirim fırsatını kaçırma!',
+        'beach lounge sun lounger closed umbrella seating ambiance empty terrace patio',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not hard-veto ambiance photo when caption is venue atmosphere only', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Bitez’de gün batımını izlemeye gelin — sahil atmosferi sizi bekliyor.',
+        'beach lounge sun lounger closed umbrella seating ambiance patio',
+      ),
+    ).toBe(false);
+  });
+
 });
 
 describe('captionRequiresStrictGalleryMatch', () => {
