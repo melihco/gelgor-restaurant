@@ -725,8 +725,6 @@ const SECTOR_ALIASES: Record<string, string> = {
   pastane: 'bakery_patisserie',
   firın: 'bakery_patisserie',
   patisserie: 'bakery_patisserie',
-  // Fitness playbook key → pack id
-  fitness: 'fitness_gym',
   // Agency / professional services (dedicated slot pack)
   agency: 'agency_services',
   web_agency: 'agency_services',
