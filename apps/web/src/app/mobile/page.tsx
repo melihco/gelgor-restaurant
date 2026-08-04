@@ -1570,6 +1570,270 @@ const CSS = `
     justify-content: flex-start;
     padding-bottom: max(24px, env(safe-area-inset-bottom));
   }
+
+  /* ── Brand confirm — identity lock (matches discover craft) ── */
+  .sa-mobile .onboarding-shell--confirm {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  .sa-mobile .onboarding-shell--confirm .onboarding-ambient-orb--c {
+    opacity: 0.22;
+  }
+  .sa-mobile .confirm-main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 20px 112px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .sa-mobile .confirm-top {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .sa-mobile .confirm-hero-title {
+    margin: 0;
+    font-size: clamp(26px, 6.4vw, 30px);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    line-height: 1.12;
+    color: #F4F4F8;
+    text-align: left;
+  }
+  .sa-mobile .confirm-hero-lead {
+    margin: 0;
+    max-width: 34ch;
+    font-size: 14px;
+    line-height: 1.45;
+    color: rgba(180, 190, 210, 0.62);
+    text-align: left;
+  }
+  .sa-mobile .confirm-identity-card {
+    position: relative;
+    border-radius: 20px;
+    min-height: 132px;
+    overflow: hidden;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.22),
+      0 14px 36px rgba(0,0,0,0.28);
+  }
+  .sa-mobile .confirm-identity-card__veil {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(0,0,0,0.42) 100%),
+      radial-gradient(ellipse 80% 70% at 90% 10%, rgba(255,255,255,0.18), transparent 55%);
+    pointer-events: none;
+  }
+  .sa-mobile .confirm-identity-card__body {
+    position: relative;
+    z-index: 1;
+    padding: 18px 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 132px;
+    justify-content: flex-end;
+  }
+  .sa-mobile .confirm-identity-card__eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.72);
+  }
+  .sa-mobile .confirm-identity-card__name {
+    margin: 0;
+    font-size: clamp(22px, 5.6vw, 26px);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: #fff;
+    text-shadow: 0 1px 12px rgba(0,0,0,0.25);
+  }
+  .sa-mobile .confirm-identity-card__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: rgba(255,255,255,0.82);
+  }
+  .sa-mobile .confirm-identity-card__swatches {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .sa-mobile .confirm-identity-card__swatches span {
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.55);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+  .sa-mobile .confirm-panel {
+    border-radius: 16px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.035);
+    overflow: hidden;
+  }
+  .sa-mobile .confirm-hline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 14px;
+    border-bottom: 0.5px solid rgba(255,255,255,0.07);
+  }
+  .sa-mobile .confirm-hline:last-child {
+    border-bottom: none;
+  }
+  .sa-mobile .confirm-hline-label {
+    flex-shrink: 0;
+    width: 78px;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(160,170,190,0.55);
+  }
+  .sa-mobile .confirm-hline-input {
+    flex: 1;
+    min-width: 0;
+    min-height: 44px;
+    border: none;
+    background: transparent;
+    color: #F4F4F8;
+    font-size: 16px;
+    font-weight: 550;
+    letter-spacing: -0.01em;
+    outline: none;
+    color-scheme: dark;
+  }
+  .sa-mobile .confirm-hline-input.is-filled {
+    color: #fff;
+  }
+  .sa-mobile .confirm-hline-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='rgba(180,190,210,0.7)' d='M1.2 1.2 6 6l4.8-4.8'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 4px center;
+    padding-right: 22px;
+  }
+  .sa-mobile .confirm-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .sa-mobile .confirm-section-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(160,170,190,0.5);
+  }
+  .sa-mobile .confirm-tone-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sa-mobile .confirm-tone-chip {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 0.5px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+    color: rgba(230,235,245,0.78);
+    font-size: 14px;
+    font-weight: 650;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+  }
+  .sa-mobile .confirm-tone-chip.is-on {
+    border-color: rgba(157,190,206,0.7);
+    background: rgba(138,171,189,0.18);
+    color: #F4F4F8;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.12);
+  }
+  .sa-mobile .confirm-color-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .sa-mobile .confirm-color-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 16px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.035);
+    cursor: pointer;
+  }
+  .sa-mobile .confirm-color-card__label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: rgba(160,170,190,0.55);
+  }
+  .sa-mobile .confirm-color-card__swatch {
+    position: relative;
+    height: 48px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.18);
+    overflow: hidden;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+  }
+  .sa-mobile .confirm-color-card__swatch input[type='color'] {
+    position: absolute;
+    inset: -8px;
+    width: calc(100% + 16px);
+    height: calc(100% + 16px);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .sa-mobile .confirm-color-card__hex {
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: 0.04em;
+    color: rgba(210,220,235,0.72);
+    font-variant-numeric: tabular-nums;
+  }
+  .sa-mobile .confirm-error {
+    margin: 0;
+  }
+  .sa-mobile .confirm-dock {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: auto;
+    padding:
+      12px 20px
+      max(16px, env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, rgba(7,9,15,0) 0%, rgba(7,9,15,0.92) 28%, #07090F 100%);
+  }
+  .sa-mobile .confirm-dock .onboarding-cta:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  @media (max-height: 700px) {
+    .sa-mobile .confirm-identity-card { min-height: 112px; }
+    .sa-mobile .confirm-identity-card__body { min-height: 112px; padding: 14px; }
+    .sa-mobile .confirm-hero-lead { font-size: 13px; }
+  }
+
   .sa-mobile .onboarding-cta--loading {
     background: rgba(255,255,255,0.08) !important;
     box-shadow: none !important;

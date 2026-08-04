@@ -1497,9 +1497,13 @@ function BrandConfirmStep({
     }
   }
 
+  const sectorLabel =
+    ONBOARDING_SECTORS.find((s) => s.id === sector)?.label
+    ?? sector;
+
   if (loading) {
     return (
-      <div className="onboarding-shell">
+      <div className="onboarding-shell onboarding-shell--confirm">
         <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
@@ -1513,31 +1517,58 @@ function BrandConfirmStep({
   }
 
   return (
-    <div className="onboarding-shell">
+    <div className="onboarding-shell onboarding-shell--confirm">
       <OnboardingChromeBackdrop />
       <OnboardingLogoHeader compact />
-      <main className="onboarding-main onboarding-signup-main onboarding-stagger" style={{ paddingBottom: 28 }}>
-        <h1 className="onboarding-title onboarding-title--step">Markanı doğrula</h1>
+      <main className="confirm-main onboarding-stagger">
+        <header className="confirm-top">
+          <h1 className="confirm-hero-title">Markanı doğrula</h1>
+          <p className="confirm-hero-lead">
+            Keşiften gelen kimliği kontrol et — üretim buna kilitlenir.
+          </p>
+        </header>
 
-        <div className="onboarding-fields">
-          <label className="onboarding-field">
-            <span className="onboarding-field-label">Marka adı</span>
+        <div
+          className="confirm-identity-card"
+          style={{
+            background: `linear-gradient(145deg, ${primary} 0%, ${primary}ee 42%, ${accent}cc 100%)`,
+          }}
+        >
+          <div className="confirm-identity-card__veil" aria-hidden />
+          <div className="confirm-identity-card__body">
+            <span className="confirm-identity-card__eyebrow">Canlı önizleme</span>
+            <p className="confirm-identity-card__name">{name.trim() || 'Marka adı'}</p>
+            <div className="confirm-identity-card__meta">
+              <span>{sectorLabel}</span>
+              <span aria-hidden>·</span>
+              <span>{TONE_LABELS[tone]}</span>
+            </div>
+            <div className="confirm-identity-card__swatches" aria-hidden>
+              <span style={{ background: primary }} />
+              <span style={{ background: accent }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="confirm-panel">
+          <label className="confirm-hline">
+            <span className="confirm-hline-label">Marka adı</span>
             <input
               value={name}
-              onChange={(e) => setName(e.target.value)}
-              className={`onboarding-input${name.trim() ? ' onboarding-input--filled' : ''}`}
+              onChange={(e) => { setName(e.target.value); setError(null); }}
+              className={`confirm-hline-input${name.trim() ? ' is-filled' : ''}`}
               autoComplete="organization"
               enterKeyHint="next"
+              inputMode="text"
             />
           </label>
 
-          <label className="onboarding-field">
-            <span className="onboarding-field-label">Sektör</span>
+          <label className="confirm-hline">
+            <span className="confirm-hline-label">Sektör</span>
             <select
               value={sector}
               onChange={(e) => setSector(e.target.value)}
-              className="onboarding-input onboarding-input--filled"
-              style={{ fontSize: 16, minHeight: 44 }}
+              className="confirm-hline-input is-filled confirm-hline-select"
             >
               {ONBOARDING_SECTORS.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -1547,70 +1578,68 @@ function BrandConfirmStep({
               )}
             </select>
           </label>
+        </div>
 
-          <div className="onboarding-field">
-            <span className="onboarding-field-label">Marka tonu</span>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-              {BRAND_TONE_PRESETS.map((t) => {
-                const on = tone === t;
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTone(t)}
-                    style={{
-                      minHeight: 44,
-                      padding: '8px 14px',
-                      borderRadius: 12,
-                      border: on ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.14)',
-                      background: on ? 'rgba(157,190,206,0.16)' : 'rgba(255,255,255,0.05)',
-                      color: '#fff',
-                      fontSize: 14,
-                      fontWeight: 600,
-                    }}
-                  >
-                    {TONE_LABELS[t]}
-                  </button>
-                );
-              })}
-            </div>
+        <div className="confirm-section">
+          <span className="confirm-section-label">Marka tonu</span>
+          <div className="confirm-tone-grid" role="group" aria-label="Marka tonu">
+            {BRAND_TONE_PRESETS.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={`confirm-tone-chip${tone === t ? ' is-on' : ''}`}
+                aria-pressed={tone === t}
+                onClick={() => setTone(t)}
+              >
+                {TONE_LABELS[t]}
+              </button>
+            ))}
           </div>
+        </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label className="onboarding-field">
-              <span className="onboarding-field-label">Ana renk</span>
-              <input
-                type="color"
-                value={primary}
-                onChange={(e) => setPrimary(e.target.value)}
-                style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
-              />
+        <div className="confirm-section">
+          <span className="confirm-section-label">Renkler</span>
+          <div className="confirm-color-grid">
+            <label className="confirm-color-card">
+              <span className="confirm-color-card__label">Ana renk</span>
+              <span className="confirm-color-card__swatch" style={{ background: primary }}>
+                <input
+                  type="color"
+                  value={primary}
+                  onChange={(e) => setPrimary(e.target.value)}
+                  aria-label="Ana renk"
+                />
+              </span>
+              <span className="confirm-color-card__hex">{primary.toUpperCase()}</span>
             </label>
-            <label className="onboarding-field">
-              <span className="onboarding-field-label">Vurgu</span>
-              <input
-                type="color"
-                value={accent}
-                onChange={(e) => setAccent(e.target.value)}
-                style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
-              />
+            <label className="confirm-color-card">
+              <span className="confirm-color-card__label">Vurgu</span>
+              <span className="confirm-color-card__swatch" style={{ background: accent }}>
+                <input
+                  type="color"
+                  value={accent}
+                  onChange={(e) => setAccent(e.target.value)}
+                  aria-label="Vurgu rengi"
+                />
+              </span>
+              <span className="confirm-color-card__hex">{accent.toUpperCase()}</span>
             </label>
           </div>
         </div>
 
-        {error && <p className="onboarding-error">{error}</p>}
-
-        <div className="onboarding-actions">
-          <button
-            type="button"
-            className="onboarding-cta"
-            disabled={submitting}
-            onClick={() => void handleConfirm()}
-          >
-            {submitting ? 'Üretim kilidi açılıyor…' : 'Doğrula ve devam et'}
-          </button>
-        </div>
+        {error && <p className="onboarding-error confirm-error">{error}</p>}
       </main>
+
+      <div className="confirm-dock">
+        <button
+          type="button"
+          className="onboarding-cta"
+          disabled={submitting || !name.trim()}
+          onClick={() => void handleConfirm()}
+        >
+          {submitting ? 'Üretim kilidi açılıyor…' : 'Doğrula ve devam et'}
+        </button>
+      </div>
     </div>
   );
 }
