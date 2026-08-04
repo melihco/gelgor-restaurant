@@ -15,6 +15,7 @@ import {
 import {
   compositeLogoOnPhoto,
   imageUrlToBuffer,
+  prepareLogoForComposite,
   resolveMediaFetchUrl,
   type LogoPlacement,
 } from './logo-compositor';
@@ -222,7 +223,8 @@ export async function compositeOfficialLogoOnVideoUrl(input: {
     const padding = edgePaddingForChannel(channel, compositorPlacement, baseH);
 
     const sharp = (await import('sharp')).default;
-    const logoPrepared = await sharp(logoBuffer)
+    const logoKnocked = await prepareLogoForComposite(logoBuffer);
+    const logoPrepared = await sharp(logoKnocked)
       .resize(logoW, undefined, { fit: 'inside', withoutEnlargement: false })
       .png()
       .toBuffer();

@@ -191,11 +191,12 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       navTransition: 'modal-in',
     })),
 
+  /** Prefer native IG preview studio over ApprovalFeedback for story/reel/post. */
   openApproval: (id) =>
     set((s) => ({
       selectedArtifactId: id,
-      screen: 'approval',
-      history: [...s.history, 'approval'],
+      screen: 'platform-preview',
+      history: [...s.history, 'platform-preview'],
       navTransition: 'modal-in',
     })),
 

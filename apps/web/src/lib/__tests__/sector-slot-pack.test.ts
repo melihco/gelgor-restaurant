@@ -57,6 +57,19 @@ describe('sector-slot-pack coverage', () => {
     }
   });
 
+  it('gates restaurant cocktail/happy-hour behind opt-in bar facility', () => {
+    expect(DEFAULT_SLOT_FACILITIES.bar).toBe(false);
+    const cafe = synthesizeSectorSlotDefinitions('restaurant_cafe');
+    const happy = cafe.find((s) => s.slot_key === 'restaurant_cafe_happy_hour_post');
+    const cocktail = cafe.find((s) => s.slot_key === 'restaurant_cafe_cocktail_bar_reel');
+    expect(happy?.optional_tags).toEqual(expect.arrayContaining(['requires:bar']));
+    expect(cocktail?.optional_tags).toEqual(expect.arrayContaining(['requires:bar']));
+    expect(slotEnabledByFacilities(happy?.optional_tags, DEFAULT_SLOT_FACILITIES)).toBe(false);
+    expect(
+      slotEnabledByFacilities(happy?.optional_tags, { ...DEFAULT_SLOT_FACILITIES, bar: true }),
+    ).toBe(true);
+  });
+
   it('every sector includes opt-in hiring + events_calendar service slots', () => {
     expect(DEFAULT_SLOT_FACILITIES.hiring).toBe(false);
     expect(DEFAULT_SLOT_FACILITIES.events_calendar).toBe(false);

@@ -1512,13 +1512,13 @@ export function buildFalLogoPlacementContract(input: {
     'DO NOT draw, generate, illustrate, paint, emboss, or type any logo, emblem, monogram, mascot, sun icon, location pin, map marker, or brand mark anywhere in this image.',
     'LOGO INTEGRITY (non-negotiable): The AI must never redraw, reimagine, simplify, cartoonify, recolor, warp, stretch, crop, or replace the official mark.',
     'FORBIDDEN SUBSTITUTES: no fake wordmarks, no stylized spelling of the brand name, no pin icons, no sun badges — the reserved zone must stay visually empty.',
-    'ALLOWED in the reserved zone only: leave empty quiet space (solid color, soft gradient, or uncluttered margin). Motion/video may later add subtle opacity pulse or glow on the composited logo — never on an AI-drawn substitute.',
+    'ALLOWED in the reserved zone only: leave empty quiet space (photo, soft gradient, or uncluttered margin) — NEVER paint a white/cream square, card, pill, or sticker plate for the logo.',
     `RESERVED LOGO ZONE: ${placementLine}${brandNote}`,
     input.hasPhotoHero !== false
       ? 'Photo hero rule: reserved logo zone must sit in a margin/corner — never over the dish, hands, knife/fork action, or primary photo subject.'
       : '',
     'Reserved zone size: ~8–12% of frame width, with at least 3% padding from frame edges and from headline/subtitle blocks.',
-    'FORBIDDEN: any invented icon, stylized lettering, fake watermark, or spelling the brand name instead of leaving the reserved zone empty.',
+    'FORBIDDEN: white logo plate, opaque badge card behind the mark, invented icon, stylized lettering, fake watermark, or spelling the brand name instead of leaving the reserved zone empty.',
   ].filter(Boolean).join(' ');
 }
 

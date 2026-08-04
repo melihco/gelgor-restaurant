@@ -46,7 +46,7 @@ function timeAgo(iso: string): string {
 
 export function NotificationsScreen() {
   const { t } = useTheme();
-  const { goBack, navigate, openApproval } = useMobileStore();
+  const { goBack, navigate, openPlatformPreview } = useMobileStore();
   const { tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
   const operatorMode = isMobileOperatorMode();
@@ -104,7 +104,8 @@ export function NotificationsScreen() {
   const handleTap = (n: any) => {
     if (!n.read) markReadMutation.mutate(n.id);
     if (n.type?.includes('action') || n.type?.includes('approval') || n.type?.includes('artifact')) {
-      if (n.relatedEntityId) openApproval(n.relatedEntityId);
+      // Native IG preview studio — avoids ApprovalFeedback caption/dock collision.
+      if (n.relatedEntityId) openPlatformPreview(n.relatedEntityId);
       else navigate('feed');
     } else if (n.type?.includes('review')) {
       navigate('reviews');

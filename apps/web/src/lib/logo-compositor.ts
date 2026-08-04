@@ -7,6 +7,9 @@
  * Placement options: bottom_right | bottom_left | top_right | top_left | none
  * Opacity: 0.0–1.0 (default 0.75 = watermark-style)
  * Size: percentage of the base image width (default 12%)
+ *
+ * JPEG / opaque logos often ship on a white square. We knock out near-white
+ * backing pixels for compositing only — mark colors/shapes are never recolored.
  */
 
 import sharp from '@/lib/sharp-runtime';
@@ -33,6 +36,9 @@ export interface LogoCompositorOptions {
   /** Padding from edge in pixels */
   padding?: number;
 }
+
+/** Near-white RGB floor for backing knockout (mark pixels stay untouched). */
+export const LOGO_WHITE_BACKING_THRESHOLD = 248;
 
 export interface LogoCompositorResult {
   buffer: Buffer;
@@ -63,6 +69,127 @@ async function fetchLogoBuffer(logoUrl: string): Promise<Buffer | null> {
   } catch {
     return null;
   }
+}
+
+function hasMeaningfulAlpha(data: Buffer, channels: number): boolean {
+  if (channels < 4 || data.length < 4) return false;
+  let transparent = 0;
+  const pixels = Math.floor(data.length / channels);
+  const sampleStep = Math.max(1, Math.floor(pixels / 4000));
+  let sampled = 0;
+  for (let i = 0; i < data.length; i += channels * sampleStep) {
+    sampled += 1;
+    if (data[i + 3]! < 240) transparent += 1;
+  }
+  return sampled > 0 && transparent / sampled >= 0.04;
+}
+
+function isNearWhiteBacking(
+  r: number,
+  g: number,
+  b: number,
+  threshold: number,
+): boolean {
+  const minC = Math.min(r, g, b);
+  const maxC = Math.max(r, g, b);
+  // Neutral light plate only — keep pale gold/brand ink in the mark.
+  return minC >= threshold && maxC - minC <= 22;
+}
+
+/**
+ * Prepare official logo bytes for overlay: knock out opaque white/cream square
+ * backing so the mark sits on the design without a sticker plate.
+ * Does not recolor, redraw, or reshape non-backing pixels.
+ */
+export async function prepareLogoForComposite(
+  logoBuffer: Buffer,
+  opts?: { whiteThreshold?: number },
+): Promise<Buffer> {
+  const threshold = opts?.whiteThreshold ?? LOGO_WHITE_BACKING_THRESHOLD;
+  const softFloor = Math.max(0, threshold - 14);
+
+  const { data, info } = await sharp(logoBuffer)
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const { width, height, channels } = info;
+  if (channels < 4 || width < 2 || height < 2) {
+    return sharp(logoBuffer).ensureAlpha().png().toBuffer();
+  }
+
+  // Already-transparent assets (true PNG marks) — keep as-is, only trim empty margin.
+  if (hasMeaningfulAlpha(data, channels)) {
+    return sharp(logoBuffer)
+      .ensureAlpha()
+      .trim({ threshold: 8 })
+      .png()
+      .toBuffer()
+      .catch(() => sharp(logoBuffer).ensureAlpha().png().toBuffer());
+  }
+
+  const out = Buffer.from(data);
+  const pixelCount = width * height;
+  const visited = new Uint8Array(pixelCount);
+  const queue = new Int32Array(pixelCount);
+  let qh = 0;
+  let qt = 0;
+
+  const enqueue = (x: number, y: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    const idx = y * width + x;
+    if (visited[idx]) return;
+    const i = idx * 4;
+    if (!isNearWhiteBacking(out[i]!, out[i + 1]!, out[i + 2]!, softFloor)) return;
+    visited[idx] = 1;
+    queue[qt++] = idx;
+  };
+
+  // Flood-fill from edges — removes the connected white plate, keeps interior art.
+  for (let x = 0; x < width; x++) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+  for (let y = 0; y < height; y++) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (qh < qt) {
+    const idx = queue[qh++]!;
+    const x = idx % width;
+    const y = (idx / width) | 0;
+    const i = idx * 4;
+    const minC = Math.min(out[i]!, out[i + 1]!, out[i + 2]!);
+    if (minC >= threshold) {
+      out[i] = 0;
+      out[i + 1] = 0;
+      out[i + 2] = 0;
+      out[i + 3] = 0;
+    } else {
+      // Soft fringe into transparency (JPEG compression halo)
+      const t = (minC - softFloor) / Math.max(1, threshold - softFloor);
+      out[i + 3] = Math.round(out[i + 3]! * (1 - Math.min(1, Math.max(0, t))));
+      if (out[i + 3]! < 8) {
+        out[i] = 0;
+        out[i + 1] = 0;
+        out[i + 2] = 0;
+        out[i + 3] = 0;
+      }
+    }
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+
+  return sharp(out, { raw: { width, height, channels: 4 } })
+    .png()
+    .trim({ threshold: 4 })
+    .toBuffer()
+    .catch(() =>
+      sharp(out, { raw: { width, height, channels: 4 } }).png().toBuffer(),
+    );
 }
 
 /**
@@ -123,14 +250,17 @@ export async function compositeLogoOnPhoto(
     // Calculate logo dimensions
     const logoW = Math.round((baseW * sizePct) / 100);
 
-    // Prepare logo: resize, preserve alpha, apply opacity
-    let logoSharp = sharp(logoBuffer).resize(logoW, undefined, { fit: 'inside', withoutEnlargement: false });
+    // Knock out white JPEG/PNG plate, then resize — mark artwork unchanged
+    const preparedLogo = await prepareLogoForComposite(logoBuffer);
 
-    // Apply opacity via composite with extract approach
-    // Sharp supports opacity via premultiplication on PNG
-    const logoResized = await logoSharp.png().toBuffer();
+    // Prepare logo: resize, preserve alpha, apply opacity
+    const logoResized = await sharp(preparedLogo)
+      .resize(logoW, undefined, { fit: 'inside', withoutEnlargement: false })
+      .png()
+      .toBuffer();
     const logoMeta = await sharp(logoResized).metadata();
-    const logoH = logoMeta.height ?? logoW;
+    const placedW = logoMeta.width ?? logoW;
+    const placedH = logoMeta.height ?? logoW;
 
     // If the logo has no alpha channel, add one for opacity
     let logoWithOpacity = logoResized;
@@ -159,31 +289,31 @@ export async function compositeLogoOnPhoto(
         top = padding;
         break;
       case 'top_center':
-        left = Math.round((baseW - logoW) / 2);
+        left = Math.round((baseW - placedW) / 2);
         top = padding;
         break;
       case 'top_right':
-        left = baseW - logoW - padding;
+        left = baseW - placedW - padding;
         top = padding;
         break;
       case 'bottom_left':
         left = padding;
-        top = baseH - logoH - padding;
+        top = baseH - placedH - padding;
         break;
       case 'bottom_center':
-        left = Math.round((baseW - logoW) / 2);
-        top = baseH - logoH - padding;
+        left = Math.round((baseW - placedW) / 2);
+        top = baseH - placedH - padding;
         break;
       case 'bottom_right':
       default:
-        left = baseW - logoW - padding;
-        top = baseH - logoH - padding;
+        left = baseW - placedW - padding;
+        top = baseH - placedH - padding;
         break;
     }
 
     // Ensure within bounds
-    left = Math.max(0, Math.min(left, baseW - logoW));
-    top = Math.max(0, Math.min(top, baseH - logoH));
+    left = Math.max(0, Math.min(left, baseW - placedW));
+    top = Math.max(0, Math.min(top, baseH - placedH));
 
     // Composite logo onto base
     const result = await sharp(baseImageBuffer)

@@ -510,6 +510,7 @@ describe('buildFalLogoPlacementContract', () => {
     expect(contract).toContain('RESERVED LOGO ZONE');
     expect(contract).toContain('Photo hero rule');
     expect(contract).toContain('never over the dish');
+    expect(contract).toMatch(/white.*square|white logo plate/i);
   });
 
   it('returns empty string when no logo', () => {

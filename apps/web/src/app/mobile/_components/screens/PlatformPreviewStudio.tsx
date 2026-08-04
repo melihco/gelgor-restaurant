@@ -4,7 +4,7 @@
  * Post detail — opened from Instagram profile grid (and similar).
  * Native IG preview + clean approval dock; theme-aware, mobile WebView first.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme, type T } from '../theme-context';
 import { useMobileStore } from '../mobile-store';
@@ -93,21 +93,17 @@ const REVISION_CHIPS = [
   'Daha lifestyle',
 ];
 
-function RevisionSheet({
+type RevisionScope = 'all' | 'caption' | 'image';
+
+function SheetShell({
   t,
   onClose,
-  onSubmit,
-  submitting,
+  children,
 }: {
   t: T;
   onClose: () => void;
-  onSubmit: (chips: string[], note: string) => void;
-  submitting: boolean;
+  children: ReactNode;
 }) {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [note, setNote] = useState('');
-  const canSubmit = selected.length > 0 || note.trim().length > 0;
-
   return (
     <div
       style={{
@@ -152,105 +148,258 @@ function RevisionSheet({
             }}
           />
         </div>
-        <div style={{ padding: '8px 20px 14px' }}>
-          <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary }}>Revizyon iste</div>
-          <div style={{ fontSize: 13, color: t.textSecondary, marginTop: 4, lineHeight: 1.45 }}>
-            Ne değişsin? Seçimleriniz üretim ekibine iletilir.
-          </div>
-        </div>
-        <div style={{ padding: '0 20px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {REVISION_CHIPS.map((chip) => {
-            const on = selected.includes(chip);
-            return (
-              <button
-                key={chip}
-                type="button"
-                onClick={() =>
-                  setSelected((s) => (on ? s.filter((x) => x !== chip) : [...s, chip]))
-                }
-                style={{
-                  minHeight: 40,
-                  padding: '8px 14px',
-                  borderRadius: 20,
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: on ? 700 : 500,
-                  background: on
-                    ? t.isDark
-                      ? 'rgba(77,112,136,0.28)'
-                      : 'rgba(77,112,136,0.12)'
-                    : t.isDark
-                      ? 'rgba(255,255,255,0.06)'
-                      : 'rgba(0,0,0,0.04)',
-                  border: `0.5px solid ${on ? t.accent : t.separator}`,
-                  color: on ? t.accent : t.textSecondary,
-                }}
-              >
-                {chip}
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ padding: '0 20px 14px' }}>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ek not (isteğe bağlı)"
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '12px 14px',
-              borderRadius: 14,
-              resize: 'none',
-              outline: 'none',
-              boxSizing: 'border-box',
-              fontSize: 16,
-              lineHeight: 1.5,
-              background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-              border: `0.5px solid ${t.separator}`,
-              color: t.textPrimary,
-            }}
-          />
-        </div>
-        <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <button
-            type="button"
-            disabled={!canSubmit || submitting}
-            onClick={() => onSubmit(selected, note)}
-            style={{
-              width: '100%',
-              minHeight: 48,
-              padding: '14px',
-              borderRadius: 16,
-              border: 'none',
-              cursor: canSubmit && !submitting ? 'pointer' : 'not-allowed',
-              background: canSubmit ? t.gradientAccent : t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-              color: canSubmit ? '#fff' : t.textMuted,
-              fontSize: 15,
-              fontWeight: 800,
-            }}
-          >
-            {submitting ? 'Gönderiliyor…' : 'Revizyon gönder'}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              border: 'none',
-              background: 'transparent',
-              color: t.textMuted,
-              fontSize: 14,
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            Vazgeç
-          </button>
-        </div>
+        {children}
       </div>
     </div>
+  );
+}
+
+function RevisionSheet({
+  t,
+  onClose,
+  onSubmit,
+  onQuickScope,
+  onSaveDraft,
+  submitting,
+}: {
+  t: T;
+  onClose: () => void;
+  onSubmit: (chips: string[], note: string) => void;
+  onQuickScope: (scope: RevisionScope) => void;
+  onSaveDraft: () => void;
+  submitting: boolean;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const [note, setNote] = useState('');
+  const canSubmit = selected.length > 0 || note.trim().length > 0;
+
+  const quickBtnStyle: CSSProperties = {
+    flex: 1,
+    minHeight: 44,
+    padding: '10px 8px',
+    borderRadius: 14,
+    cursor: submitting ? 'wait' : 'pointer',
+    fontSize: 12,
+    fontWeight: 700,
+    background: t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    border: `0.5px solid ${t.separator}`,
+    color: t.textSecondary,
+  };
+
+  return (
+    <SheetShell t={t} onClose={onClose}>
+      <div style={{ padding: '8px 20px 14px' }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary }}>Revizyon iste</div>
+        <div style={{ fontSize: 13, color: t.textSecondary, marginTop: 4, lineHeight: 1.45 }}>
+          Hızlı mod veya not ile yeniden üretim isteyin.
+        </div>
+      </div>
+
+      <div style={{ padding: '0 20px 14px', display: 'flex', gap: 8 }}>
+        <button type="button" disabled={submitting} onClick={() => onQuickScope('caption')} style={quickBtnStyle}>
+          Caption
+        </button>
+        <button type="button" disabled={submitting} onClick={() => onQuickScope('image')} style={quickBtnStyle}>
+          Görsel
+        </button>
+        <button type="button" disabled={submitting} onClick={() => onQuickScope('all')} style={quickBtnStyle}>
+          Tümü
+        </button>
+      </div>
+
+      <div style={{ padding: '0 20px 16px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {REVISION_CHIPS.map((chip) => {
+          const on = selected.includes(chip);
+          return (
+            <button
+              key={chip}
+              type="button"
+              onClick={() =>
+                setSelected((s) => (on ? s.filter((x) => x !== chip) : [...s, chip]))
+              }
+              style={{
+                minHeight: 40,
+                padding: '8px 14px',
+                borderRadius: 20,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: on ? 700 : 500,
+                background: on
+                  ? t.isDark
+                    ? 'rgba(77,112,136,0.28)'
+                    : 'rgba(77,112,136,0.12)'
+                  : t.isDark
+                    ? 'rgba(255,255,255,0.06)'
+                    : 'rgba(0,0,0,0.04)',
+                border: `0.5px solid ${on ? t.accent : t.separator}`,
+                color: on ? t.accent : t.textSecondary,
+              }}
+            >
+              {chip}
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding: '0 20px 14px' }}>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Ek not (isteğe bağlı)"
+          rows={3}
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            borderRadius: 14,
+            resize: 'none',
+            outline: 'none',
+            boxSizing: 'border-box',
+            fontSize: 16,
+            lineHeight: 1.5,
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${t.separator}`,
+            color: t.textPrimary,
+          }}
+        />
+      </div>
+      <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button
+          type="button"
+          disabled={!canSubmit || submitting}
+          onClick={() => onSubmit(selected, note)}
+          style={{
+            width: '100%',
+            minHeight: 48,
+            padding: '14px',
+            borderRadius: 16,
+            border: 'none',
+            cursor: canSubmit && !submitting ? 'pointer' : 'not-allowed',
+            background: canSubmit ? t.gradientAccent : t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+            color: canSubmit ? '#fff' : t.textMuted,
+            fontSize: 15,
+            fontWeight: 800,
+          }}
+        >
+          {submitting ? 'Gönderiliyor…' : 'Revizyon gönder'}
+        </button>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={onSaveDraft}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            borderRadius: 14,
+            cursor: submitting ? 'wait' : 'pointer',
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${t.separator}`,
+            color: t.textSecondary,
+            fontSize: 14,
+            fontWeight: 600,
+          }}
+        >
+          Taslak olarak kaydet
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            border: 'none',
+            background: 'transparent',
+            color: t.textMuted,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Vazgeç
+        </button>
+      </div>
+    </SheetShell>
+  );
+}
+
+function RejectSheet({
+  t,
+  onClose,
+  onReject,
+  submitting,
+}: {
+  t: T;
+  onClose: () => void;
+  onReject: (note: string) => void;
+  submitting: boolean;
+}) {
+  const [note, setNote] = useState('');
+
+  return (
+    <SheetShell t={t} onClose={onClose}>
+      <div style={{ padding: '8px 20px 14px' }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary }}>İçeriği reddet</div>
+        <div style={{ fontSize: 13, color: t.textSecondary, marginTop: 4, lineHeight: 1.45 }}>
+          Kısa bir gerekçe ekleyebilirsiniz (isteğe bağlı).
+        </div>
+      </div>
+      <div style={{ padding: '0 20px 14px' }}>
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Red gerekçesi…"
+          rows={3}
+          style={{
+            width: '100%',
+            padding: '12px 14px',
+            borderRadius: 14,
+            resize: 'none',
+            outline: 'none',
+            boxSizing: 'border-box',
+            fontSize: 16,
+            lineHeight: 1.5,
+            background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${t.separator}`,
+            color: t.textPrimary,
+          }}
+        />
+      </div>
+      <div style={{ padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => onReject(note.trim())}
+          style={{
+            width: '100%',
+            minHeight: 48,
+            padding: '14px',
+            borderRadius: 16,
+            border: 'none',
+            cursor: submitting ? 'wait' : 'pointer',
+            background: 'linear-gradient(160deg, #f87171 0%, #dc2626 100%)',
+            color: '#fff',
+            fontSize: 15,
+            fontWeight: 800,
+          }}
+        >
+          {submitting ? 'Reddediliyor…' : 'Reddet'}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            border: 'none',
+            background: 'transparent',
+            color: t.textMuted,
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Vazgeç
+        </button>
+      </div>
+    </SheetShell>
   );
 }
 
@@ -260,6 +409,7 @@ function ApprovalDock({
   approving,
   onApprove,
   onRevise,
+  onReject,
   onBoost,
 }: {
   t: T;
@@ -267,6 +417,7 @@ function ApprovalDock({
   approving: boolean;
   onApprove: () => void;
   onRevise: () => void;
+  onReject: () => void;
   onBoost: () => void;
 }) {
   const isApproved = status === 'approved';
@@ -374,23 +525,42 @@ function ApprovalDock({
           >
             {approving ? 'Onaylanıyor…' : 'Onayla'}
           </button>
-          <button
-            type="button"
-            onClick={onRevise}
-            style={{
-              width: '100%',
-              minHeight: 44,
-              borderRadius: 14,
-              cursor: 'pointer',
-              background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-              border: `0.5px solid ${t.separator}`,
-              color: t.textSecondary,
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            Revize iste
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              type="button"
+              onClick={onRevise}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 14,
+                cursor: 'pointer',
+                background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
+                border: `0.5px solid ${t.separator}`,
+                color: t.textSecondary,
+                fontSize: 14,
+                fontWeight: 600,
+              }}
+            >
+              Revize
+            </button>
+            <button
+              type="button"
+              onClick={onReject}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                borderRadius: 14,
+                cursor: 'pointer',
+                background: t.isDark ? 'rgba(239,68,68,0.12)' : 'rgba(239,68,68,0.08)',
+                border: '0.5px solid rgba(239,68,68,0.35)',
+                color: t.danger,
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              Reddet
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -404,6 +574,7 @@ export function PlatformPreviewStudio() {
   const engagementApi = useFeedEngagement();
 
   const [showRevision, setShowRevision] = useState(false);
+  const [showReject, setShowReject] = useState(false);
   const [showBoost, setShowBoost] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -422,22 +593,60 @@ export function PlatformPreviewStudio() {
     staleTime: 30_000,
   });
 
+  const invalidateArtifact = () => {
+    void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+    void queryClient.invalidateQueries({ queryKey: ['artifact', selectedArtifactId] });
+    void queryClient.invalidateQueries({ queryKey: ['notifications'] });
+  };
+
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiClient.approveArtifact(id, 'Approved from post detail'),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
-      void queryClient.invalidateQueries({ queryKey: ['artifact', selectedArtifactId] });
+      invalidateArtifact();
+    },
+  });
+
+  const saveDraftMutation = useMutation({
+    mutationFn: (id: string) => apiClient.approveArtifact(id, '[DRAFT] Saved as draft from preview'),
+    onSuccess: () => {
+      invalidateArtifact();
+      setShowRevision(false);
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, note }: { id: string; note: string }) =>
+      apiClient.rejectArtifact(id, note || 'Rejected from post detail'),
+    onSuccess: () => {
+      invalidateArtifact();
+      setShowReject(false);
+      goBack();
     },
   });
 
   const revisionMutation = useMutation({
-    mutationFn: ({ id, chips, note }: { id: string; chips: string[]; note: string }) =>
-      apiClient.requestRevision(
-        id,
-        [chips.join(', '), note].filter(Boolean).join(' · ') || 'Revision requested',
-      ),
+    mutationFn: ({
+      id,
+      chips,
+      note,
+      scope,
+    }: {
+      id: string;
+      chips?: string[];
+      note?: string;
+      scope?: RevisionScope;
+    }) => {
+      const scopePrefix = scope === 'caption'
+        ? '[REVISE_CAPTION_ONLY] '
+        : scope === 'image'
+          ? '[REVISE_IMAGE_ONLY] '
+          : '';
+      const body = scopePrefix
+        + ([...(chips ?? []), note].filter(Boolean).join(' · ') || 'Revision requested');
+      return apiClient.requestRevision(id, body);
+    },
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['artifacts'] });
+      invalidateArtifact();
       setShowRevision(false);
     },
   });
@@ -512,7 +721,8 @@ export function PlatformPreviewStudio() {
     );
   }
 
-  const dockPad = isPending || artifact.status === 'approved' ? 140 : 24;
+  // Pending dock: primary + Revize/Reddet row (~50+44+gaps+safe-area)
+  const dockPad = isPending || artifact.status === 'approved' ? 168 : 24;
 
   return (
     <MediaPlaybackProvider>
@@ -586,6 +796,7 @@ export function PlatformPreviewStudio() {
           approving={approveMutation.isPending}
           onApprove={() => approveMutation.mutate(artifact.id)}
           onRevise={() => setShowRevision(true)}
+          onReject={() => setShowReject(true)}
           onBoost={() => setShowBoost(true)}
         />
       )}
@@ -606,10 +817,23 @@ export function PlatformPreviewStudio() {
         <RevisionSheet
           t={t}
           onClose={() => setShowRevision(false)}
-          submitting={revisionMutation.isPending}
+          submitting={revisionMutation.isPending || saveDraftMutation.isPending}
           onSubmit={(chips, note) =>
-            revisionMutation.mutate({ id: artifact.id, chips, note })
+            revisionMutation.mutate({ id: artifact.id, chips, note, scope: 'all' })
           }
+          onQuickScope={(scope) =>
+            revisionMutation.mutate({ id: artifact.id, scope })
+          }
+          onSaveDraft={() => saveDraftMutation.mutate(artifact.id)}
+        />
+      )}
+
+      {showReject && (
+        <RejectSheet
+          t={t}
+          onClose={() => setShowReject(false)}
+          submitting={rejectMutation.isPending}
+          onReject={(note) => rejectMutation.mutate({ id: artifact.id, note })}
         />
       )}
 

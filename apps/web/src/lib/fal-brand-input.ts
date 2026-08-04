@@ -115,13 +115,13 @@ function describeLogoTreatment(treatment: BrandDesignTypographyConfig['logo_trea
     'Never redraw, recolor, or replace the official logo — the exact asset is composited in post-production; vibe may only affect opacity, shadow, or glow on the composited mark.';
   switch (treatment) {
     case 'watermark':
-      return `Logo treatment: keep the brand mark subtle, refined, and watermark-like rather than dominant. ${integrity}`;
+      return `Logo treatment: keep the brand mark subtle, refined, and watermark-like — transparent mark only, never a white square plate. ${integrity}`;
     case 'badge':
-      return `Logo treatment: place the logo as a small premium badge lockup in a quiet corner — never over the photo focal point. ${integrity}`;
+      return `Logo treatment: small corner mark with transparent edges (no white card/sticker backing) — never over the photo focal point. ${integrity}`;
     case 'inline':
-      return `Logo treatment: integrate the brand mark inline with the composition, not as a random sticker. ${integrity}`;
+      return `Logo treatment: integrate the brand mark with the composition as a transparent mark, not a white square sticker. ${integrity}`;
     case 'none':
-      return `Logo treatment: avoid forced logo placement unless essential for balance. When placed, ${integrity.toLowerCase()}`;
+      return `Logo treatment: avoid forced logo placement unless essential for balance. When placed, no white plate; ${integrity.toLowerCase()}`;
     default:
       return undefined;
   }

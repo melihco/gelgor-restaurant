@@ -136,6 +136,13 @@ function FacilityGlyph({ name, color }: { name: string; color: string }) {
           <circle cx="12" cy="13" r="3.2" />
         </svg>
       );
+    case 'bar':
+      return (
+        <svg {...common}>
+          <path d="M8 4h8l-1.5 9H9.5L8 4z" />
+          <path d="M10 13v5M14 13v5M9 18h6" />
+        </svg>
+      );
     case 'spa':
       return (
         <svg {...common}>

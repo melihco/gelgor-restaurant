@@ -1211,8 +1211,10 @@ async function compositeLogoBadge(
   try {
     const logoBuf = await fetchExternalImageBuffer(logoUrl, 12_000);
     if (!logoBuf) return baseBuffer;
+    const { prepareLogoForComposite } = await import('@/lib/logo-compositor');
+    const prepared = await prepareLogoForComposite(logoBuf);
     const badgeWidth = Math.round(dims.width * 0.16);
-    const logo = await sharp(logoBuf)
+    const logo = await sharp(prepared)
       .resize(badgeWidth, badgeWidth, { fit: 'inside', withoutEnlargement: true })
       .png()
       .toBuffer();

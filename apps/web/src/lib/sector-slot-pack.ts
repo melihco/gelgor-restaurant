@@ -35,6 +35,11 @@ export interface BrandSlotFacilities {
    * Enables photo-studio slots under wedding_event; venue amenities stay separate.
    */
   wedding_photography?: boolean;
+  /**
+   * Opt-in — cocktail / happy-hour / bar service surface.
+   * Breakfast / kahvaltı venues keep this OFF so wine-glass creatives do not ship.
+   */
+  bar?: boolean;
 }
 
 export interface SlotArchetypeInstance {
@@ -95,6 +100,7 @@ export const DEFAULT_SLOT_FACILITIES: BrandSlotFacilities = {
   hiring: false,
   events_calendar: false,
   wedding_photography: false,
+  bar: false,
 };
 
 /** Facilities that stay OFF until the brand explicitly enables them. */
@@ -102,6 +108,7 @@ export const OPT_IN_SLOT_FACILITIES: ReadonlyArray<keyof BrandSlotFacilities> = 
   'hiring',
   'events_calendar',
   'wedding_photography',
+  'bar',
 ];
 
 /**
@@ -473,7 +480,7 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
       { suffix: 'customer_review_post', labelTr: 'Müşteri yorumu', labelEn: 'Customer review', format: 'post' },
       { suffix: 'seasonal_ingredient_post', labelTr: 'Mevsimsel malzeme', labelEn: 'Seasonal ingredient', format: 'post' },
       { suffix: 'brunch_offer_post', labelTr: 'Brunch teklifi', labelEn: 'Brunch offer', format: 'post' },
-      { suffix: 'happy_hour_post', labelTr: 'Happy hour', labelEn: 'Happy hour', format: 'post' },
+      { suffix: 'happy_hour_post', labelTr: 'Happy hour', labelEn: 'Happy hour', format: 'post', optionalTags: ['requires:bar'] },
       { suffix: 'private_dining_post', labelTr: 'Özel yemek', labelEn: 'Private dining', format: 'post', optionalTags: ['requires:private_events'] },
       { suffix: 'new_menu_story', labelTr: 'Yeni menü story', labelEn: 'New menu story', format: 'story', optionalTags: ['requires:full_menu'] },
       { suffix: 'kitchen_bts_story', labelTr: 'Mutfak kulis story', labelEn: 'Kitchen BTS story', format: 'story' },
@@ -510,7 +517,7 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
       { suffix: 'chef_plating_reel', labelTr: 'Şef plating reel', labelEn: 'Chef plating reel', format: 'reel' },
       { suffix: 'kitchen_process_reel', labelTr: 'Mutfak süreç reel', labelEn: 'Kitchen process reel', format: 'reel' },
       { suffix: 'dining_experience_reel', labelTr: 'Yemek deneyimi reel', labelEn: 'Dining experience reel', format: 'reel' },
-      { suffix: 'cocktail_bar_reel', labelTr: 'Kokteyl bar reel', labelEn: 'Cocktail bar reel', format: 'reel' },
+      { suffix: 'cocktail_bar_reel', labelTr: 'Kokteyl bar reel', labelEn: 'Cocktail bar reel', format: 'reel', optionalTags: ['requires:bar'] },
       { suffix: 'menu_tasting_carousel', labelTr: 'Menü tadım carousel', labelEn: 'Menu tasting carousel', format: 'carousel', optionalTags: ['requires:full_menu'] },
     ],
   },
@@ -534,7 +541,7 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
       { suffix: 'brew_method_story', labelTr: 'Demleme yöntemi story', labelEn: 'Brew method story', format: 'story' },
       { suffix: 'barista_bts_story', labelTr: 'Barista kulis story', labelEn: 'Barista BTS story', format: 'story' },
       { suffix: 'new_blend_story', labelTr: 'Yeni harman story', labelEn: 'New blend story', format: 'story' },
-      { suffix: 'happy_hour_story', labelTr: 'Happy hour story', labelEn: 'Happy hour story', format: 'story' },
+      { suffix: 'happy_hour_story', labelTr: 'Happy hour story', labelEn: 'Happy hour story', format: 'story', optionalTags: ['requires:bar'] },
       { suffix: 'latte_art_reel', labelTr: 'Latte art reel', labelEn: 'Latte art reel', format: 'reel' },
       { suffix: 'cafe_atmosphere_reel', labelTr: 'Kafe atmosfer reel', labelEn: 'Cafe atmosphere reel', format: 'reel' },
       { suffix: 'roasting_process_reel', labelTr: 'Kavurma süreç reel', labelEn: 'Roasting process reel', format: 'reel' },
@@ -1123,6 +1130,7 @@ export const FACILITY_HINT_LABELS_TR: Record<keyof BrandSlotFacilities, string> 
   hiring: 'İş ilanı içerikleri için açın',
   events_calendar: 'Etkinlik takvimi / program duyuruları için açın',
   wedding_photography: 'Düğün fotoğraf / video stüdyosu slotları için açın',
+  bar: 'Kokteyl, şarap veya happy hour servisi varsa açın',
 };
 
 export function facilityHintForSlot(optionalTags?: string[]): string | null {

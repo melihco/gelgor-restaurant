@@ -37,9 +37,11 @@ _DEFAULT_SLOT_FACILITIES: dict[str, bool] = {
     "hiring": False,
     "events_calendar": False,
     "wedding_photography": False,
+    # Cocktail / happy-hour — OFF by default (kahvaltı venues must not get wine creatives)
+    "bar": False,
 }
 
-_OPT_IN_FACILITIES = frozenset({"hiring", "events_calendar", "wedding_photography"})
+_OPT_IN_FACILITIES = frozenset({"hiring", "events_calendar", "wedding_photography", "bar"})
 
 _FACILITY_LABELS_TR: dict[str, str] = {
     "pool": "Havuz",
@@ -55,6 +57,7 @@ _FACILITY_LABELS_TR: dict[str, str] = {
     "hiring": "İş ilanı / kariyer",
     "events_calendar": "Etkinlik takvimi",
     "wedding_photography": "Düğün fotoğraf / video",
+    "bar": "Bar / kokteyl / happy hour",
 }
 
 _FACILITY_HINTS_TR: dict[str, str] = {
@@ -71,6 +74,7 @@ _FACILITY_HINTS_TR: dict[str, str] = {
     "hiring": "İş ilanı içerikleri için açın",
     "events_calendar": "Etkinlik takvimi / program duyuruları için açın",
     "wedding_photography": "Düğün fotoğraf / video stüdyosu slotları için açın",
+    "bar": "Kokteyl, şarap veya happy hour servisi varsa açın",
 }
 
 _WEDDING_PHOTOGRAPHY_CATEGORIES = frozenset({
