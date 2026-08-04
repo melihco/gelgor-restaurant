@@ -1834,6 +1834,287 @@ const CSS = `
     .sa-mobile .confirm-hero-lead { font-size: 13px; }
   }
 
+  /* ── Visual identity confirm (logo / palette / typography vibe) ── */
+  .sa-mobile .onboarding-shell--visual {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  .sa-mobile .onboarding-shell--visual .onboarding-ambient-orb,
+  .sa-mobile .onboarding-shell--confirm .onboarding-ambient-orb {
+    opacity: 0.18;
+  }
+  .sa-mobile .visual-main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 4px 20px 112px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .sa-mobile .visual-preview-card {
+    position: relative;
+    border-radius: 20px;
+    overflow: hidden;
+    min-height: 118px;
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.2),
+      0 14px 34px rgba(0,0,0,0.28);
+  }
+  .sa-mobile .visual-preview-card__veil {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(120deg, rgba(0,0,0,0.12) 0%, rgba(0,0,0,0.45) 100%),
+      radial-gradient(ellipse 70% 80% at 100% 0%, rgba(255,255,255,0.16), transparent 55%);
+    pointer-events: none;
+  }
+  .sa-mobile .visual-preview-card__row {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px;
+    min-height: 118px;
+  }
+  .sa-mobile .visual-preview-card__logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.28);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .sa-mobile .visual-preview-card__logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .sa-mobile .visual-preview-card__logo span {
+    font-size: 10px;
+    font-weight: 700;
+    color: rgba(15,23,42,0.4);
+  }
+  .sa-mobile .visual-preview-card__copy {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sa-mobile .visual-preview-card__eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,0.7);
+  }
+  .sa-mobile .visual-preview-card__sample {
+    margin: 0;
+    font-size: clamp(22px, 5.5vw, 26px);
+    font-weight: 750;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+    color: #fff;
+    text-shadow: 0 1px 10px rgba(0,0,0,0.22);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sa-mobile .visual-preview-card__strip {
+    display: flex;
+    gap: 5px;
+    margin-top: 6px;
+  }
+  .sa-mobile .visual-preview-card__strip span {
+    width: 16px;
+    height: 16px;
+    border-radius: 999px;
+    border: 1.5px solid rgba(255,255,255,0.5);
+  }
+  .sa-mobile .visual-logo-panel {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border-radius: 16px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.035);
+  }
+  .sa-mobile .visual-logo-panel__mark {
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 0.5px solid rgba(255,255,255,0.12);
+  }
+  .sa-mobile .visual-logo-panel__mark img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .sa-mobile .visual-logo-panel__mark span {
+    font-size: 10px;
+    font-weight: 650;
+    color: rgba(15,23,42,0.4);
+    text-align: center;
+    padding: 6px;
+  }
+  .sa-mobile .visual-logo-panel__actions {
+    flex: 1;
+    min-width: 0;
+  }
+  .sa-mobile .visual-logo-panel__btn {
+    width: 100%;
+    min-height: 44px;
+    border-radius: 12px;
+    border: 0.5px solid rgba(255,255,255,0.14);
+    background: rgba(255,255,255,0.06);
+    color: #F4F4F8;
+    font-size: 14px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .sa-mobile .visual-logo-panel__btn:disabled {
+    opacity: 0.55;
+  }
+  .sa-mobile .visual-logo-panel__hint {
+    margin: 7px 0 0;
+    font-size: 11px;
+    color: rgba(160,170,190,0.5);
+  }
+  .sa-mobile .visual-palette-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .sa-mobile .visual-palette-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 0.5px solid rgba(255,255,255,0.1);
+  }
+  .sa-mobile .visual-vibe-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .sa-mobile .visual-vibe-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 72px;
+    padding: 12px;
+    text-align: left;
+    border-radius: 16px;
+    border: 0.5px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.035);
+    color: #F4F4F8;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease;
+  }
+  .sa-mobile .visual-vibe-card.is-on {
+    border-color: rgba(157,190,206,0.75);
+    background: rgba(138,171,189,0.16);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+  .sa-mobile .visual-vibe-card__glyph {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.28);
+    border: 0.5px solid rgba(255,255,255,0.1);
+    font-size: 18px;
+    font-weight: 750;
+    color: #fff;
+    line-height: 1;
+  }
+  .sa-mobile .visual-vibe-card__text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .sa-mobile .visual-vibe-card__title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    line-height: 1.2;
+  }
+  .sa-mobile .visual-vibe-card__desc {
+    font-size: 11px;
+    line-height: 1.3;
+    color: rgba(190,200,220,0.58);
+  }
+  .sa-mobile .vibe-sample--bubble_3d {
+    font-family: "Avenir Next Rounded", "Nunito", "Segoe UI", system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+  }
+  .sa-mobile .vibe-sample--chrome_gradient {
+    font-family: "Avenir Next Condensed", "Arial Narrow", system-ui, sans-serif;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .sa-mobile .vibe-sample--neon_glow {
+    font-family: Impact, "Arial Black", system-ui, sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .sa-mobile .vibe-sample--editorial_serif {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 600;
+    font-style: italic;
+  }
+  .sa-mobile .vibe-sample--street_bold {
+    font-family: Impact, "Arial Black", system-ui, sans-serif;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+  .sa-mobile .vibe-sample--handwritten {
+    font-family: "Segoe Print", "Bradley Hand", "Comic Sans MS", cursive;
+    font-weight: 600;
+  }
+  .sa-mobile .vibe-sample--retro_poster {
+    font-family: "Rockwell", "Courier New", Georgia, serif;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .sa-mobile .vibe-sample--minimal_modern {
+    font-family: "SF Pro Display", Inter, system-ui, sans-serif;
+    font-weight: 550;
+    letter-spacing: -0.04em;
+  }
+  .sa-mobile .vibe-sample--warm_coastal {
+    font-family: "Iowan Old Style", Georgia, serif;
+    font-weight: 600;
+  }
+  @media (max-height: 700px) {
+    .sa-mobile .visual-preview-card,
+    .sa-mobile .visual-preview-card__row { min-height: 100px; }
+    .sa-mobile .visual-vibe-card { min-height: 64px; padding: 10px; }
+  }
+
   .sa-mobile .onboarding-cta--loading {
     background: rgba(255,255,255,0.08) !important;
     box-shadow: none !important;

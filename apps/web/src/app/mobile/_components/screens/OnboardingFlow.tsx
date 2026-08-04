@@ -2032,9 +2032,14 @@ function TypographyConfirmStep({
     }
   }
 
+  const vibeLabel = config
+    ? (TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.find((o) => o.id === config.vibe)?.label ?? config.vibe)
+    : '';
+  const previewName = (brandName || 'Marka').trim().slice(0, 22);
+
   if (loading) {
     return (
-      <div className="onboarding-shell">
+      <div className="onboarding-shell onboarding-shell--visual">
         <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
@@ -2049,7 +2054,7 @@ function TypographyConfirmStep({
 
   if (!config) {
     return (
-      <div className="onboarding-shell">
+      <div className="onboarding-shell onboarding-shell--visual">
         <main className="onboarding-welcome-body">
           <p className="onboarding-lead">{error ?? 'Görsel kimlik yüklenemedi.'}</p>
           <button type="button" className="onboarding-primary-btn" onClick={onDone}>
@@ -2061,47 +2066,63 @@ function TypographyConfirmStep({
   }
 
   return (
-    <div className="onboarding-shell">
+    <div className="onboarding-shell onboarding-shell--visual">
       <OnboardingChromeBackdrop />
       <OnboardingLogoHeader compact />
-      <main className="onboarding-welcome-body onboarding-stagger" style={{ paddingBottom: 28, overflowY: 'auto', alignItems: 'stretch' }}>
-        <h1 className="onboarding-title" style={{ marginBottom: 8, textAlign: 'left' }}>Görsel kimliğini onayla</h1>
+      <main className="visual-main onboarding-stagger">
+        <header className="confirm-top">
+          <h1 className="confirm-hero-title">Görsel kimliğini onayla</h1>
+          <p className="confirm-hero-lead">
+            Logo, palet ve tipografi vibe — üretim dili buradan kilitlenir.
+          </p>
+        </header>
 
-        {/* Logo */}
-        <div style={{ width: '100%', maxWidth: 360, marginBottom: 18 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Logo
-          </div>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 14,
-            padding: 14,
-            borderRadius: 16,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(255,255,255,0.10)',
+        <div
+          className="visual-preview-card"
+          style={{
+            background: `linear-gradient(145deg, ${primary} 0%, ${primary}dd 48%, ${accent}bb 100%)`,
           }}
-          >
-            <div style={{
-              width: 64,
-              height: 64,
-              borderRadius: 14,
-              background: neutral,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-              flexShrink: 0,
-            }}
-            >
+        >
+          <div className="visual-preview-card__veil" aria-hidden />
+          <div className="visual-preview-card__row">
+            <div className="visual-preview-card__logo" style={{ background: neutral }}>
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                <img src={logoUrl} alt="" />
               ) : (
-                <span style={{ fontSize: 11, color: 'rgba(15,23,42,0.45)', textAlign: 'center', padding: 6 }}>Logo yok</span>
+                <span>Logo</span>
               )}
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="visual-preview-card__copy">
+              <span className="visual-preview-card__eyebrow">{vibeLabel}</span>
+              <p
+                className={`visual-preview-card__sample vibe-sample--${config.vibe}`}
+                style={{ color: shadow === '#111111' || shadow.toLowerCase() === '#000000' ? '#fff' : shadow }}
+              >
+                {previewName}
+              </p>
+              <div className="visual-preview-card__strip" aria-hidden>
+                <span style={{ background: primary }} />
+                <span style={{ background: accent }} />
+                <span style={{ background: neutral }} />
+                <span style={{ background: shadow }} />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="confirm-section">
+          <span className="confirm-section-label">Logo</span>
+          <div className="visual-logo-panel">
+            <div className="visual-logo-panel__mark" style={{ background: neutral }}>
+              {logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={logoUrl} alt="Logo" />
+              ) : (
+                <span>Logo yok</span>
+              )}
+            </div>
+            <div className="visual-logo-panel__actions">
               <input
                 ref={logoInputRef}
                 type="file"
@@ -2111,128 +2132,88 @@ function TypographyConfirmStep({
               />
               <button
                 type="button"
+                className="visual-logo-panel__btn"
                 onClick={() => logoInputRef.current?.click()}
                 disabled={uploadingLogo}
-                style={{
-                  minHeight: 44,
-                  width: '100%',
-                  borderRadius: 12,
-                  border: '1px solid rgba(255,255,255,0.16)',
-                  background: 'rgba(255,255,255,0.06)',
-                  color: '#fff',
-                  fontSize: 14,
-                  fontWeight: 600,
-                }}
               >
                 {uploadingLogo ? 'Yükleniyor…' : logoUrl ? 'Logoyu değiştir' : 'Logo yükle'}
               </button>
-              <p style={{ margin: '6px 0 0', fontSize: 11, color: 'rgba(148,163,184,0.55)' }}>
-                PNG / SVG tercih edilir · şeffaf arka plan
-              </p>
+              <p className="visual-logo-panel__hint">PNG / SVG · şeffaf arka plan tercih</p>
             </div>
           </div>
         </div>
 
-        {/* Palette */}
-        <div style={{ width: '100%', maxWidth: 360, marginBottom: 18 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Renk paleti
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 10,
-          }}
-          >
+        <div className="confirm-section">
+          <span className="confirm-section-label">Renk paleti</span>
+          <div className="visual-palette-grid">
             {([
               { label: 'Ana', value: primary, set: setPrimary },
               { label: 'Vurgu', value: accent, set: setAccent },
               { label: 'Nötr', value: neutral, set: setNeutral },
               { label: 'Gölge', value: shadow, set: setShadow },
             ] as const).map((c) => (
-              <label key={c.label} className="onboarding-field" style={{ margin: 0 }}>
-                <span className="onboarding-field-label">{c.label}</span>
-                <input
-                  type="color"
-                  value={c.value}
-                  onChange={(e) => c.set(e.target.value)}
-                  style={{ width: '100%', minHeight: 44, padding: 4, borderRadius: 12, border: '1px solid rgba(255,255,255,0.14)' }}
-                />
+              <label key={c.label} className="confirm-color-card">
+                <span className="confirm-color-card__label">{c.label}</span>
+                <span className="confirm-color-card__swatch" style={{ background: c.value }}>
+                  <input
+                    type="color"
+                    value={c.value}
+                    onChange={(e) => c.set(e.target.value)}
+                    aria-label={c.label}
+                  />
+                </span>
+                <span className="confirm-color-card__hex">{c.value.toUpperCase()}</span>
               </label>
             ))}
           </div>
-          <div style={{
-            marginTop: 10,
-            height: 36,
-            borderRadius: 12,
-            overflow: 'hidden',
-            display: 'grid',
-            gridTemplateColumns: '2fr 1.4fr 1fr 0.8fr',
-          }}
-          >
-            <div style={{ background: primary }} />
-            <div style={{ background: accent }} />
-            <div style={{ background: neutral }} />
-            <div style={{ background: shadow }} />
+          <div className="visual-palette-bar" aria-hidden>
+            <span style={{ flex: 2.2, background: primary }} />
+            <span style={{ flex: 1.5, background: accent }} />
+            <span style={{ flex: 1.1, background: neutral }} />
+            <span style={{ flex: 0.9, background: shadow }} />
           </div>
         </div>
 
-        {/* Vibe */}
-        <div style={{ width: '100%', maxWidth: 360, marginBottom: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.7)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-            Tipografi vibe
-          </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 1fr',
-            gap: 10,
-          }}
-          >
+        <div className="confirm-section">
+          <span className="confirm-section-label">Tipografi vibe</span>
+          <div className="visual-vibe-grid" role="listbox" aria-label="Tipografi vibe">
             {TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.map((opt) => {
               const active = config.vibe === opt.id;
               return (
                 <button
                   key={opt.id}
                   type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`visual-vibe-card${active ? ' is-on' : ''}`}
                   onClick={() => setConfig({ ...config, vibe: opt.id as TypographyVibe })}
-                  style={{
-                    textAlign: 'left',
-                    padding: '12px 14px',
-                    borderRadius: 14,
-                    border: active ? '2px solid rgba(157,190,206,0.95)' : '1px solid rgba(255,255,255,0.12)',
-                    background: active ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.05)',
-                    color: '#fff',
-                    cursor: 'pointer',
-                    minHeight: 44,
-                  }}
                 >
-                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>
-                    {opt.emoji} {opt.label}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'rgba(226,232,240,0.72)', lineHeight: 1.35 }}>
-                    {opt.desc}
-                  </div>
+                  <span className={`visual-vibe-card__glyph vibe-sample--${opt.id}`} aria-hidden>
+                    Aa
+                  </span>
+                  <span className="visual-vibe-card__text">
+                    <span className="visual-vibe-card__title">{opt.label}</span>
+                    <span className="visual-vibe-card__desc">{opt.desc}</span>
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
 
-        {error && (
-          <p className="onboarding-lead" style={{ color: '#fca5a5', marginBottom: 12 }}>
-            {error}
-          </p>
-        )}
+        {error && <p className="onboarding-error confirm-error">{error}</p>}
+      </main>
 
+      <div className="confirm-dock">
         <button
           type="button"
-          className="onboarding-primary-btn"
+          className="onboarding-cta"
           disabled={submitting || uploadingLogo}
           onClick={() => void handleConfirm()}
         >
           {submitting ? 'Kaydediliyor…' : 'Kimliği onayla ve devam et'}
         </button>
-      </main>
+      </div>
     </div>
   );
 }
