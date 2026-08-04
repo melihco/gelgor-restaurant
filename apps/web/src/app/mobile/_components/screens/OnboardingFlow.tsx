@@ -7,6 +7,7 @@ import { useAuthStore } from '../auth-store';
 import { apiClient } from '@/lib/api-client';
 import { setSessionToken } from '@/lib/session-token';
 import { getRequestContextHeaders } from '@/lib/runtime-config';
+import { fetchTenantBff } from '@/lib/bff-fetch';
 import { humanizeMobileServiceError } from '@/lib/mobile-customer-copy';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { BrandDiscoveryResult, BrandIntelligenceReport } from '@/types';
@@ -1759,17 +1760,48 @@ function GalleryReadyStep({
     setError(null);
     setStatus(`${files.length} fotoğraf yükleniyor…`);
     try {
-      const formData = new FormData();
-      for (const file of Array.from(files)) formData.append('file', file);
-      const res = await fetch(`/api/brand-context/${tenantId}/gallery-upload`, {
-        method: 'POST',
-        headers: getRequestContextHeaders(),
-        body: formData,
-      });
+      const fileList = Array.from(files).slice(0, 12);
+      // Mobile WebView often breaks multipart FormData — upload as JSON data URLs.
+      const images = await Promise.all(fileList.map(async (file) => {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ''));
+          reader.onerror = () => reject(new Error('Dosya okunamadı'));
+          reader.readAsDataURL(file);
+        });
+        if (!dataUrl.startsWith('data:')) throw new Error('Dosya okunamadı');
+        return {
+          dataUrl,
+          fileName: file.name || 'photo.jpg',
+          mimeType: file.type || 'image/jpeg',
+        };
+      }));
+
+      const res = await fetchTenantBff(
+        `/api/brand-context/${tenantId}/gallery-upload`,
+        tenantId,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images }),
+        },
+      );
       const data = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; uploaded?: number };
-      if (!res.ok) throw new Error(data.error || `Yükleme başarısız (${res.status})`);
+
+      if (!res.ok) {
+        const raw = String(data.error ?? '');
+        const errMap: Record<string, string> = {
+          file_too_large_max_10mb: 'Dosya 10 MB sınırını aşıyor.',
+          images_only_jpg_png_webp: 'Sadece JPG, PNG, WebP veya HEIC yükleyebilirsiniz.',
+          heic_unsupported_convert_to_jpg: 'HEIC dönüştürülemedi — JPG olarak kaydedip tekrar deneyin.',
+          no_files: 'Fotoğraf alınamadı — tekrar seçin.',
+          'Failed to parse body as FormData.': 'Yükleme formatı bozuldu — tekrar deneyin.',
+          'R2 storage not configured': 'Depolama yapılandırması eksik.',
+        };
+        throw new Error(errMap[raw] || (raw ? humanizeMobileServiceError(raw) : `Yükleme başarısız (${res.status})`));
+      }
       const count = await refreshCount();
-      setStatus(`✓ ${data.uploaded ?? files.length} fotoğraf yüklendi (${count} toplam)`);
+      setStatus(`✓ ${data.uploaded ?? fileList.length} fotoğraf yüklendi (${count} toplam)`);
       if (count >= MIN_GALLERY_PHOTOS) {
         await generateTemplates();
       }

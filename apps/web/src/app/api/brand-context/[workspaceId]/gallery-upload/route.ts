@@ -28,6 +28,67 @@ function collectUploadBlobs(form: FormData): UploadBlob[] {
   return out;
 }
 
+/** WebView-safe path — JSON data URLs when multipart FormData parsing fails. */
+function collectUploadBlobsFromJson(body: unknown): UploadBlob[] {
+  if (!body || typeof body !== 'object') return [];
+  const raw = body as Record<string, unknown>;
+  const list = Array.isArray(raw.images)
+    ? raw.images
+    : Array.isArray(raw.files)
+      ? raw.files
+      : [];
+  const out: UploadBlob[] = [];
+  for (const item of list) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const dataUrl = String(row.dataUrl ?? row.data_url ?? '').trim();
+    if (!dataUrl.startsWith('data:')) continue;
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) continue;
+    const meta = dataUrl.slice(5, comma); // image/jpeg;base64
+    const b64 = dataUrl.slice(comma + 1);
+    try {
+      const buffer = Buffer.from(b64, 'base64');
+      if (!buffer.length || buffer.length > MAX_FILE_BYTES) continue;
+      const mimeFromMeta = meta.split(';')[0]?.trim() || 'image/jpeg';
+      const mime = String(row.mimeType ?? row.mime_type ?? mimeFromMeta).trim() || 'image/jpeg';
+      const name = String(row.fileName ?? row.name ?? `upload.${mime.includes('png') ? 'png' : 'jpg'}`);
+      const blob = new Blob([new Uint8Array(buffer)], { type: mime }) as UploadBlob;
+      blob.name = name;
+      out.push(blob);
+    } catch {
+      /* skip bad row */
+    }
+  }
+  return out;
+}
+
+async function collectUploadBlobsFromRequest(req: NextRequest): Promise<UploadBlob[]> {
+  const ct = (req.headers.get('content-type') || '').toLowerCase();
+  if (ct.includes('application/json')) {
+    const body = await req.json().catch(() => null);
+    return collectUploadBlobsFromJson(body);
+  }
+  if (ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')) {
+    const form = await req.formData();
+    return collectUploadBlobs(form);
+  }
+  // Some WebViews omit/break Content-Type — try multipart, then JSON.
+  try {
+    const form = await req.formData();
+    const fromForm = collectUploadBlobs(form);
+    if (fromForm.length) return fromForm;
+  } catch {
+    /* fall through */
+  }
+  try {
+    const body = await req.json();
+    return collectUploadBlobsFromJson(body);
+  } catch {
+    return [];
+  }
+}
+
 function guessImageMime(file: UploadBlob): string {
   const named = String(file.name ?? '').toLowerCase();
   const typed = String(file.type ?? '').toLowerCase();
@@ -136,8 +197,7 @@ export async function POST(
   }
 
   try {
-    const form = await req.formData();
-    const files = collectUploadBlobs(form);
+    const files = await collectUploadBlobsFromRequest(req);
     if (!files.length) {
       return NextResponse.json({ error: 'no_files' }, { status: 400 });
     }
