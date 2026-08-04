@@ -129,6 +129,13 @@ function FacilityGlyph({ name, color }: { name: string; color: string }) {
           <path d="M8 4v4M16 4v4M4 11h16" />
         </svg>
       );
+    case 'wedding_photography':
+      return (
+        <svg {...common}>
+          <path d="M4 8.5h3l1.2-2h7.6l1.2 2H20v10H4z" />
+          <circle cx="12" cy="13" r="3.2" />
+        </svg>
+      );
     case 'spa':
       return (
         <svg {...common}>
@@ -435,9 +442,6 @@ export function BrandSlotFacilitiesPanel({
       <header className="brand-facilities-studio__head">
         <div>
           <div className="sa-chrome-eyebrow" style={{ marginBottom: 4 }}>Tesis profili</div>
-          <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: t.textMuted }}>
-            İşletmenizde olan olanakları seçin — kapalı olanlar üretim setinden düşer.
-          </p>
         </div>
         <div
           className="brand-facilities-studio__stats"
@@ -531,10 +535,10 @@ export function BrandSlotFacilitiesPanel({
         >
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.4, color: t.textSecondary }}>
             {previewLoading
-              ? 'Etki hesaplanıyor…'
+              ? 'Hesaplanıyor…'
               : recommendCount > 0
-                ? `${recommendCount} slot bu değişiklikle kapanacak.`
-                : 'Kaydedince üretim seti güncellenir.'}
+                ? `${recommendCount} slot kapanacak`
+                : 'Kaydetmek için onaylayın'}
           </p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button

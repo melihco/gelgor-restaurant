@@ -30,6 +30,11 @@ export interface BrandSlotFacilities {
   hiring?: boolean;
   /** Opt-in — harici etkinlik takvimi / program feed slotları */
   events_calendar?: boolean;
+  /**
+   * Opt-in — wedding photography / videography studio surface.
+   * Enables photo-studio slots under wedding_event; venue amenities stay separate.
+   */
+  wedding_photography?: boolean;
 }
 
 export interface SlotArchetypeInstance {
@@ -89,12 +94,14 @@ export const DEFAULT_SLOT_FACILITIES: BrandSlotFacilities = {
   delivery: true,
   hiring: false,
   events_calendar: false,
+  wedding_photography: false,
 };
 
 /** Facilities that stay OFF until the brand explicitly enables them. */
 export const OPT_IN_SLOT_FACILITIES: ReadonlyArray<keyof BrandSlotFacilities> = [
   'hiring',
   'events_calendar',
+  'wedding_photography',
 ];
 
 /**
@@ -204,6 +211,27 @@ export function resolveBrandSlotFacilities(
     }
   }
   return out;
+}
+
+/**
+ * Facility defaults for wedding photography / videography studios on wedding_event.
+ * Venue amenities off; photography opt-in on.
+ */
+export function photographyWeddingFacilityDefaults(): BrandSlotFacilities {
+  return {
+    ...DEFAULT_SLOT_FACILITIES,
+    wedding_photography: true,
+    outdoor_terrace: false,
+    dj_stage: false,
+    live_music: false,
+    pool: false,
+    spa: false,
+    full_menu: false,
+    kids_area: false,
+    delivery: false,
+    classes: false,
+    private_events: true,
+  };
 }
 
 export function slotEnabledByFacilities(
@@ -646,7 +674,10 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
     sectorId: 'wedding_event',
     labelTr: 'Düğün & Etkinlik',
     labelEn: 'Wedding & Event',
-    aliases: ['wedding', 'event_venue', 'wedding_planner', 'banquet'],
+    aliases: [
+      'wedding', 'event_venue', 'wedding_planner', 'banquet',
+      'wedding_photography', 'wedding_photographer', 'destination_wedding',
+    ],
     sortOrder: 45,
     instances: [
       { suffix: 'venue_showcase_post', labelTr: 'Mekan vitrin', labelEn: 'Venue showcase', format: 'post' },
@@ -659,13 +690,38 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
       { suffix: 'planning_tip_post', labelTr: 'Planlama ipucu', labelEn: 'Planning tip', format: 'post' },
       { suffix: 'outdoor_ceremony_post', labelTr: 'Açık hava tören', labelEn: 'Outdoor ceremony', format: 'post', optionalTags: ['requires:outdoor_terrace'] },
       { suffix: 'dj_reception_post', labelTr: 'DJ resepsiyon', labelEn: 'DJ reception', format: 'post', optionalTags: ['requires:dj_stage'] },
+      // Photography / videography studio surface (opt-in facility)
+      { suffix: 'couple_portrait_post', labelTr: 'Çift portre', labelEn: 'Couple portrait', format: 'post', optionalTags: ['requires:wedding_photography'] },
+      { suffix: 'detail_macro_post', labelTr: 'Detay makro', labelEn: 'Detail macro', format: 'post', optionalTags: ['requires:wedding_photography'] },
+      { suffix: 'prep_getting_ready_post', labelTr: 'Hazırlık anı', labelEn: 'Getting ready', format: 'post', optionalTags: ['requires:wedding_photography'] },
       { suffix: 'save_date_story', labelTr: 'Save the date story', labelEn: 'Save the date story', format: 'story' },
       { suffix: 'behind_setup_story', labelTr: 'Kurulum kulis story', labelEn: 'Behind setup story', format: 'story' },
       { suffix: 'availability_story', labelTr: 'Müsaitlik story', labelEn: 'Availability story', format: 'story' },
       { suffix: 'floral_detail_story', labelTr: 'Çiçek detay story', labelEn: 'Floral detail story', format: 'story' },
+      { suffix: 'shoot_day_bts_story', labelTr: 'Çekim günü kulis', labelEn: 'Shoot day BTS story', format: 'story', optionalTags: ['requires:wedding_photography'], pipeline: 'fal_story', slotRole: 'campaign_story_motion' },
+      {
+        suffix: 'event_announcement_story',
+        labelTr: 'Etkinlik duyuru afişi',
+        labelEn: 'Event announcement story',
+        format: 'story',
+        pipeline: 'fal_story',
+        slotRole: 'campaign_story_motion',
+        designTemplateType: 'event_special',
+      },
+      {
+        suffix: 'typography_poster_story',
+        labelTr: 'Tipografi poster story',
+        labelEn: 'Typography poster story',
+        format: 'story',
+        pipeline: 'fal_only_story',
+        slotRole: 'fal_only_story',
+        designTemplateType: 'campaign_announcement',
+      },
       { suffix: 'venue_walkthrough_reel', labelTr: 'Mekan walkthrough reel', labelEn: 'Venue walkthrough reel', format: 'reel' },
       { suffix: 'ceremony_moments_reel', labelTr: 'Tören anları reel', labelEn: 'Ceremony moments reel', format: 'reel' },
       { suffix: 'reception_energy_reel', labelTr: 'Resepsiyon enerji reel', labelEn: 'Reception energy reel', format: 'reel', optionalTags: ['requires:live_music'] },
+      { suffix: 'teaser_film_reel', labelTr: 'Teaser film reel', labelEn: 'Teaser film reel', format: 'reel', optionalTags: ['requires:wedding_photography'] },
+      { suffix: 'highlight_film_reel', labelTr: 'Highlight film reel', labelEn: 'Highlight film reel', format: 'reel', optionalTags: ['requires:wedding_photography'] },
       { suffix: 'portfolio_carousel', labelTr: 'Portfolyo carousel', labelEn: 'Portfolio carousel', format: 'carousel' },
     ],
   },
@@ -872,6 +928,64 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
     ],
   },
   {
+    sectorId: 'agency_services',
+    labelTr: 'Ajans & Profesyonel Hizmet',
+    labelEn: 'Agency & Professional Services',
+    aliases: ['agency', 'web_agency', 'creative_agency', 'marketing_agency', 'photo_studio', 'photography'],
+    sortOrder: 75,
+    instances: [
+      { suffix: 'service_hero_post', labelTr: 'Hizmet hero', labelEn: 'Service hero', format: 'post' },
+      { suffix: 'case_study_post', labelTr: 'Vaka çalışması', labelEn: 'Case study', format: 'post' },
+      { suffix: 'client_logo_wall_post', labelTr: 'Müşteri logoları', labelEn: 'Client logo wall', format: 'post' },
+      { suffix: 'team_expertise_post', labelTr: 'Ekip uzmanlık', labelEn: 'Team expertise', format: 'post' },
+      { suffix: 'process_explainer_post', labelTr: 'Süreç anlatımı', labelEn: 'Process explainer', format: 'post' },
+      { suffix: 'thought_leadership_post', labelTr: 'Düşünce liderliği', labelEn: 'Thought leadership', format: 'post' },
+      { suffix: 'offer_package_post', labelTr: 'Teklif paketi', labelEn: 'Offer package', format: 'post' },
+      { suffix: 'testimonial_post', labelTr: 'Referans', labelEn: 'Testimonial', format: 'post' },
+      { suffix: 'portfolio_highlight_post', labelTr: 'Portfolyo öne çıkan', labelEn: 'Portfolio highlight', format: 'post' },
+      { suffix: 'insight_tip_story', labelTr: 'İçgörü ipucu story', labelEn: 'Insight tip story', format: 'story' },
+      { suffix: 'client_win_story', labelTr: 'Müşteri kazanım story', labelEn: 'Client win story', format: 'story' },
+      { suffix: 'booking_cta_story', labelTr: 'Görüşme CTA story', labelEn: 'Booking CTA story', format: 'story' },
+      {
+        suffix: 'capability_poster_story',
+        labelTr: 'Yetenek afişi story',
+        labelEn: 'Capability poster story',
+        format: 'story',
+        pipeline: 'fal_only_story',
+        slotRole: 'fal_only_story',
+        designTemplateType: 'campaign_announcement',
+      },
+      { suffix: 'project_walkthrough_reel', labelTr: 'Proje walkthrough reel', labelEn: 'Project walkthrough reel', format: 'reel' },
+      { suffix: 'office_culture_reel', labelTr: 'Ofis kültür reel', labelEn: 'Office culture reel', format: 'reel' },
+      { suffix: 'services_carousel', labelTr: 'Hizmetler carousel', labelEn: 'Services carousel', format: 'carousel' },
+    ],
+  },
+  {
+    sectorId: 'jewelry_accessories',
+    labelTr: 'Takı & Aksesuar',
+    labelEn: 'Jewelry & Accessories',
+    aliases: ['jewelry', 'jewellery', 'kuyumcu', 'accessories', 'mücevher', 'mucevher'],
+    sortOrder: 78,
+    instances: [
+      { suffix: 'product_macro_post', labelTr: 'Ürün makro', labelEn: 'Product macro', format: 'post' },
+      { suffix: 'collection_hero_post', labelTr: 'Koleksiyon hero', labelEn: 'Collection hero', format: 'post' },
+      { suffix: 'styled_look_post', labelTr: 'Stilize look', labelEn: 'Styled look', format: 'post' },
+      { suffix: 'craftsmanship_post', labelTr: 'İşçilik', labelEn: 'Craftsmanship', format: 'post' },
+      { suffix: 'gift_moment_post', labelTr: 'Hediye anı', labelEn: 'Gift moment', format: 'post' },
+      { suffix: 'new_arrival_post', labelTr: 'Yeni gelen', labelEn: 'New arrival', format: 'post' },
+      { suffix: 'bestseller_post', labelTr: 'Çok satan', labelEn: 'Bestseller', format: 'post' },
+      { suffix: 'occasion_guide_post', labelTr: 'Özel gün rehberi', labelEn: 'Occasion guide', format: 'post' },
+      { suffix: 'sparkle_detail_story', labelTr: 'Parıltı detay story', labelEn: 'Sparkle detail story', format: 'story' },
+      { suffix: 'try_on_story', labelTr: 'Dene story', labelEn: 'Try-on story', format: 'story' },
+      { suffix: 'limited_drop_story', labelTr: 'Limited drop story', labelEn: 'Limited drop story', format: 'story' },
+      { suffix: 'gift_cta_story', labelTr: 'Hediye CTA story', labelEn: 'Gift CTA story', format: 'story' },
+      { suffix: 'macro_sparkle_reel', labelTr: 'Makro parıltı reel', labelEn: 'Macro sparkle reel', format: 'reel' },
+      { suffix: 'unboxing_reel', labelTr: 'Unboxing reel', labelEn: 'Unboxing reel', format: 'reel' },
+      { suffix: 'atelier_bts_reel', labelTr: 'Atölye kulis reel', labelEn: 'Atelier BTS reel', format: 'reel' },
+      { suffix: 'collection_carousel', labelTr: 'Koleksiyon carousel', labelEn: 'Collection carousel', format: 'carousel' },
+    ],
+  },
+  {
     sectorId: 'general_business',
     labelTr: 'Genel İşletme',
     labelEn: 'General Business',
@@ -1008,6 +1122,7 @@ export const FACILITY_HINT_LABELS_TR: Record<keyof BrandSlotFacilities, string> 
   delivery: 'Teslimat yoksa kapatabilirsiniz',
   hiring: 'İş ilanı içerikleri için açın',
   events_calendar: 'Etkinlik takvimi / program duyuruları için açın',
+  wedding_photography: 'Düğün fotoğraf / video stüdyosu slotları için açın',
 };
 
 export function facilityHintForSlot(optionalTags?: string[]): string | null {

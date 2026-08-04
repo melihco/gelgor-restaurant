@@ -767,31 +767,34 @@ function ParameterGroupHeader({
   title: string;
   /** @deprecated unused — kept for call-site compatibility */
   subtitle?: string;
-  onHelp: () => void;
+  /** Operator/debug only — omit in customer UI */
+  onHelp?: () => void;
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10 }}>
       <div style={{ fontSize: 12, fontWeight: 800, color: t.textPrimary, letterSpacing: '-0.01em' }}>{title}</div>
-      <button
-        type="button"
-        onClick={onHelp}
-        aria-label={`${title} açıklaması`}
-        style={{
-          width: 24,
-          height: 24,
-          borderRadius: 12,
-          border: `0.5px solid ${t.accentBorder}`,
-          background: t.accentDim,
-          color: t.accent,
-          cursor: 'pointer',
-          fontSize: 13,
-          fontWeight: 800,
-          lineHeight: '22px',
-          flexShrink: 0,
-        }}
-      >
-        ?
-      </button>
+      {onHelp ? (
+        <button
+          type="button"
+          onClick={onHelp}
+          aria-label={`${title} açıklaması`}
+          style={{
+            width: 24,
+            height: 24,
+            borderRadius: 12,
+            border: `0.5px solid ${t.accentBorder}`,
+            background: t.accentDim,
+            color: t.accent,
+            cursor: 'pointer',
+            fontSize: 13,
+            fontWeight: 800,
+            lineHeight: '22px',
+            flexShrink: 0,
+          }}
+        >
+          ?
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -936,6 +939,7 @@ function PostDesignDefaultsPanel({
   onSave: (next: BrandPostDesignDefaults) => void;
   onSaveTypography: (next: BrandDesignTypographyConfig) => void;
 }) {
+  const debugUi = isDebugUiMode();
   const saved = hasSavedPostDesignDefaults(theme);
   const typoCfg = readTypographyDesignConfig(theme);
   const suggested = resolvePostDesignDefaultsFromVibe(typoCfg?.vibe ?? 'retro_poster', {
@@ -1052,16 +1056,15 @@ function PostDesignDefaultsPanel({
             {TYPOGRAPHY_VIBE_LABELS[activeTypo.vibe].tr}
             {' · '}
             {saved
-              ? `Template: ${selectedTemplate?.name ?? 'Otomatik'}`
-              : 'Tipografi vibe’ından türetildi. Bir seçeneğe dokununca kaydedilir.'}
+              ? `Şablon: ${selectedTemplate?.name ?? 'Otomatik'}`
+              : 'Öneri'}
           </div>
         </div>
 
         <ParameterGroupHeader
           t={t}
           title="Varsayılan Post Template"
-          subtitle="Mission üretiminde önce kullanılacak kayıtlı post şablonu"
-          onHelp={() => setHelpTopic('template')}
+          onHelp={debugUi ? () => setHelpTopic('template') : undefined}
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           <ParameterOptionCard
@@ -1098,15 +1101,14 @@ function PostDesignDefaultsPanel({
             lineHeight: 1.45,
             marginBottom: 14,
           }}>
-            Henüz kayıtlı post template yok. Mission ekranında bir tasarımı çıktılara kaydedince burada varsayılan olarak seçilebilir.
+            Henüz kayıtlı şablon yok.
           </div>
         )}
 
         <ParameterGroupHeader
           t={t}
           title="Yazı Karakteri"
-          subtitle="Markanın headline font imzası"
-          onHelp={() => setHelpTopic('font')}
+          onHelp={debugUi ? () => setHelpTopic('font') : undefined}
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           {POST_FONT_OPTIONS.map((opt) => (
@@ -1125,8 +1127,7 @@ function PostDesignDefaultsPanel({
         <ParameterGroupHeader
           t={t}
           title="Yazı Efekti"
-          subtitle="3D, glow, outline ve okunabilirlik davranışı"
-          onHelp={() => setHelpTopic('effect')}
+          onHelp={debugUi ? () => setHelpTopic('effect') : undefined}
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           {POST_EFFECT_OPTIONS.map((opt) => (
@@ -1145,8 +1146,7 @@ function PostDesignDefaultsPanel({
         <ParameterGroupHeader
           t={t}
           title="Logo Alanı"
-          subtitle="Gerçek logo dosyasının güvenli yerleşimi"
-          onHelp={() => setHelpTopic('logo')}
+          onHelp={debugUi ? () => setHelpTopic('logo') : undefined}
         />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
           {POST_LOGO_OPTIONS.map((opt) => (
@@ -1167,8 +1167,6 @@ function PostDesignDefaultsPanel({
           <ParameterGroupHeader
             t={t}
             title="AI Tipografi Stili"
-            subtitle="Fal / tasarım postlarında kullanılan vibe imzası"
-            onHelp={() => {}}
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
             {TYPOGRAPHY_VIBE_OPTIONS.map((opt) => (
@@ -1186,8 +1184,6 @@ function PostDesignDefaultsPanel({
           <ParameterGroupHeader
             t={t}
             title="Arka Plan Stili"
-            subtitle="Tasarım postlarının arka plan tipi"
-            onHelp={() => {}}
           />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {BACKGROUND_STYLE_OPTIONS.map((opt) => (
@@ -2776,11 +2772,8 @@ function VibeDnaTab({ t, tenantId, pyCtx, queryClient }: {
           {/* Palette — read-only source summary; edit production colors in Renk Paleti */}
           {result.palette && (
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
-                Palet (kaynak özeti)
-              </div>
-              <div style={{ fontSize: 11, color: t.textTertiary, marginBottom: 8, lineHeight: 1.4 }}>
-                Üretim renklerini Stil & DNA → Renk Paleti’nden düzenleyin.
+              <div style={{ fontSize: 10, fontWeight: 700, color: t.accent, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
+                Palet
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, opacity: 0.9 }}>
                 {swatch(result.palette.primary, 'ana renk')}
@@ -4100,11 +4093,8 @@ export function BrandConstitution() {
             background: t.isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.06)',
             border: `0.5px solid ${t.isDark ? 'rgba(239,68,68,0.28)' : 'rgba(239,68,68,0.22)'}`,
           }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 4 }}>
-              Üretim tasarımı eksik ({productionReadiness.productionProfile.score}/{PRODUCTION_PROFILE_THRESHOLD})
-            </div>
-            <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, marginBottom: 8 }}>
-              Story ve gönderi üretimi için marka tasarım profilinin tamamlanması gerekir.
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
+              Tasarım eksik ({productionReadiness.productionProfile.score}/{PRODUCTION_PROFILE_THRESHOLD})
             </div>
             {(productionReadiness.productionProfile.missing ?? []).slice(0, 3).map((item) => (
               <div key={item.id} style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4, marginTop: 4 }}>
@@ -4358,15 +4348,6 @@ export function BrandConstitution() {
         {/* Strategy group index — campaign / competitors / special days */}
         {tab === 'strategy' && strategyGroup === null && (
           <BrandVisionerList>
-            <p style={{
-              margin: '0 4px 12px',
-              fontSize: 12,
-              lineHeight: 1.4,
-              color: t.textMuted,
-            }}
-            >
-              Ideation bağlamı — feed / galeri / fal üretim ayarı değildir.
-            </p>
             {STRATEGY_GROUPS.map((g) => (
               <BrandVisionerGroup key={g.key}>
                 <BrandVisionerNavRow
@@ -4497,10 +4478,7 @@ export function BrandConstitution() {
                   <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: summary ? t.textSecondary : t.textMuted }}>
                     {summary
                       ? (summary.length > 280 ? `${summary.slice(0, 280)}…` : summary)
-                      : 'Henüz görsel dil özeti yok — aşağıdaki Marka DNA’dan çıkarılabilir.'}
-                  </p>
-                  <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.4, color: t.textTertiary }}>
-                    Üretim paleti ve yazı standardı aşağıdaki panellerden yönetilir.
+                      : 'Henüz görsel dil özeti yok.'}
                   </p>
                 </div>
               )}
@@ -4611,11 +4589,8 @@ export function BrandConstitution() {
               ).trim();
               return (
                 <SCard t={t} title="Font özeti">
-                  <InfoRow t={t} label="Başlık" value={heading || 'Yazı karakteri preset’inden'} />
-                  <InfoRow t={t} label="Gövde" value={body || 'Sistem varsayılanı'} />
-                  <p style={{ margin: '8px 0 0', fontSize: 11, lineHeight: 1.4, color: t.textTertiary }}>
-                    Üretimde öncelik Yazı Karakteri preset’idir. Serbest font adı yalnızca operatör debug’da.
-                  </p>
+                  <InfoRow t={t} label="Başlık" value={heading || 'Preset'} />
+                  <InfoRow t={t} label="Gövde" value={body || 'Varsayılan'} />
                   {debugUi && (
                     <div style={{ marginTop: 12 }}>
                       <Field t={t} label="Ana Font"
@@ -4632,9 +4607,6 @@ export function BrandConstitution() {
             </CollapsibleGroup>
 
             <SCard t={t} title="Renk Paleti" accent={t.accent}>
-              <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: 1.4, color: t.textMuted }}>
-                Üretim renk SSOT’u — vibe çıkarımındaki palet yalnızca kaynak özetidir.
-              </p>
               <BrandColorPalettePicker
                 tenantId={tenantId!}
                 sector={industrySlug || industryDisplay}

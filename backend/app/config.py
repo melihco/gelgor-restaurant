@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     app_secret_key: str = "change-me-to-a-random-64-char-string"
     internal_api_key: str = "smartagency-internal-dev-key"
     enable_public_api: bool = True
+    # Expose FastAPI /docs + /openapi.json (default: on in development).
+    # Set ENABLE_OPENAPI=true in staging when handing Swagger to admin UI agents.
+    enable_openapi: bool | None = None
     # Schema gate: fail|warn|off — empty = warn in development, fail elsewhere.
     # Catches missing factory columns when manual SQL migrations were not applied.
     schema_gate_mode: str = ""
@@ -309,6 +312,12 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env == "development"
+
+    @property
+    def openapi_enabled(self) -> bool:
+        if self.enable_openapi is None:
+            return self.is_development
+        return bool(self.enable_openapi)
 
 
 @lru_cache

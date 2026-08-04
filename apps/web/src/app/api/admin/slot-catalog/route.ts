@@ -1,11 +1,15 @@
 import { NextRequest } from 'next/server';
 import { assertPlatformAdminAccess } from '@/lib/platform-admin-auth';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
 
 /**
  * Platform admin — global slot catalog + tenant management proxies.
+ *
+ * OpenAPI contract for UI agents: `/docs/admin-slot-catalog.openapi.json`
+ * (also `GET ?view=openapi`).
  */
 export async function GET(req: NextRequest) {
   const auth = await assertPlatformAdminAccess(req);
@@ -16,6 +20,23 @@ export async function GET(req: NextRequest) {
   const workspaceId = req.nextUrl.searchParams.get('workspace_id')?.trim();
   const slotKey = req.nextUrl.searchParams.get('slot_key')?.trim();
 
+  if (view === 'openapi') {
+    const { readFile } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    try {
+      const path = join(process.cwd(), 'docs', 'admin-slot-catalog.openapi.json');
+      const raw = await readFile(path, 'utf8');
+      return new Response(raw, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      });
+    } catch {
+      return Response.json({ error: 'openapi_contract_missing' }, { status: 404 });
+    }
+  }
+  if (view === 'readiness') {
+    return proxyToCrewBackend('/api/v1/slot-catalog/readiness', { method: 'GET' });
+  }
   if (view === 'library_shelves') {
     return proxyToCrewBackend('/api/v1/slot-catalog/library-shelves', { method: 'GET' });
   }
@@ -23,6 +44,12 @@ export async function GET(req: NextRequest) {
     const activeOnly = req.nextUrl.searchParams.get('active_only');
     const qs = activeOnly != null ? `?active_only=${encodeURIComponent(activeOnly)}` : '';
     return proxyToCrewBackend(`/api/v1/slot-catalog/sectors${qs}`, { method: 'GET' });
+  }
+  if (view === 'sector_resolve' && workspaceId) {
+    return proxyToCrewBackend(`/api/v1/slot-catalog/tenants/${workspaceId}/sector`, {
+      workspaceId,
+      method: 'GET',
+    });
   }
   if (view === 'sector' && sectorId) {
     return proxyToCrewBackend(
@@ -85,6 +112,20 @@ export async function POST(req: NextRequest) {
     (typeof body?.action === 'string' && body.action.trim()) ||
     req.nextUrl.searchParams.get('action') ||
     '';
+
+  // Catalog seed upsert (server injects internal key — platform admin only).
+  if (action === 'sync_seed') {
+    const key = serverConfig.internal.apiKey;
+    if (!key) {
+      return Response.json({ error: 'internal_api_key_not_configured' }, { status: 503 });
+    }
+    return proxyToCrewBackend('/api/v1/slot-catalog/sync-seed', {
+      method: 'POST',
+      body: {},
+      timeoutMs: 120_000,
+      headers: { 'X-Internal-Api-Key': key },
+    });
+  }
 
   // Global / brand slot authoring (no tenant bootstrap required).
   if (action === 'create_slot' || action === 'create_sector') {

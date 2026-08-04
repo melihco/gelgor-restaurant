@@ -36,9 +36,10 @@ _DEFAULT_SLOT_FACILITIES: dict[str, bool] = {
     # Opt-in service surface — OFF until brand enables
     "hiring": False,
     "events_calendar": False,
+    "wedding_photography": False,
 }
 
-_OPT_IN_FACILITIES = frozenset({"hiring", "events_calendar"})
+_OPT_IN_FACILITIES = frozenset({"hiring", "events_calendar", "wedding_photography"})
 
 _FACILITY_LABELS_TR: dict[str, str] = {
     "pool": "Havuz",
@@ -53,6 +54,7 @@ _FACILITY_LABELS_TR: dict[str, str] = {
     "delivery": "Teslimat",
     "hiring": "İş ilanı / kariyer",
     "events_calendar": "Etkinlik takvimi",
+    "wedding_photography": "Düğün fotoğraf / video",
 }
 
 _FACILITY_HINTS_TR: dict[str, str] = {
@@ -68,7 +70,38 @@ _FACILITY_HINTS_TR: dict[str, str] = {
     "delivery": "Teslimat yoksa kapatabilirsiniz",
     "hiring": "İş ilanı içerikleri için açın",
     "events_calendar": "Etkinlik takvimi / program duyuruları için açın",
+    "wedding_photography": "Düğün fotoğraf / video stüdyosu slotları için açın",
 }
+
+_WEDDING_PHOTOGRAPHY_CATEGORIES = frozenset({
+    "wedding_photography",
+    "wedding_photographer",
+})
+
+
+def is_wedding_photography_surface(*, category: str | None = None) -> bool:
+    """True when tenant is a wedding photography/videography studio under wedding_event."""
+    return (category or "").strip().lower() in _WEDDING_PHOTOGRAPHY_CATEGORIES
+
+
+def photography_wedding_facility_defaults() -> dict[str, bool]:
+    """Venue amenities off; photography opt-in on — for studio tenants on wedding_event."""
+    facilities = dict(_DEFAULT_SLOT_FACILITIES)
+    facilities.update({
+        "wedding_photography": True,
+        "outdoor_terrace": False,
+        "dj_stage": False,
+        "live_music": False,
+        "pool": False,
+        "spa": False,
+        "full_menu": False,
+        "kids_area": False,
+        "delivery": False,
+        "classes": False,
+        "private_events": True,
+    })
+    return facilities
+
 
 # Fixed 7 shelves — mirrors apps/web brand-template-library BRAND_LIBRARY_SLOT_SPECS keys.
 LIBRARY_SHELF_SPECS: list[dict[str, Any]] = [
@@ -183,9 +216,45 @@ async def load_brand_slot_facilities(db: AsyncSession, workspace_id: uuid.UUID) 
 _load_brand_slot_facilities = load_brand_slot_facilities
 
 
+# Playbook keys → slot-pack sector_id (pack SSOT). Keep aligned with
+# apps/web sector-production-profile SECTOR_ALIASES / sector-slot-pack.
+_PLAYBOOK_TO_PACK_SECTOR: dict[str, str] = {
+    "fitness": "fitness_gym",
+    "nightclub_lounge": "nightclub",
+    "fashion_retail": "fashion_boutique",
+    # bakery playbook key cafe_bakery — pack is bakery_patisserie (coffee stays coffee_shop)
+    "bakery": "bakery_patisserie",
+    "patisserie": "bakery_patisserie",
+    "pastane": "bakery_patisserie",
+    "wedding_photography": "wedding_event",
+    "wedding_photographer": "wedding_event",
+    "hotel_resort": "hospitality",
+    "hotel": "hospitality",
+    "jewelry": "jewelry_accessories",
+    "jewellery": "jewelry_accessories",
+    "photography": "agency_services",
+    "photo_studio": "agency_services",
+}
+
+
 def _normalize_sector_slug(value: str | None) -> str:
+    """Normalize to canonical *slot pack* sector_id (not playbook key)."""
     raw = (value or "").strip().lower().replace(" ", "_").replace("&", "_")
-    return normalize_industry_id(raw) if raw else ""
+    if not raw:
+        return ""
+    if raw in _PLAYBOOK_TO_PACK_SECTOR:
+        return _PLAYBOOK_TO_PACK_SECTOR[raw]
+    # Prefer direct pack id when already canonical
+    from app.data.sector_slot_pack import SLOT_KEYS_BY_SECTOR
+
+    if raw in SLOT_KEYS_BY_SECTOR:
+        return raw
+    playbook = normalize_industry_id(raw)
+    if playbook in _PLAYBOOK_TO_PACK_SECTOR:
+        return _PLAYBOOK_TO_PACK_SECTOR[playbook]
+    if playbook in SLOT_KEYS_BY_SECTOR:
+        return playbook
+    return playbook
 
 
 async def resolve_workspace_sector_id(db: AsyncSession, workspace_id: uuid.UUID) -> str | None:
@@ -893,8 +962,9 @@ async def reset_tenant_slot_defaults(
     reset_facilities: bool = True,
     reset_assignments: bool = True,
     force_operator: bool = True,
+    facility_overrides: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
-    """Reset facilities to all-true and/or re-bootstrap sector default assignments."""
+    """Reset facilities to sector-aware defaults and/or re-bootstrap sector default assignments."""
     resolved_sector = sector_id or await resolve_workspace_sector_id(db, workspace_id)
     if not resolved_sector:
         raise ValueError("workspace sector could not be resolved")
@@ -902,10 +972,27 @@ async def reset_tenant_slot_defaults(
     facilities = await _load_brand_slot_facilities(db, workspace_id)
     facilities_reset = False
     if reset_facilities:
+        target_facilities = dict(facility_overrides) if facility_overrides else dict(_DEFAULT_SLOT_FACILITIES)
+        if facility_overrides is None:
+            # Photography studio under wedding_event: venue amenities off, photo slots on.
+            ctx = await _load_brand_context(db, workspace_id)
+            sp = getattr(ctx, "brand_service_profile", None) if ctx else None
+            category = ""
+            if isinstance(sp, dict):
+                category = str(sp.get("category") or "")
+            elif isinstance(sp, str) and sp.strip():
+                try:
+                    parsed = json.loads(sp)
+                    if isinstance(parsed, dict):
+                        category = str(parsed.get("category") or "")
+                except Exception:
+                    category = ""
+            if resolved_sector == "wedding_event" and is_wedding_photography_surface(category=category):
+                target_facilities = photography_wedding_facility_defaults()
         update = await update_brand_slot_facilities(
             db,
             workspace_id,
-            dict(_DEFAULT_SLOT_FACILITIES),
+            target_facilities,
             sync_assignments=False,
         )
         facilities = update["facilities"]

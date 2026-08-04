@@ -22,6 +22,7 @@ from app.schemas.slot_catalog import (
     CanonicalSectorUpdate,
     FacilityOptionOut,
     SectorCoverageOut,
+    SectorReadinessReportOut,
     LibraryShelfOut,
     ProductionSlotCloneRequest,
     ProductionSlotDefinitionCreate,
@@ -33,6 +34,7 @@ from app.schemas.slot_catalog import (
     SlotStatusRequest,
     SyncFacilitiesToAssignmentsResponse,
     SyncSlotCatalogSeedResponse,
+    TenantSectorResolveOut,
     TenantSlotAdminOverviewOut,
     TenantSlotAssignmentOut,
     TenantSlotEffectiveOut,
@@ -43,10 +45,11 @@ from app.schemas.slot_catalog import (
 from app.models.slot_catalog import CanonicalSector, ProductionSlotDefinition
 from app.services import slot_catalog_authoring as authoring
 from app.services import slot_catalog_service as svc
+from app.services.sector_readiness_service import build_sector_readiness_report
 
 logger = structlog.get_logger()
 
-router = APIRouter()
+router = APIRouter(tags=["Slot Catalog Admin"])
 
 
 def _sector_out(row) -> CanonicalSectorOut:
@@ -121,6 +124,17 @@ def _overview_out(data: dict) -> TenantSlotAdminOverviewOut:
         assignment_row_count=int(data["assignment_row_count"]),
         using_sector_defaults=bool(data["using_sector_defaults"]),
     )
+
+
+@router.get(
+    "/readiness",
+    response_model=SectorReadinessReportOut,
+    summary="Multi-sector production readiness gate",
+)
+async def get_sector_readiness(db: AsyncSession = Depends(get_db)):
+    """Pack SSOT + DB seed + profile/playbook flags for all pack sectors (target ≥20 FULL)."""
+    data = await build_sector_readiness_report(db)
+    return SectorReadinessReportOut(**data)
 
 
 @router.get("/library-shelves", response_model=list[LibraryShelfOut])
@@ -453,6 +467,55 @@ async def upsert_tenant_slot_assignments(
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+@router.get(
+    "/tenants/{workspace_id}/sector",
+    response_model=TenantSectorResolveOut,
+    summary="Resolve tenant canonical pack sector",
+)
+async def resolve_tenant_sector(
+    workspace_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resolve pack `sector_id` from brand_service_profile.category or business_type."""
+    import json as _json
+
+    from sqlalchemy import select
+
+    from app.models.brand_context import BrandContext
+
+    result = await db.execute(
+        select(BrandContext).where(BrandContext.workspace_id == workspace_id)
+    )
+    ctx = result.scalar_one_or_none()
+    business_type = str(getattr(ctx, "business_type", None) or "").strip() or None
+    category = None
+    source: str = "unresolved"
+    sp = getattr(ctx, "brand_service_profile", None) if ctx else None
+    if isinstance(sp, str) and sp.strip():
+        try:
+            sp = _json.loads(sp)
+        except Exception:
+            sp = None
+    if isinstance(sp, dict):
+        category = str(sp.get("category") or "").strip() or None
+    sector_id = await svc.resolve_workspace_sector_id(db, workspace_id)
+    if category:
+        source = "service_profile"
+    elif business_type:
+        source = "business_type"
+    facilities = await svc.load_brand_slot_facilities(db, workspace_id)
+    photo = svc.is_wedding_photography_surface(category=category)
+    return TenantSectorResolveOut(
+        workspace_id=workspace_id,
+        sector_id=sector_id,
+        business_type=business_type,
+        service_profile_category=category,
+        source=source,  # type: ignore[arg-type]
+        facilities=facilities,
+        photography_surface=photo,
+    )
+
+
 @router.get("/tenants/{workspace_id}/facilities", response_model=BrandSlotFacilitiesOut)
 async def get_tenant_slot_facilities(
     workspace_id: uuid.UUID,
@@ -592,9 +655,15 @@ async def reset_tenant_slot_defaults(
     "/sync-seed",
     response_model=SyncSlotCatalogSeedResponse,
     dependencies=[Depends(verify_internal_api_key)],
+    summary="Upsert pack SSOT into DB",
 )
 async def sync_slot_catalog_seed(db: AsyncSession = Depends(get_db)):
-    """Upsert canonical_sectors + production_slot_definitions from sector_slot_pack (live ops)."""
+    """Upsert canonical_sectors + production_slot_definitions from sector_slot_pack.
+
+    Auth: ``X-Internal-Api-Key``. Platform admin BFF calls this via
+    ``POST /api/admin/slot-catalog`` with ``{ "action": "sync_seed" }}``
+    (server injects the key).
+    """
     from sqlalchemy import select
 
     from app.services.slot_catalog_bootstrap import ensure_slot_catalog_schema

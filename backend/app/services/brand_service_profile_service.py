@@ -148,6 +148,10 @@ _CATEGORY_TO_CANONICAL_SECTOR: dict[str, str] = {
     "fashion_retail": "fashion_boutique",
     "wedding_event_service": "wedding_event",
     "event_planning_service": "wedding_event",
+    "wedding_photography": "wedding_event",
+    "wedding_photographer": "wedding_event",
+    "destination_wedding": "wedding_event",
+    "event_management": "wedding_event",
 }
 
 

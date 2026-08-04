@@ -440,6 +440,21 @@ async def complete_brand_gaps(
                     # Force calendar rebuild for mission brief seasonality
                     target_ids = set(target_ids)
                     target_ids.add("industry_calendar_stale")
+                    # Sector change invalidates prior pack assignments — re-bootstrap.
+                    try:
+                        from app.services.slot_catalog_service import reset_tenant_slot_defaults
+
+                        await reset_tenant_slot_defaults(
+                            db,
+                            workspace_id,
+                            sector_id=auth,
+                            reset_facilities=True,
+                            reset_assignments=True,
+                            force_operator=True,
+                        )
+                        await _step("slot_realign", True, f"reset defaults for {auth}")
+                    except Exception as slot_exc:
+                        await _step("slot_realign", False, str(slot_exc))
 
             if not synced:
                 await _step("sector_sync", True, "already_aligned")

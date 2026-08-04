@@ -235,7 +235,7 @@ function UrlStep({
           />
           <h1 className="discover-hero-title">Markanı tanıyalım</h1>
           <p className="discover-hero-lead">
-            Web veya Instagram’dan kimliğini çıkarıyoruz.
+            Web sitesi veya Instagram
           </p>
         </header>
 
@@ -611,19 +611,19 @@ function ResultsStep({ result, url, ig, onNext }: {
       label: 'Marka Analizi',
       icon: 'brand' as const,
       color: SA_ONBOARDING.doneBright,
-      desc: `${url ? domain : (ig ? `@${ig}` : 'Markanız')} analiz edildi. Tam marka profili kayıt sonrası oluşturulacak.`,
+      desc: url ? domain : (ig ? `@${ig}` : 'Markanız'),
     },
     {
       label: 'İçerik İhtiyaçları',
       icon: 'content' as const,
       color: '#6A8EA0',
-      desc: 'AI ekibiniz içerik stratejinizi kayıt tamamlandığında otomatik hazırlayacak.',
+      desc: 'Kayıt sonrası hazırlanır',
     },
     {
       label: 'AI Ekibi Hazır',
       icon: 'team' as const,
       color: SA_ONBOARDING.done,
-      desc: '6 ajan markanız için çalışmaya başlayacak: içerik, tasarım, analiz ve daha fazlası.',
+      desc: 'İçerik, tasarım ve analiz',
     },
   ] : [];
 
@@ -681,10 +681,10 @@ function ResultsStep({ result, url, ig, onNext }: {
               <div style={{ fontSize: 14, fontWeight: 700, color: '#F4F4F8', marginBottom: 3 }}>Kaynak Güveni</div>
               <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)' }}>
                 {confidence >= 80
-                  ? 'Birden fazla kaynak doğrulandı'
+                  ? 'Birden fazla kaynak'
                   : confidence >= 60
-                    ? 'Temel kaynaklar okundu'
-                    : 'Sınırlı kaynak — kayıt sonrası derin analiz önerilir'}
+                    ? 'Temel kaynaklar'
+                    : 'Sınırlı kaynak'}
               </div>
               {resultMessage && limitedPreview && (
                 <div style={{ fontSize: 11, color: 'rgba(251,191,36,0.85)', marginTop: 4, lineHeight: 1.4 }}>
@@ -701,12 +701,7 @@ function ResultsStep({ result, url, ig, onNext }: {
             <OnboardingPreviewIcon name="info" />
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 4 }}>
-                {limitedPreview ? 'Daha güçlü analiz için web / Google ekleyin' : 'Tam analiz için kayıt gerekli'}
-              </div>
-              <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.55)', lineHeight: 1.55 }}>
-                {limitedPreview
-                  ? 'Instagram tek başına kota veya private hesapta yetersiz kalabilir. Kayıt sonrası web sitesi ve Google Business ekleyerek marka DNA’sını güçlendirebilirsiniz.'
-                  : `Hesap oluşturduktan sonra AI ekibiniz ${domain} için marka profilinizi derinlemesine hazırlayacak.`}
+                {limitedPreview ? 'Web veya Google ekleyin' : 'Devam etmek için kayıt olun'}
               </div>
             </div>
           </div>
@@ -796,21 +791,6 @@ function ResultsStep({ result, url, ig, onNext }: {
           </div>
         ))}
 
-        {/* What happens next teaser */}
-        <div style={{ ...cardStyle, background: SA_ONBOARDING.warmBg, border: `0.5px solid ${SA_ONBOARDING.doneBorder}`, marginTop: 4 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: SA_ONBOARDING.doneBright, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 10 }}>Kayıt Sonrası</div>
-          {[
-            'Tam marka analizini görün',
-            'AI ekibinizi aktive edin',
-            'İçerik stratejinizi otomatik oluşturun',
-            'Markaya özel şablonlar hazırlanır',
-          ].map((item, i) => (
-            <div key={i} style={{ fontSize: 13, color: 'rgba(226,232,240,0.65)', marginBottom: i < 3 ? 7 : 0, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <span style={{ color: SA_ONBOARDING.done, flexShrink: 0, fontSize: 10, marginTop: 2 }}>●</span>
-              <span>{item}</span>
-            </div>
-          ))}
-        </div>
       </div>
 
       {/* CTA dock */}
@@ -870,8 +850,8 @@ function SetupProgressOverlay({ brandName, status }: { brandName: string; status
 
   const display = Math.round(pct);
   const hint = phase >= 2
-    ? 'Derin analiz 1–3 dakika sürebilir — bu ekranda kalabilirsiniz.'
-    : 'Birkaç saniye içinde hazır...';
+    ? '1–3 dakika sürebilir'
+    : 'Hazırlanıyor…';
 
   return (
     <div className="onboarding-shell">
@@ -902,7 +882,7 @@ function SetupProgressOverlay({ brandName, status }: { brandName: string; status
         </div>
 
         <div className="onboarding-setup-brand">{brandName || 'Markanız'}</div>
-        <div className="onboarding-setup-sub">AI ekibiniz markanız için hazırlanıyor</div>
+        <div className="onboarding-setup-sub">Kurulum sürüyor</div>
 
         <div className="onboarding-setup-steps">
           {SETUP_PHASES.map((p, i) => {
@@ -1304,9 +1284,6 @@ function SignupStep({
 
       <main className="onboarding-main onboarding-signup-main">
         <h1 className="onboarding-title onboarding-title--step">Hesap Oluşturun</h1>
-        <p className="onboarding-lead onboarding-lead--step">
-          Marka analizinizi kaydedin ve AI ekibinizi aktive edin.
-        </p>
 
         <div className="onboarding-fields">
           <label className="onboarding-field">
@@ -1541,9 +1518,6 @@ function BrandConfirmStep({
       <OnboardingLogoHeader compact />
       <main className="onboarding-main onboarding-signup-main onboarding-stagger" style={{ paddingBottom: 28 }}>
         <h1 className="onboarding-title onboarding-title--step">Markanı doğrula</h1>
-        <p className="onboarding-lead onboarding-lead--step">
-          Üretim kilidi açılmadan önce isim, sektör, ton ve renkleri onayla.
-        </p>
 
         <div className="onboarding-fields">
           <label className="onboarding-field">
@@ -1804,8 +1778,7 @@ function GalleryReadyStep({
       <main className="onboarding-welcome-body" style={{ paddingBottom: 28 }}>
         <h1 className="onboarding-title" style={{ marginBottom: 8 }}>Fotoğraflarını ekle</h1>
         <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 16 }}>
-          Şablon vitrini için en az {MIN_GALLERY_PHOTOS} gerçek fotoğraf gerekir.
-          Şu an: {photoCount} / {MIN_GALLERY_PHOTOS}
+          {photoCount} / {MIN_GALLERY_PHOTOS} fotoğraf
         </p>
 
         <input
@@ -1838,12 +1811,6 @@ function GalleryReadyStep({
           </button>
         )}
 
-        {!ready && (
-          <p className="onboarding-note" style={{ marginTop: 12 }}>
-            Mekan / ürün fotoğrafları yükle — Instagram CDN linkleri yerine kalıcı galeri gerekir.
-          </p>
-        )}
-
         {error && (
           <p className="onboarding-lead" style={{ color: '#fca5a5', marginTop: 12 }}>{error}</p>
         )}
@@ -1856,17 +1823,17 @@ function GalleryReadyStep({
 }
 
 // ─── Templates Showcase Step ───────────────────────────────────────────
-const TEMPLATE_TYPE_DESCRIPTIONS: Record<string, string> = {
-  campaign_announcement: 'Kampanyalarınızı duyururken bu tasarım kullanılır.',
-  event_special: 'Özel günlerde markanıza özel kutlama tasarımı.',
-  menu_highlight: 'Ürün ve menü tanıtımlarınız için.',
-  venue_showcase: 'Mekanınızı en iyi gösteren story tasarımı.',
-  seasonal_promo: 'Sezon kampanyalarınız için hazır.',
-  social_proof: 'Müşteri yorumlarınızı paylaşırken.',
-  daily_story: 'Günlük paylaşımlarınız için sade tasarım.',
-  announcement_formal: 'Resmi duyurularınız için kurumsal tasarım.',
-  reel_cover: 'Reel videolarınızın kapak tasarımı.',
-  brand_identity: 'Marka kimliğinizi yansıtan tasarım.',
+const TEMPLATE_TYPE_LABELS: Record<string, string> = {
+  campaign_announcement: 'Kampanya',
+  event_special: 'Özel gün',
+  menu_highlight: 'Menü',
+  venue_showcase: 'Mekan',
+  seasonal_promo: 'Sezon',
+  social_proof: 'Yorum',
+  daily_story: 'Günlük',
+  announcement_formal: 'Duyuru',
+  reel_cover: 'Reel kapak',
+  brand_identity: 'Kimlik',
 };
 
 function TypographyConfirmStep({
@@ -2070,9 +2037,6 @@ function TypographyConfirmStep({
       <OnboardingLogoHeader compact />
       <main className="onboarding-welcome-body onboarding-stagger" style={{ paddingBottom: 28, overflowY: 'auto', alignItems: 'stretch' }}>
         <h1 className="onboarding-title" style={{ marginBottom: 8, textAlign: 'left' }}>Görsel kimliğini onayla</h1>
-        <p className="onboarding-lead" style={{ maxWidth: 320, marginBottom: 18, textAlign: 'left' }}>
-          Logo, palet ve tipografi vibe — tüm AI tasarımları buna kilitlenir.
-        </p>
 
         {/* Logo */}
         <div style={{ width: '100%', maxWidth: 360, marginBottom: 18 }}>
@@ -2333,9 +2297,7 @@ function TemplatesShowcaseStep({
               Markanı tanıdık
             </h1>
             <p className="onboarding-lead" style={{ maxWidth: 320 }}>
-              {brandName} için kurumsal renkleriniz, logonuz ve tarzınızla
-              {` `}<strong>{templates.length} özel tasarım şablonu</strong> hazırladık.
-              Kaydırarak göz atın.
+              <strong>{templates.length} tasarım</strong> hazır · kaydırarak bakın
             </p>
           </main>
         </div>
@@ -2380,7 +2342,7 @@ function TemplatesShowcaseStep({
             </div>
             <div className="template-showcase-name">{template?.template_name}</div>
             <div className="template-showcase-desc">
-              {template ? (TEMPLATE_TYPE_DESCRIPTIONS[template.template_type] ?? 'Markanıza özel tasarım.') : ''}
+              {template ? (TEMPLATE_TYPE_LABELS[template.template_type] ?? '') : ''}
             </div>
           </div>
         </div>
@@ -2421,7 +2383,7 @@ function WelcomeStep({
           {brandName} hazır!
         </h1>
         <p className="onboarding-lead" style={{ marginBottom: 24, maxWidth: 310 }}>
-          AI ekibiniz aktive edildi. Marka analiziniz tamamlandı ve ajanlar çalışmaya hazır.
+          Marka profilin hazır.
         </p>
 
         <div className="onboarding-brand-card">

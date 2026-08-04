@@ -264,9 +264,6 @@ export function BrandChatbotProfileCard({
             <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>
               Müşteri sohbet asistanı
             </div>
-            <p style={{ margin: '6px 0 0', fontSize: 12, lineHeight: 1.45, color: t.textMuted }}>
-              Instagram DM ve Mertcafe yanıtları için. Feed post / story / tasarım üretim ayarlarını değiştirmez.
-            </p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {CHAT_GROUPS.map((g) => (
@@ -290,7 +287,6 @@ export function BrandChatbotProfileCard({
                 </div>
                 <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em' }}>{g.label}</div>
-                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{g.hint}</div>
                 </div>
                 <ChevronRight color={t.textTertiary} />
               </button>

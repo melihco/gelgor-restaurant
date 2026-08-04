@@ -116,13 +116,34 @@ async def lifespan(app: FastAPI):
     logger.info("shutdown_complete")
 
 
+_OPENAPI_DESC = """
+SmartAgency Crew / slot-catalog admin API.
+
+## Platform admin — Slot Catalog
+Primary surfaces for multi-sector readiness + tenant slot ops:
+
+| Area | Endpoints |
+|------|-----------|
+| Readiness gate | `GET /api/v1/slot-catalog/readiness` |
+| Sectors / slots | `GET /api/v1/slot-catalog/sectors`, `.../slots` |
+| Seed sync | `POST /api/v1/slot-catalog/sync-seed` (header `X-Internal-Api-Key`) |
+| Tenant sector | `GET /api/v1/slot-catalog/tenants/{workspace_id}/sector` |
+| Facilities | `GET|PUT .../tenants/{id}/facilities` |
+| Assignments | `GET|PUT .../tenants/{id}/assignments` |
+| Bootstrap / reset | `POST .../bootstrap`, `POST .../reset-defaults` |
+| Preview / overview | `GET .../overview`, `POST .../preview` |
+
+Browser admin UI should call the Next.js BFF (`/api/admin/slot-catalog`) — see committed OpenAPI at `apps/web/docs/admin-slot-catalog.openapi.json`.
+"""
+
 app = FastAPI(
     title="SmartAgency Crew Service",
-    description="Internal CrewAI orchestration service for the SmartAgency app API",
-    version="0.1.0",
+    description=_OPENAPI_DESC,
+    version="0.2.0",
     lifespan=lifespan,
-    docs_url="/docs" if settings.is_development else None,
-    redoc_url="/redoc" if settings.is_development else None,
+    docs_url="/docs" if settings.openapi_enabled else None,
+    redoc_url="/redoc" if settings.openapi_enabled else None,
+    openapi_url="/openapi.json" if settings.openapi_enabled else None,
 )
 
 if settings.enable_public_api:

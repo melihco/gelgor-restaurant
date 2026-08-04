@@ -102,8 +102,74 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type SectorReadinessStatus = 'full' | 'seed_stale' | 'partial' | 'missing_pack';
+
+export interface SectorReadinessItem {
+  sector_id: string;
+  label_tr: string;
+  label_en: string;
+  aliases: string[];
+  pack_slot_count: number;
+  db_active_global_slots: number;
+  db_total_slots: number;
+  formats: Record<string, number>;
+  has_production_profile: boolean;
+  has_industry_playbook: boolean;
+  playbook_id: string;
+  seeded_in_db: boolean;
+  db_sector_active: boolean;
+  status: SectorReadinessStatus;
+  ready: boolean;
+  min_pack_slots: number;
+}
+
+export interface SectorReadinessReport {
+  target_full_sectors: number;
+  full_count: number;
+  ready: boolean;
+  expected_pack_sectors: number;
+  expected_pack_slots: number;
+  db_sector_count: number;
+  db_active_global_slots: number;
+  seed_ok: boolean;
+  sectors: SectorReadinessItem[];
+}
+
+export interface TenantSectorResolve {
+  workspace_id: string;
+  sector_id: string | null;
+  business_type: string | null;
+  service_profile_category: string | null;
+  source: 'service_profile' | 'business_type' | 'unresolved';
+  facilities: Record<string, boolean>;
+  photography_surface: boolean;
+}
+
 export async function fetchAdminCatalogSectors(): Promise<CanonicalSector[]> {
   return adminFetch<CanonicalSector[]>('/api/admin/slot-catalog?view=sectors');
+}
+
+export async function fetchAdminSectorReadiness(): Promise<SectorReadinessReport> {
+  return adminFetch<SectorReadinessReport>('/api/admin/slot-catalog?view=readiness');
+}
+
+export async function fetchAdminTenantSector(
+  workspaceId: string,
+): Promise<TenantSectorResolve> {
+  return adminFetch<TenantSectorResolve>(
+    `/api/admin/slot-catalog?view=sector_resolve&workspace_id=${encodeURIComponent(workspaceId)}`,
+  );
+}
+
+export async function syncAdminSlotCatalogSeed(): Promise<{
+  sectors_touched: number;
+  slots_touched: number;
+  total_definitions: number;
+}> {
+  return adminFetch('/api/admin/slot-catalog', {
+    method: 'POST',
+    body: JSON.stringify({ action: 'sync_seed' }),
+  });
 }
 
 export async function fetchAdminLibraryShelves(): Promise<LibraryShelf[]> {

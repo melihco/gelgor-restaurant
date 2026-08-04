@@ -31,6 +31,8 @@ describe('sector-slot-pack coverage', () => {
     'bakery_patisserie',
     'real_estate',
     'local_service_business',
+    'agency_services',
+    'jewelry_accessories',
     'general_business',
   ];
 
@@ -42,12 +44,12 @@ describe('sector-slot-pack coverage', () => {
     }
   });
 
-  it('each sector has 12–30 unique slot keys', () => {
+  it('each sector has 12–40 unique slot keys', () => {
     const keysBySector = buildSlotKeysBySectorFromPacks();
     for (const pack of SECTOR_SLOT_PACKS) {
       const keys = keysBySector[pack.sectorId] ?? [];
       expect(keys.length).toBeGreaterThanOrEqual(12);
-      expect(keys.length).toBeLessThanOrEqual(30);
+      expect(keys.length).toBeLessThanOrEqual(40);
       expect(new Set(keys).size).toBe(keys.length);
       for (const key of keys) {
         expect(key.startsWith(`${pack.sectorId}_`)).toBe(true);
@@ -117,6 +119,33 @@ describe('sector-slot-pack coverage', () => {
     const keys = buildSlotKeysBySectorFromPacks().wedding_event;
     expect(keys.some((k) => k.includes('bridal'))).toBe(true);
     expect(keys.some((k) => k.includes('venue'))).toBe(true);
+  });
+
+  it('wedding photography slots gate on wedding_photography facility', () => {
+    const pack = getSectorSlotPack('wedding_event');
+    const photo = pack?.instances.find((i) => i.suffix === 'couple_portrait_post');
+    expect(photo?.optionalTags).toContain('requires:wedding_photography');
+    expect(DEFAULT_SLOT_FACILITIES.wedding_photography).toBe(false);
+    expect(slotEnabledByFacilities(photo?.optionalTags, DEFAULT_SLOT_FACILITIES)).toBe(false);
+    expect(
+      slotEnabledByFacilities(photo?.optionalTags, {
+        ...DEFAULT_SLOT_FACILITIES,
+        wedding_photography: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('agency_services and jewelry_accessories packs are production-ready size', () => {
+    for (const sector of ['agency_services', 'jewelry_accessories'] as const) {
+      const pack = getSectorSlotPack(sector);
+      expect(pack).not.toBeNull();
+      expect(pack!.instances.length).toBeGreaterThanOrEqual(16);
+      const formats = new Set(pack!.instances.map((i) => i.format));
+      expect(formats.has('post')).toBe(true);
+      expect(formats.has('story')).toBe(true);
+      expect(formats.has('reel')).toBe(true);
+      expect(formats.has('carousel')).toBe(true);
+    }
   });
 
   it('beach_club and restaurant_cafe expose story poster slots with pipeline overrides', () => {

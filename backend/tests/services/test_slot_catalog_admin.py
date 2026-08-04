@@ -9,9 +9,12 @@ from app.services.slot_catalog_service import (
     _build_shelf_summaries,
     _compute_effective_rows,
     _coverage_from_effective,
+    _normalize_sector_slug,
     default_slot_facilities,
     facility_options,
+    is_wedding_photography_surface,
     list_library_shelves,
+    photography_wedding_facility_defaults,
     required_facilities_from_tags,
     resolve_facilities_dict,
     validate_format_coverage,
@@ -55,6 +58,7 @@ def test_resolve_facilities_opt_out_defaults():
     # Opt-in service surface defaults OFF
     assert resolve_facilities_dict(None)["hiring"] is False
     assert resolve_facilities_dict(None)["events_calendar"] is False
+    assert resolve_facilities_dict(None)["wedding_photography"] is False
     assert resolve_facilities_dict({"hiring": True})["hiring"] is True
 
 
@@ -70,6 +74,9 @@ def test_facility_options_include_labels():
     events = next(o for o in opts if o["key"] == "events_calendar")
     assert events["enabled"] is False
     assert events["opt_in"] is True
+    photo = next(o for o in opts if o["key"] == "wedding_photography")
+    assert photo["enabled"] is False
+    assert photo["opt_in"] is True
 
 
 def test_required_facilities_from_tags():
@@ -78,6 +85,27 @@ def test_required_facilities_from_tags():
         "dj_stage",
     ]
     assert required_facilities_from_tags(["other"]) == []
+    assert required_facilities_from_tags(["requires:wedding_photography"]) == [
+        "wedding_photography",
+    ]
+
+
+def test_normalize_sector_slug_maps_to_pack_ids():
+    assert _normalize_sector_slug("fitness") == "fitness_gym"
+    assert _normalize_sector_slug("nightclub_lounge") == "nightclub"
+    assert _normalize_sector_slug("fashion_retail") == "fashion_boutique"
+    assert _normalize_sector_slug("wedding_photography") == "wedding_event"
+    assert _normalize_sector_slug("agency_services") == "agency_services"
+    assert _normalize_sector_slug("jewelry_accessories") == "jewelry_accessories"
+
+
+def test_photography_wedding_facility_defaults():
+    assert is_wedding_photography_surface(category="wedding_photography") is True
+    assert is_wedding_photography_surface(category="wedding_event_service") is False
+    fac = photography_wedding_facility_defaults()
+    assert fac["wedding_photography"] is True
+    assert fac["dj_stage"] is False
+    assert fac["outdoor_terrace"] is False
 
 
 def test_coverage_requires_post_and_story():

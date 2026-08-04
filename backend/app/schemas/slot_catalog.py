@@ -358,3 +358,50 @@ class SectorCoverageOut(BaseModel):
     by_design_template_type: dict[str, int] = Field(default_factory=dict)
     shelves: list[SectorShelfCoverageOut] = Field(default_factory=list)
     brand_count: int = 0
+
+
+class SectorReadinessItemOut(BaseModel):
+    """One pack sector’s production-readiness row for admin dashboards."""
+
+    sector_id: str
+    label_tr: str
+    label_en: str
+    aliases: list[str] = Field(default_factory=list)
+    pack_slot_count: int
+    db_active_global_slots: int
+    db_total_slots: int = 0
+    formats: dict[str, int] = Field(default_factory=dict)
+    has_production_profile: bool
+    has_industry_playbook: bool
+    playbook_id: str
+    seeded_in_db: bool
+    db_sector_active: bool = False
+    status: Literal["full", "seed_stale", "partial", "missing_pack"]
+    ready: bool
+    min_pack_slots: int = 12
+
+
+class SectorReadinessReportOut(BaseModel):
+    """Gate: pack ≥12 + profile + playbook + DB seed for all pack sectors."""
+
+    target_full_sectors: int
+    full_count: int
+    ready: bool
+    expected_pack_sectors: int
+    expected_pack_slots: int
+    db_sector_count: int
+    db_active_global_slots: int
+    seed_ok: bool
+    sectors: list[SectorReadinessItemOut] = Field(default_factory=list)
+
+
+class TenantSectorResolveOut(BaseModel):
+    """Resolved canonical pack sector for a workspace (admin)."""
+
+    workspace_id: UUID
+    sector_id: str | None = None
+    business_type: str | None = None
+    service_profile_category: str | None = None
+    source: Literal["service_profile", "business_type", "unresolved"] = "unresolved"
+    facilities: dict[str, bool] = Field(default_factory=dict)
+    photography_surface: bool = False

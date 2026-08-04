@@ -35,10 +35,10 @@ export function BrandProductionRepairCard({
         : 'Son rötuşlar';
 
   const subtitle = brandGaps.running
-    ? 'Sektör sync, tipografi, brief ve üretim katmanları…'
+    ? 'Tamamlanıyor…'
     : designFocus
-      ? `Üretim ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD} — sektör hizasını, tipografiyi ve brief/mission eksiklerini tamamlar`
-      : 'Tek dokunuşla marka eksiklerini tamamla';
+      ? `Üretim ${pprScore}/${PRODUCTION_PROFILE_THRESHOLD}`
+      : 'Eksikleri tamamla';
 
   return (
     <div style={{ marginBottom: 12 }}>

@@ -803,6 +803,32 @@ describe('wedding_event sector isolation', () => {
     });
     expect(set.slots.map((s) => s.slotKey)).toEqual(['wedding_event_venue_showcase_post']);
   });
+
+  it('enables photography slots only when wedding_photography facility is on', () => {
+    const sectorSlots = [
+      mockSlot('wedding_event_real_wedding_post', 'post', { sector_id: 'wedding_event' }),
+      mockSlot('wedding_event_couple_portrait_post', 'post', {
+        sector_id: 'wedding_event',
+        optional_tags: ['requires:wedding_photography'],
+      }),
+    ];
+    const off = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-wedding',
+      sector: 'wedding_event',
+      sectorSlots,
+      slotFacilities: { wedding_photography: false },
+    });
+    expect(off.enabledSlotKeys.has('wedding_event_couple_portrait_post')).toBe(false);
+    expect(off.enabledSlotKeys.has('wedding_event_real_wedding_post')).toBe(true);
+
+    const on = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-wedding',
+      sector: 'wedding_event',
+      sectorSlots,
+      slotFacilities: { wedding_photography: true },
+    });
+    expect(on.enabledSlotKeys.has('wedding_event_couple_portrait_post')).toBe(true);
+  });
 });
 
 describe('local_products_shop sector isolation', () => {

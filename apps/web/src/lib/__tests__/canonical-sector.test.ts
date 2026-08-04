@@ -124,6 +124,17 @@ describe('canonical sector sync', () => {
     expect(resolveAuthoritativeIndustry(py)).toBe('wedding_event');
   });
 
+  it('maps wedding_photography category to wedding_event pack sector', () => {
+    const py = {
+      business_type: 'wedding_photography',
+      brand_service_profile: {
+        category: 'wedding_photography',
+        category_confidence: 0.95,
+      },
+    };
+    expect(resolveAuthoritativeIndustry(py)).toBe('wedding_event');
+  });
+
   it('keeps coffee_shop separate from restaurant_cafe in food/drink aliases', () => {
     const py = {
       business_type: 'coffee_shop',

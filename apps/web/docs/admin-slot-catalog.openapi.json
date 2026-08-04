@@ -1,0 +1,434 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SmartAgency Platform Admin — Slot Catalog BFF",
+    "version": "1.0.0",
+    "description": "Browser-facing admin API (Next.js BFF). Auth: platform admin session / headers used by assertPlatformAdminAccess. Proxies Python Crew `/api/v1/slot-catalog/*`.\n\n**UI agent brief**\n1. Call `GET /api/admin/slot-catalog?view=readiness` for the 20-sector gate.\n2. If `seed_ok` is false → `POST` `{ \"action\": \"sync_seed\" }`.\n3. Pick a brand (`/api/admin/brands`) → `view=sector_resolve` + `view=overview`.\n4. Edit facilities → `PUT` `target=facilities` (+ optional `sync_assignments`).\n5. Reset wrong pack → `POST` `{ \"action\": \"reset_defaults\", \"workspace_id\" }`.\n6. Bootstrap empty tenant → `POST` `{ \"action\": \"bootstrap\", \"workspace_id\" }`.\n7. Dry-run → `POST` `{ \"action\": \"preview\", \"workspace_id\", \"facilities\" }`.\n\nDo not hardcode tenant UUIDs. Wedding photography = `wedding_event` + facility `wedding_photography`."
+  },
+  "servers": [
+    { "url": "/", "description": "Same-origin Next.js app (dev :3000 / prod web)" }
+  ],
+  "tags": [
+    { "name": "Readiness", "description": "Multi-sector production-ready gate" },
+    { "name": "Catalog", "description": "Sectors + slot definitions" },
+    { "name": "Tenant", "description": "Per-workspace sector, facilities, assignments" },
+    { "name": "Ops", "description": "Seed sync / bootstrap / reset / preview" }
+  ],
+  "paths": {
+    "/api/admin/slot-catalog": {
+      "get": {
+        "tags": ["Readiness", "Catalog", "Tenant"],
+        "summary": "Admin slot-catalog multiplex GET",
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openapi",
+                "readiness",
+                "library_shelves",
+                "sectors",
+                "sector",
+                "coverage",
+                "overview",
+                "facilities",
+                "assignments",
+                "sector_resolve"
+              ]
+            },
+            "description": "Resource selector. Omit with sector_id to list sector slots; omit both to list all slots."
+          },
+          { "name": "sector_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "workspace_id", "in": "query", "schema": { "type": "string", "format": "uuid" } },
+          { "name": "slot_key", "in": "query", "schema": { "type": "string" } },
+          { "name": "active_only", "in": "query", "schema": { "type": "string" } },
+          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["global", "brand", "all"] } },
+          { "name": "include_archived", "in": "query", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Varies by view",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/SectorReadinessReport" },
+                    { "type": "array", "items": { "$ref": "#/components/schemas/CanonicalSector" } },
+                    { "type": "array", "items": { "$ref": "#/components/schemas/ProductionSlotDefinition" } },
+                    { "$ref": "#/components/schemas/TenantSlotAdminOverview" },
+                    { "$ref": "#/components/schemas/BrandSlotFacilities" },
+                    { "$ref": "#/components/schemas/TenantSectorResolve" },
+                    { "type": "object", "description": "OpenAPI document when view=openapi" }
+                  ]
+                }
+              }
+            }
+          },
+          "401": { "description": "Not platform admin" }
+        }
+      },
+      "post": {
+        "tags": ["Ops", "Catalog"],
+        "summary": "Admin actions (sync_seed, bootstrap, reset, preview, authoring)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminSlotCatalogPostBody" },
+              "examples": {
+                "syncSeed": {
+                  "summary": "Upsert pack → DB",
+                  "value": { "action": "sync_seed" }
+                },
+                "bootstrap": {
+                  "value": { "action": "bootstrap", "workspace_id": "00000000-0000-0000-0000-000000000001", "sector_id": "beach_club" }
+                },
+                "resetDefaults": {
+                  "value": {
+                    "action": "reset_defaults",
+                    "workspace_id": "00000000-0000-0000-0000-000000000001",
+                    "reset_facilities": true,
+                    "reset_assignments": true,
+                    "force_operator": true
+                  }
+                },
+                "preview": {
+                  "value": {
+                    "action": "preview",
+                    "workspace_id": "00000000-0000-0000-0000-000000000001",
+                    "facilities": { "dj_stage": false, "wedding_photography": true }
+                  }
+                },
+                "syncFacilities": {
+                  "value": { "action": "sync_facilities", "workspace_id": "00000000-0000-0000-0000-000000000001" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Action result" },
+          "400": { "description": "Validation / missing workspace_id" },
+          "401": { "description": "Not platform admin" }
+        }
+      },
+      "put": {
+        "tags": ["Tenant"],
+        "summary": "Update facilities or assignments",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AdminSlotCatalogPutBody" },
+              "examples": {
+                "facilities": {
+                  "value": {
+                    "target": "facilities",
+                    "workspace_id": "00000000-0000-0000-0000-000000000001",
+                    "facilities": { "pool": false, "wedding_photography": true },
+                    "sync_assignments": true
+                  }
+                },
+                "assignments": {
+                  "value": {
+                    "target": "assignments",
+                    "workspace_id": "00000000-0000-0000-0000-000000000001",
+                    "assignments": [
+                      { "slot_key": "beach_club_sunset_ambiance_post", "enabled": true, "priority": 10 }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated facilities or assignment list" },
+          "401": { "description": "Not platform admin" }
+        }
+      },
+      "patch": {
+        "tags": ["Catalog"],
+        "summary": "Patch sector or slot definition",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "target": { "type": "string", "enum": ["slot", "sector"] },
+                  "sector_id": { "type": "string" },
+                  "slot_key": { "type": "string" }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated entity" }
+        }
+      }
+    },
+    "/api/admin/brands": {
+      "get": {
+        "tags": ["Tenant"],
+        "summary": "List brands (platform registry)",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "sector_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "view", "in": "query", "schema": { "type": "string", "enum": ["by_sector"] } }
+        ],
+        "responses": {
+          "200": { "description": "Brand list or sector counts" }
+        }
+      }
+    },
+    "/api/admin/brands/{workspaceId}": {
+      "get": {
+        "tags": ["Tenant"],
+        "summary": "Single brand detail (includes sector_id)",
+        "parameters": [
+          { "name": "workspaceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Brand" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CanonicalSector": {
+        "type": "object",
+        "required": ["sector_id", "label_tr", "label_en"],
+        "properties": {
+          "sector_id": { "type": "string" },
+          "label_tr": { "type": "string" },
+          "label_en": { "type": "string" },
+          "aliases": { "type": "array", "items": { "type": "string" } },
+          "is_active": { "type": "boolean" },
+          "sort_order": { "type": "integer" }
+        }
+      },
+      "ProductionSlotDefinition": {
+        "type": "object",
+        "required": ["slot_key", "sector_id", "format"],
+        "properties": {
+          "slot_key": { "type": "string" },
+          "sector_id": { "type": "string" },
+          "label_tr": { "type": "string" },
+          "label_en": { "type": "string" },
+          "format": { "type": "string", "enum": ["post", "story", "reel", "carousel"] },
+          "pipeline": { "type": "string" },
+          "slot_role": { "type": "string" },
+          "design_template_type": { "type": "string" },
+          "library_slot_key": { "type": ["string", "null"] },
+          "tier": { "type": "string" },
+          "optional_tags": { "type": "array", "items": { "type": "string" }, "description": "e.g. requires:pool, requires:wedding_photography" },
+          "enabled_by_default": { "type": "boolean" },
+          "sort_order": { "type": "integer" },
+          "status": { "type": "string" },
+          "owner_workspace_id": { "type": ["string", "null"], "format": "uuid" },
+          "match_signals": { "type": "object", "additionalProperties": true },
+          "prompt_pack": { "type": "object", "additionalProperties": true }
+        }
+      },
+      "SectorReadinessItem": {
+        "type": "object",
+        "properties": {
+          "sector_id": { "type": "string" },
+          "label_tr": { "type": "string" },
+          "label_en": { "type": "string" },
+          "aliases": { "type": "array", "items": { "type": "string" } },
+          "pack_slot_count": { "type": "integer" },
+          "db_active_global_slots": { "type": "integer" },
+          "db_total_slots": { "type": "integer" },
+          "formats": { "type": "object", "additionalProperties": { "type": "integer" } },
+          "has_production_profile": { "type": "boolean" },
+          "has_industry_playbook": { "type": "boolean" },
+          "playbook_id": { "type": "string" },
+          "seeded_in_db": { "type": "boolean" },
+          "db_sector_active": { "type": "boolean" },
+          "status": { "type": "string", "enum": ["full", "seed_stale", "partial", "missing_pack"] },
+          "ready": { "type": "boolean" },
+          "min_pack_slots": { "type": "integer" }
+        }
+      },
+      "SectorReadinessReport": {
+        "type": "object",
+        "description": "GET ?view=readiness",
+        "properties": {
+          "target_full_sectors": { "type": "integer" },
+          "full_count": { "type": "integer" },
+          "ready": { "type": "boolean" },
+          "expected_pack_sectors": { "type": "integer" },
+          "expected_pack_slots": { "type": "integer" },
+          "db_sector_count": { "type": "integer" },
+          "db_active_global_slots": { "type": "integer" },
+          "seed_ok": { "type": "boolean" },
+          "sectors": { "type": "array", "items": { "$ref": "#/components/schemas/SectorReadinessItem" } }
+        }
+      },
+      "TenantSectorResolve": {
+        "type": "object",
+        "description": "GET ?view=sector_resolve&workspace_id=",
+        "properties": {
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "sector_id": { "type": ["string", "null"] },
+          "business_type": { "type": ["string", "null"] },
+          "service_profile_category": { "type": ["string", "null"] },
+          "source": { "type": "string", "enum": ["service_profile", "business_type", "unresolved"] },
+          "facilities": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "photography_surface": { "type": "boolean" }
+        }
+      },
+      "FacilityOption": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "enabled": { "type": "boolean" },
+          "label_tr": { "type": "string" },
+          "hint_tr": { "type": "string" },
+          "opt_in": { "type": "boolean" }
+        }
+      },
+      "BrandSlotFacilities": {
+        "type": "object",
+        "properties": {
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "sector_id": { "type": ["string", "null"] },
+          "facilities": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "options": { "type": "array", "items": { "$ref": "#/components/schemas/FacilityOption" } },
+          "defaults": { "type": "object", "additionalProperties": { "type": "boolean" } }
+        }
+      },
+      "CoverageInfo": {
+        "type": "object",
+        "properties": {
+          "effective_enabled_count": { "type": "integer" },
+          "has_post": { "type": "boolean" },
+          "has_story": { "type": "boolean" },
+          "ok": { "type": "boolean" },
+          "errors": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "TenantSlotEffective": {
+        "type": "object",
+        "properties": {
+          "slot_key": { "type": "string" },
+          "slot": { "$ref": "#/components/schemas/ProductionSlotDefinition" },
+          "assigned": { "type": "boolean" },
+          "assignment_enabled": { "type": ["boolean", "null"] },
+          "assignment_source": { "type": ["string", "null"] },
+          "priority": { "type": ["integer", "null"] },
+          "facility_blocked": { "type": "boolean" },
+          "required_facilities": { "type": "array", "items": { "type": "string" } },
+          "effective_enabled": { "type": "boolean" },
+          "blocked_by": {
+            "type": ["string", "null"],
+            "enum": ["assignment", "facility", "not_default", "inactive", null]
+          }
+        }
+      },
+      "TenantSlotAdminOverview": {
+        "type": "object",
+        "description": "GET ?view=overview&workspace_id=",
+        "properties": {
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "sector_id": { "type": ["string", "null"] },
+          "facilities": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "facility_options": { "type": "array", "items": { "$ref": "#/components/schemas/FacilityOption" } },
+          "shelves": { "type": "array", "items": { "type": "object" } },
+          "slots": { "type": "array", "items": { "$ref": "#/components/schemas/TenantSlotEffective" } },
+          "coverage": { "$ref": "#/components/schemas/CoverageInfo" },
+          "assignment_row_count": { "type": "integer" },
+          "using_sector_defaults": { "type": "boolean" }
+        }
+      },
+      "AdminSlotCatalogPostBody": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "sync_seed",
+              "bootstrap",
+              "reset_defaults",
+              "preview",
+              "sync_facilities",
+              "create_slot",
+              "create_sector",
+              "clone_slot",
+              "archive_slot",
+              "activate_slot",
+              "custom_slot"
+            ]
+          },
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "sector_id": { "type": ["string", "null"] },
+          "slot_key": { "type": "string" },
+          "facilities": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "assignments": { "type": "array", "items": { "type": "object" } },
+          "reset_facilities": { "type": "boolean" },
+          "reset_assignments": { "type": "boolean" },
+          "force_operator": { "type": "boolean" }
+        },
+        "additionalProperties": true
+      },
+      "AdminSlotCatalogPutBody": {
+        "type": "object",
+        "required": ["workspace_id"],
+        "properties": {
+          "target": { "type": "string", "enum": ["facilities", "assignments"] },
+          "workspace_id": { "type": "string", "format": "uuid" },
+          "facilities": { "type": "object", "additionalProperties": { "type": "boolean" } },
+          "sync_assignments": { "type": "boolean" },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["slot_key"],
+              "properties": {
+                "slot_key": { "type": "string" },
+                "enabled": { "type": "boolean" },
+                "priority": { "type": "integer" },
+                "assignment_source": { "type": "string" },
+                "notes": { "type": ["string", "null"] },
+                "customization": { "type": "object", "additionalProperties": true }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-ui-screens": [
+    {
+      "id": "sector-readiness",
+      "title": "Sector readiness",
+      "primary": "GET /api/admin/slot-catalog?view=readiness",
+      "actions": ["POST action=sync_seed when seed_ok=false"]
+    },
+    {
+      "id": "sector-slots",
+      "title": "Sector slot pack",
+      "primary": "GET /api/admin/slot-catalog?sector_id={sector_id}",
+      "secondary": "GET ?view=coverage&sector_id="
+    },
+    {
+      "id": "tenant-ops",
+      "title": "Tenant slot ops",
+      "flow": [
+        "GET /api/admin/brands",
+        "GET ?view=sector_resolve&workspace_id=",
+        "GET ?view=overview&workspace_id=",
+        "PUT target=facilities",
+        "POST action=reset_defaults | bootstrap | preview"
+      ]
+    }
+  ]
+}

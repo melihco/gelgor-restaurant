@@ -332,6 +332,9 @@ INDUSTRY_ALIASES = {
     # production_company is its own canonical ID — do NOT alias to agency_services
     "service": "local_service_business",
     "general_business": "local_service_business",
+    # Fine dining → restaurant playbook (pack sector fine_dining)
+    "fine_dining": "restaurant_cafe",
+    "fine_dine": "restaurant_cafe",
     # Local products / artisan food
     "local_products": "local_products_shop",
     "yöresel_ürün": "local_products_shop",
@@ -348,26 +351,32 @@ INDUSTRY_ALIASES = {
     "kuafor": "barber_salon",
     "berber": "barber_salon",
     "bar": "beach_club",
+    # Nightlife — pack id is nightclub; playbook key remains nightclub_lounge
     "nightclub": "nightclub_lounge",
+    "nightclub_lounge": "nightclub_lounge",
     "club": "nightclub_lounge",
     "lounge": "nightclub_lounge",
     "gece_kulubu": "nightclub_lounge",
-    # Hotel / resort
-    "hotel": "hotel_resort",
-    "resort": "hotel_resort",
-    "otel": "hotel_resort",
-    "boutique_hotel": "hotel_resort",
-    "motel": "hotel_resort",
-    # Fitness
+    # Hotel / resort → hospitality pack (slot SSOT)
+    "hotel": "hospitality",
+    "hotel_resort": "hospitality",
+    "resort": "hospitality",
+    "otel": "hospitality",
+    "boutique_hotel": "hospitality",
+    "motel": "hospitality",
+    # Fitness — pack id fitness_gym; playbook key remains fitness
+    "fitness": "fitness",
+    "fitness_gym": "fitness",
     "gym": "fitness",
     "spor": "fitness",
     "yoga": "fitness",
     "pilates": "fitness",
     "crossfit": "fitness",
     "personal_training": "fitness",
-    # Fashion / clothing
+    # Fashion — pack id fashion_boutique; playbook key remains fashion_retail
     "fashion": "fashion_retail",
     "fashion_retail": "fashion_retail",
+    "fashion_boutique": "fashion_retail",
     "clothing": "fashion_retail",
     "moda": "fashion_retail",
     "giyim": "fashion_retail",
@@ -380,8 +389,7 @@ INDUSTRY_ALIASES = {
     "kuyumcu": "fashion_retail",
     "mücevher": "fashion_retail",
     "mucevher": "fashion_retail",
-    # Bakery / patisserie — maps to cafe_bakery playbook (closest food retail)
-    # TypeScript sector-production-profile.ts handles the more specific bakery behavior.
+    # Bakery / patisserie — pack id bakery_patisserie; playbook key cafe_bakery
     "bakery": "cafe_bakery",
     "bakery_patisserie": "cafe_bakery",
     "pastane": "cafe_bakery",
@@ -428,6 +436,10 @@ INDUSTRY_ALIASES = {
     "event_planning": "wedding_event",
     "event_planning_service": "wedding_event",
     "wedding_event_service": "wedding_event",
+    "wedding_photography": "wedding_event",
+    "wedding_photographer": "wedding_event",
+    "destination_wedding": "wedding_event",
+    "event_management": "wedding_event",
     "dugun": "wedding_event",
     "düğün": "wedding_event",
     "organizasyon": "wedding_event",
@@ -439,8 +451,11 @@ INDUSTRY_ALIASES = {
     "avukat": "agency_services",
     "muhasebe": "agency_services",
     "accountant": "agency_services",
+    # Generic photography studio → agency_services (has slot pack).
+    # Bridal / wedding photography aliases map to wedding_event above.
     "photography": "agency_services",
     "fotograf": "agency_services",
+    "photo_studio": "agency_services",
 }
 
 

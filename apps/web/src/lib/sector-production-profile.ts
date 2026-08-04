@@ -700,15 +700,17 @@ const SECTOR_ALIASES: Record<string, string> = {
   // Fitness
   gym: 'fitness_gym',
   fitness: 'fitness_gym',
-  // Nightlife
+  // Nightlife — pack id nightclub; playbook key nightclub_lounge
   night_club: 'nightclub',
+  nightclub_lounge: 'nightclub',
   entertainment: 'nightclub',
   // Logistics
   logistics: 'moving_logistics',
   moving: 'moving_logistics',
   nakliyat: 'moving_logistics',
-  // Fashion
+  // Fashion — pack id fashion_boutique; playbook key fashion_retail
   fashion: 'fashion_boutique',
+  fashion_retail: 'fashion_boutique',
   butik: 'fashion_boutique',
   giyim: 'fashion_boutique',
   clothing: 'fashion_boutique',
@@ -717,12 +719,23 @@ const SECTOR_ALIASES: Record<string, string> = {
   takı: 'jewelry_accessories',
   taki: 'jewelry_accessories',
   accessories: 'jewelry_accessories',
-  // Bakery
+  // Bakery — pack id bakery_patisserie (service category cafe_bakery stays coffee_shop via CATEGORY map)
   bakery: 'bakery_patisserie',
+  bakery_patisserie: 'bakery_patisserie',
   pastane: 'bakery_patisserie',
   firın: 'bakery_patisserie',
   patisserie: 'bakery_patisserie',
-  // Wedding
+  // Fitness playbook key → pack id
+  fitness: 'fitness_gym',
+  // Agency / professional services (dedicated slot pack)
+  agency: 'agency_services',
+  web_agency: 'agency_services',
+  creative_agency: 'agency_services',
+  marketing_agency: 'agency_services',
+  photography: 'agency_services',
+  photo_studio: 'agency_services',
+  fotograf: 'agency_services',
+  // Wedding / photography studio (stay on wedding_event pack — no separate sector)
   wedding: 'wedding_event',
   event: 'wedding_event',
   dugun: 'wedding_event',
@@ -733,6 +746,10 @@ const SECTOR_ALIASES: Record<string, string> = {
   event_planning: 'wedding_event',
   event_planning_service: 'wedding_event',
   wedding_event_service: 'wedding_event',
+  wedding_photography: 'wedding_event',
+  wedding_photographer: 'wedding_event',
+  destination_wedding: 'wedding_event',
+  event_management: 'wedding_event',
   etkinlik_ve_organizasyon: 'wedding_event',
   etkinlik_organizasyon: 'wedding_event',
 };

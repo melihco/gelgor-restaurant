@@ -526,18 +526,9 @@ export function BrandHubDashboard({
 
       {strategyItem ? (
         <div style={{ marginTop: 22 }}>
-          <div className="sa-chrome-eyebrow" style={{ marginBottom: 6 }}>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
             Strateji
           </div>
-          <p style={{
-            margin: '0 0 10px',
-            fontSize: 12,
-            lineHeight: 1.4,
-            color: t.textMuted,
-          }}
-          >
-            Kampanya, rakip ve özel gün bağlamı — galeri / fal üretim ayarı değildir.
-          </p>
           <SaMenuIndex>
             <div className="sa-menu-index__slot">
               <BrandHubTile
@@ -552,18 +543,9 @@ export function BrandHubDashboard({
 
       {assistantItem ? (
         <div style={{ marginTop: 22 }}>
-          <div className="sa-chrome-eyebrow" style={{ marginBottom: 6 }}>
+          <div className="sa-chrome-eyebrow" style={{ marginBottom: 10 }}>
             Müşteri kanalları
           </div>
-          <p style={{
-            margin: '0 0 10px',
-            fontSize: 12,
-            lineHeight: 1.4,
-            color: t.textMuted,
-          }}
-          >
-            Instagram DM / sohbet asistanı — feed ve tasarım üretimini etkilemez.
-          </p>
           <SaMenuIndex>
             <div className="sa-menu-index__slot">
               <BrandHubTile

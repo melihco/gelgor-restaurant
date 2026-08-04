@@ -105,10 +105,40 @@ CROSS_SECTOR_SERVICE_SLOTS: list[SlotInstance] = [
     ),
 ]
 
+# Mirrors apps/web CROSS_SECTOR_PREMIUM_EDITORIAL_SLOTS
+CROSS_SECTOR_PREMIUM_EDITORIAL_SLOTS: list[SlotInstance] = [
+    _inst(
+        "premium_editorial_campaign_post",
+        "Premium Editorial Campaign",
+        "Premium Editorial Campaign",
+        "post",
+        pipeline="premium_editorial",
+        slot_role="premium_editorial_campaign_post",
+        design_template_type="campaign_announcement",
+        requires_premium_composition=True,
+        enabled_by_default=True,
+    ),
+    _inst(
+        "premium_editorial_campaign_story",
+        "Premium Editorial Story",
+        "Premium Editorial Story",
+        "story",
+        pipeline="premium_editorial",
+        slot_role="premium_editorial_campaign_story",
+        design_template_type="campaign_announcement",
+        requires_premium_composition=True,
+        enabled_by_default=True,
+    ),
+]
+
 
 def _with_cross_sector_slots(pack: SectorPack) -> SectorPack:
     existing = {inst["suffix"] for inst in pack["instances"]}
-    extras = [s for s in CROSS_SECTOR_SERVICE_SLOTS if s["suffix"] not in existing]
+    extras = [
+        s
+        for s in [*CROSS_SECTOR_SERVICE_SLOTS, *CROSS_SECTOR_PREMIUM_EDITORIAL_SLOTS]
+        if s["suffix"] not in existing
+    ]
     if not extras:
         return pack
     return {**pack, "instances": [*pack["instances"], *extras]}
@@ -379,7 +409,15 @@ _SECTOR_SLOT_PACKS_BASE: list[SectorPack] = [
         "sector_id": "wedding_event",
         "label_tr": "Düğün & Etkinlik",
         "label_en": "Wedding & Event",
-        "aliases": ["wedding", "event_venue", "wedding_planner", "banquet"],
+        "aliases": [
+            "wedding",
+            "event_venue",
+            "wedding_planner",
+            "banquet",
+            "wedding_photography",
+            "wedding_photographer",
+            "destination_wedding",
+        ],
         "sort_order": 45,
         "instances": [
             _inst("venue_showcase_post", "Mekan vitrin", "Venue showcase", "post"),
@@ -392,13 +430,45 @@ _SECTOR_SLOT_PACKS_BASE: list[SectorPack] = [
             _inst("planning_tip_post", "Planlama ipucu", "Planning tip", "post"),
             _inst("outdoor_ceremony_post", "Açık hava tören", "Outdoor ceremony", "post", ["requires:outdoor_terrace"]),
             _inst("dj_reception_post", "DJ resepsiyon", "DJ reception", "post", ["requires:dj_stage"]),
+            _inst("couple_portrait_post", "Çift portre", "Couple portrait", "post", ["requires:wedding_photography"]),
+            _inst("detail_macro_post", "Detay makro", "Detail macro", "post", ["requires:wedding_photography"]),
+            _inst("prep_getting_ready_post", "Hazırlık anı", "Getting ready", "post", ["requires:wedding_photography"]),
             _inst("save_date_story", "Save the date story", "Save the date story", "story"),
             _inst("behind_setup_story", "Kurulum kulis story", "Behind setup story", "story"),
             _inst("availability_story", "Müsaitlik story", "Availability story", "story"),
             _inst("floral_detail_story", "Çiçek detay story", "Floral detail story", "story"),
+            _inst(
+                "shoot_day_bts_story",
+                "Çekim günü kulis",
+                "Shoot day BTS story",
+                "story",
+                ["requires:wedding_photography"],
+                pipeline="fal_story",
+                slot_role="campaign_story_motion",
+            ),
+            _inst(
+                "event_announcement_story",
+                "Etkinlik duyuru afişi",
+                "Event announcement story",
+                "story",
+                pipeline="fal_story",
+                slot_role="campaign_story_motion",
+                design_template_type="event_special",
+            ),
+            _inst(
+                "typography_poster_story",
+                "Tipografi poster story",
+                "Typography poster story",
+                "story",
+                pipeline="fal_only_story",
+                slot_role="fal_only_story",
+                design_template_type="campaign_announcement",
+            ),
             _inst("venue_walkthrough_reel", "Mekan walkthrough reel", "Venue walkthrough reel", "reel"),
             _inst("ceremony_moments_reel", "Tören anları reel", "Ceremony moments reel", "reel"),
             _inst("reception_energy_reel", "Resepsiyon enerji reel", "Reception energy reel", "reel", ["requires:live_music"]),
+            _inst("teaser_film_reel", "Teaser film reel", "Teaser film reel", "reel", ["requires:wedding_photography"]),
+            _inst("highlight_film_reel", "Highlight film reel", "Highlight film reel", "reel", ["requires:wedding_photography"]),
             _inst("portfolio_carousel", "Portfolyo carousel", "Portfolio carousel", "carousel"),
         ],
     },
@@ -602,6 +672,64 @@ _SECTOR_SLOT_PACKS_BASE: list[SectorPack] = [
             _inst("work_process_reel", "İş süreç reel", "Work process reel", "reel"),
             _inst("team_in_action_reel", "Ekip aksiyon reel", "Team in action reel", "reel"),
             _inst("services_carousel", "Hizmetler carousel", "Services carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "agency_services",
+        "label_tr": "Ajans & Profesyonel Hizmet",
+        "label_en": "Agency & Professional Services",
+        "aliases": ["agency", "web_agency", "creative_agency", "marketing_agency", "photo_studio", "photography"],
+        "sort_order": 75,
+        "instances": [
+            _inst("service_hero_post", "Hizmet hero", "Service hero", "post"),
+            _inst("case_study_post", "Vaka çalışması", "Case study", "post"),
+            _inst("client_logo_wall_post", "Müşteri logoları", "Client logo wall", "post"),
+            _inst("team_expertise_post", "Ekip uzmanlık", "Team expertise", "post"),
+            _inst("process_explainer_post", "Süreç anlatımı", "Process explainer", "post"),
+            _inst("thought_leadership_post", "Düşünce liderliği", "Thought leadership", "post"),
+            _inst("offer_package_post", "Teklif paketi", "Offer package", "post"),
+            _inst("testimonial_post", "Referans", "Testimonial", "post"),
+            _inst("portfolio_highlight_post", "Portfolyo öne çıkan", "Portfolio highlight", "post"),
+            _inst("insight_tip_story", "İçgörü ipucu story", "Insight tip story", "story"),
+            _inst("client_win_story", "Müşteri kazanım story", "Client win story", "story"),
+            _inst("booking_cta_story", "Görüşme CTA story", "Booking CTA story", "story"),
+            _inst(
+                "capability_poster_story",
+                "Yetenek afişi story",
+                "Capability poster story",
+                "story",
+                pipeline="fal_only_story",
+                slot_role="fal_only_story",
+                design_template_type="campaign_announcement",
+            ),
+            _inst("project_walkthrough_reel", "Proje walkthrough reel", "Project walkthrough reel", "reel"),
+            _inst("office_culture_reel", "Ofis kültür reel", "Office culture reel", "reel"),
+            _inst("services_carousel", "Hizmetler carousel", "Services carousel", "carousel"),
+        ],
+    },
+    {
+        "sector_id": "jewelry_accessories",
+        "label_tr": "Takı & Aksesuar",
+        "label_en": "Jewelry & Accessories",
+        "aliases": ["jewelry", "jewellery", "kuyumcu", "accessories", "mücevher", "mucevher"],
+        "sort_order": 78,
+        "instances": [
+            _inst("product_macro_post", "Ürün makro", "Product macro", "post"),
+            _inst("collection_hero_post", "Koleksiyon hero", "Collection hero", "post"),
+            _inst("styled_look_post", "Stilize look", "Styled look", "post"),
+            _inst("craftsmanship_post", "İşçilik", "Craftsmanship", "post"),
+            _inst("gift_moment_post", "Hediye anı", "Gift moment", "post"),
+            _inst("new_arrival_post", "Yeni gelen", "New arrival", "post"),
+            _inst("bestseller_post", "Çok satan", "Bestseller", "post"),
+            _inst("occasion_guide_post", "Özel gün rehberi", "Occasion guide", "post"),
+            _inst("sparkle_detail_story", "Parıltı detay story", "Sparkle detail story", "story"),
+            _inst("try_on_story", "Dene story", "Try-on story", "story"),
+            _inst("limited_drop_story", "Limited drop story", "Limited drop story", "story"),
+            _inst("gift_cta_story", "Hediye CTA story", "Gift CTA story", "story"),
+            _inst("macro_sparkle_reel", "Makro parıltı reel", "Macro sparkle reel", "reel"),
+            _inst("unboxing_reel", "Unboxing reel", "Unboxing reel", "reel"),
+            _inst("atelier_bts_reel", "Atölye kulis reel", "Atelier BTS reel", "reel"),
+            _inst("collection_carousel", "Koleksiyon carousel", "Collection carousel", "carousel"),
         ],
     },
     {

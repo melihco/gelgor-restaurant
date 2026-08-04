@@ -64,6 +64,7 @@ async def ensure_slot_catalog_ready() -> None:
     from scripts.seed_production_slot_catalog import seed_sectors, seed_slots
 
     expected_global = sum(len(keys) for keys in SLOT_KEYS_BY_SECTOR.values())
+    expected_sectors = len(SLOT_KEYS_BY_SECTOR)
 
     async with async_session_factory() as session:
         sector_count = await session.scalar(select(func.count()).select_from(CanonicalSector))
@@ -72,13 +73,19 @@ async def ensure_slot_catalog_ready() -> None:
             .select_from(ProductionSlotDefinition)
             .where(ProductionSlotDefinition.owner_workspace_id.is_(None))
         )
-        needs_seed = not sector_count or int(slot_count or 0) < expected_global
+        # Upsert when pack grows (new sectors OR new slot keys). Slot count alone is
+        # insufficient — stale DBs can have more rows than expected yet miss new packs.
+        needs_seed = (
+            int(sector_count or 0) < expected_sectors
+            or int(slot_count or 0) < expected_global
+        )
         if not needs_seed:
             logger.info(
                 "slot_catalog_ready",
                 sectors=int(sector_count or 0),
                 global_slots=int(slot_count or 0),
                 expected_global=expected_global,
+                expected_sectors=expected_sectors,
             )
             return
 
@@ -92,4 +99,5 @@ async def ensure_slot_catalog_ready() -> None:
             slot_rows=slots,
             total_definitions=int(total or 0),
             expected_global=expected_global,
+            expected_sectors=expected_sectors,
         )

@@ -1603,6 +1603,28 @@ def infer_industry(text: str, fallback: str = "") -> str:
         "cabana", "aegean", "mykonos", "bodrum", "marina",
     ] if w in blob)
 
+    # ── 3b. Wedding / event BEFORE beauty ─────────────────────────────────
+    # Bridal makeup / "gelin" must not land in beauty_wellness (salon pack).
+    # Photography studios covering weddings map to wedding_event (has a slot pack).
+    wedding_strong = [
+        "wedding planner", "wedding planning", "wedding venue", "düğün salonu", "dugun salonu",
+        "düğün organizasyon", "dugun organizasyon", "wedding organization", "destination wedding",
+        "bridal", "wedding coordinator", "event décor", "event decor",
+        "wedding photography", "wedding photographer", "düğün fotoğraf", "dugun fotograf",
+        "wedding videography", "gelin fotoğraf", "meon wedding",
+    ]
+    wedding_signals = [
+        "wedding", "düğün", "dugun", "gelin", "damat", "bride", "groom", "nişan", "nisan",
+        "ceremony", "reception", "wedding invitation", "davetiye",
+    ]
+    if any(w in blob for w in wedding_strong):
+        return "wedding_event"
+    wedding_hits = sum(1 for w in wedding_signals if w in blob)
+    if wedding_hits >= 2:
+        return "wedding_event"
+    if wedding_hits >= 1 and any(w in blob for w in ["organizasyon", "event planning", "etkinlik", "fotoğraf", "fotograf", "photography"]):
+        return "wedding_event"
+
     # ── 4. Beauty & personal care ─────────────────────────────────────────
     # Covers nail salon, spa, hair salon, barber, aesthetics.
     # Runs BEFORE restaurant check (beauty sites also mention "fiyat", "menü").
@@ -1702,25 +1724,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
         "antrenman", "personal trainer", "egzersiz", "spor merkezi",
     ]
     if any(w in blob for w in fitness_signals):
-        return "fitness"
-
-    # ── 8b. Wedding & event services — override stale fallback ────────────
-    wedding_strong = [
-        "wedding planner", "wedding planning", "wedding venue", "düğün salonu", "dugun salonu",
-        "düğün organizasyon", "dugun organizasyon", "wedding organization", "destination wedding",
-        "bridal", "wedding coordinator", "event décor", "event decor",
-    ]
-    wedding_signals = [
-        "wedding", "düğün", "dugun", "gelin", "damat", "bride", "groom", "nişan", "nisan",
-        "ceremony", "reception", "wedding invitation", "davetiye",
-    ]
-    if any(w in blob for w in wedding_strong):
-        return "wedding_event"
-    wedding_hits = sum(1 for w in wedding_signals if w in blob)
-    if wedding_hits >= 2:
-        return "wedding_event"
-    if wedding_hits >= 1 and any(w in blob for w in ["organizasyon", "event planning", "etkinlik"]):
-        return "wedding_event"
+        return "fitness_gym"
 
     # ── 9. Respect stale fallback for all remaining ambiguous signals ─────
     # Strong sector-specific keywords above can now override a stale value.
