@@ -324,6 +324,7 @@ export const CANVA_SECTOR_ARCHETYPE_HINTS: Record<string, CanvaArchetypeId[]> = 
   fashion_boutique: ['magazine_cover_drop', 'graphic_shape_stack', 'noir_editorial', 'promo_price_stack'],
   bakery_patisserie: ['product_hero_card', 'polaroid_memory', 'promo_price_stack', 'split_feature_panel'],
   wedding_event: ['event_ticket_stub', 'editorial_date_masthead', 'frosted_quote_card', 'cinematic_full_bleed'],
+  kids_party_venue: ['event_ticket_stub', 'polaroid_memory', 'graphic_shape_stack', 'promo_price_stack'],
   jewelry_accessories: ['noir_editorial', 'product_hero_card', 'split_feature_panel', 'editorial_date_masthead'],
   moving_logistics: ['location_pin_card', 'split_feature_panel', 'graphic_shape_stack', 'campaign_hero_block'],
   healthcare_clinic: ['frosted_quote_card', 'split_feature_panel', 'location_pin_card', 'graphic_shape_stack'],

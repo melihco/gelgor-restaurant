@@ -639,6 +639,30 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     menuIsServiceList: true,
   },
 
+  // ── Kids Party Venue ─────────────────────────────────────────────────────
+  {
+    sectorId: 'kids_party_venue',
+    hasPhysicalVenue: true,
+    galleryReliability: 'high',
+    defaultVisualSubject: 'lifestyle',
+    defaultEnhanceLevel: 'moderate',
+    forceAdaptiveScene: false,
+    captionDrivenDefault: false,
+    galleryRevisionDefault: true,
+    backgroundScenePrompt: 'colorful kids party venue, themed birthday rooms, balloon arches, cake table, playful soft lighting, joyful celebration atmosphere for children — bright and inviting, never adult nightlife',
+    imageNegativeGuards: [
+      'No bridal or wedding ceremony scenes',
+      'No adult nightlife, DJ club, cocktail bar, or alcohol-forward framing',
+      'No romantic couple portraits',
+    ],
+    sceneLockSubject: 'joyful kids birthday party venue — themed room, cake table, activity zone, or decoration details with bright playful editorial photography',
+    colorGrade: 'vibrant',
+    reelPacing: 'mid_tempo',
+    headlineFallback: 'Unutulmaz Parti',
+    recommendedEnhanceLevelLabel: 'Moderate — playful kids party energy',
+    menuIsServiceList: true,
+  },
+
   // ── General / Unknown ────────────────────────────────────────────────────
   {
     sectorId: 'general_business',
@@ -750,6 +774,17 @@ const SECTOR_ALIASES: Record<string, string> = {
   event_management: 'wedding_event',
   etkinlik_ve_organizasyon: 'wedding_event',
   etkinlik_organizasyon: 'wedding_event',
+  // Kids party venue (must stay distinct from wedding_event)
+  kids_party: 'kids_party_venue',
+  kids_birthday: 'kids_party_venue',
+  birthday_party_house: 'kids_party_venue',
+  party_house: 'kids_party_venue',
+  children_party_venue: 'kids_party_venue',
+  cocuk_parti_evi: 'kids_party_venue',
+  çocuk_parti_evi: 'kids_party_venue',
+  dogum_gunu_evi: 'kids_party_venue',
+  doğum_günü_evi: 'kids_party_venue',
+  kids_party_service: 'kids_party_venue',
 };
 
 const FALLBACK_PROFILE: SectorProductionProfile = PROFILE_MAP.get('general_business')!;

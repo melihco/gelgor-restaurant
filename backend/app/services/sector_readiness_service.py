@@ -23,6 +23,7 @@ _PRODUCTION_PROFILE_SECTORS = frozenset({
     "barber_salon",
     "healthcare_clinic",
     "wedding_event",
+    "kids_party_venue",
     "local_products_shop",
     "ecommerce_retail",
     "fitness_gym",

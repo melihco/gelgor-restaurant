@@ -40,3 +40,4 @@ def test_pack_list_includes_agency_and_jewelry():
     assert "agency_services" in ids
     assert "jewelry_accessories" in ids
     assert "wedding_event" in ids
+    assert "kids_party_venue" in ids

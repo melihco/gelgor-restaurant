@@ -119,6 +119,10 @@ export function resolveSectorPack(
     'consulting':            'professional_service',
     'law_firm':              'professional_service',
     'accounting':            'professional_service',
+    // Kids party / event venues (prefer professional_service seasonality over nightlife)
+    'kids_party_venue':      'professional_service',
+    'kids_party':            'professional_service',
+    'wedding_event':         'professional_service',
     // Retail / e-commerce
     'retail':                'retail',
     'ecommerce':             'retail',

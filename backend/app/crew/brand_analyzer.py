@@ -1603,6 +1603,20 @@ def infer_industry(text: str, fallback: str = "") -> str:
         "cabana", "aegean", "mykonos", "bodrum", "marina",
     ] if w in blob)
 
+    # ── 3a. Kids party venue BEFORE wedding / beauty ──────────────────────
+    # "parti evi" / çocuk doğum günü must not land in wedding_event bridal pack.
+    kids_party_strong = [
+        "parti evi", "çocuk parti", "cocuk parti", "kids party", "kids birthday",
+        "birthday party house", "party house", "doğum günü evi", "dogum gunu evi",
+        "çocuk doğum günü", "cocuk dogum gunu", "children's party", "childrens party",
+        "tema oda", "pasta masası", "pasta masasi",
+    ]
+    if any(w in blob for w in kids_party_strong):
+        return "kids_party_venue"
+    kids_hits = sum(1 for w in ["çocuk", "cocuk", "kids", "birthday", "doğum günü", "dogum gunu"] if w in blob)
+    if kids_hits >= 2 and any(w in blob for w in ["parti", "party", "organizasyon", "etkinlik", "animasyon"]):
+        return "kids_party_venue"
+
     # ── 3b. Wedding / event BEFORE beauty ─────────────────────────────────
     # Bridal makeup / "gelin" must not land in beauty_wellness (salon pack).
     # Photography studios covering weddings map to wedding_event (has a slot pack).
@@ -1775,7 +1789,14 @@ def infer_content_pillars(text: str, industry: str) -> list[str]:
     from app.crew.industry_playbooks import normalize_industry_id, get_industry_playbook
     normalized = normalize_industry_id(industry)
     playbook = get_industry_playbook(normalized)
-    if normalized in ("local_products_shop", "beach_club", "ecommerce_retail", "beauty_wellness", "wedding_event"):
+    if normalized in (
+        "local_products_shop",
+        "beach_club",
+        "ecommerce_retail",
+        "beauty_wellness",
+        "wedding_event",
+        "kids_party_venue",
+    ):
         return playbook.default_content_needs[:6]
 
     # For other industries, build from text signals

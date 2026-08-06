@@ -64,7 +64,8 @@ const ONBOARDING_SECTORS: { id: string; label: string }[] = [
   { id: 'beauty_wellness', label: 'Güzellik / wellness' },
   { id: 'coffee_shop', label: 'Kahve' },
   { id: 'fashion_retail', label: 'Moda / retail' },
-  { id: 'event_management', label: 'Etkinlik' },
+  { id: 'event_management', label: 'Düğün / etkinlik' },
+  { id: 'kids_party_venue', label: 'Çocuk parti evi' },
   { id: 'general_business', label: 'Diğer' },
 ];
 

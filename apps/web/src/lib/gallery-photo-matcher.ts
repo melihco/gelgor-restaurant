@@ -871,6 +871,24 @@ const BUSINESS_TYPE_AFFINITY: Array<{
     ],
     avoid: ['medical', 'clinic', 'gym equipment', 'surgery'],
   },
+  // ── Kids party venue (before nightlife — "parti" must not map to club) ──
+  {
+    match: [
+      'kids_party_venue', 'kids_party', 'kids party', 'parti evi', 'çocuk parti',
+      'cocuk parti', 'birthday_party', 'birthday party', 'doğum günü evi',
+      'dogum gunu', 'party_house', 'children_party',
+    ],
+    prefer: [
+      'kids', 'çocuk', 'cocuk', 'birthday', 'doğum günü', 'dogum gunu', 'party',
+      'parti', 'balloon', 'balon', 'cake', 'pasta', 'decoration', 'süsleme',
+      'theme', 'tema', 'room', 'oda', 'activity', 'aktivite', 'playground',
+      'oyun', 'colorful', 'renkli', 'celebration', 'kutlama', 'invite', 'davet',
+    ],
+    avoid: [
+      'bridal', 'gelin', 'wedding', 'düğün', 'cocktail', 'nightlife', 'dj club',
+      'alcohol', 'wine', 'romantic couple',
+    ],
+  },
   // ── Beach club / nightlife ───────────────────────────────────────────────
   {
     match: [

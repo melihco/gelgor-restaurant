@@ -17,6 +17,7 @@ export const CATEGORY_TO_CANONICAL_SECTOR: Record<string, string> = {
   wedding_photographer: 'wedding_event',
   destination_wedding: 'wedding_event',
   event_management: 'wedding_event',
+  kids_party_service: 'kids_party_venue',
 };
 
 export const WEAK_INDUSTRY_VALUES = new Set([
@@ -49,6 +50,7 @@ const SECTOR_TO_SERVICE_CATEGORY: Record<string, string> = {
   local_products_shop: 'local_products_shop',
   fashion_boutique: 'fashion_retail',
   wedding_event: 'wedding_event_service',
+  kids_party_venue: 'kids_party_service',
 };
 
 /**

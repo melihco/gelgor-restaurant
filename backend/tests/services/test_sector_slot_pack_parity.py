@@ -16,6 +16,7 @@ READY_PACK_SECTORS = (
     "barber_salon",
     "healthcare_clinic",
     "wedding_event",
+    "kids_party_venue",
     "local_products_shop",
     "ecommerce_retail",
     "fitness_gym",
@@ -52,9 +53,18 @@ def test_wedding_photography_optional_tags():
 
 def test_playbook_aliases_resolve_for_pack_sectors():
     # Playbook may use a different key; normalize must not fail / fall to empty.
-    for sector in ("beach_club", "wedding_event", "agency_services", "jewelry_accessories"):
+    for sector in ("beach_club", "wedding_event", "kids_party_venue", "agency_services", "jewelry_accessories"):
         pb = get_industry_playbook(sector)
         assert pb.id
     assert normalize_industry_id("wedding_photography") == "wedding_event"
+    assert normalize_industry_id("kids_party") == "kids_party_venue"
+    assert normalize_industry_id("cocuk_parti_evi") == "kids_party_venue"
     assert normalize_industry_id("fitness_gym") in {"fitness", "fitness_gym"}
     assert normalize_industry_id("nightclub") in {"nightclub", "nightclub_lounge"}
+
+
+def test_kids_party_venue_has_birthday_slots():
+    keys = SLOT_KEYS_BY_SECTOR["kids_party_venue"]
+    assert any("birthday_package" in k for k in keys)
+    assert any("theme_room" in k for k in keys)
+    assert all("bridal" not in k for k in keys)

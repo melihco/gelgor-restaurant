@@ -144,6 +144,7 @@ _SECTOR_TO_SERVICE_CATEGORY: dict[str, str] = {
     "local_products_shop": "local_products_shop",
     "fashion_boutique": "fashion_retail",
     "wedding_event": "wedding_event_service",
+    "kids_party_venue": "kids_party_service",
 }
 
 

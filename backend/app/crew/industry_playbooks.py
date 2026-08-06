@@ -300,6 +300,21 @@ INDUSTRY_PLAYBOOKS: dict[str, IndustryPlaybook] = {
         approval_required_for=["date", "personal_data"],
         preferred_channels=["instagram_story", "instagram_post", "instagram_reel"],
     ),
+    "kids_party_venue": IndustryPlaybook(
+        id="kids_party_venue",
+        label="Kids Party Venue",
+        default_content_needs=[
+            "event_announcement",
+            "social_proof",
+            "behind_the_scenes",
+            "campaign_offer",
+            "daily_story",
+            "lead_generation",
+        ],
+        risky_signals=["date", "location", "personal_data", "limited_availability", "age"],
+        approval_required_for=["date", "personal_data", "age"],
+        preferred_channels=["instagram_story", "instagram_post", "instagram_reel"],
+    ),
 }
 
 
@@ -446,6 +461,18 @@ INDUSTRY_ALIASES = {
     "etkinlik_ve_organizasyon": "wedding_event",
     "etkinlik_organizasyon": "wedding_event",
     "event": "wedding_event",
+    # Kids party venue (distinct from wedding_event)
+    "kids_party_venue": "kids_party_venue",
+    "kids_party": "kids_party_venue",
+    "kids_birthday": "kids_party_venue",
+    "birthday_party_house": "kids_party_venue",
+    "party_house": "kids_party_venue",
+    "children_party_venue": "kids_party_venue",
+    "cocuk_parti_evi": "kids_party_venue",
+    "çocuk_parti_evi": "kids_party_venue",
+    "dogum_gunu_evi": "kids_party_venue",
+    "doğum_günü_evi": "kids_party_venue",
+    "kids_party_service": "kids_party_venue",
     "law_firm": "agency_services",
     "lawyer": "agency_services",
     "avukat": "agency_services",

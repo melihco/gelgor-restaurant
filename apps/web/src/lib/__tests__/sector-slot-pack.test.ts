@@ -23,6 +23,7 @@ describe('sector-slot-pack coverage', () => {
     'barber_salon',
     'healthcare_clinic',
     'wedding_event',
+    'kids_party_venue',
     'local_products_shop',
     'ecommerce_retail',
     'fitness_gym',
@@ -132,6 +133,16 @@ describe('sector-slot-pack coverage', () => {
     const keys = buildSlotKeysBySectorFromPacks().wedding_event;
     expect(keys.some((k) => k.includes('bridal'))).toBe(true);
     expect(keys.some((k) => k.includes('venue'))).toBe(true);
+  });
+
+  it('kids_party_venue has birthday/theme slots and stays off wedding bridal', () => {
+    const keys = buildSlotKeysBySectorFromPacks().kids_party_venue;
+    expect(keys.some((k) => k.includes('birthday_package'))).toBe(true);
+    expect(keys.some((k) => k.includes('theme_room'))).toBe(true);
+    expect(keys.every((k) => !k.includes('bridal'))).toBe(true);
+    const pack = getSectorSlotPack('kids_party_venue');
+    const theme = pack?.instances.find((i) => i.suffix === 'theme_room_post');
+    expect(theme?.optionalTags).toContain('requires:kids_area');
   });
 
   it('wedding photography slots gate on wedding_photography facility', () => {

@@ -3,6 +3,7 @@ import {
   buildSectorSyncPatch,
   resolveAuthoritativeIndustry,
   resolveTenantCanonicalSector,
+  serviceProfileCategoryForSector,
   shouldRefreshIndustryFromPython,
 } from '@/lib/canonical-sector';
 import { buildCompanyProfilePatchFromPython } from '@/lib/sync-company-profile-from-python';
@@ -133,6 +134,18 @@ describe('canonical sector sync', () => {
       },
     };
     expect(resolveAuthoritativeIndustry(py)).toBe('wedding_event');
+  });
+
+  it('maps kids_party_service category to kids_party_venue pack sector', () => {
+    const py = {
+      business_type: 'general_business',
+      brand_service_profile: {
+        category: 'kids_party_service',
+        category_confidence: 0.9,
+      },
+    };
+    expect(resolveAuthoritativeIndustry(py)).toBe('kids_party_venue');
+    expect(serviceProfileCategoryForSector('kids_party_venue')).toBe('kids_party_service');
   });
 
   it('keeps coffee_shop separate from restaurant_cafe in food/drink aliases', () => {
