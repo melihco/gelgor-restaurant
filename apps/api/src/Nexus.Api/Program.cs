@@ -647,6 +647,8 @@ static async Task ApplySchemaPatches(NexusDbContext ctx)
         "ALTER TABLE \"CompanyProfiles\" ADD COLUMN IF NOT EXISTS \"CreativeProfileConfirmedAt\" timestamp with time zone;",
         "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"PasswordHash\" varchar(500) NOT NULL DEFAULT '';",
         "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"EmailVerifiedAt\" timestamp with time zone;",
+        "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"PasswordResetTokenHash\" varchar(128);",
+        "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"PasswordResetExpiresAt\" timestamp with time zone;",
         "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"InvitedAt\" timestamp with time zone;",
         "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"InviteAcceptedAt\" timestamp with time zone;",
         @"CREATE TABLE IF NOT EXISTS ""TenantMediaAssets"" (

@@ -10,6 +10,9 @@ public class User : TenantEntity, ISoftDeletable
     public string Role { get; set; } = "User";
     public string PasswordHash { get; set; } = string.Empty;
     public DateTime? EmailVerifiedAt { get; set; }
+    /// <summary>SHA-256 hex of one-time reset token (raw token never stored).</summary>
+    public string? PasswordResetTokenHash { get; set; }
+    public DateTime? PasswordResetExpiresAt { get; set; }
     public DateTime? InvitedAt { get; set; }
     public DateTime? InviteAcceptedAt { get; set; }
     public bool IsActive { get; set; } = true;

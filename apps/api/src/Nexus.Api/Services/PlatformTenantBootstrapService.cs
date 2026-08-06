@@ -146,7 +146,7 @@ public sealed class PlatformTenantBootstrapService
                 if (request.OwnerPassword.Length < 8)
                     throw new ArgumentException("owner_password must be at least 8 characters");
                 user.PasswordHash = _auth.HashPassword(request.OwnerPassword);
-                user.EmailVerifiedAt = DateTime.UtcNow;
+                user.EmailVerifiedAt = null;
                 user.InviteAcceptedAt = DateTime.UtcNow;
             }
 

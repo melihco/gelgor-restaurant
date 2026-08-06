@@ -21,12 +21,14 @@ logger = structlog.get_logger()
 
 SchemaGateMode = Literal["fail", "warn", "off"]
 
-# Factory blast-radius columns (keep in sync with migrations 0024/0026/0027/0038/0039/0041).
+# Factory blast-radius columns (keep in sync with migrations 0024–0042).
 REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     "production_jobs": ("priority", "slot_key"),
-    "production_slot_definitions": ("optional_tags", "owner_workspace_id"),
-    "brand_contexts": ("brand_service_profile",),
+    "production_slot_definitions": ("optional_tags", "owner_workspace_id", "is_active"),
+    "brand_contexts": ("brand_service_profile", "brand_theme"),
     "brand_design_templates": ("catalog_slot_key",),
+    "tenant_slot_assignments": ("customization", "enabled", "workspace_id", "slot_key"),
+    "canonical_sectors": ("is_active", "sector_id"),
 }
 
 REQUIRED_TABLES: tuple[str, ...] = (
@@ -35,6 +37,7 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "canonical_sectors",
     "tenant_slot_assignments",
     "brand_contexts",
+    "brand_design_templates",
 )
 
 # Idempotent additive DDL — safe to re-run; mirrors migration snippets.
@@ -56,12 +59,32 @@ ADDITIVE_DDL: tuple[str, ...] = (
         ADD COLUMN IF NOT EXISTS owner_workspace_id UUID NULL
     """,
     """
+    ALTER TABLE production_slot_definitions
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
+    """,
+    """
     ALTER TABLE brand_contexts
         ADD COLUMN IF NOT EXISTS brand_service_profile JSONB
     """,
     """
+    ALTER TABLE brand_contexts
+        ADD COLUMN IF NOT EXISTS brand_theme JSONB
+    """,
+    """
     ALTER TABLE brand_design_templates
         ADD COLUMN IF NOT EXISTS catalog_slot_key VARCHAR(128)
+    """,
+    """
+    ALTER TABLE tenant_slot_assignments
+        ADD COLUMN IF NOT EXISTS customization JSONB NOT NULL DEFAULT '{}'::jsonb
+    """,
+    """
+    ALTER TABLE tenant_slot_assignments
+        ADD COLUMN IF NOT EXISTS enabled BOOLEAN NOT NULL DEFAULT TRUE
+    """,
+    """
+    ALTER TABLE canonical_sectors
+        ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE
     """,
 )
 

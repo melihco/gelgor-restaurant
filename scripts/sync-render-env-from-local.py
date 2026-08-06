@@ -60,7 +60,8 @@ def merge_env() -> dict[str, str]:
 
 def build_service_env(merged: dict[str, str]) -> dict[str, dict[str, str]]:
     shared = {
-        "INTERNAL_API_KEY": merged.get("INTERNAL_API_KEY", "smartagency-internal-dev-key"),
+        # Never default a known-dev key into Render — require local env or leave empty for sync:false.
+        "INTERNAL_API_KEY": merged.get("INTERNAL_API_KEY", ""),
         "OPENAI_API_KEY": merged.get("OPENAI_API_KEY", ""),
         "APIFY_API_KEY": merged.get("APIFY_API_KEY", ""),
         "META_APP_ID": merged.get("META_APP_ID", ""),
@@ -134,7 +135,8 @@ def build_service_env(merged: dict[str, str]) -> dict[str, dict[str, str]]:
         "FRONTEND_BASE_URL": PUBLIC_WEB,
         "Cors__AllowedOrigins__0": PUBLIC_WEB,
         "RateLimit__PermitLimit": "480",
-        "Auth__EnsureSeedAdminLogin": "true",
+        "Auth__EnsureSeedAdminLogin": "false",
+        "EnableSwagger": "false",
         "OrchestrationService__BaseUrl": f"http://{INTERNAL_CREW}",
     }
 

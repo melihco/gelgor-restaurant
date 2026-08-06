@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getPlanSpec, isSellablePackageSlug } from '@/lib/package-plan-config';
 import { isPaytrEnabled } from '@/lib/paytr/config';
 import { requestPaytrIframeToken } from '@/lib/paytr/client';
-import { createMerchantOid, savePaytrOrder } from '@/lib/paytr/orders';
-import { hasRedis } from '@/lib/redis-client';
+import { canPersistPaytrOrders, createMerchantOid, savePaytrOrder } from '@/lib/paytr/orders';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -72,9 +71,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (process.env.NODE_ENV === 'production' && !hasRedis()) {
-    console.warn(
-      '[paytr/checkout] REDIS_URL missing — pending orders are in-memory only; callbacks may fail across instances',
+  if (!canPersistPaytrOrders()) {
+    console.error('[paytr/checkout] Redis required when PayTR is enabled in production');
+    return NextResponse.json(
+      {
+        error: 'paytr_redis_required',
+        message: 'Ödeme için Redis yapılandırması gerekli. Lütfen daha sonra tekrar deneyin.',
+      },
+      { status: 503 },
     );
   }
 

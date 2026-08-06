@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Nexus.Api.Services;
 using Nexus.Domain.Entities;
 using Nexus.Domain.Enums;
@@ -16,17 +19,20 @@ public class SecurityController : ControllerBase
     private readonly ILocalAuthService _authService;
     private readonly IPermissionService _permissionService;
     private readonly IRequestContext _requestContext;
+    private readonly IHostEnvironment _env;
 
     public SecurityController(
         NexusDbContext db,
         ILocalAuthService authService,
         IPermissionService permissionService,
-        IRequestContext requestContext)
+        IRequestContext requestContext,
+        IHostEnvironment env)
     {
         _db = db;
         _authService = authService;
         _permissionService = permissionService;
         _requestContext = requestContext;
+        _env = env;
     }
 
     [HttpPost("register")]
@@ -52,7 +58,7 @@ public class SecurityController : ControllerBase
             user = existingUser;
             user.DisplayName = request.DisplayName?.Trim() ?? user.DisplayName;
             user.PasswordHash = _authService.HashPassword(request.Password);
-            user.EmailVerifiedAt = DateTime.UtcNow;
+            user.EmailVerifiedAt = null;
             user.InviteAcceptedAt = DateTime.UtcNow;
             user.IsActive = true;
         }
@@ -88,7 +94,7 @@ public class SecurityController : ControllerBase
                 DisplayName = request.DisplayName?.Trim() ?? email.Split('@')[0],
                 Role = "Owner",
                 PasswordHash = _authService.HashPassword(request.Password),
-                EmailVerifiedAt = DateTime.UtcNow,
+                EmailVerifiedAt = null,
                 InviteAcceptedAt = DateTime.UtcNow,
                 IsActive = true
             };
@@ -154,6 +160,77 @@ public class SecurityController : ControllerBase
     {
         _authService.ClearSessionCookie(Response);
         return Ok(new { status = "signed_out" });
+    }
+
+    /// <summary>
+    /// Issue a one-time password reset token. Always returns a generic success payload
+    /// (no email enumeration). Raw token is only echoed in Development when SMTP is absent.
+    /// </summary>
+    [HttpPost("forgot-password")]
+    public async Task<ActionResult> ForgotPassword([FromBody] ForgotPasswordRequest request, CancellationToken cancellationToken)
+    {
+        var email = NormalizeEmail(request.Email ?? string.Empty);
+        if (string.IsNullOrWhiteSpace(email))
+            return BadRequest(new { error = "email is required." });
+
+        var user = await _db.Users
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email && u.IsActive, cancellationToken);
+
+        string? rawTokenForDev = null;
+        if (user != null && !string.IsNullOrWhiteSpace(user.PasswordHash))
+        {
+            var raw = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            user.PasswordResetTokenHash = HashResetToken(raw);
+            user.PasswordResetExpiresAt = DateTime.UtcNow.AddHours(1);
+            await _db.SaveChangesAsync(cancellationToken);
+
+            // No SMTP in stack yet — log for ops; expose token only in Development.
+            Console.WriteLine($"[forgot-password] reset issued for {email} expires={user.PasswordResetExpiresAt:o}");
+            if (_env.IsDevelopment())
+                rawTokenForDev = raw;
+        }
+
+        return Ok(new
+        {
+            status = "ok",
+            message = "If an account exists for that email, a reset link was issued.",
+            // Development-only aid when no mailer is configured.
+            resetToken = rawTokenForDev,
+        });
+    }
+
+    [HttpPost("reset-password")]
+    public async Task<ActionResult> ResetPassword([FromBody] ResetPasswordRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token) || string.IsNullOrWhiteSpace(request.Password))
+            return BadRequest(new { error = "token and password are required." });
+        if (request.Password.Length < 8)
+            return BadRequest(new { error = "password must be at least 8 characters." });
+
+        var hash = HashResetToken(request.Token.Trim());
+        var now = DateTime.UtcNow;
+        var user = await _db.Users.FirstOrDefaultAsync(
+            u => u.PasswordResetTokenHash == hash
+                 && u.PasswordResetExpiresAt != null
+                 && u.PasswordResetExpiresAt > now
+                 && u.IsActive,
+            cancellationToken);
+
+        if (user == null)
+            return BadRequest(new { error = "Invalid or expired reset token." });
+
+        user.PasswordHash = _authService.HashPassword(request.Password);
+        user.PasswordResetTokenHash = null;
+        user.PasswordResetExpiresAt = null;
+        await _db.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { status = "password_updated" });
+    }
+
+    private static string HashResetToken(string rawToken)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawToken));
+        return Convert.ToHexString(bytes).ToLowerInvariant();
     }
 
     [HttpGet("me")]
@@ -487,6 +564,8 @@ public class SecurityController : ControllerBase
 
 public record RegisterRequest(string Email, string Password, string? DisplayName, string? TenantName);
 public record LoginRequest(string Email, string Password);
+public record ForgotPasswordRequest(string Email);
+public record ResetPasswordRequest(string Token, string Password);
 public record InviteUserRequest(string Email, string? DisplayName, string Role);
 public record UpdateUserRoleRequest(string Role);
 public record UpdateUserActiveRequest(bool IsActive);

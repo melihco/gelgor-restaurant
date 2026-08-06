@@ -29,12 +29,12 @@ Doğru vaat:
 
 ## Koşullu veya Eksik Vaatler
 
-- Live provider execution: Kod yolu ve RBAC var; gerçek provider hesabı, OAuth credential ve tenant bazlı canlı doğrulama tamamlanmadan “sorunsuz canlı otomasyon” denmemeli.
+- Live provider execution: Kod yolu ve RBAC var; prod `ActionExecution:Mode=dry-run` kalmalı. Google review reply / Instagram schedule adapter’ları **fail-loud** (`not_implemented`) — sahte `success` dönmez. Anlık IG paylaşımı Meta publish yolundan yapılır.
 - Google Ads optimizasyonu: Budget ve creative adapter var; canlı kullanım için Google Ads bağlantısı, ad group/final URL ve gerçek hesap testleri gerekiyor.
-- Google Business review reply: Provider endpoint ve executor routing var; production credential yoksa canlı yanıt yazma başarısız olur.
-- Instagram scheduling: Content plan/schedule adapter var; gerçek Instagram Business token ve yayınlama izinleri doğrulanmalı.
+- Google Business review reply: Endpoint routing var; gerçek GBP write API bağlı değil → live execution başarısız / not_implemented.
+- Instagram scheduling: Schedule adapter canlı yazma yapmaz (`not_implemented`); onaylı creative için Meta publish kullanın.
 - Brand memory / Qdrant: Relational brand memory çalışıyor; vector memory şu an disabled ve embedding provider configured değil.
-- Production database lifecycle: Health ve backup dokümantasyonu var; gerçek production için EF Core migration süreci tamamlanmalı.
+- Production database lifecycle: Schema gate factory kolonları genişletildi; full Alembic + EF Core migrations hâlâ ayrı epic.
 - Ödeme tahsilatı: Paket ve usage var; ödeme sağlayıcı, fatura, abonelik tahsilatı ve iptal/iade akışı henüz ürünleşmiş değil.
 - Alert/retry operasyonu: Operasyon görünürlüğü var; otomatik retry queue, alert routing ve SLA dashboard henüz yok.
 

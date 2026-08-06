@@ -1411,6 +1411,22 @@ class ApiClient {
     });
   }
 
+  async forgotPassword(email: string): Promise<{ status: string; message?: string; resetToken?: string | null }> {
+    return this.request('/api/security/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      timeoutMs: 30_000,
+    });
+  }
+
+  async resetPassword(token: string, password: string): Promise<{ status: string }> {
+    return this.request('/api/security/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+      timeoutMs: 30_000,
+    });
+  }
+
   async register(data: { email: string; password: string; displayName?: string; tenantName?: string }): Promise<AuthSession> {
     return this.request('/api/security/register', {
       method: 'POST',

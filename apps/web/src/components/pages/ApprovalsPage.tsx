@@ -66,6 +66,7 @@ export default function ApprovalsPage() {
   const [filter, setFilter] = useState<FilterKey>('all');
   const [search, setSearch] = useState('');
   const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const [executeFeedback, setExecuteFeedback] = useState<{ ok: boolean; text: string } | null>(null);
 
   const { data: actions = [], isLoading } = useQuery({
     queryKey: ['suggested-actions'],
@@ -112,7 +113,23 @@ export default function ApprovalsPage() {
 
   const approveMutation = useMutation({ mutationFn: (id: string) => apiClient.approveAction(id), onSuccess: invalidate });
   const rejectMutation = useMutation({ mutationFn: (id: string) => apiClient.rejectAction(id, 'Rejected from command center'), onSuccess: invalidate });
-  const executeMutation = useMutation({ mutationFn: (id: string) => apiClient.executeAction(id, mode), onSuccess: invalidate });
+  const executeMutation = useMutation({
+    mutationFn: (id: string) => apiClient.executeAction(id, mode),
+    onSuccess: async (result) => {
+      const ok = Boolean(result?.success);
+      const text = String(result?.message || (ok ? 'Execution completed.' : 'Execution failed.'));
+      setExecuteFeedback({
+        ok,
+        text: mode === 'live' && !ok
+          ? `${text} Live provider writes for schedule/review reply are not implemented — use dry-run or Meta publish.`
+          : text,
+      });
+      await invalidate();
+    },
+    onError: (err: Error) => {
+      setExecuteFeedback({ ok: false, text: err?.message || 'Execution request failed.' });
+    },
+  });
   const bulkApproveMutation = useMutation({
     mutationFn: async (ids: string[]) => { for (const id of ids) await apiClient.approveAction(id); },
     onSuccess: async () => { setBulkSelected(new Set()); await invalidate(); },
@@ -139,6 +156,22 @@ export default function ApprovalsPage() {
   return (
     <div className="h-full overflow-y-auto scrollbar-thin" style={{ background: '#07080f' }}>
       <div className="relative mx-auto max-w-[1600px] space-y-5 px-5 py-6 pb-12">
+
+        {executeFeedback && (
+          <div
+            className="flex items-start justify-between gap-3 rounded-xl px-4 py-3 text-[13px]"
+            style={{
+              background: executeFeedback.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.12)',
+              border: executeFeedback.ok ? '1px solid rgba(34,197,94,0.28)' : '1px solid rgba(239,68,68,0.35)',
+              color: executeFeedback.ok ? '#86efac' : '#fca5a5',
+            }}
+          >
+            <p className="min-w-0 flex-1 leading-snug">{executeFeedback.text}</p>
+            <button type="button" onClick={() => setExecuteFeedback(null)} className="shrink-0 opacity-70 hover:opacity-100" aria-label="Dismiss">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {/* ── Header ─────────────────────────────────────────────────── */}
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
