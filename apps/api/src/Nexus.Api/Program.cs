@@ -543,33 +543,79 @@ using (var scope = app.Services.CreateScope())
 
     if (dbContext.Database.ProviderName != "Microsoft.EntityFrameworkCore.InMemory")
     {
-        try
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        // Render deploys can briefly refuse Postgres (internal DNS / cold start).
+        // Retry instead of crashing the new instance with SocketException 111.
+        const int maxAttempts = 8;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            await dbContext.Database.EnsureCreatedAsync();
-            // Apply any schema patches for columns added after initial EnsureCreated
-            await ApplySchemaPatches(dbContext);
-            await SeedData.SeedAsync(dbContext);
+            try
+            {
+                await dbContext.Database.EnsureCreatedAsync();
+                // Apply any schema patches for columns added after initial EnsureCreated
+                await ApplySchemaPatches(dbContext);
+                await SeedData.SeedAsync(dbContext);
 
-            var isDev = app.Environment.IsDevelopment();
-            var ensureSeedLogin = app.Configuration.GetValue("Auth:EnsureSeedAdminLogin", false);
-            var resetDevSeedPassword = app.Configuration.GetValue("Auth:ResetDevSeedPassword", false);
-            await SeedData.EnsureDevSeedAdminCredentialsAsync(
-                dbContext,
-                forceReset: isDev || resetDevSeedPassword,
-                fillEmptyOnly: ensureSeedLogin);
+                var isDev = app.Environment.IsDevelopment();
+                var ensureSeedLogin = app.Configuration.GetValue("Auth:EnsureSeedAdminLogin", false);
+                var resetDevSeedPassword = app.Configuration.GetValue("Auth:ResetDevSeedPassword", false);
+                await SeedData.EnsureDevSeedAdminCredentialsAsync(
+                    dbContext,
+                    forceReset: isDev || resetDevSeedPassword,
+                    fillEmptyOnly: ensureSeedLogin);
 
-            await ApplyDataPatches(dbContext);
-        }
-        catch (Exception ex)
-        {
-            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-            logger.LogError(ex, "An error occurred while migrating or seeding the database.");
-            throw;
+                await ApplyDataPatches(dbContext);
+                break;
+            }
+            catch (Exception ex) when (attempt < maxAttempts && IsTransientDbStartupFailure(ex))
+            {
+                var delay = TimeSpan.FromSeconds(Math.Min(2 * attempt, 15));
+                logger.LogWarning(
+                    ex,
+                    "Database bootstrap attempt {Attempt}/{MaxAttempts} failed; retrying in {DelaySeconds}s.",
+                    attempt,
+                    maxAttempts,
+                    delay.TotalSeconds);
+                await Task.Delay(delay);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+                throw;
+            }
         }
     }
 }
 
 app.Run();
+
+static bool IsTransientDbStartupFailure(Exception ex)
+{
+    for (var cur = ex; cur is not null; cur = cur.InnerException)
+    {
+        if (cur is NpgsqlException npg)
+        {
+            var msg = npg.Message ?? string.Empty;
+            if (msg.Contains("Failed to connect", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                || msg.Contains("Connection refused", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        if (cur is System.Net.Sockets.SocketException sock
+            && (sock.SocketErrorCode is System.Net.Sockets.SocketError.ConnectionRefused
+                or System.Net.Sockets.SocketError.TimedOut
+                or System.Net.Sockets.SocketError.NetworkUnreachable
+                or System.Net.Sockets.SocketError.HostUnreachable))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
 
 static async Task ApplySchemaPatches(NexusDbContext ctx)
 {
