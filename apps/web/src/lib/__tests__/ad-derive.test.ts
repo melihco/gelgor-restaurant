@@ -22,6 +22,7 @@ vi.mock('@/lib/brand-design-template-production', () => ({
     brandDirectives: [],
     brandColors: null,
     logoUrl: undefined,
+    logoPlacement: null,
     occasion: undefined,
   }),
 }));

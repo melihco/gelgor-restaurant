@@ -20,6 +20,7 @@ import {
   overlayHeadlineGroundedInCaption,
   rebiasUngroundedOverlayCopy,
 } from './overlay-caption-grounding';
+import type { TemplateTypeBudget } from './template-type-budget';
 
 // ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
 
@@ -962,9 +963,29 @@ export function resolveOverlayHeadlineWordBudget(input: {
   designIntensity?: string | null;
   /** Library design_spec.sampleHeadline — when set, never exceed its length/words. */
   sampleHeadline?: string | null;
+  /**
+   * Persisted `design_spec.type_budget`. Operator source wins over intensity +
+   * sample soft-floor; generated/migrated still get the mission punch floor.
+   */
+  typeBudget?: TemplateTypeBudget | null;
 }): { maxWords: number; maxLen: number } {
   const intensity = String(input.designIntensity ?? '').trim().toLowerCase();
   const channel = input.channel;
+  const channelMaxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+
+  const tb = input.typeBudget;
+  if (tb?.headline) {
+    const MISSION_PUNCH_FLOOR_LEN = 18;
+    const MISSION_PUNCH_FLOOR_WORDS = 3;
+    const soft = tb.source !== 'operator';
+    let maxLen = Math.min(channelMaxLen, tb.headline.maxChars);
+    let maxWords = Math.min(6, tb.headline.maxWords);
+    if (soft) {
+      maxLen = Math.min(channelMaxLen, Math.max(maxLen, MISSION_PUNCH_FLOOR_LEN));
+      maxWords = Math.max(maxWords, MISSION_PUNCH_FLOOR_WORDS);
+    }
+    return { maxWords, maxLen };
+  }
 
   let maxWords = channel === 'reel' ? 3 : channel === 'story' ? 3 : 4;
   if (
@@ -981,7 +1002,7 @@ export function resolveOverlayHeadlineWordBudget(input: {
     maxWords = channel === 'feed_post' ? 4 : 3;
   }
 
-  let maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;
+  let maxLen = channelMaxLen;
 
   const sample = String(input.sampleHeadline ?? '').trim();
   if (sample.length >= 2) {
@@ -1006,7 +1027,11 @@ export type TemplateOverlayCopyBudget = {
   headline: { maxWords: number; maxLen: number };
   subtitle: { maxWords: number; maxLen: number } | null;
   showSubline: boolean;
-  source: 'template_sample' | 'channel_default';
+  source:
+    | 'operator_type_budget'
+    | 'generated_type_budget'
+    | 'template_sample'
+    | 'channel_default';
 };
 
 /**
@@ -1019,6 +1044,7 @@ export function resolveTemplateOverlayCopyBudget(input: {
   sampleHeadline?: string | null;
   sampleSubtitle?: string | null;
   showSubline?: boolean | null;
+  typeBudget?: TemplateTypeBudget | null;
 }): TemplateOverlayCopyBudget {
   const sampleH = String(input.sampleHeadline ?? '').trim();
   const sampleS = String(input.sampleSubtitle ?? '').trim();
@@ -1028,17 +1054,29 @@ export function resolveTemplateOverlayCopyBudget(input: {
       ? true
       : Boolean(sampleS);
 
+  const tb = input.typeBudget ?? null;
   const headline = resolveOverlayHeadlineWordBudget({
     channel: input.channel,
     designIntensity: input.designIntensity,
     sampleHeadline: sampleH || null,
+    typeBudget: tb,
   });
 
   let subtitle: TemplateOverlayCopyBudget['subtitle'] = null;
   if (showSubline) {
     const channelSubLen = input.channel === 'reel' ? 18 : input.channel === 'story' ? 22 : 24;
     const channelSubWords = 3;
-    if (sampleS.length >= 2) {
+    if (tb?.subtitle) {
+      const soft = tb.source !== 'operator';
+      subtitle = {
+        maxLen: soft
+          ? Math.min(channelSubLen, Math.max(tb.subtitle.maxChars, 12))
+          : Math.min(channelSubLen, tb.subtitle.maxChars),
+        maxWords: soft
+          ? Math.max(1, Math.min(channelSubWords, Math.max(tb.subtitle.maxWords, 2)))
+          : Math.max(1, Math.min(channelSubWords, tb.subtitle.maxWords)),
+      };
+    } else if (sampleS.length >= 2) {
       const sw = sampleS.split(/\s+/).filter(Boolean).length;
       subtitle = {
         maxLen: Math.min(channelSubLen, sampleS.length),
@@ -1049,11 +1087,17 @@ export function resolveTemplateOverlayCopyBudget(input: {
     }
   }
 
+  const source: TemplateOverlayCopyBudget['source'] = tb
+    ? (tb.source === 'operator' ? 'operator_type_budget' : 'generated_type_budget')
+    : sampleH.length >= 2
+      ? 'template_sample'
+      : 'channel_default';
+
   return {
     headline,
     subtitle,
     showSubline: Boolean(subtitle),
-    source: sampleH.length >= 2 ? 'template_sample' : 'channel_default',
+    source,
   };
 }
 
@@ -1069,8 +1113,10 @@ export function fitMissionOverlayToTemplateBudget(input: {
   sampleHeadline?: string | null;
   sampleSubtitle?: string | null;
   showSubline?: boolean | null;
+  typeBudget?: TemplateTypeBudget | null;
 }): { headline: string; subtitle?: string; budget: TemplateOverlayCopyBudget } {
   const budget = resolveTemplateOverlayCopyBudget(input);
+  const allowSoftFloor = budget.source !== 'operator_type_budget';
   const rawH = correctTurkishSpelling(sanitizeFalOverlayText(input.headline));
   let headline = tightenOverlayHeadline(
     rawH,
@@ -1083,7 +1129,11 @@ export function fitMissionOverlayToTemplateBudget(input: {
   // Tiny template samples ("DJ Night", ≤8 chars) often cannot hold a long English
   // mission line. Prefer a mission-aligned scene punch with a soft floor, then the
   // template sample itself — never an empty string that lets GPT invent "Cocktail".
-  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+  // Operator type_budget is exact — do not relax past the declared zone.
+  if (
+    allowSoftFloor
+    && (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline))
+  ) {
     const relaxedLen = Math.max(budget.headline.maxLen, 18);
     const relaxedWords = Math.max(budget.headline.maxWords, 3);
     const missionCompressed = tightenOverlayHeadline(rawH, relaxedLen, relaxedWords)
@@ -1096,7 +1146,10 @@ export function fitMissionOverlayToTemplateBudget(input: {
       headline = missionCompressed;
     }
   }
-  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+  if (
+    allowSoftFloor
+    && (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline))
+  ) {
     const relaxedLen = Math.max(budget.headline.maxLen, 18);
     const relaxedWords = Math.max(budget.headline.maxWords, 3);
     const scenePunch = extractCaptionThemePunchline({
@@ -1134,7 +1187,10 @@ export function fitMissionOverlayToTemplateBudget(input: {
   // Last resort: prefer empty over mid-word / incomplete junk ("doy...", "Yazın tadını").
   // Downstream fal/GPT paths invent less harmfully than shipping a truncated stub.
   if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
-    const fallback = truncateAtWordBoundary(rawH, Math.max(budget.headline.maxLen, 18));
+    const fallbackLen = allowSoftFloor
+      ? Math.max(budget.headline.maxLen, 18)
+      : budget.headline.maxLen;
+    const fallback = truncateAtWordBoundary(rawH, fallbackLen);
     headline = (
       fallback
       && isMeaningfulFalOverlayText(fallback)
@@ -1174,9 +1230,10 @@ export function fitMissionOverlayToTemplateBudget(input: {
   ) {
     return { headline, budget };
   }
-  // Template sample zones are often 1 short word (e.g. "Misafir") — skip the
-  // general ≥8-char meaningfulness gate when locked to sample footprint.
-  const subtitleOk = budget.source === 'template_sample'
+  // Template / type-budget zones are often 1 short word (e.g. "Misafir") — skip the
+  // general ≥8-char meaningfulness gate when locked to a designed footprint.
+  const lockedZone = budget.source !== 'channel_default';
+  const subtitleOk = lockedZone
     ? Boolean(subtitle && subtitle.length >= 2 && !areFalOverlayTextsRedundant(headline, subtitle))
     : Boolean(
       subtitle

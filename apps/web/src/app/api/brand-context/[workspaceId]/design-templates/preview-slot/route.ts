@@ -32,6 +32,7 @@ import {
   ensureSlotCreativeBriefsForAssignments,
   persistSlotCreativeBriefsFromTemplates,
 } from '@/lib/slot-creative-library-persist';
+import { parseTemplateTypeBudget, type TemplateTypeBudget } from '@/lib/template-type-budget';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600;
@@ -88,6 +89,8 @@ export async function POST(
     template_id?: string;
     /** Brand Hub alt yazı toggle — when set, regenerate respects headline-only vs support. */
     show_subline?: boolean;
+    /** Brand Hub logo toggle — when set, regenerate includes/excludes official logo. */
+    include_logo?: boolean;
     parameter_overrides?: Partial<BrandFalTemplateProductionConfig>;
     compare_intensities?: FalDesignIntensityLevel[];
   };
@@ -189,6 +192,9 @@ export async function POST(
   let previousGalleryRef: string | null = null;
   let forceShowSubline: boolean | null =
     typeof body.show_subline === 'boolean' ? body.show_subline : null;
+  let forceIncludeLogo: boolean | null =
+    typeof body.include_logo === 'boolean' ? body.include_logo : null;
+  let preserveOperatorTypeBudget: TemplateTypeBudget | null = null;
   if (body.template_id) {
     const existingRes = await fetchCrewBackendJson<{
       thumbnail_url?: string | null;
@@ -204,6 +210,16 @@ export async function POST(
       if (forceShowSubline === null && spec) {
         const raw = spec.showSubline ?? spec.show_subline;
         if (typeof raw === 'boolean') forceShowSubline = raw;
+      }
+      if (forceIncludeLogo === null && spec) {
+        const rawLogo = spec.includeLogo ?? spec.include_logo ?? spec.prominentLogo;
+        if (typeof rawLogo === 'boolean') forceIncludeLogo = rawLogo;
+      }
+      if (spec) {
+        const existingBudget = parseTemplateTypeBudget(spec.type_budget ?? spec.typeBudget);
+        if (existingBudget?.source === 'operator') {
+          preserveOperatorTypeBudget = existingBudget;
+        }
       }
     }
   }
@@ -281,6 +297,8 @@ export async function POST(
           excludeGalleryUrls,
           layoutFamilySalt: `${layoutFamilySalt}:${level}`,
           forceShowSubline,
+          forceIncludeLogo,
+          preserveOperatorTypeBudget,
         },
       );
       variants.push({
@@ -300,6 +318,8 @@ export async function POST(
         excludeGalleryUrls,
         layoutFamilySalt,
         forceShowSubline,
+        forceIncludeLogo,
+        preserveOperatorTypeBudget,
       },
     );
     regenerateResult = generated;

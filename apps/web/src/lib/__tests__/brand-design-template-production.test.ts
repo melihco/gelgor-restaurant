@@ -109,6 +109,7 @@ describe('resolveFalTemplateLockOptions', () => {
         brandDirectives: [],
         brandColors: matched.brandColors,
         logoUrl: matched.logoUrl,
+        logoPlacement: null,
         occasion: undefined,
       },
       baseGrafikerMaxRetries: 0,
@@ -129,6 +130,7 @@ describe('resolveFalTemplateLockOptions', () => {
         brandDirectives: [],
         brandColors: null,
         logoUrl: undefined,
+        logoPlacement: null,
         occasion: undefined,
       },
       baseGrafikerMaxRetries: 0,
@@ -190,6 +192,7 @@ describe('templateLayoutReferenceUrl', () => {
     brandDirectives: [],
     brandColors: matched.brandColors,
     logoUrl: matched.logoUrl,
+    logoPlacement: matched.logoPlacement ?? null,
     occasion: undefined,
   };
 
@@ -227,6 +230,7 @@ describe('template replica prompt', () => {
     brandDirectives: [],
     brandColors: matched.brandColors,
     logoUrl: matched.logoUrl,
+    logoPlacement: matched.logoPlacement ?? null,
     occasion: undefined,
   };
 
@@ -315,6 +319,27 @@ describe('template replica prompt', () => {
     expect(prompt).toContain('1="Sunset" · 2="Glow"');
     expect(prompt).not.toMatch(/1="DJ" · 2="Night"/);
   });
+
+  it('prefers persisted type_budget over sample-length TYPE ZONE lines', () => {
+    const prompt = buildTemplateReplicaPrompt(
+      {
+        prompt: 'Layout shell with type zone.',
+        sampleHeadline: 'Where friends gather forever',
+        sampleSubtitle: null,
+        typeBudget: {
+          headline: { maxChars: 16, maxWords: 2, maxLines: 1 },
+          subtitle: null,
+          source: 'operator',
+        },
+        forbiddenTexts: [],
+        format: 'post',
+      },
+      { headline: 'Sunset Glow' },
+    );
+    expect(prompt).toContain('TYPE ZONE BUDGET (operator): headline ≤16 chars / 2 words');
+    expect(prompt).toContain('Library sample headline was "Where friends gather forever"');
+    expect(prompt).not.toMatch(/TYPE ZONE BUDGET: headline ≤\d+ chars.*library sample was/);
+  });
 });
 
 describe('bindBrandTemplateForFalProduction', () => {
@@ -339,6 +364,92 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.lockedVibe).toBe('neon_glow');
     expect(binding.brandColors?.accent).toBe('#f0f');
     expect(binding.brandDirectives.some((d) => d.includes('LAYOUT TEMPLATE'))).toBe(true);
+    expect(binding.logoUrl).toBe(matched.logoUrl);
+  });
+
+  it('carries design-fit logoPlacement for beach_club includeLogo templates', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue({
+      ...matched,
+      format: 'post',
+      prominentLogo: true,
+      canvaArchetypeId: 'cinematic_full_bleed',
+      logoPlacement: {
+        position: 'top_left',
+        zoneHint: 'top-left quiet margin — away from type zone (bottom_right)',
+        source: 'archetype',
+      },
+    });
+    const binding = await bindBrandTemplateForFalProduction({
+      workspaceId: 'ws-beach-club',
+      slotRole: 'fal_designed_post',
+      librarySlotKey: null,
+      format: 'post',
+      missionReferenceUrl: 'https://cdn.example.com/sunset.jpg',
+      baseDirectives: [],
+      brandColors: { primary: '#007b7f', accent: '#f4a261' },
+      brandVibe: 'warm_coastal',
+      logoUrl: 'https://cdn.example.com/brand-logo.png',
+    });
+    expect(binding.logoUrl).toBe('https://cdn.example.com/brand-logo.png');
+    expect(binding.logoPlacement?.position).toBe('top_left');
+    expect(binding.brandDirectives.some((d) => d.includes('LOGO SEAT'))).toBe(true);
+  });
+
+  it('omits brand logo when template includeLogo/prominentLogo is false (beach_club)', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue({
+      ...matched,
+      prominentLogo: false,
+      logoUrl: 'https://cdn.example.com/sarnic-logo.png',
+      logoPlacement: {
+        position: 'top_right',
+        zoneHint: null,
+        source: 'archetype',
+      },
+    });
+    const binding = await bindBrandTemplateForFalProduction({
+      workspaceId: 'ws-sarnic',
+      slotRole: 'fal_designed_post',
+      librarySlotKey: null,
+      format: 'post',
+      missionReferenceUrl: 'https://cdn.example.com/venue.jpg',
+      baseDirectives: [],
+      brandColors: { primary: '#007b7f', accent: '#f4a261' },
+      brandVibe: 'warm_coastal',
+      logoUrl: 'https://cdn.example.com/brand-default-logo.png',
+    });
+    expect(binding.matched?.prominentLogo).toBe(false);
+    expect(binding.logoUrl).toBeUndefined();
+    expect(binding.logoPlacement).toBeNull();
+    expect(binding.brandDirectives.some((d) => d.includes('LOGO OFF'))).toBe(true);
+  });
+
+  it('carries design-fit logoPlacement for local_products_shop product hero', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue({
+      ...matched,
+      format: 'post',
+      templateType: 'product_hero',
+      templateName: 'Ürün Hero',
+      prominentLogo: true,
+      canvaArchetypeId: 'product_hero_card',
+      logoPlacement: {
+        position: 'bottom_right',
+        zoneHint: null,
+        source: 'archetype',
+      },
+    });
+    const binding = await bindBrandTemplateForFalProduction({
+      workspaceId: 'ws-local-shop',
+      slotRole: 'fal_designed_post',
+      librarySlotKey: null,
+      format: 'post',
+      missionReferenceUrl: 'https://cdn.example.com/product.jpg',
+      baseDirectives: [],
+      brandColors: { primary: '#3d2b1f', accent: '#c4a35a' },
+      brandVibe: null,
+      logoUrl: 'https://cdn.example.com/shop-logo.png',
+    });
+    expect(binding.logoPlacement?.position).toBe('bottom_right');
+    expect(binding.logoPlacement?.source).toBe('archetype');
   });
 
   it('prefers confirmed brand vibe over template snapshot', async () => {

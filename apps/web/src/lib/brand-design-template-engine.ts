@@ -54,6 +54,11 @@ import {
 } from '@/lib/brand-layout-language';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
 import {
+  formatFalLogoPlacementDirective,
+  resolveFalLogoPlacement,
+  type ResolvedFalLogoPlacement,
+} from '@/lib/fal-logo-placement';
+import {
   fetchSlotTemplateArtDirection,
   formatSlotArtDirectionPromptBlock,
   type SlotArtDirection,
@@ -108,6 +113,10 @@ import {
   resolveSlotCreativeForLibraryGen,
   type SlotCreativeCustomization,
 } from '@/lib/slot-creative-customization';
+import {
+  seedGeneratedTypeBudget,
+  type TemplateTypeBudget,
+} from '@/lib/template-type-budget';
 
 /** A special day (DB-resolved) the brand should get a dedicated event template for. */
 export interface EngineSpecialDay {
@@ -187,6 +196,17 @@ export interface DesignTemplateEngineInput {
    * false → headline-only; true → keep/ensure short support; unset → sample copy default.
    */
   forceShowSubline?: boolean | null;
+  /**
+   * Explicit logo preference from Brand Hub toggle / prior design_spec.
+   * false → no official logo / wordmark; true → include when asset exists;
+   * unset → theme + preset prominentLogo default.
+   */
+  forceIncludeLogo?: boolean | null;
+  /**
+   * Operator type_budget from a prior design_spec — preserved across regenerate.
+   * Non-operator budgets are re-seeded from the new sample punchline.
+   */
+  preserveOperatorTypeBudget?: TemplateTypeBudget | null;
   /** When false, skip CrewAI slot art direction (tests / offline). Default true. */
   enableSlotArtDirection?: boolean;
   /**
@@ -215,6 +235,15 @@ export interface GeneratedDesignTemplate {
     sampleSubtitle?: string;
     /** false = headline-only layout for this template slot */
     showSubline?: boolean;
+    /**
+     * Brand Hub: include official logo on this template canvas.
+     * Synced with prominentLogo for matcher / production.
+     */
+    includeLogo?: boolean;
+    /** Layout-fit logo anchor for post-composite (when includeLogo). */
+    logoPlacement?: ResolvedFalLogoPlacement | null;
+    /** Per-template on-canvas char/word budget (operator | generated). */
+    type_budget?: TemplateTypeBudget;
     galleryRef: string | null;
     galleryMatchScore: number | null;
     intent: string;
@@ -868,14 +897,23 @@ async function generateOne(
     referencePhotoUrl: picked?.url,
   });
   const productionSettings = resolveFalTemplateProductionSettings(theme);
+  const includeLogoPref = input.forceIncludeLogo;
+  const wantBrandMark = includeLogoPref === false
+    ? false
+    : includeLogoPref === true
+      ? true
+      : (
+        shouldProminentLogoInFalTemplate(theme, preset.prominentLogo)
+        || Boolean(input.logoUrl?.trim())
+      );
   const brandMark = resolveBrandMarkMode({
-    logoUrl: input.logoUrl,
+    logoUrl: includeLogoPref === false ? undefined : input.logoUrl,
     brandName: input.brandName,
-    logoTreatment: productionSettings.logo_treatment,
-    wantBrandMark: shouldProminentLogoInFalTemplate(theme, preset.prominentLogo)
-      || Boolean(input.logoUrl?.trim()),
+    logoTreatment: includeLogoPref === false ? 'none' : productionSettings.logo_treatment,
+    wantBrandMark,
   });
   const prominentLogo = brandMark.mode === 'official_logo';
+  const includeLogo = brandMark.mode === 'official_logo';
   const antiPatternDirective = (input.antiPatterns ?? []).length
     ? `Avoid: ${input.antiPatterns!.slice(0, 6).join('; ')}.`
     : undefined;
@@ -925,6 +963,28 @@ async function generateOne(
   }
   const slotArtDirectionBlock = slotArtDirection
     ? formatSlotArtDirectionPromptBlock(slotArtDirection)
+    : '';
+
+  // Design-fit logo seat AFTER type-zone art direction: archetype/layout first,
+  // then push logo off the same vertical band as the headline stack.
+  const logoChannel = intensityChannel === 'story'
+    ? 'story' as const
+    : intensityChannel === 'reel'
+      ? 'reel' as const
+      : 'feed_post' as const;
+  const logoPlacement: ResolvedFalLogoPlacement | null = includeLogo
+    ? resolveFalLogoPlacement({
+        agentLogoPosition: layoutBrief.logoPlacement?.position,
+        agentLogoZone: layoutBrief.logoPlacement?.zoneHint,
+        canvaArchetypeId: layoutBrief.canvaArchetypeId,
+        layoutPattern: layoutBrief.layoutPattern,
+        typographyMode: layoutBrief.typographyMode,
+        typeZoneAnchor: slotArtDirection?.type_zone_anchor ?? null,
+        channel: logoChannel,
+      })
+    : null;
+  const logoPlacementDirective = logoPlacement
+    ? formatFalLogoPlacementDirective(logoPlacement, logoChannel)
     : '';
 
   const needsCraftFamily = shouldApplyCraftLayoutFamily(designIntensityLevel, layoutLanguage);
@@ -1013,7 +1073,12 @@ async function generateOne(
           : '',
     'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
     brandMark.mode === 'official_logo'
-      ? 'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.'
+      ? [
+          'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.',
+          logoPlacementDirective
+            ? `RESERVED LOGO ZONE (design-fit): ${logoPlacementDirective} Leave that corner empty — no type, icons, or busy texture.`
+            : 'RESERVED LOGO ZONE: leave one quiet craft/margin corner empty for the official mark — never over the headline/subline block.',
+        ].filter(Boolean).join(' ')
       : brandMark.mode === 'text_wordmark'
         ? `BRAND WORDMARK: type "${input.brandName}" once as a small corner mark — do not invent a logo icon.`
         : 'FORBIDDEN BRAND MARK: no logo and no typed brand name on this canvas.',
@@ -1074,6 +1139,7 @@ async function generateOne(
         location: input.location,
         businessType: input.sector,
         logoUrl: brandMark.logoUrl,
+        logoPlacement: logoPlacement ?? undefined,
         overlayColor: input.brandColors.primary,
         backgroundIntent: sceneHint,
       });
@@ -1116,7 +1182,7 @@ async function generateOne(
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
         logoUrl: brandMark.logoUrl,
-        logoPlacement: layoutBrief.logoPlacement ?? undefined,
+        logoPlacement: logoPlacement ?? layoutBrief.logoPlacement ?? undefined,
         location: input.location,
         sector: input.sector,
         captionAwareHeadline: false,
@@ -1171,6 +1237,22 @@ async function generateOne(
         : input.forceShowSubline === true
           ? true
           : showSublineFromSampleCopy(subtitle),
+      includeLogo,
+      logoPlacement,
+      type_budget: (() => {
+        const preserved = input.preserveOperatorTypeBudget;
+        if (preserved?.source === 'operator') return preserved;
+        const resolvedShowSubline = input.forceShowSubline === false
+          ? false
+          : input.forceShowSubline === true
+            ? true
+            : showSublineFromSampleCopy(subtitle);
+        return seedGeneratedTypeBudget({
+          sampleHeadline: headline,
+          sampleSubtitle: subtitle,
+          showSubline: resolvedShowSubline,
+        });
+      })(),
       galleryRef: picked?.url ?? null,
       galleryMatchScore: picked?.score ?? null,
       defaultHeroPhotoLock: Boolean(defaultHeroPhoto),
@@ -1323,6 +1405,8 @@ export async function generateSingleDesignTemplatePreset(
     excludeGalleryUrls?: string[];
     layoutFamilySalt?: string;
     forceShowSubline?: boolean | null;
+    forceIncludeLogo?: boolean | null;
+    preserveOperatorTypeBudget?: TemplateTypeBudget | null;
     enableSlotArtDirection?: boolean;
   },
 ): Promise<GeneratedDesignTemplate> {
@@ -1332,6 +1416,9 @@ export async function generateSingleDesignTemplatePreset(
     excludeGalleryUrls: options?.excludeGalleryUrls ?? input.excludeGalleryUrls,
     layoutFamilySalt: options?.layoutFamilySalt ?? input.layoutFamilySalt,
     forceShowSubline: options?.forceShowSubline ?? input.forceShowSubline,
+    forceIncludeLogo: options?.forceIncludeLogo ?? input.forceIncludeLogo,
+    preserveOperatorTypeBudget:
+      options?.preserveOperatorTypeBudget ?? input.preserveOperatorTypeBudget,
     enableSlotArtDirection: options?.enableSlotArtDirection ?? input.enableSlotArtDirection,
   };
   return generateOne(

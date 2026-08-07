@@ -27,6 +27,11 @@ import { BrandFalTemplateProductionPanel } from '@/components/brand/BrandFalTemp
 import { FalSlotPreviewCompareModal } from '@/components/brand/FalSlotPreviewCompareModal';
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { resolveClientMediaUrl } from '@/lib/media-url';
+import {
+  buildOperatorTypeBudget,
+  parseTemplateTypeBudget,
+  type TemplateTypeBudget,
+} from '@/lib/template-type-budget';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -108,6 +113,10 @@ function GalleryCard({
   slotSaving,
   onToggleSubline,
   sublineSaving,
+  onToggleIncludeLogo,
+  includeLogoSaving,
+  onSaveTypeBudget,
+  typeBudgetSaving,
 }: {
   row: CatalogDesignGalleryRow | null;
   template?: BrandDesignTemplateRow | null;
@@ -120,6 +129,10 @@ function GalleryCard({
   slotSaving?: boolean;
   onToggleSubline?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
   sublineSaving?: boolean;
+  onToggleIncludeLogo?: (row: CatalogDesignGalleryRow, enabled: boolean) => void;
+  includeLogoSaving?: boolean;
+  onSaveTypeBudget?: (row: CatalogDesignGalleryRow, budget: TemplateTypeBudget) => void;
+  typeBudgetSaving?: boolean;
 }) {
   const tmpl = orphan ?? row?.template ?? null;
   const title = orphan
@@ -151,6 +164,22 @@ function GalleryCard({
     ? tmpl.design_spec
     : {}) as Record<string, unknown>;
   const showSubline = designSpec.showSubline !== false && designSpec.show_subline !== false;
+  const includeLogo = (() => {
+    const raw = designSpec.includeLogo ?? designSpec.include_logo;
+    if (typeof raw === 'boolean') return raw;
+    if (typeof designSpec.prominentLogo === 'boolean') return designSpec.prominentLogo;
+    // Unset → on (brand logo used when available).
+    return true;
+  })();
+  const typeBudget = parseTemplateTypeBudget(designSpec.type_budget ?? designSpec.typeBudget);
+  const sampleHeadline = typeof designSpec.sampleHeadline === 'string'
+    ? designSpec.sampleHeadline.trim()
+    : '';
+  const sampleWords = sampleHeadline.split(/\s+/).filter(Boolean).length;
+  const headlineWords = typeBudget?.headline.maxWords
+    ?? (sampleWords >= 1 ? sampleWords : 3);
+  const headlineChars = typeBudget?.headline.maxChars
+    ?? (sampleHeadline.length >= 8 ? sampleHeadline.length : 28);
 
   return (
     <div
@@ -268,7 +297,7 @@ function GalleryCard({
         {row && tmpl && onToggleSubline && slotEnabled && (
           <button
             type="button"
-            disabled={sublineSaving || slotGenerating || slotSaving}
+            disabled={sublineSaving || includeLogoSaving || slotGenerating || slotSaving || typeBudgetSaving}
             onClick={() => onToggleSubline(row, !showSubline)}
             aria-pressed={showSubline}
             style={{
@@ -284,7 +313,7 @@ function GalleryCard({
               color: showSubline ? t.accent : t.textMuted,
               fontSize: 11,
               fontWeight: 700,
-              cursor: (sublineSaving || slotGenerating) ? 'wait' : 'pointer',
+              cursor: (sublineSaving || includeLogoSaving || slotGenerating || typeBudgetSaving) ? 'wait' : 'pointer',
             }}
           >
             {sublineSaving
@@ -293,6 +322,127 @@ function GalleryCard({
                 ? 'Alt yazı (subline): açık'
                 : 'Alt yazı (subline): kapalı'}
           </button>
+        )}
+        {row && tmpl && onToggleIncludeLogo && slotEnabled && (
+          <button
+            type="button"
+            disabled={includeLogoSaving || sublineSaving || slotGenerating || slotSaving || typeBudgetSaving}
+            onClick={() => onToggleIncludeLogo(row, !includeLogo)}
+            aria-pressed={includeLogo}
+            style={{
+              marginTop: 6,
+              width: '100%',
+              minHeight: 44,
+              padding: '7px 10px',
+              borderRadius: 8,
+              border: `1px solid ${includeLogo ? t.accentBorder : t.separator}`,
+              background: includeLogo
+                ? (t.isDark ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.08)')
+                : 'transparent',
+              color: includeLogo ? t.accent : t.textMuted,
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: (includeLogoSaving || slotGenerating || typeBudgetSaving) ? 'wait' : 'pointer',
+            }}
+          >
+            {includeLogoSaving
+              ? 'Kaydediliyor…'
+              : includeLogo
+                ? 'Marka logosu: açık'
+                : 'Marka logosu: kapalı'}
+          </button>
+        )}
+        {row && tmpl && onSaveTypeBudget && slotEnabled && (
+          <div
+            style={{
+              marginTop: 6,
+              padding: '8px 10px',
+              borderRadius: 8,
+              border: `1px solid ${t.separator}`,
+              background: t.isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.015)',
+            }}
+          >
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.textSecondary, marginBottom: 6 }}>
+              Başlık bütçesi
+              {typeBudget?.source === 'operator' ? ' · operatör' : typeBudget ? ' · otomatik' : ''}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <label style={{ flex: 1, minWidth: 0, fontSize: 10, color: t.textMuted }}>
+                Kelime
+                <select
+                  aria-label="Maksimum kelime"
+                  disabled={typeBudgetSaving || slotGenerating || slotSaving || sublineSaving}
+                  value={headlineWords}
+                  onChange={(e) => {
+                    const maxWords = Number(e.target.value);
+                    onSaveTypeBudget(row, buildOperatorTypeBudget({
+                      headline: { maxChars: headlineChars, maxWords, maxLines: 1 },
+                      subtitle: showSubline
+                        ? (typeBudget?.subtitle ?? { maxChars: 22, maxWords: 3, maxLines: 1 })
+                        : null,
+                      showSubline,
+                    }));
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    marginTop: 4,
+                    minHeight: 44,
+                    fontSize: 16,
+                    borderRadius: 8,
+                    border: `1px solid ${t.separator}`,
+                    background: t.isDark ? '#111' : '#fff',
+                    color: t.textPrimary,
+                    padding: '0 8px',
+                  }}
+                >
+                  {[1, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ flex: 1, minWidth: 0, fontSize: 10, color: t.textMuted }}>
+                Karakter
+                <select
+                  aria-label="Maksimum karakter"
+                  disabled={typeBudgetSaving || slotGenerating || slotSaving || sublineSaving}
+                  value={headlineChars}
+                  onChange={(e) => {
+                    const maxChars = Number(e.target.value);
+                    onSaveTypeBudget(row, buildOperatorTypeBudget({
+                      headline: { maxChars, maxWords: headlineWords, maxLines: 1 },
+                      subtitle: showSubline
+                        ? (typeBudget?.subtitle ?? { maxChars: 22, maxWords: 3, maxLines: 1 })
+                        : null,
+                      showSubline,
+                    }));
+                  }}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    marginTop: 4,
+                    minHeight: 44,
+                    fontSize: 16,
+                    borderRadius: 8,
+                    border: `1px solid ${t.separator}`,
+                    background: t.isDark ? '#111' : '#fff',
+                    color: t.textPrimary,
+                    padding: '0 8px',
+                  }}
+                >
+                  {[8, 12, 16, 18, 22, 24, 28, 32, 36, 40, 48].map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                  {!([8, 12, 16, 18, 22, 24, 28, 32, 36, 40, 48] as number[]).includes(headlineChars) && (
+                    <option value={headlineChars}>{headlineChars}</option>
+                  )}
+                </select>
+              </label>
+            </div>
+            {typeBudgetSaving && (
+              <div style={{ fontSize: 10, color: t.textMuted, marginTop: 6 }}>Kaydediliyor…</div>
+            )}
+          </div>
         )}
         {row && onGenerateSlot && slotEnabled && (
           <button
@@ -528,6 +678,87 @@ export function BrandFalTemplateGalleryPanel({
         : `${galleryRowTitle(row)} — alt yazı kapatıldı (yalnızca headline)`);
     } catch (err) {
       setStatus(err instanceof Error ? err.message : 'Alt yazı ayarı kaydedilemedi');
+    } finally {
+      setSlotSavingKey(null);
+    }
+  };
+
+  const toggleIncludeLogoPreference = async (row: CatalogDesignGalleryRow, enabled: boolean) => {
+    if (!tenantId || !row.template?.id || slotSavingKey) return;
+    setSlotSavingKey(`logo:${row.slotKey}`);
+    setStatus('');
+    try {
+      const prevSpec = (row.template.design_spec && typeof row.template.design_spec === 'object'
+        ? row.template.design_spec
+        : {}) as Record<string, unknown>;
+      const res = await fetchTenantBff(
+        `/api/brand-context/${tenantId}/design-templates/${row.template.id}`,
+        tenantId,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            design_spec: {
+              ...prevSpec,
+              includeLogo: enabled,
+              prominentLogo: enabled,
+              ...(enabled
+                ? {}
+                : { brandMarkMode: 'none', logoUrl: null }),
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(err.message || err.error || `HTTP ${res.status}`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
+      setStatus(enabled
+        ? `${galleryRowTitle(row)} — marka logosu açıldı (yeniden üretince uygulanır)`
+        : `${galleryRowTitle(row)} — marka logosu kapandı (yeniden üretince uygulanır)`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Logo ayarı kaydedilemedi');
+    } finally {
+      setSlotSavingKey(null);
+    }
+  };
+
+  const saveTypeBudgetPreference = async (
+    row: CatalogDesignGalleryRow,
+    budget: TemplateTypeBudget,
+  ) => {
+    if (!tenantId || !row.template?.id || slotSavingKey) return;
+    setSlotSavingKey(`typebudget:${row.slotKey}`);
+    setStatus('');
+    try {
+      const prevSpec = (row.template.design_spec && typeof row.template.design_spec === 'object'
+        ? row.template.design_spec
+        : {}) as Record<string, unknown>;
+      const res = await fetchTenantBff(
+        `/api/brand-context/${tenantId}/design-templates/${row.template.id}`,
+        tenantId,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            design_spec: {
+              ...prevSpec,
+              type_budget: budget,
+            },
+          }),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string; message?: string };
+        throw new Error(err.message || err.error || `HTTP ${res.status}`);
+      }
+      await queryClient.invalidateQueries({ queryKey: ['brand-design-templates', tenantId] });
+      setStatus(
+        `${galleryRowTitle(row)} — başlık bütçesi ${budget.headline.maxWords} kelime / ${budget.headline.maxChars} karakter`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : 'Başlık bütçesi kaydedilemedi');
     } finally {
       setSlotSavingKey(null);
     }
@@ -905,9 +1136,13 @@ export function BrandFalTemplateGalleryPanel({
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 onToggleSubline={(r, enabled) => void toggleSublinePreference(r, enabled)}
+                onToggleIncludeLogo={(r, enabled) => void toggleIncludeLogoPreference(r, enabled)}
+                onSaveTypeBudget={(r, budget) => void saveTypeBudgetPreference(r, budget)}
                 slotGenerating={generatingSlotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
                 sublineSaving={slotSavingKey === `subline:${row.slotKey}`}
+                includeLogoSaving={slotSavingKey === `logo:${row.slotKey}`}
+                typeBudgetSaving={slotSavingKey === `typebudget:${row.slotKey}`}
               />
             ))}
           </div>
@@ -932,9 +1167,13 @@ export function BrandFalTemplateGalleryPanel({
                 onGenerateSlot={row.enabled ? (r) => void generateSingleSlot(r) : undefined}
                 onToggleSlot={(r, enabled) => void toggleSlotPreference(r, enabled)}
                 onToggleSubline={(r, enabled) => void toggleSublinePreference(r, enabled)}
+                onToggleIncludeLogo={(r, enabled) => void toggleIncludeLogoPreference(r, enabled)}
+                onSaveTypeBudget={(r, budget) => void saveTypeBudgetPreference(r, budget)}
                 slotGenerating={generatingSlotKey === row.slotKey}
                 slotSaving={slotSavingKey === row.slotKey}
                 sublineSaving={slotSavingKey === `subline:${row.slotKey}`}
+                includeLogoSaving={slotSavingKey === `logo:${row.slotKey}`}
+                typeBudgetSaving={slotSavingKey === `typebudget:${row.slotKey}`}
               />
             ))}
           </div>

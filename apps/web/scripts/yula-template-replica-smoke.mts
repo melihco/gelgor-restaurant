@@ -122,6 +122,7 @@ async function main() {
     }),
     brandColors,
     logoUrl: typeof sd.logoUrl === 'string' ? sd.logoUrl : undefined,
+    logoPlacement: matched.logoPlacement ?? null,
     occasion: undefined,
   };
 

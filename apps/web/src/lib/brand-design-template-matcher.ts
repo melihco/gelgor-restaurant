@@ -14,6 +14,16 @@ import {
 } from '@/lib/brand-active-slot-resolver';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
+import {
+  formatChannelFromTemplateFormat,
+  parseResolvedFalLogoPlacement,
+  resolveFalLogoPlacement,
+  type ResolvedFalLogoPlacement,
+} from '@/lib/fal-logo-placement';
+import {
+  parseTemplateTypeBudget,
+  type TemplateTypeBudget,
+} from '@/lib/template-type-budget';
 import type { TypographyVibe } from '@/types/brand-theme';
 
 export interface BrandDesignTemplateRecord {
@@ -44,7 +54,16 @@ export interface MatchedDesignTemplate {
   format: string;
   vibe?: TypographyVibe;
   galleryRef: string | null;
+  /**
+   * Official logo on this template canvas.
+   * From design_spec.includeLogo (preferred) or legacy prominentLogo.
+   */
   prominentLogo: boolean;
+  /**
+   * Design-fit logo anchor for post-composite (design_spec.logoPlacement).
+   * Null when includeLogo is off or placement was never persisted.
+   */
+  logoPlacement?: ResolvedFalLogoPlacement | null;
   /** Onboarding GPT-image prompt — preview-only; do not inject verbatim in production. */
   designSpecPrompt: string | null;
   thumbnailUrl: string | null;
@@ -61,6 +80,11 @@ export interface MatchedDesignTemplate {
    * Persisted on design_spec.showSubline (default true when unset).
    */
   showSubline?: boolean;
+  /**
+   * Per-template on-canvas char/word budget (`design_spec.type_budget`).
+   * Operator source wins over intensity + sample inference.
+   */
+  typeBudget?: TemplateTypeBudget | null;
   layoutPattern?: string | null;
   designBriefDirectives?: string[];
   canvaArchetypeId?: string | null;
@@ -668,6 +692,32 @@ export async function matchDesignTemplateToSlot(
   const sd = r.design_spec ?? {};
   const sdSpecial = sd.specialDay as { name?: string; mmdd?: string; category?: string } | undefined;
   const colors = sd.brandColors as { primary?: string; accent?: string } | undefined;
+  const prominentLogo = (() => {
+    const include = sd.includeLogo ?? sd.include_logo;
+    if (typeof include === 'boolean') return include;
+    if (typeof sd.prominentLogo === 'boolean') return sd.prominentLogo;
+    // Unset → allow logo when brand asset exists (legacy templates).
+    return true;
+  })();
+  const persistedLogoPlacement = parseResolvedFalLogoPlacement(
+    sd.logoPlacement ?? sd.logo_placement,
+  );
+  const typeZoneFromArt = (() => {
+    const art = sd.slot_art_direction ?? sd.slotArtDirection;
+    if (!art || typeof art !== 'object' || Array.isArray(art)) return null;
+    const anchor = (art as Record<string, unknown>).type_zone_anchor
+      ?? (art as Record<string, unknown>).typeZoneAnchor;
+    return typeof anchor === 'string' && anchor.trim() ? anchor.trim() : null;
+  })();
+  const logoPlacement: ResolvedFalLogoPlacement | null = !prominentLogo
+    ? null
+    : (persistedLogoPlacement ?? resolveFalLogoPlacement({
+        canvaArchetypeId: typeof sd.canvaArchetypeId === 'string' ? sd.canvaArchetypeId : null,
+        layoutPattern: typeof sd.layoutPattern === 'string' ? sd.layoutPattern : null,
+        typographyMode: typeof sd.typographyMode === 'string' ? sd.typographyMode : null,
+        typeZoneAnchor: typeZoneFromArt,
+        channel: formatChannelFromTemplateFormat(r.format),
+      }));
   return {
     id: r.id,
     templateType: r.template_type,
@@ -675,7 +725,8 @@ export async function matchDesignTemplateToSlot(
     format: r.format,
     vibe: sd.vibe,
     galleryRef: (sd.galleryRef as string | null | undefined) ?? null,
-    prominentLogo: Boolean(sd.prominentLogo),
+    prominentLogo,
+    logoPlacement,
     designSpecPrompt: typeof sd.prompt === 'string' ? sd.prompt : null,
     thumbnailUrl: r.thumbnail_url ?? null,
     brandColors:
@@ -695,6 +746,7 @@ export async function matchDesignTemplateToSlot(
       // Unset → enabled (legacy templates keep current dual-line behaviour).
       return true;
     })(),
+    typeBudget: parseTemplateTypeBudget(sd.type_budget ?? sd.typeBudget),
     layoutPattern: typeof sd.layoutPattern === 'string' ? sd.layoutPattern : null,
     designBriefDirectives: Array.isArray(sd.designBriefDirectives)
       ? sd.designBriefDirectives.filter((line): line is string => typeof line === 'string')

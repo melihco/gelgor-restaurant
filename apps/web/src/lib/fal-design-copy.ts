@@ -23,6 +23,7 @@ import {
   tightenOverlayHeadline,
   type OverlayLocale,
 } from '@/lib/fal-caption-headline';
+import type { TemplateTypeBudget } from '@/lib/template-type-budget';
 import {
   isLabelStyleHeadline,
   isMeaninglessBrandEchoHeadline,
@@ -213,6 +214,7 @@ function finalizeMissionOverlay(input: {
   sampleHeadline?: string | null;
   sampleSubtitle?: string | null;
   showSubline?: boolean | null;
+  typeBudget?: TemplateTypeBudget | null;
 }): { headline: string; subtitle?: string } {
   const overlay = resolveFalOverlayCopy({
     headline: input.headline,
@@ -229,6 +231,7 @@ function finalizeMissionOverlay(input: {
     channel: input.channel,
     designIntensity: input.designIntensity,
     sampleHeadline: input.sampleHeadline,
+    typeBudget: input.typeBudget,
   });
   const headline = resolveFalProductionOverlayHeadline(
     overlay.headline,
@@ -283,6 +286,7 @@ function finalizeMissionOverlay(input: {
         sampleHeadline: input.sampleHeadline,
         sampleSubtitle: input.sampleSubtitle,
         showSubline: input.showSubline,
+        typeBudget: input.typeBudget,
       });
       return { headline: fittedTone.headline, subtitle: fittedTone.subtitle };
     }
@@ -304,6 +308,7 @@ function finalizeMissionOverlay(input: {
     sampleHeadline: input.sampleHeadline,
     sampleSubtitle: input.sampleSubtitle,
     showSubline: input.showSubline,
+    typeBudget: input.typeBudget,
   });
   return { headline: fitted.headline, subtitle: fitted.subtitle };
 }
@@ -314,6 +319,7 @@ function resolvePlannedOverlayLine(
   channel: 'reel' | 'feed_post' | 'story',
   designIntensity?: string | null,
   sampleHeadline?: string | null,
+  typeBudget?: TemplateTypeBudget | null,
 ): string {
   const planned = resolveMissionPlannedOverlayLine(line, fallbacks, channel);
   if (!planned) return '';
@@ -321,6 +327,7 @@ function resolvePlannedOverlayLine(
     channel,
     designIntensity,
     sampleHeadline,
+    typeBudget,
   });
   // Quoted punchlines that already fit the budget stay verbatim.
   const words = planned.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
@@ -355,6 +362,8 @@ export function resolveMissionFalDesignCopy(input: {
   sampleHeadline?: string | null;
   sampleSubtitle?: string | null;
   showSubline?: boolean | null;
+  /** Persisted design_spec.type_budget from matched template (preferred). */
+  typeBudget?: TemplateTypeBudget | null;
 }): {
   headline: string;
   subtitle?: string;
@@ -368,6 +377,7 @@ export function resolveMissionFalDesignCopy(input: {
     channel,
     designIntensity: input.designIntensity,
     sampleHeadline: input.sampleHeadline,
+    typeBudget: input.typeBudget,
   });
   const maxLen = budget.maxLen;
 
@@ -394,6 +404,7 @@ export function resolveMissionFalDesignCopy(input: {
       sampleHeadline: input.sampleHeadline,
       sampleSubtitle: input.sampleSubtitle,
       showSubline: input.showSubline,
+      typeBudget: input.typeBudget,
     });
     return {
       headline: fitted.headline,
@@ -406,6 +417,7 @@ export function resolveMissionFalDesignCopy(input: {
     sampleHeadline: input.sampleHeadline,
     sampleSubtitle: input.sampleSubtitle,
     showSubline: input.showSubline,
+    typeBudget: input.typeBudget,
   };
 
   // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
@@ -417,6 +429,7 @@ export function resolveMissionFalDesignCopy(input: {
       channel,
       input.designIntensity,
       input.sampleHeadline,
+      input.typeBudget,
     );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const ideationTitle = unwrapQuotedOverlayLine(
@@ -434,6 +447,7 @@ export function resolveMissionFalDesignCopy(input: {
           channel,
           input.designIntensity,
           input.sampleHeadline,
+          input.typeBudget,
         ) || undefined
         : undefined;
       return lockToTemplate({ headline, subtitle, source: 'mission_tagline' });
@@ -449,6 +463,7 @@ export function resolveMissionFalDesignCopy(input: {
       channel,
       input.designIntensity,
       input.sampleHeadline,
+      input.typeBudget,
     );
     if (headline && acceptPlannedOverlayLine(headline)) {
       const subtitleRaw = extracted.subtitle || input.cta;
@@ -460,6 +475,7 @@ export function resolveMissionFalDesignCopy(input: {
           channel,
           input.designIntensity,
           input.sampleHeadline,
+          input.typeBudget,
         ) || undefined
         : resolveFalSubtitle({
           caption,
@@ -490,6 +506,7 @@ export function resolveMissionFalDesignCopy(input: {
       channel,
       input.designIntensity,
       input.sampleHeadline,
+      input.typeBudget,
     );
     if (!headline || !acceptPlannedOverlayLine(headline)) continue;
     const subtitleRaw = input.cta || String(input.idea.subline ?? '').trim();
@@ -502,6 +519,7 @@ export function resolveMissionFalDesignCopy(input: {
         channel,
         input.designIntensity,
         input.sampleHeadline,
+        input.typeBudget,
       ) || undefined
       : resolveFalSubtitle({
         caption,

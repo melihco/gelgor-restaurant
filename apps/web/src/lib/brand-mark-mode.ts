@@ -48,7 +48,8 @@ export function resolveBrandMarkMode(input: ResolveBrandMarkModeInput): Resolved
   const treatment = normalizeTreatment(input.logoTreatment);
   const wantMark = input.wantBrandMark !== false;
 
-  if (treatment === 'none') {
+  // Explicit opt-out (Brand Hub includeLogo=false, or logo_treatment=none).
+  if (!wantMark || treatment === 'none') {
     return {
       mode: 'none',
       typeWordmark: false,

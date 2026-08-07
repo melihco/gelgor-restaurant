@@ -187,7 +187,17 @@ export async function produceFalDesignedPost(
     const visualSourceMode = resolveVisualSourceMode(
       input.brandTheme as Record<string, unknown> | null | undefined,
     );
-    const logoUrl = binding?.logoUrl ?? input.logoUrl;
+    // Matched template includeLogo=false → never fall back to brand logoUrl.
+    const logoUrl = binding?.matched
+      ? (binding.matched.prominentLogo
+        ? (binding.logoUrl ?? input.logoUrl)
+        : undefined)
+      : (binding?.logoUrl ?? input.logoUrl);
+    // Template library placement is SSOT when includeLogo — design-fit seat wins
+    // over ad-hoc mission falLogoPlacement when both exist.
+    const logoPlacement = logoUrl
+      ? (binding?.logoPlacement ?? binding?.matched?.logoPlacement ?? input.logoPlacement ?? null)
+      : null;
     // Mission gallery is SSOT under gallery_only / gallery_enhanced — never prefer
     // binding.referencePhotoUrl when it was a template galleryRef bake.
     const missionPhoto =
@@ -235,10 +245,16 @@ export async function produceFalDesignedPost(
         sampleHeadline: binding?.matched?.sampleHeadline,
         sampleSubtitle: binding?.matched?.sampleSubtitle,
         showSubline: binding?.matched?.showSubline,
+        typeBudget: binding?.matched?.typeBudget,
       });
-      if (fitted.budget.source === 'template_sample') {
+      if (
+        fitted.budget.source === 'template_sample'
+        || fitted.budget.source === 'operator_type_budget'
+        || fitted.budget.source === 'generated_type_budget'
+      ) {
         console.log(
           `[auto-produce] [fal-design] template copy budget `
+          + `src=${fitted.budget.source} `
           + `h≤${fitted.budget.headline.maxLen}/${fitted.budget.headline.maxWords}w `
           + `sample="${String(binding?.matched?.sampleHeadline ?? '').slice(0, 24)}" `
           + `"${overlayCopy.headline.slice(0, 36)}" → "${fitted.headline.slice(0, 36)}"`,
@@ -313,7 +329,7 @@ export async function produceFalDesignedPost(
         occasion: binding?.occasion,
         briefMood: input.mood,
         logoUrl,
-        logoPlacement: input.logoPlacement,
+        logoPlacement,
       });
       if (replicaSpec) {
         console.log(
@@ -337,7 +353,7 @@ export async function produceFalDesignedPost(
           location: input.location,
           businessType: input.sector,
           logoUrl: logoUrl || undefined,
-          logoPlacement: input.logoPlacement,
+          logoPlacement,
           templateLayoutImageUrl,
         });
         if (!designedUrl) break;
@@ -443,6 +459,7 @@ export async function produceFalDesignedPost(
         brandDirectives,
         visualDnaTone: input.visualDnaTone,
         logoUrl,
+        logoPlacement,
         location: input.location,
         brandReferenceImageUrls: templateStyleReferenceUrls(
           binding ?? {
@@ -453,6 +470,7 @@ export async function produceFalDesignedPost(
             brandDirectives: brandDirectives ?? [],
             brandColors: null,
             logoUrl,
+            logoPlacement: null,
             occasion: undefined,
           },
           input.brandReferenceImageUrls,
@@ -727,7 +745,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       fontPersonality: inputs.falFontPersonality,
       headingFont: inputs.falHeadingFont,
       bodyFont: inputs.falBodyFont,
-      logoPlacement: inputs.falLogoPlacement,
+      logoPlacement: templateBinding.logoPlacement ?? inputs.falLogoPlacement,
       galleryPhotoMeta,
     });
     if (designed) {

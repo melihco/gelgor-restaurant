@@ -169,7 +169,7 @@ async function renderAdCreativeWithFal(
     aspectRatio: '4:5',
     subtitle: adCta,
     captionAwareHeadline: true,
-    logoPlacement: null,
+    logoPlacement: binding?.logoPlacement ?? null,
   });
 
   if (!falResult?.imageUrl) {

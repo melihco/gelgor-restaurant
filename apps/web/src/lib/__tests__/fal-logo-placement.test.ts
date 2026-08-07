@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { resolveFalDesignBrief } from '../fal-design-brief';
 import {
+  parseResolvedFalLogoPlacement,
   resolveArchetypeLogoPosition,
   resolveFalLogoPlacement,
 } from '../fal-logo-placement';
@@ -45,6 +46,53 @@ describe('resolveFalLogoPlacement', () => {
       channel: 'reel',
     });
     expect(placement.position).toBe('bottom_right');
+  });
+
+  it('beach_club feed: moves logo off bottom type zone (design-fit)', () => {
+    // cinematic_full_bleed defaults bottom_right — type zone also bottom → flip up.
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'cinematic_full_bleed',
+      typeZoneAnchor: 'bottom_right',
+      channel: 'feed_post',
+      layoutPattern: 'full_bleed sunset hospitality post',
+    });
+    expect(placement.source).toBe('archetype');
+    expect(placement.position).toBe('top_left');
+  });
+
+  it('local_products_shop feed: keeps archetype seat when type zone is opposite band', () => {
+    // product_hero_card defaults bottom_right; type at top → no conflict.
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'product_hero_card',
+      typeZoneAnchor: 'top_center',
+      channel: 'feed_post',
+      layoutPattern: 'product hero craft pack',
+    });
+    expect(placement.position).toBe('bottom_right');
+  });
+
+  it('local_products_shop: flips logo when agent seat collides with type zone', () => {
+    const placement = resolveFalLogoPlacement({
+      agentLogoPosition: 'top_left',
+      typeZoneAnchor: 'top_left',
+      channel: 'feed_post',
+      canvaArchetypeId: 'product_hero_card',
+    });
+    expect(placement.source).toBe('agent');
+    expect(placement.position).toBe('bottom_right');
+  });
+});
+
+describe('parseResolvedFalLogoPlacement', () => {
+  it('round-trips design_spec logoPlacement', () => {
+    const parsed = parseResolvedFalLogoPlacement({
+      position: 'top_left',
+      zoneHint: 'away from type',
+      source: 'archetype',
+    });
+    expect(parsed?.position).toBe('top_left');
+    expect(parsed?.zoneHint).toBe('away from type');
+    expect(parsed?.source).toBe('archetype');
   });
 });
 

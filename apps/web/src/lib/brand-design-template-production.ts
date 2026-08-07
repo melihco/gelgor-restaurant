@@ -21,6 +21,15 @@ import {
 } from '@/lib/ai-visual-production-standard';
 import { collectTemplatePlaceholderTexts } from '@/lib/template-placeholder-guard';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
+import {
+  formatChannelFromTemplateFormat,
+  formatFalLogoPlacementDirective,
+  type ResolvedFalLogoPlacement,
+} from '@/lib/fal-logo-placement';
+import {
+  formatTypeBudgetPromptLines,
+  type TemplateTypeBudget,
+} from '@/lib/template-type-budget';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -33,6 +42,8 @@ export interface BrandTemplateFalBinding {
   brandDirectives: string[];
   brandColors: { primary: string; accent: string } | null;
   logoUrl: string | undefined;
+  /** Design-fit logo seat for post-composite (template library SSOT). */
+  logoPlacement: ResolvedFalLogoPlacement | null;
   occasion: { name: string; mood?: string } | undefined;
 }
 
@@ -155,6 +166,17 @@ export function buildTemplateLayoutDirectives(
     'TEXT LOCK: Render ONLY the mission headline and supporting line above. ' +
       'Typography style, weight, and placement must follow the locked layout recipe — not the preview image text.',
   );
+
+  if (matched.prominentLogo && matched.logoPlacement) {
+    const channel = formatChannelFromTemplateFormat(matched.format);
+    out.push(
+      `LOGO SEAT (design-fit, post-composite): ${formatFalLogoPlacementDirective(matched.logoPlacement, channel)} ` +
+        'Leave that quiet corner empty — official mark is composited after generation; never over the type zone.',
+    );
+  } else if (!matched.prominentLogo) {
+    out.push('LOGO OFF: this template has includeLogo=false — no brand mark on canvas.');
+  }
+
   return out;
 }
 
@@ -254,6 +276,7 @@ export async function bindBrandTemplateForFalProduction(input: {
     brandDirectives: [...input.baseDirectives],
     brandColors: null,
     logoUrl: input.logoUrl,
+    logoPlacement: null,
     occasion: undefined,
   };
   const catalogPinned = Boolean(String(input.catalogSlotKey ?? '').trim());
@@ -330,7 +353,13 @@ export async function bindBrandTemplateForFalProduction(input: {
         ...dropConflictingLayoutDirectives(input.baseDirectives, matched),
       ],
       brandColors: matched.brandColors ?? null,
-      logoUrl: matched.prominentLogo ? (input.logoUrl ?? matched.logoUrl) : input.logoUrl,
+      // Template includeLogo/prominentLogo=false must not fall back to brand logoUrl.
+      logoUrl: matched.prominentLogo
+        ? (input.logoUrl ?? matched.logoUrl)
+        : undefined,
+      logoPlacement: matched.prominentLogo
+        ? (matched.logoPlacement ?? null)
+        : null,
       occasion: specialDay?.name
         ? { name: specialDay.name, mood: specialDay.category }
         : undefined,
@@ -350,6 +379,8 @@ export interface TemplateReplicaSpec {
   sampleSubtitle: string | null;
   /** false → replica prompt forces NO SUBTITLE */
   showSubline?: boolean;
+  /** Persisted design_spec.type_budget — preferred over sample-length inference. */
+  typeBudget?: TemplateTypeBudget | null;
   forbiddenTexts: string[];
   format?: 'story' | 'post' | 'reel';
 }
@@ -500,6 +531,7 @@ export function templateReplicaSpecFromBinding(
     sampleHeadline: matched.sampleHeadline ?? null,
     sampleSubtitle: matched.sampleSubtitle ?? null,
     showSubline: matched.showSubline !== false,
+    typeBudget: matched.typeBudget ?? null,
     forbiddenTexts: collectTemplatePlaceholderTexts(matched),
     format,
   };
@@ -546,17 +578,25 @@ export function buildTemplateReplicaPrompt(
 
   const sampleH = String(spec.sampleHeadline ?? '').trim();
   const sampleS = String(spec.sampleSubtitle ?? '').trim();
+  const typeBudgetLines = formatTypeBudgetPromptLines(spec.typeBudget);
   const header = [
     '═══ MISSION COPY OVERRIDE (FINAL AUTHORITY) ═══',
     `ON-CANVAS HEADLINE (exact, Turkish diacritics preserved): "${mission.headline}"`,
     missionSubtitle
       ? `ON-CANVAS SUBTITLE (exact): "${missionSubtitle}"`
       : 'NO SUBTITLE — render only the headline above.',
-    sampleH
-      ? `TYPE ZONE BUDGET: headline ≤${sampleH.length} chars / ${sampleH.split(/\s+/).filter(Boolean).length} words (library sample was "${sampleH}") — do not paint longer copy.`
-      : '',
-    missionSubtitle && sampleS
-      ? `SUBLINE ZONE BUDGET: ≤${sampleS.length} chars (library sample was "${sampleS}").`
+    ...(typeBudgetLines.length > 0
+      ? typeBudgetLines
+      : [
+        sampleH
+          ? `TYPE ZONE BUDGET: headline ≤${sampleH.length} chars / ${sampleH.split(/\s+/).filter(Boolean).length} words (library sample was "${sampleH}") — do not paint longer copy.`
+          : '',
+        missionSubtitle && sampleS
+          ? `SUBLINE ZONE BUDGET: ≤${sampleS.length} chars (library sample was "${sampleS}").`
+          : '',
+      ]),
+    sampleH && typeBudgetLines.length > 0
+      ? `Library sample headline was "${sampleH}" — layout cue only; respect TYPE ZONE BUDGET above.`
       : '',
     spec.forbiddenTexts.length
       ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`

@@ -111,30 +111,72 @@ function channelFallback(channel: 'feed_post' | 'reel' | 'story'): FalLogoPositi
   return channel === 'reel' || channel === 'story' ? 'bottom_right' : 'bottom_right';
 }
 
+/**
+ * Keep logo off the type zone (headline/subline). Priority: design-fit placement —
+ * logo sits in a quiet craft/margin corner, never over the punchline block.
+ */
+function oppositeCornerForTypeZone(typeZoneAnchor: string): FalLogoPosition | null {
+  const z = typeZoneAnchor.toLowerCase().replace(/-/g, '_');
+  if (/bottom_right|lower_right/.test(z)) return 'top_left';
+  if (/bottom_left|lower_left/.test(z)) return 'top_right';
+  if (/bottom_center|lower_center|bottom_band|lower_third/.test(z)) return 'top_right';
+  if (/top_right|upper_right/.test(z)) return 'bottom_left';
+  if (/top_left|upper_left/.test(z)) return 'bottom_right';
+  if (/top_center|upper_center|masthead/.test(z)) return 'bottom_right';
+  if (/center|middle/.test(z)) return 'top_right';
+  return null;
+}
+
 /** Reels/stories with upper headline stacks need logo away from the type zone. */
 function adjustLogoPlacementForHeadlineZone(input: {
   placement: ResolvedFalLogoPlacement;
   channel: 'feed_post' | 'reel' | 'story';
   layoutPattern?: string | null;
   typographyMode?: string | null;
+  typeZoneAnchor?: string | null;
 }): ResolvedFalLogoPlacement {
   const { placement, channel } = input;
-  if (channel !== 'reel' && channel !== 'story') return placement;
+  let next = placement;
+
+  // Explicit type-zone anchor (CrewAI / slot art direction) — all channels.
+  // Design-fit rule: logo and headline must not share the same vertical band.
+  const typeAway = input.typeZoneAnchor
+    ? oppositeCornerForTypeZone(input.typeZoneAnchor)
+    : null;
+  if (typeAway && next.position) {
+    const z = input.typeZoneAnchor!.toLowerCase();
+    const logoTop = next.position.startsWith('top');
+    const logoBottom = next.position.startsWith('bottom');
+    const typeTop = /top_|upper_|masthead/.test(z);
+    const typeBottom = /bottom_|lower_|lower.?third/.test(z);
+    const sameBand = (logoTop && typeTop) || (logoBottom && typeBottom);
+    if (sameBand) {
+      next = {
+        ...next,
+        position: typeAway,
+        zoneHint: next.zoneHint
+          ? `${next.zoneHint} Keep logo ${formatFalLogoPositionLabel(typeAway)} — type zone is ${input.typeZoneAnchor}.`
+          : `${formatFalLogoPositionLabel(typeAway)} quiet margin — away from type zone (${input.typeZoneAnchor}).`,
+      };
+    }
+  }
+
+  if (channel !== 'reel' && channel !== 'story') return next;
 
   const layoutText = `${input.layoutPattern ?? ''} ${input.typographyMode ?? ''}`.toLowerCase();
   const upperHeadline = /oversized|upper|stack|masthead|full_bleed|bold_display|campaign_hero|poster|headline|typography.*hero|editorial_display|layered_graphics/.test(
     layoutText,
   );
-  if (!upperHeadline || !placement.position) return placement;
+  if (!upperHeadline || !next.position) return next;
 
   const topAnchors: FalLogoPosition[] = ['top_center', 'top_left', 'top_right'];
-  if (!topAnchors.includes(placement.position)) return placement;
+  if (!topAnchors.includes(next.position)) return next;
 
   return {
-    ...placement,
+    ...next,
     position: 'bottom_right',
-    zoneHint: placement.zoneHint
-      ? `${placement.zoneHint} Keep logo bottom-right — headline occupies upper/middle frame.`
+    zoneHint: next.zoneHint
+      ? `${next.zoneHint} Keep logo bottom-right — headline occupies upper/middle frame.`
       : 'Bottom-right above Instagram UI safe zone — never over the headline stack.',
   };
 }
@@ -145,6 +187,7 @@ function finalizeFalLogoPlacement(
     channel: 'feed_post' | 'reel' | 'story';
     layoutPattern?: string | null;
     typographyMode?: string | null;
+    typeZoneAnchor?: string | null;
   },
 ): ResolvedFalLogoPlacement {
   return adjustLogoPlacementForHeadlineZone({
@@ -152,6 +195,7 @@ function finalizeFalLogoPlacement(
     channel: input.channel,
     layoutPattern: input.layoutPattern,
     typographyMode: input.typographyMode,
+    typeZoneAnchor: input.typeZoneAnchor,
   });
 }
 
@@ -169,6 +213,8 @@ export function resolveFalLogoPlacement(input: {
   canvaArchetypeId?: string | null;
   layoutPattern?: string | null;
   typographyMode?: string | null;
+  /** Slot art-direction type zone — logo must not share this corner/band. */
+  typeZoneAnchor?: string | null;
   brandLogoPosition?: FalLogoPosition | null;
   channel?: 'feed_post' | 'reel' | 'story';
 }): ResolvedFalLogoPlacement {
@@ -177,6 +223,7 @@ export function resolveFalLogoPlacement(input: {
     channel,
     layoutPattern: input.layoutPattern,
     typographyMode: input.typographyMode,
+    typeZoneAnchor: input.typeZoneAnchor,
   };
   const agentPosition = parseFalLogoPosition(input.agentLogoPosition);
   const agentZone = str(input.agentLogoZone);
@@ -228,6 +275,35 @@ export function resolveFalLogoPlacement(input: {
     zoneHint: null,
     source: 'channel_fallback',
   }, layoutCtx);
+}
+
+/** Persist / design_spec round-trip for template library + production bind. */
+export function parseResolvedFalLogoPlacement(
+  raw: unknown,
+): ResolvedFalLogoPlacement | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const position = parseFalLogoPosition(o.position);
+  const zoneHint = str(o.zoneHint ?? o.zone_hint) || null;
+  const sourceRaw = str(o.source).toLowerCase();
+  const source: FalLogoPlacementSource =
+    sourceRaw === 'agent'
+    || sourceRaw === 'archetype'
+    || sourceRaw === 'brand_default'
+    || sourceRaw === 'channel_fallback'
+      ? (sourceRaw as FalLogoPlacementSource)
+      : 'archetype';
+  if (!position && !zoneHint) return null;
+  return { position, zoneHint, source };
+}
+
+export function formatChannelFromTemplateFormat(
+  format: string | null | undefined,
+): 'feed_post' | 'reel' | 'story' {
+  const f = str(format).toLowerCase();
+  if (f === 'story') return 'story';
+  if (f === 'reel' || f === 'reel_cover') return 'reel';
+  return 'feed_post';
 }
 
 export function formatFalLogoPlacementDirective(

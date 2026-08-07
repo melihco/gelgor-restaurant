@@ -37,4 +37,16 @@ describe('resolveBrandMarkMode', () => {
     expect(mark.typeWordmark).toBe(false);
     expect(mark.logoUrl).toBeUndefined();
   });
+
+  it('honors wantBrandMark=false even when logo URL exists (template includeLogo off)', () => {
+    const mark = resolveBrandMarkMode({
+      logoUrl: 'https://cdn.example.com/sarnic-logo.png',
+      brandName: 'Sarnıç Beach',
+      logoTreatment: 'watermark',
+      wantBrandMark: false,
+    });
+    expect(mark.mode).toBe('none');
+    expect(mark.logoUrl).toBeUndefined();
+    expect(mark.typeWordmark).toBe(false);
+  });
 });
