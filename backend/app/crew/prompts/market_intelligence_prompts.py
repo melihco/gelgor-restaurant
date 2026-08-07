@@ -47,11 +47,18 @@ Industry niche: {industry_niche}
 Competitors to monitor: {competitor_handles}
 Key hashtags to track: {seed_hashtags}
 
+## 📅 DATE TRUTH (hard rules — never violate)
+{holiday_date_block}
+- NEVER invent or shift religious bayram dates (Ramazan / Kurban).
+- If TODAY is outside a bayram content window, do NOT propose bayram campaigns.
+- Sector guard: for kids_party_venue / kids party businesses, NEVER propose wedding/düğün content.
+
 ## Your research steps (execute in order):
 
 ### Step 1 — Trend Discovery (Perplexity)
 Search for: "{industry_niche} trends {location} {current_month}"
 Also search for any upcoming local events, festivals, or seasonal moments relevant to this business.
+Only cite holidays that appear in DATE TRUTH above.
 
 ### Step 2 — Competitor Monitoring (Apify)
 For each competitor handle listed above, scan their last 5-7 posts:

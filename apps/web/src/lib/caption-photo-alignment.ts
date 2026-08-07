@@ -46,14 +46,16 @@ const MEAT_FOOD_PHOTO_HINTS = [
 ];
 
 /**
- * Cross-category nightlife intent (DJ / party / live music) — NOT venue or
- * campaign scenarios. Arbitrary event copy is matched via subject + AI judge.
+ * Cross-category nightlife intent (DJ / club night / live music) — NOT kids
+ * birthday "parti" / generic celebration copy. Bare `parti`/`party` false-positives
+ * kids_party_venue captions and hard-vetoes cake/venue gallery photos.
  */
 const NIGHTLIFE_CAPTION_HINTS = [
-  'dj', 'dj night', 'dj nights', 'party', 'beach party', 'nightlife',
+  'dj', 'dj night', 'dj nights', 'beach party', 'nightlife',
   'dance', 'dancing', 'live music', 'concert', 'festival', 'opening night',
-  'weekend nights', 'gece', 'geceleri', 'parti', 'dans', 'canlı müzik',
-  'sahne', 'performans', 'lineup', 'after party',
+  'weekend nights', 'gece', 'geceleri', 'gece parti', 'parti gecesi',
+  'dans', 'canlı müzik', 'sahne', 'performans', 'lineup', 'after party',
+  'club night', 'nightclub', 'party night',
 ];
 
 /**

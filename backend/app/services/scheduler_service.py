@@ -449,6 +449,11 @@ async def _opportunity_scanner_job() -> None:
                 if not isinstance(ideas, list) or not ideas:
                     continue
 
+                # Drop past-holiday hallucinations (e.g. Ramazan Bayramı in August)
+                from app.services.holiday_date_gate import filter_urgent_ideas_for_date
+
+                ideas = filter_urgent_ideas_for_date(ideas)
+
                 # Filter to urgent opportunities
                 urgent = [
                     idea for idea in ideas

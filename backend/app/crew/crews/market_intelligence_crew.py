@@ -20,6 +20,11 @@ from app.config import get_settings
 from app.crew.agents.market_intelligence_agent import create_market_intelligence_agent
 from app.crew.context import BrandInfo
 from app.crew.prompts.market_intelligence_prompts import MARKET_INTELLIGENCE_TASK
+from app.services.holiday_date_gate import (
+    filter_urgent_ideas_for_date,
+    sanitize_market_copy_for_date,
+    verified_upcoming_holidays_prompt_block,
+)
 
 logger = structlog.get_logger()
 
@@ -55,8 +60,10 @@ def run_market_intelligence(brand: BrandInfo) -> dict[str, Any]:
     competitor_handles = _extract_competitor_handles(brand.competitors or "")
     handles_str = ", ".join(f"@{h}" for h in competitor_handles) if competitor_handles else "none specified"
     seed_hashtags = _seed_hashtags_for_brand(brand)
-    current_month = datetime.now(timezone.utc).strftime("%B %Y")
+    now = datetime.now(timezone.utc)
+    current_month = now.strftime("%B %Y")
     industry_niche = f"{brand.business_type} {brand.location or ''}".strip()
+    holiday_date_block = verified_upcoming_holidays_prompt_block(now.date())
 
     task_description = MARKET_INTELLIGENCE_TASK.format(
         business_name=brand.business_name,
@@ -66,6 +73,7 @@ def run_market_intelligence(brand: BrandInfo) -> dict[str, Any]:
         competitor_handles=handles_str,
         seed_hashtags=seed_hashtags,
         current_month=current_month,
+        holiday_date_block=holiday_date_block,
     )
 
     task = Task(
@@ -96,12 +104,33 @@ def run_market_intelligence(brand: BrandInfo) -> dict[str, Any]:
     except Exception:
         pass
 
+    today = datetime.now(timezone.utc).date()
+    trend_brief = sanitize_market_copy_for_date(
+        str(parsed.get("trend_brief") or (raw[:1200] if raw else "")),
+        today,
+    )
+    competitor_pulse = sanitize_market_copy_for_date(
+        str(parsed.get("competitor_pulse") or ""),
+        today,
+    )
+    urgent_raw = parsed.get("urgent_content_ideas") or []
+    if not isinstance(urgent_raw, list):
+        urgent_raw = []
+    urgent = filter_urgent_ideas_for_date(urgent_raw, today)
+    dropped = len(urgent_raw) - len(urgent)
+    if dropped:
+        logger.info(
+            "market_intelligence_past_holiday_ideas_dropped",
+            brand=brand.business_name,
+            dropped=dropped,
+        )
+
     return {
         "status": "completed",
-        "trend_brief": parsed.get("trend_brief", raw[:1200] if raw else ""),
-        "competitor_pulse": parsed.get("competitor_pulse", ""),
+        "trend_brief": trend_brief,
+        "competitor_pulse": competitor_pulse,
         "top_opportunity_hashtags": parsed.get("top_opportunity_hashtags", []),
-        "urgent_content_ideas": parsed.get("urgent_content_ideas", []),
+        "urgent_content_ideas": urgent,
         "confidence_notes": parsed.get("confidence_notes", ""),
         "raw_output": raw,
         "refreshed_at": datetime.now(timezone.utc).isoformat(),

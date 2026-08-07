@@ -173,6 +173,24 @@ describe('captionRequiresStrictGalleryMatch', () => {
       'Saf Lezzet',
     )).toBe(true);
   });
+
+  it('does not treat kids birthday parti copy as nightlife-strict', () => {
+    expect(captionRequiresStrictGalleryMatch(
+      'Doğum günü partisi için renkli tema odaları hazır!',
+      'Parti Paketi',
+    )).toBe(false);
+  });
+});
+
+describe('kids party captions vs cake/venue photos', () => {
+  it('does not hard-veto birthday parti caption against cake table photo', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Doğum günü partisi paketi — pasta masası ve balon süsleme',
+        'birthday cake pasta balon decoration kids party table venue_reference',
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('matcher hard veto — DJ never picks food', () => {

@@ -77,8 +77,11 @@ def _build_signals_summary(brand: BrandInfo) -> str:
     # ── Market opportunities ───────────────────────────────────────────────────
     if brand.market_opportunity_ideas:
         try:
+            from app.services.holiday_date_gate import filter_urgent_ideas_for_date
+
             ideas = json.loads(brand.market_opportunity_ideas)
             if isinstance(ideas, list) and ideas:
+                ideas = filter_urgent_ideas_for_date(ideas)
                 urgent = [i for i in ideas if isinstance(i, dict) and i.get("urgency") in ("today", "this_week")]
                 if urgent:
                     parts.append("⚡ ACİL PAZAR FIRSATLARI:")
@@ -123,7 +126,11 @@ def _build_signals_summary(brand: BrandInfo) -> str:
 
     # ── Trend intelligence ─────────────────────────────────────────────────────
     if brand.trend_brief:
-        parts.append(f"📈 TREND BRIEF (bu hafta):\n{brand.trend_brief[:500]}")
+        from app.services.holiday_date_gate import sanitize_market_copy_for_date
+
+        trend = sanitize_market_copy_for_date(brand.trend_brief)
+        if trend:
+            parts.append(f"📈 TREND BRIEF (bu hafta):\n{trend[:500]}")
 
     # ── Social listening ───────────────────────────────────────────────────────
     if brand.social_signals:
