@@ -179,6 +179,19 @@ export async function ensureTenantStoredGalleryUrl(
   return null;
 }
 
+async function externalGalleryUrlIsReachable(
+  externalTarget: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    const buffer = await fetchExternalImageBuffer(externalTarget, timeoutMs);
+    if (buffer && buffer.length >= 100) return true;
+  } catch {
+    /* fall through to HEAD/GET probe */
+  }
+  return probeMediaUrlReliableLocal(externalTarget, { timeoutMs, retries: 1 });
+}
+
 export async function ensureProductionGalleryPhotoUrlServer(
   workspaceId: string,
   photoUrl: string,
@@ -207,6 +220,15 @@ export async function ensureProductionGalleryPhotoUrlServer(
         externalTarget.slice(0, 90),
         mirrorErr instanceof Error ? mirrorErr.message : mirrorErr,
       );
+    }
+  }
+
+  // Brand-site galleries (WordPress, etc.) are often reachable even when R2 mirror
+  // or local /api/media probe fails. Prefer a live external URL over starving the slot
+  // with a false "expired URL" — fal / media-proxy can still fetch https origins.
+  if (externalTarget?.startsWith('https://')) {
+    if (await externalGalleryUrlIsReachable(externalTarget, timeoutMs)) {
+      return externalTarget;
     }
   }
 

@@ -96,4 +96,18 @@ describe('ensureProductionGalleryPhotoUrlServer', () => {
     expect(url).toContain('/api/media?key=');
     expect(fetchExternalImageBuffer).not.toHaveBeenCalled();
   });
+
+  it('falls back to reachable brand-site URL when R2 mirror fails', async () => {
+    const brand = 'https://ballidupartievi.com/wp-content/uploads/2026/01/home_01.webp';
+    vi.mocked(fetchExternalImageBuffer)
+      .mockResolvedValueOnce(null) // mirror fetch fails closed
+      .mockResolvedValueOnce(Buffer.alloc(200)); // external still readable
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      headers: { get: () => null },
+    })));
+
+    const url = await ensureProductionGalleryPhotoUrlServer(TENANT, brand);
+    expect(url).toBe(brand);
+  });
 });

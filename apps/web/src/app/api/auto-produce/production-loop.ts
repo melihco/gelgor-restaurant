@@ -516,6 +516,10 @@ function canRetryBrandGalleryRecovery(pipeline: string, slotRole: string): boole
  * When matchInput is provided, only caption-aligned candidates (≥ minScore) are tried —
  * never fall back to the first reachable brand photo without scoring.
  */
+type GalleryRematchResult =
+  | { ok: true; url: string }
+  | { ok: false; reason: 'no_photos' | 'no_aligned_candidate' | 'unreachable' };
+
 async function rematchMirroredBrandGalleryUrl(opts: {
   workspaceId: string;
   primaryUrl: string | null | undefined;
@@ -523,9 +527,9 @@ async function rematchMirroredBrandGalleryUrl(opts: {
   matchInput?: MatchPhotoInput;
   galleryMeta?: Record<string, GalleryPhotoMeta>;
   minScore?: number;
-}): Promise<string | null> {
+}): Promise<GalleryRematchResult> {
   const photos = opts.galleryPhotos.filter((u) => Boolean(u?.trim()));
-  if (!photos.length) return null;
+  if (!photos.length) return { ok: false, reason: 'no_photos' };
 
   const minScore = opts.minScore ?? MIN_ACCEPT_SCORE;
   let ordered = photos;
@@ -541,9 +545,9 @@ async function rematchMirroredBrandGalleryUrl(opts: {
     ).filter((r) => r.score >= minScore);
     if (!ranked.length) {
       console.warn(
-        '[auto-produce] rematch refused — no caption-aligned reachable candidates above floor',
+        '[auto-produce] rematch refused — no caption-aligned candidates above floor',
       );
-      return null;
+      return { ok: false, reason: 'no_aligned_candidate' };
     }
     ordered = ranked.map((r) => r.url);
   }
@@ -554,7 +558,7 @@ async function rematchMirroredBrandGalleryUrl(opts: {
       ? opts.primaryUrl
       : ordered[0]
   )!.trim();
-  if (!primary) return null;
+  if (!primary) return { ok: false, reason: 'no_photos' };
 
   const picked = await pickReachableProductionGalleryUrl(
     opts.workspaceId,
@@ -562,7 +566,34 @@ async function rematchMirroredBrandGalleryUrl(opts: {
     ordered,
     { timeoutMs: 12_000 },
   );
-  return picked?.url ?? null;
+  if (!picked?.url) return { ok: false, reason: 'unreachable' };
+  return { ok: true, url: picked.url };
+}
+
+function galleryRematchErrorMessage(reason: GalleryRematchResult extends { ok: false; reason: infer R } ? R : never): string {
+  if (reason === 'no_aligned_candidate') {
+    return 'Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı';
+  }
+  if (reason === 'no_photos') {
+    return 'Marka galerisinde kullanılabilir fotoğraf yok';
+  }
+  return 'Galeri fotoğrafı erişilemiyor (mirror/probe başarısız — URL süresi dolmuş veya fetch engelli olabilir)';
+}
+
+/** Prefer byte-fetch for brand-site https — HEAD-only probes false-fail on some hosts. */
+async function isProductionGalleryUrlReachable(url: string, timeoutMs = 8_000): Promise<boolean> {
+  const trimmed = url.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('https://')) {
+    try {
+      const { fetchExternalImageBuffer } = await import('@/lib/external-image-fetch');
+      const buf = await fetchExternalImageBuffer(trimmed, timeoutMs);
+      if (buf && buf.length >= 100) return true;
+    } catch {
+      /* fall through */
+    }
+  }
+  return probeMediaUrlReliable(trimmed, { timeoutMs, retries: trimmed.includes('/api/media') ? 3 : 2 });
 }
 
 export async function runProduction(params: RunProductionParams): Promise<NextResponse> {
@@ -2308,7 +2339,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))) {
+    if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await isProductionGalleryUrlReachable(referenceUrl))) {
       // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
       console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
       const fallbackCandidates = galleryPhotos.filter((u) => u !== referenceUrl);
@@ -2328,7 +2359,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ideaIndex,
           )
         : null;
-      const rematched = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+      const rematch = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
         ? await rematchMirroredBrandGalleryUrl({
           workspaceId,
           primaryUrl: heuristicPick || referenceUrl,
@@ -2344,17 +2375,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           },
           galleryMeta,
         })
-        : null;
-      if (rematched) {
-        console.log(`[auto-produce] brand gallery rematch/mirror: ${rematched.slice(0, 80)}`);
-        referenceUrl = rematched;
-        referenceIsStock = isStockGalleryPhotoUrl(rematched);
+        : { ok: false as const, reason: 'unreachable' as const };
+      if (rematch.ok) {
+        console.log(`[auto-produce] brand gallery rematch/mirror: ${rematch.url.slice(0, 80)}`);
+        referenceUrl = rematch.url;
+        referenceIsStock = isStockGalleryPhotoUrl(rematch.url);
       } else if (
         allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)
         && canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
       ) {
         console.warn(
-          `[auto-produce] no brand gallery rematch — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
+          `[auto-produce] no brand gallery rematch (${rematch.reason}) — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
         );
         const recovered = await runScratchVibeImage({
           referenceImageUrls: undefined,
@@ -2363,7 +2394,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           results.push({
             title: headline,
             imageUrl: '',
-            error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+            error: galleryRematchErrorMessage(rematch.reason),
             slotKey,
           });
           continue;
@@ -2373,11 +2404,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMatchScore = null;
         captionDrivenGenerated = true;
       } else {
-        console.warn(`[auto-produce] brand gallery unreachable — refusing caption scratch for photo brand`);
+        console.warn(`[auto-produce] brand gallery rematch failed (${rematch.reason}) — refusing caption scratch for photo brand`);
         results.push({
           title: headline,
           imageUrl: '',
-          error: 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+          error: galleryRematchErrorMessage(rematch.reason),
           slotKey,
         });
         continue;
@@ -2450,7 +2481,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         referenceUrl = internalFallback;
         referenceIsStock = isStockGalleryPhotoUrl(internalFallback);
       } else {
-        const rematched = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
+        const rematch = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
           ? await rematchMirroredBrandGalleryUrl({
             workspaceId,
             primaryUrl: referenceUrl,
@@ -2466,17 +2497,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             },
             galleryMeta,
           })
-          : null;
-        if (rematched) {
-          console.log(`[auto-produce] brand gallery rematch after internal miss: ${rematched.slice(0, 80)}`);
-          referenceUrl = rematched;
-          referenceIsStock = isStockGalleryPhotoUrl(rematched);
+          : { ok: false as const, reason: 'unreachable' as const };
+        if (rematch.ok) {
+          console.log(`[auto-produce] brand gallery rematch after internal miss: ${rematch.url.slice(0, 80)}`);
+          referenceUrl = rematch.url;
+          referenceIsStock = isStockGalleryPhotoUrl(rematch.url);
         } else if (
           allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)
           && canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
         ) {
           console.warn(
-            `[auto-produce] broken internal/no gallery — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
+            `[auto-produce] broken internal/no gallery (${rematch.reason}) — caption scratch (non-venue) for "${headline.slice(0, 48)}"`,
           );
           const recovered = await runScratchVibeImage({
           referenceImageUrls: undefined,
@@ -2487,7 +2518,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               imageUrl: '',
               error: brokenInternal
                 ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-                : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+                : galleryRematchErrorMessage(rematch.reason),
               slotKey,
             });
             continue;
@@ -2497,13 +2528,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           galleryMatchScore = null;
           captionDrivenGenerated = true;
         } else {
-          console.warn(`[auto-produce] broken internal gallery URL skipped: ${(referenceUrl ?? '').slice(0, 100)}`);
+          console.warn(`[auto-produce] broken internal gallery URL skipped (${rematch.reason}): ${(referenceUrl ?? '').slice(0, 100)}`);
           results.push({
             title: headline,
             imageUrl: '',
             error: brokenInternal
               ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-              : 'Seçilen galeri fotoğrafı erişilemiyor (süresi dolmuş veya geçersiz URL)',
+              : galleryRematchErrorMessage(rematch.reason),
             slotKey,
           });
           continue;
@@ -3049,7 +3080,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       })
     ) {
       // Prefer another mirrored brand photo over caption-scratch AI.
-      const rematched = hasRealBrandPhotos
+      const rematch = hasRealBrandPhotos
         ? await rematchMirroredBrandGalleryUrl({
           workspaceId,
           primaryUrl: resolvedReferenceUrl,
@@ -3067,20 +3098,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           },
           galleryMeta,
         })
-        : null;
-      if (rematched) {
+        : { ok: false as const, reason: 'no_photos' as const };
+      if (rematch.ok) {
         console.warn(
           `[auto-produce] weak gallery (${galleryMatchScore}/${galleryFloor}) — rematched brand photo for "${headline.slice(0, 40)}"`,
         );
-        referenceUrl = rematched;
-        resolvedReferenceUrl = rematched;
-        galleryPreviewUrl = toFeedPreviewUrl(rematched) ?? rematched;
-        referenceIsStock = isStockGalleryPhotoUrl(rematched);
+        referenceUrl = rematch.url;
+        resolvedReferenceUrl = rematch.url;
+        galleryPreviewUrl = toFeedPreviewUrl(rematch.url) ?? rematch.url;
+        referenceIsStock = isStockGalleryPhotoUrl(rematch.url);
         pickedFromBrandGallery = true;
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
           headline: galleryMatchHeadline,
-          photoUrl: rematched,
+          photoUrl: rematch.url,
           galleryAnalysis: galleryMeta,
           businessType: brandBusinessType,
           mood,
