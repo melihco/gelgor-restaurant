@@ -570,7 +570,9 @@ async function rematchMirroredBrandGalleryUrl(opts: {
   return { ok: true, url: picked.url };
 }
 
-function galleryRematchErrorMessage(reason: GalleryRematchResult extends { ok: false; reason: infer R } ? R : never): string {
+function galleryRematchErrorMessage(
+  reason: 'no_photos' | 'no_aligned_candidate' | 'unreachable',
+): string {
   if (reason === 'no_aligned_candidate') {
     return 'Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı';
   }
