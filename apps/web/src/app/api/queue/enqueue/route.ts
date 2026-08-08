@@ -126,6 +126,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (existing) {
       const state = await existing.getState();
       if (ACTIVE_BULLMQ_JOB_STATES.has(state)) {
+        // Refresh urgency — factory boosts were previously ignored on dedupe, and
+        // BullMQ lower-number-first ordering made "priority 10" wait behind everyone.
+        if (jobPriority > 0) {
+          try {
+            await existing.changePriority({ priority: jobPriority });
+          } catch {
+            /* best-effort; job remains queued */
+          }
+        }
         return NextResponse.json({
           ok: true,
           jobId,
@@ -133,6 +142,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           deduplicated: true,
           reason: 'already_queued',
           state,
+          priority: jobPriority,
         });
       }
       if (state === 'completed' || state === 'failed') {

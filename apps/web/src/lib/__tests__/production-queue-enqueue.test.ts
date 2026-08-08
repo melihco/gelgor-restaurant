@@ -25,9 +25,14 @@ describe('buildProductionSlotJobId', () => {
 });
 
 describe('resolveEnqueuePriority', () => {
-  it('clamps explicit priority to 0-10', () => {
-    expect(resolveEnqueuePriority(5)).toBe(5);
-    expect(resolveEnqueuePriority(99)).toBe(10);
+  it('inverts factory urgency so BullMQ runs higher urgency first', () => {
+    expect(resolveEnqueuePriority(10)).toBe(1);
+    expect(resolveEnqueuePriority(9)).toBe(2);
+    expect(resolveEnqueuePriority(1)).toBe(10);
+    expect(resolveEnqueuePriority(5)).toBe(6);
+    expect(resolveEnqueuePriority(99)).toBe(1);
+    expect(resolveEnqueuePriority(0)).toBe(0);
     expect(resolveEnqueuePriority(-1)).toBe(0);
+    expect(resolveEnqueuePriority(undefined)).toBe(0);
   });
 });
