@@ -34,6 +34,7 @@ import {
   type BrandSlotFacilities,
 } from '@/lib/sector-slot-pack';
 import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaults';
+import { intentFamilyFromSignals } from '@/lib/catalog-slot-ai-picker';
 import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
 
 /** Soft penalty per prior use of the same catalog slot (reuse pass only). */
@@ -428,7 +429,78 @@ function ideaHaystack(idea: Record<string, unknown>): string {
     idea.template_use_case,
     idea.visual_direction,
     idea.tagline,
+    idea.strategic_purpose,
+    idea.subject_key,
+    idea.scene_hint,
+    idea.mood,
+    idea.hook,
   ].join(' ').toLowerCase();
+}
+
+/** Strong intent families that must not cross-match via a soft preferred pin. */
+const STRONG_INTENT_FAMILIES = new Set([
+  'event',
+  'social_proof',
+  'product_menu',
+  'offer_ticket',
+  'hiring',
+  'brand_bts',
+]);
+
+/** Score gap that lets a better peer beat a soft preferred pin. */
+const PREFERRED_SOFT_SCORE_MARGIN = 18;
+
+export function resolveIdeaIntentFamily(idea: Record<string, unknown>): string {
+  const announcement = normalizeToken(
+    String(idea.calendar_announcement_type ?? idea.announcement_type ?? idea.template_use_case ?? ''),
+  );
+  const hay = ideaHaystack(idea);
+  const keywords = hay.split(/\s+/).filter((w) => w.length >= 3).slice(0, 48);
+  // Caption-only family — when FD/stamp drifts announcement (e.g. social_proof on a
+  // DJ night), trust the visual copy over the label for soft-pin veto.
+  const captionFamily = intentFamilyFromSignals({ keywords });
+  const combined = intentFamilyFromSignals({
+    announcementTypes: announcement ? [announcement] : [],
+    keywords,
+  });
+  if (
+    captionFamily !== 'other'
+    && combined !== 'other'
+    && captionFamily !== combined
+    && STRONG_INTENT_FAMILIES.has(captionFamily)
+    && STRONG_INTENT_FAMILIES.has(combined)
+  ) {
+    return captionFamily;
+  }
+  return combined;
+}
+
+export function resolveSlotIntentFamily(slot: BrandActiveSlot): string {
+  const signals = slot.matchSignals ?? {};
+  const announcementTypes = Array.isArray(signals.announcement_types)
+    ? signals.announcement_types.map((a) => String(a))
+    : [];
+  const keywords = Array.isArray(signals.keywords)
+    ? signals.keywords.map((k) => String(k))
+    : [];
+  return intentFamilyFromSignals({
+    designTemplateType: slot.designTemplateType,
+    announcementTypes,
+    keywords,
+    slotKey: slot.slotKey,
+  });
+}
+
+/** True when idea intent and preferred slot family are incompatible (soft pins only). */
+export function catalogIntentFamiliesConflict(
+  ideaFamily: string,
+  slotFamily: string,
+): boolean {
+  if (!ideaFamily || !slotFamily || ideaFamily === 'other' || slotFamily === 'other') {
+    return false;
+  }
+  if (ideaFamily === slotFamily) return false;
+  return STRONG_INTENT_FAMILIES.has(ideaFamily) && STRONG_INTENT_FAMILIES.has(slotFamily);
 }
 
 function scoreMatchSignals(
@@ -535,9 +607,31 @@ function scoreSlotForIdea(
 
   if (/dj|live music|konser|party|gece/.test(hay)) {
     if (/dj|live_music|night|neon/.test(key)) score += 28;
+    // DJ/event copy must not land on guest-review shells.
+    if (/social_proof|guest_review|customer_review|testimonial/.test(key)) score -= 45;
   }
   if (/private|özel|wedding|düğün|vip/.test(hay)) {
     if (/private_event|vip|guestlist/.test(key)) score += 28;
+  }
+  if (/\b(yorum|review|testimonial|misafir|guest say|what guests)\b/.test(hay)) {
+    if (/social_proof|guest|review|testimonial/.test(key)) score += 30;
+    if (/dj|live_music|neon/.test(key)) score -= 35;
+  }
+  if (/(?:^|\s)(kokteyl|cocktail|ürün|product|menü|menu|tabak|dish|reçel|zeytin|vitrin)/.test(` ${hay} `)) {
+    if (/product|menu|dish|cocktail|signature|harvest|vitrine|shelf/.test(key)) score += 28;
+    if (/dj|live_music|private_event|social_proof/.test(key) && !/cocktail/.test(key)) {
+      score -= 30;
+    }
+  }
+  if (/\b(day.?pass|daybed|indirim|offer|promo|rezerv|booking)\b/.test(hay)) {
+    if (/offer|day_pass|daybed|promo|reservation|booking/.test(key)) score += 28;
+  }
+
+  // Intent-family veto — soft scoring path (preferred pin handled separately).
+  const ideaFamily = resolveIdeaIntentFamily(idea);
+  const slotFamily = resolveSlotIntentFamily(slot);
+  if (catalogIntentFamiliesConflict(ideaFamily, slotFamily)) {
+    score -= 50;
   }
 
   score += scoreMatchSignals(slot, idea, announcement, hay);
@@ -568,6 +662,11 @@ export interface CatalogSlotMatchInput {
   preferredCatalogSlotKey?: string | null;
   /** Soft variety — keys hard-pinned in recent artifacts (most recent first). */
   recentCatalogSlotKeys?: string[];
+  /**
+   * Factory/plan durable pin — never intent-veto or score-demote.
+   * Soft FD/stamp preferred keys remain vetoable for idea-fit.
+   */
+  preferredIsDurable?: boolean;
 }
 
 /**
@@ -586,37 +685,121 @@ export function matchIdeaToBrandCatalogSlot(
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
 
+  const pickBestScored = (): {
+    slot: BrandActiveSlot;
+    score: number;
+    usage: number;
+    recentIdx: number;
+    tie: number;
+  } | null => {
+    let best: {
+      slot: BrandActiveSlot;
+      score: number;
+      usage: number;
+      recentIdx: number;
+      tie: number;
+    } | null = null;
+    for (const slot of activeSlots.slots) {
+      if (usedSlotKeys?.has(slot.slotKey)) continue;
+      const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
+      const score = scoreSlotForIdea(slot, idea, assignment, usage, recentCatalogSlotKeys);
+      if (score <= 0) continue;
+      const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
+      const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
+      if (
+        !best
+        || score > best.score
+        || (score === best.score && usage < best.usage)
+        || (score === best.score && usage === best.usage && (
+          (recentIdx < 0 && best.recentIdx >= 0)
+          || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
+          || (recentIdx === best.recentIdx && tie < best.tie)
+        ))
+      ) {
+        best = { slot, score, usage, recentIdx, tie };
+      }
+    }
+    return best;
+  };
+
   if (preferred && activeSlots.enabledSlotKeys.has(preferred)) {
     const exact = activeSlots.slots.find((s) => s.slotKey === preferred);
     if (exact && (!usedSlotKeys || !usedSlotKeys.has(exact.slotKey))) {
-      // Explicit catalog pin always wins — applyCatalogSlotToAssignment realigns
-      // slot_role/pipeline to the catalog row (fixes reel-key-on-carousel drift).
-      return exact;
+      // Durable plan/factory pins always win.
+      if (input.preferredIsDurable) {
+        return exact;
+      }
+      // Soft preferred (FD/stamp): veto when idea intent conflicts, or a
+      // same-format peer clearly fits better — so DJ ideas don't keep a
+      // social_proof shell. Score against the preferred slot's own role/format
+      // (catalog key is SSOT; assignment role may still be drifted carousel↔reel).
+      const ideaFamily = resolveIdeaIntentFamily(idea);
+      const slotFamily = resolveSlotIntentFamily(exact);
+      const alignedAssignment = assignment
+        ? {
+            ...assignment,
+            catalog_slot_key: exact.slotKey,
+            slot_role: (exact.slotRole || assignment.slot_role) as typeof assignment.slot_role,
+          }
+        : undefined;
+      const preferredScore = scoreSlotForIdea(
+        exact,
+        idea,
+        alignedAssignment,
+        slotUsageCounts?.get(exact.slotKey) ?? 0,
+        recentCatalogSlotKeys,
+      );
+      const intentConflict = catalogIntentFamiliesConflict(ideaFamily, slotFamily);
+      // Rematch peers in the preferred slot's format only — cross-format
+      // rematch is applyCatalogSlotToAssignment's job when we keep the pin.
+      const bestSameFormat = (() => {
+        let best: ReturnType<typeof pickBestScored> = null;
+        for (const slot of activeSlots.slots) {
+          if (slot.format !== exact.format) continue;
+          if (usedSlotKeys?.has(slot.slotKey)) continue;
+          const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
+          const score = scoreSlotForIdea(
+            slot,
+            idea,
+            alignedAssignment,
+            usage,
+            recentCatalogSlotKeys,
+          );
+          if (score <= 0) continue;
+          const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
+          const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
+          if (
+            !best
+            || score > best.score
+            || (score === best.score && usage < best.usage)
+            || (score === best.score && usage === best.usage && (
+              (recentIdx < 0 && best.recentIdx >= 0)
+              || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
+              || (recentIdx === best.recentIdx && tie < best.tie)
+            ))
+          ) {
+            best = { slot, score, usage, recentIdx, tie };
+          }
+        }
+        return best;
+      })();
+      const peerWins = Boolean(
+        bestSameFormat
+        && bestSameFormat.slot.slotKey !== exact.slotKey
+        && bestSameFormat.score >= preferredScore + PREFERRED_SOFT_SCORE_MARGIN,
+      );
+      if (!intentConflict && !peerWins) {
+        return exact;
+      }
+      if (intentConflict || peerWins) {
+        // Intent conflict: allow any-format best so DJ≠social can rematch.
+        const best = intentConflict ? pickBestScored() : bestSameFormat;
+        if (best) return best.slot;
+      }
     }
   }
 
-  let best: { slot: BrandActiveSlot; score: number; usage: number; recentIdx: number; tie: number } | null = null;
-  for (const slot of activeSlots.slots) {
-    if (usedSlotKeys?.has(slot.slotKey)) continue;
-    const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
-    const score = scoreSlotForIdea(slot, idea, assignment, usage, recentCatalogSlotKeys);
-    if (score <= 0) continue;
-    const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
-    const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
-    if (
-      !best
-      || score > best.score
-      || (score === best.score && usage < best.usage)
-      || (score === best.score && usage === best.usage && (
-        (recentIdx < 0 && best.recentIdx >= 0)
-        || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
-        || (recentIdx === best.recentIdx && tie < best.tie)
-      ))
-    ) {
-      best = { slot, score, usage, recentIdx, tie };
-    }
-  }
-
+  const best = pickBestScored();
   if (best) return best.slot;
 
   // Format-only fallback — same format only (never stamp a reel key onto a story).
@@ -874,8 +1057,9 @@ export function enrichProductionQueueWithBrandSlots(
       ?? (item.idea as Record<string, unknown>).catalog_slot_key
       ?? '',
     ).trim() || null;
-    // Soft stamp / FD pick that already ran recently → re-score for variety.
-    // Plan/factory durable bindings keep their exact shell.
+    // Soft stamp / FD pick that already ran recently → clear preferred for variety.
+    // Intent veto inside matchIdeaToBrandCatalogSlot also rematches soft misfits.
+    // Plan/factory durable bindings keep their exact shell (preferredIsDurable).
     const rematchRecent = Boolean(
       !isDurablePin
       && preferredKey
@@ -895,6 +1079,7 @@ export function enrichProductionQueueWithBrandSlots(
       usedSlotKeys: usedKeys,
       recentCatalogSlotKeys,
       preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
+      preferredIsDurable: isDurablePin,
     });
     // Content packages often exceed enabled catalog size — rotate with soft penalty, never drop.
     if (!matched && activeSlots.slots.length > 0) {
@@ -905,6 +1090,7 @@ export function enrichProductionQueueWithBrandSlots(
         slotUsageCounts: usage,
         recentCatalogSlotKeys,
         preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
+        preferredIsDurable: isDurablePin,
       });
     }
     if (!matched) {

@@ -86,6 +86,26 @@ describe('resolveDesignTemplateCandidateTypes', () => {
     });
     expect(types[0]).toBe('reel_cover');
   });
+
+  it('overrides social_proof announcement when caption is DJ event (beach_club)', () => {
+    const types = resolveDesignTemplateCandidateTypes({
+      announcementType: 'social_proof',
+      headline: 'DJ Night',
+      caption: 'Live DJ set this Friday under the stars',
+      format: 'post',
+    });
+    expect(types[0]).toBe('event_special');
+  });
+
+  it('overrides social_proof announcement when caption is product (local_products_shop)', () => {
+    const types = resolveDesignTemplateCandidateTypes({
+      announcementType: 'social_proof',
+      headline: 'Haftalık reçel vitrini',
+      caption: 'Ev yapımı ürünler — reçel ve zeytin rafta',
+      format: 'post',
+    });
+    expect(types[0]).toBe('menu_highlight');
+  });
 });
 
 describe('selectBrandDesignTemplate — 1A hard pin', () => {

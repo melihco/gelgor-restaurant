@@ -872,10 +872,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     });
   }
 
-  // Stamp without recent-key memory — gallery context loads next; enrich applies
-  // cross-mission catalog variety via recentCatalogSlotKeys.
+  // Lightweight recent catalog keys before gallery context — stamp idea-fit + variety.
+  let stampRecentCatalogKeys: string[] = [];
+  if (brandActiveSlots) {
+    try {
+      const { fetchRecentCatalogSlotKeys } = await import('@/lib/template-usage-tracker');
+      stampRecentCatalogKeys = await fetchRecentCatalogSlotKeys(workspaceId);
+    } catch {
+      stampRecentCatalogKeys = [];
+    }
+  }
   const brandAwareToProcess = brandActiveSlots
-    ? stampIdeasWithBrandCatalogSlots(ideasForStamp, brandActiveSlots)
+    ? stampIdeasWithBrandCatalogSlots(ideasForStamp, brandActiveSlots, {
+      recentCatalogSlotKeys: stampRecentCatalogKeys,
+    })
     : ideasForStamp;
 
   const routeBaseUrl = getNextjsInternalOrigin();

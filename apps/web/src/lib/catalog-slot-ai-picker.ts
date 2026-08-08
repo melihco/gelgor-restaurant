@@ -109,12 +109,15 @@ export function intentFamilyFromSignals(input: {
     ann.some((a) => a.includes('event') || a.includes('wedding'))
     || type === 'event_special'
     || /(?:^|_)(event|dj|live_music|concert|wedding|bridal|aftermovie)(?:_|$)/.test(key)
+    // Caption/keyword cues — ideas with drifted announcement labels still classify as event.
+    || /\b(dj|live\s*set|live\s*music|line.?up|konser|afterparty|aftermovie|wedding|düğün)\b/.test(kw)
   ) {
     return 'event';
   }
   if (
     ann.some((a) => a.includes('social_proof') || a.includes('testimonial') || a.includes('ugc'))
     || type === 'social_proof'
+    || /\b(guest\s*review|customer\s*review|testimonial|what\s*guests|misafir\s*yorum)\b/.test(kw)
   ) {
     return 'social_proof';
   }
@@ -128,8 +131,9 @@ export function intentFamilyFromSignals(input: {
   if (
     ann.some((a) => a.includes('product') || a.includes('menu'))
     || type === 'menu_highlight'
-    || /(?:^|_)(product|menu|dish|cocktail|pastry|collection|arrival)(?:_|$)/.test(key)
-    || /\b(cocktail|kokteyl|ürün|product|menu|menü)\b/.test(kw)
+    || /(?:^|_)(product|menu|dish|cocktail|pastry|collection|arrival|vitrine|shelf)(?:_|$)/.test(key)
+    // Stem-friendly: Turkish plurals (ürünleri) and shelf/vitrine cues.
+    || /(?:^|\s)(cocktail|kokteyl|ürün|product|menu|menü|tabak|dish|reçel|zeytin|vitrin)/.test(` ${kw} `)
   ) {
     return 'product_menu';
   }

@@ -325,6 +325,108 @@ describe('matchIdeaToBrandCatalogSlot', () => {
     });
     expect(matched?.slotKey).toBe('beach_club_dj_night_teaser_post');
   });
+
+  it('vetoes soft preferred social_proof when idea is DJ night (beach_club)', () => {
+    const social = mockSlot('beach_club_guest_review_post', 'post', {
+      design_template_type: 'social_proof',
+      match_signals: { announcement_types: ['social_proof'] },
+    });
+    const dj = mockSlot('beach_club_dj_night_teaser_post', 'post', {
+      design_template_type: 'event_special',
+      match_signals: { announcement_types: ['event_teaser'], keywords: ['dj', 'night'] },
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-soft-veto-dj',
+      sector: 'beach_club',
+      sectorSlots: [social, dj],
+      tenantAssignments: [
+        mockAssignment(social.slot_key, true, social),
+        mockAssignment(dj.slot_key, true, dj),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        // Drifted FD/stamp label — copy is clearly an event.
+        calendar_announcement_type: 'social_proof',
+        headline: 'DJ Night under the stars',
+        caption: 'Live DJ set this Friday — join us on the deck',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+      preferredCatalogSlotKey: social.slot_key,
+      preferredIsDurable: false,
+    });
+    expect(matched?.slotKey).toBe('beach_club_dj_night_teaser_post');
+  });
+
+  it('keeps durable preferred social_proof even when idea is DJ night', () => {
+    const social = mockSlot('beach_club_guest_review_post', 'post', {
+      design_template_type: 'social_proof',
+      match_signals: { announcement_types: ['social_proof'] },
+    });
+    const dj = mockSlot('beach_club_dj_night_teaser_post', 'post', {
+      design_template_type: 'event_special',
+      match_signals: { announcement_types: ['event_teaser'] },
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-durable-pin',
+      sector: 'beach_club',
+      sectorSlots: [social, dj],
+      tenantAssignments: [
+        mockAssignment(social.slot_key, true, social),
+        mockAssignment(dj.slot_key, true, dj),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'social_proof',
+        headline: 'DJ Night under the stars',
+        caption: 'Live DJ set this Friday',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+      preferredCatalogSlotKey: social.slot_key,
+      preferredIsDurable: true,
+    });
+    expect(matched?.slotKey).toBe('beach_club_guest_review_post');
+  });
+
+  it('vetoes soft preferred social_proof for product idea (local_products_shop)', () => {
+    const social = mockSlot('local_products_shop_guest_love_post', 'post', {
+      sector_id: 'local_products_shop',
+      design_template_type: 'social_proof',
+      match_signals: { announcement_types: ['social_proof'] },
+    });
+    const product = mockSlot('local_products_shop_shelf_vitrine_post', 'post', {
+      sector_id: 'local_products_shop',
+      design_template_type: 'menu_highlight',
+      match_signals: {
+        announcement_types: ['product_reveal'],
+        keywords: ['ürün', 'reçel', 'vitrin'],
+      },
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-soft-veto-product',
+      sector: 'local_products_shop',
+      sectorSlots: [social, product],
+      tenantAssignments: [
+        mockAssignment(social.slot_key, true, social),
+        mockAssignment(product.slot_key, true, product),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'social_proof',
+        headline: 'Haftalık reçel vitrini',
+        caption: 'Yeni sezon ürünleri rafta — ev yapımı reçel ve zeytin',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+      preferredCatalogSlotKey: social.slot_key,
+      preferredIsDurable: false,
+    });
+    expect(matched?.slotKey).toBe('local_products_shop_shelf_vitrine_post');
+  });
 });
 
 describe('filterDesignTemplatesToActiveSlots', () => {

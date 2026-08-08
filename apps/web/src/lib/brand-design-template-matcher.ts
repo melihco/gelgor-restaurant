@@ -232,6 +232,26 @@ export function resolveDesignTemplateCandidateTypes(
     String(input.caption ?? ''),
   ].join(' ').toLowerCase();
 
+  // Caption/headline beats a conflicting announcement label (e.g. social_proof
+  // stamped on a DJ night idea) so soft / missing_template paths stay idea-fit.
+  const captionImpliesEvent = /event|etkinlik|dj|gece|night|live set|line.?up|party|parti/.test(hay);
+  const captionImpliesProduct = /menu|product|ürün|tabak|lezzet|cocktail|kokteyl|reçel|zeytin/.test(hay);
+  const captionImpliesSocial = /social_proof|guest review|what guests|yorum|memnuniyet|testimonial/.test(hay);
+  const announcementIsSocial = /social_proof|testimonial|ugc/.test(announcement)
+    || /social_proof|testimonial|ugc/.test(useCase);
+  const announcementIsEvent = /event|teaser|dj|night/.test(announcement)
+    || /event|teaser|dj|night/.test(useCase);
+
+  if (captionImpliesEvent && announcementIsSocial) {
+    return dedupeTypes(['event_special', 'campaign_announcement', 'daily_story', ...DEFAULT_TEMPLATE_TYPES_BY_FORMAT[format]]);
+  }
+  if (captionImpliesProduct && (announcementIsSocial || announcementIsEvent) && !captionImpliesEvent) {
+    return dedupeTypes(['menu_highlight', 'venue_showcase', 'campaign_announcement', ...DEFAULT_TEMPLATE_TYPES_BY_FORMAT[format]]);
+  }
+  if (captionImpliesSocial && announcementIsEvent && !captionImpliesEvent) {
+    return dedupeTypes(['social_proof', 'announcement_formal', ...DEFAULT_TEMPLATE_TYPES_BY_FORMAT[format]]);
+  }
+
   const fromAnnouncement = ANNOUNCEMENT_TO_TEMPLATE_TYPES[announcement]
     ?? ANNOUNCEMENT_TO_TEMPLATE_TYPES[useCase];
   if (fromAnnouncement?.length) {
@@ -249,13 +269,13 @@ export function resolveDesignTemplateCandidateTypes(
   if (/campaign|ad_creative|promo|indirim|discount|offer|fırsat|teklif|%|kampanya/.test(hay)) {
     return dedupeTypes(['campaign_announcement', 'seasonal_promo', 'announcement_formal']);
   }
-  if (/event|etkinlik|dj|gece|night|live set|line.?up|party|parti/.test(hay)) {
+  if (captionImpliesEvent) {
     return dedupeTypes(['event_special', 'campaign_announcement', 'daily_story']);
   }
-  if (/social_proof|proof|review|yorum|memnuniyet/.test(hay)) {
+  if (captionImpliesSocial || /social_proof|proof|review|yorum|memnuniyet/.test(hay)) {
     return dedupeTypes(['social_proof', 'announcement_formal']);
   }
-  if (/menu|product|ürün|tabak|lezzet|cocktail|kokteyl/.test(hay)) {
+  if (captionImpliesProduct || /menu|product|ürün|tabak|lezzet|cocktail|kokteyl/.test(hay)) {
     return dedupeTypes(['menu_highlight', 'venue_showcase', 'campaign_announcement']);
   }
   if (/duyuru|announcement|bilgilendirme|resmi|önemli/.test(hay)) {
