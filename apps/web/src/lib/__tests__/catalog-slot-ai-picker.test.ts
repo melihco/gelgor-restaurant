@@ -31,12 +31,20 @@ vi.mock('openai', () => ({
   },
 }));
 
-vi.mock('@/lib/server-config', () => ({
-  serverConfig: {
-    openai: { apiKey: 'test-key' },
-    ai: { chatModel: () => 'gpt-4o-mini' },
-  },
-}));
+vi.mock('@/lib/server-config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/server-config')>();
+  return {
+    ...actual,
+    serverConfig: {
+      ...actual.serverConfig,
+      openai: { ...actual.serverConfig.openai, apiKey: 'test-key' },
+      ai: {
+        ...actual.serverConfig.ai,
+        chatModel: () => 'gpt-4o-mini',
+      },
+    },
+  };
+});
 
 vi.mock('@/lib/ai-cost-telemetry', () => ({
   emitAiCostLine: vi.fn(),
@@ -458,5 +466,77 @@ describe('preferAiCatalogSlotsOnIdeas', () => {
 
     expect(ideas[0]).toEqual(idea);
     expect(createMock).toHaveBeenCalled();
+  });
+
+  it('rejects product_menu brief rematched onto event calendar slot', async () => {
+    createMock.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              catalog_slot_key: 'beach_club_events_calendar_post',
+              reason: 'signature dishes → product menu',
+            }),
+          },
+        },
+      ],
+      usage: { prompt_tokens: 80, completion_tokens: 20 },
+    });
+
+    const postSlots: BrandActiveSlotSet = {
+      sectorId: 'beach_club',
+      workspaceId: 'ws-beach',
+      slots: [
+        slot({
+          slotKey: 'beach_club_menu_highlight_post',
+          labelTr: 'Menü',
+          labelEn: 'Menu',
+          format: 'post',
+          priority: 120,
+          slotRole: 'fal_designed_post',
+          pipeline: 'fal_design',
+          designTemplateType: 'menu_highlight',
+          matchSignals: {
+            announcement_types: ['product_showcase', 'menu_highlight'],
+            keywords: ['dish', 'menu', 'food', 'yemek'],
+          },
+        }),
+        slot({
+          slotKey: 'beach_club_events_calendar_post',
+          labelTr: 'Takvim',
+          labelEn: 'Calendar',
+          format: 'post',
+          priority: 110,
+          slotRole: 'fal_designed_post',
+          pipeline: 'fal_design',
+          designTemplateType: 'event_special',
+          matchSignals: {
+            announcement_types: ['event_announcement'],
+            keywords: ['event', 'calendar', 'schedule'],
+          },
+        }),
+      ],
+      enabledSlotKeys: new Set([
+        'beach_club_menu_highlight_post',
+        'beach_club_events_calendar_post',
+      ]),
+      unassignedCatalogKeys: [],
+    };
+
+    const idea = {
+      headline: 'Signature Dishes',
+      caption_draft:
+        'Dive into the rich flavors of our signature dishes! Every meal is a celebration.',
+      format: 'post',
+    };
+    const ideas = await preferAiCatalogSlotsOnIdeas({
+      ideas: [idea],
+      activeSlots: postSlots,
+      sector: 'beach_club',
+    });
+
+    // AI picked event — strong family conflict → leave idea for heuristic stamp.
+    expect(ideas[0]).toEqual(idea);
+    expect(ideas[0]!.catalog_slot_key).toBeUndefined();
   });
 });

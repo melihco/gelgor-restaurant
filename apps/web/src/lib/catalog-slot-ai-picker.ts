@@ -16,7 +16,13 @@ import {
   estimateOpenAiUsd,
   type OpenAiUsageLike,
 } from '@/lib/ai-cost-telemetry';
-import type { BrandActiveSlot, BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
+import {
+  catalogIntentFamiliesConflict,
+  resolveIdeaIntentFamily,
+  resolveSlotIntentFamily,
+  type BrandActiveSlot,
+  type BrandActiveSlotSet,
+} from '@/lib/brand-active-slot-resolver';
 
 export interface CatalogSlotPickerCandidate {
   slot_key: string;
@@ -452,6 +458,24 @@ export async function preferAiCatalogSlotsOnIdeas(input: {
     const slot: BrandActiveSlot | undefined = activeSlots.slots.find(
       (s) => s.slotKey === pick.catalog_slot_key,
     );
+    // Reject strong intent-family mismatches (e.g. product_menu brief → events_calendar).
+    // Heuristic stamp / soft rematch can recover a compatible key.
+    if (slot) {
+      const ideaFamily = resolveIdeaIntentFamily({
+        ...idea,
+        headline: title,
+        caption_draft: direction,
+      });
+      const slotFamily = resolveSlotIntentFamily(slot);
+      if (catalogIntentFamiliesConflict(ideaFamily, slotFamily)) {
+        console.warn(
+          `[catalog-slot-ai-picker] rejected ${pick.catalog_slot_key} `
+          + `(idea=${ideaFamily} vs slot=${slotFamily}) — heuristic fallback`,
+        );
+        out.push(idea);
+        continue;
+      }
+    }
     out.push({
       ...idea,
       catalog_slot_key: pick.catalog_slot_key,

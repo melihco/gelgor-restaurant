@@ -6,19 +6,19 @@
  * AI confirmation layer for the *gray zone*: no confident deterministic pick,
  * a near-threshold score, a subject conflict, or multilingual ambiguity.
  *
- * Policy (see plan `gallery-match-quality`):
+ * Policy:
  * - Meaning for *any* caption is owned by canonical subject + AI judge —
  *   not venue/campaign keyword scenarios.
  * - Fast path: strong score AND vision subject matches caption subject AND
- *   no cross-category theme risk → skip AI.
- * - Otherwise (no subject lock, gray score, diversity, theme risk) → AI judge
- *   confirms or swaps. Wrong photo ≫ judge cost.
- * - Judge unavailable + (theme risk OR no subject lock) → fail closed.
- *   Subject-aligned strong deterministic picks may keep without the judge.
- *   Hard category vetoes still apply upstream.
+ *   no cross-category theme risk AND caption is NOT food/drink/product/
+ *   nightlife/beauty-strict → skip AI.
+ * - Strict captions (food / drink / local product / nightlife / beauty) ALWAYS
+ *   ask the AI picker — deterministic score alone must never ship. For those,
+ *   the judge also receives candidate image URLs (vision) when publicly fetchable.
+ * - Judge unavailable + (strict OR theme risk OR no subject lock) → fail closed.
+ *   Hard category vetoes still apply upstream and prune the candidate pool.
  *
- * Sector-agnostic — no brand/tenant/scenario branches. Judge sees caption,
- * headline, canonical intent and candidate metadata — never raw pixels.
+ * Sector-agnostic — no brand/tenant/scenario branches.
  */
 
 import OpenAI from 'openai';
@@ -43,8 +43,10 @@ import {
 } from '@/lib/ai-cost-telemetry';
 import {
   buildGalleryPhotoSearchable,
+  captionRequiresAiGalleryJudge,
   themeConflictNeedsAiJudge,
 } from '@/lib/caption-photo-alignment';
+import { getAiModelProfile } from '@/lib/ai-model-tier';
 
 /** Candidate photo metadata the judge is allowed to see (no raw image). */
 export interface GalleryJudgeCandidate {
@@ -66,6 +68,11 @@ export interface GalleryJudgeInput {
   businessType?: string;
   contentType?: string;
   candidates: GalleryJudgeCandidate[];
+  /**
+   * When true, attach publicly fetchable candidate image URLs so the model
+   * can verify subject (food vs fashion portrait) beyond gallery metadata.
+   */
+  useVision?: boolean;
 }
 
 /** Raw structured verdict returned by the model. */
@@ -123,17 +130,30 @@ Rules:
 - If the copy names a specific product and NO candidate shows it, you MUST return pickIndex null.
 - A generic family caption (e.g. "our jams" / "reçel çeşitlerimiz") may match any specific variant of that family.
 - Never pick a photo of a different product just because it looks nice or is on-brand.
+- When candidate images are attached, TRUST THE IMAGE over metadata tags if they disagree.
 - Theme alignment (meaning over keywords):
   * Nightlife / DJ / party / dance copy → need nightlife proof (DJ booth, stage, dancing crowd, neon party). A plated meal is NOT OK.
   * Any other caption → the photo must depict the same subject/scene/mood the copy is about. Generic "on-brand" venue shots are NOT enough when the copy names a different subject.
-  * Food / menu / plated dish copy → need food proof. A DJ stage is NOT OK.
-  * Cocktail / drink-hero copy → need a drink/bar hero. A steak/pasta plate is NOT OK.
+  * Food / menu / plated dish / "signature dishes" / flavors / dining copy → need visible food/plated dish/menu proof. A fashion portrait, woman/man posing in a dress, lifestyle guest shot WITHOUT food is NOT OK.
+  * Cocktail / drink-hero copy → need a drink/bar hero. A steak/pasta plate OR a fashion portrait without a drink is NOT OK.
+  * Local product / SKU copy (honey, olive oil, jam…) → need that product visible. Fashion/people-only frames are NOT OK.
   * Cocktail mention inside a nightlife/DJ caption MAY match a nightlife crowd/DJ photo (cocktails are atmosphere, not the hero subject).
   * Beauty: nail copy must not pick lash/hair heroes and vice versa.
 - confidence is your honest probability (0..1) that the pick is correct. Be conservative.
 
 Return STRICT JSON only, no prose:
 {"pickIndex": <int|null>, "confidence": <0..1>, "canonicalSubject": "<token>", "reason": "<short>", "rejectReason": "<short|empty>"}`;
+
+/** Public https URLs OpenAI vision can fetch (skip relative /api/media paths). */
+function isPublicHttpImageUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url.trim());
+}
+
+/** Vision for strict captions unless explicitly disabled. */
+export function galleryJudgeVisionEnabled(): boolean {
+  if (process.env.GALLERY_JUDGE_VISION === 'false') return false;
+  return true;
+}
 
 function buildJudgeUserPayload(input: GalleryJudgeInput): string {
   const candidates = input.candidates.slice(0, JUDGE_MAX_CANDIDATES).map((c, i) => ({
@@ -145,6 +165,7 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     description: (c.description ?? '').slice(0, 240),
     content_tags: (c.contentTags ?? []).slice(0, 10),
     deterministic_score: c.deterministicScore ?? null,
+    has_image: Boolean(input.useVision && isPublicHttpImageUrl(c.url)),
   }));
   return JSON.stringify({
     caption: input.caption.slice(0, 600),
@@ -152,8 +173,30 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     canonical_subject_hint: input.canonicalSubject ?? null,
     business_type: input.businessType ?? null,
     content_type: input.contentType ?? null,
+    vision_attached: Boolean(input.useVision),
     candidates,
   });
+}
+
+function buildJudgeUserContent(
+  input: GalleryJudgeInput,
+): string | OpenAI.Chat.ChatCompletionContentPart[] {
+  const text = buildJudgeUserPayload(input);
+  if (!input.useVision) return text;
+
+  const parts: OpenAI.Chat.ChatCompletionContentPart[] = [
+    { type: 'text', text },
+  ];
+  const detail = getAiModelProfile().visionDetail === 'high' ? 'high' : 'low';
+  input.candidates.slice(0, JUDGE_MAX_CANDIDATES).forEach((c, i) => {
+    if (!isPublicHttpImageUrl(c.url)) return;
+    parts.push({ type: 'text', text: `Candidate index ${i} image:` });
+    parts.push({
+      type: 'image_url',
+      image_url: { url: c.url, detail },
+    });
+  });
+  return parts.length > 1 ? parts : text;
 }
 
 function parseVerdict(raw: string, model: string, usage: OpenAiUsageLike | null): GalleryJudgeVerdict {
@@ -200,7 +243,11 @@ export async function judgeGalleryMatch(
   if (!input.candidates.length) return null;
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey && !deps?.openai) return null;
-  const model = deps?.model ?? serverConfig.ai.chatModel('standard');
+  const profile = getAiModelProfile();
+  const model = deps?.model
+    ?? (input.useVision
+      ? profile.visionGrafiker
+      : serverConfig.ai.chatModel('standard'));
   try {
     const openai = deps?.openai ?? new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
@@ -210,7 +257,7 @@ export async function judgeGalleryMatch(
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: JUDGE_SYSTEM_PROMPT },
-        { role: 'user', content: buildJudgeUserPayload(input) },
+        { role: 'user', content: buildJudgeUserContent(input) },
       ],
     });
     const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
@@ -286,6 +333,8 @@ export async function confirmGalleryPickWithAiJudge(
     || canonicalSubjectFromText(`${params.headline} ${params.caption}`);
   const enabled = params.enabled ?? galleryJudgeEnabled();
   const score = params.deterministicScore;
+  const captionBlob = `${params.headline} ${params.caption}`;
+  const strictCaption = captionRequiresAiGalleryJudge(params.caption, params.headline);
 
   const base: Omit<GalleryMatchDecision, 'action' | 'confidence' | 'reason'> = {
     url: params.selectedUrl,
@@ -295,11 +344,24 @@ export async function confirmGalleryPickWithAiJudge(
     canonicalSubject,
   };
 
+  const matchInput: MatchPhotoInput = {
+    caption: params.caption,
+    headline: params.headline,
+    mood: params.mood,
+    contentType: params.contentType,
+    businessType: params.businessType,
+    subjectKey: canonicalSubject || params.subjectKey,
+  };
+
   const selectedMeta = resolveMetaForUrl(params.selectedUrl, params.galleryAnalysis);
-  const captionBlob = `${params.headline} ${params.caption}`;
   const themeRisk = themeConflictNeedsAiJudge(
     captionBlob,
     buildGalleryPhotoSearchable(selectedMeta, params.selectedUrl),
+  );
+  const selectedHardVeto = isHardGalleryThemeMismatch(
+    matchInput,
+    selectedMeta,
+    params.selectedUrl,
   );
   const subjectAligned = Boolean(
     canonicalSubject
@@ -307,14 +369,15 @@ export async function confirmGalleryPickWithAiJudge(
     && canonicalSubjectRelationForMeta(canonicalSubject, selectedMeta) === 'match',
   );
 
-  // Fast path only when vision subject locks to caption subject at a strong
-  // score with no cross-category risk. Every other caption (any language /
-  // sector / campaign) goes through the AI meaning gate.
+  // Fast path only when NOT a strict food/drink/product caption, vision subject
+  // locks, strong score, and no cross-category risk.
   if (
-    typeof score === 'number'
+    !strictCaption
+    && typeof score === 'number'
     && score >= GIS_PILOT_MIN_SCORE
     && subjectAligned
     && !themeRisk
+    && !selectedHardVeto
   ) {
     return {
       ...base,
@@ -324,21 +387,28 @@ export async function confirmGalleryPickWithAiJudge(
     };
   }
 
-  // Judge unavailable → fail closed without subject lock (or on theme risk).
-  // Subject-aligned picks may keep — they already cleared the meaning bar.
+  // Judge unavailable → fail closed for strict / theme risk / hard veto / no lock.
   if (!enabled) {
-    if (themeRisk || !subjectAligned) {
+    if (strictCaption || themeRisk || selectedHardVeto || !subjectAligned) {
       return {
         ...base,
         url: undefined,
         action: 'reject',
         confidence: 0,
-        reason: themeRisk
-          ? 'theme risk without ai judge — fail closed'
-          : 'no subject lock and ai judge disabled — fail closed',
-        rejectReason: themeRisk
-          ? 'ai_judge_required_for_theme'
-          : 'ai_judge_required_without_subject_lock',
+        reason: selectedHardVeto
+          ? 'hard theme mismatch without ai judge — fail closed'
+          : strictCaption
+            ? 'strict caption without ai judge — fail closed'
+            : themeRisk
+              ? 'theme risk without ai judge — fail closed'
+              : 'no subject lock and ai judge disabled — fail closed',
+        rejectReason: selectedHardVeto
+          ? 'ai_judge_required_for_hard_veto'
+          : strictCaption
+            ? 'ai_judge_required_for_strict_caption'
+            : themeRisk
+              ? 'ai_judge_required_for_theme'
+              : 'ai_judge_required_without_subject_lock',
       };
     }
     return {
@@ -349,16 +419,7 @@ export async function confirmGalleryPickWithAiJudge(
     };
   }
 
-  // Build the top-N candidate pool (selected photo first).
-  // Prefer derived canonical subject so ranking matches the judge's intent.
-  const matchInput: MatchPhotoInput = {
-    caption: params.caption,
-    headline: params.headline,
-    mood: params.mood,
-    contentType: params.contentType,
-    businessType: params.businessType,
-    subjectKey: canonicalSubject || params.subjectKey,
-  };
+  // Build top-N pool; hard-vetoed photos never enter the judge shortlist.
   const excludeBases = new Set((params.excludeUrls ?? []).map(normalizeGalleryUrl));
   const lookup = buildGalleryLookup(params.galleryAnalysis, params.candidateUrls);
   const ranked = rankPhotosForContent(
@@ -369,12 +430,36 @@ export async function confirmGalleryPickWithAiJudge(
     params.galleryAnalysis,
   );
 
-  const orderedUrls: string[] = [];
   const scoreByBase = new Map<string, number>();
-  const selectedBase = normalizeGalleryUrl(params.selectedUrl);
-  orderedUrls.push(params.selectedUrl);
   for (const r of ranked) {
     scoreByBase.set(normalizeGalleryUrl(r.url), r.score);
+  }
+
+  const isVetoed = (url: string): boolean => {
+    const meta = resolveMetaForUrl(url, params.galleryAnalysis);
+    return isHardGalleryThemeMismatch(matchInput, meta, url);
+  };
+
+  const orderedUrls: string[] = [];
+  let seedUrl = params.selectedUrl;
+  if (isVetoed(seedUrl)) {
+    const rescue = ranked.find((r) => !isVetoed(r.url));
+    if (!rescue) {
+      return {
+        ...base,
+        url: undefined,
+        action: 'reject',
+        confidence: 0,
+        reason: 'all candidates hard-vetoed for caption theme',
+        rejectReason: 'hard_theme_mismatch_no_candidates',
+      };
+    }
+    seedUrl = rescue.url;
+  }
+  const selectedBase = normalizeGalleryUrl(seedUrl);
+  orderedUrls.push(seedUrl);
+  for (const r of ranked) {
+    if (isVetoed(r.url)) continue;
     if (normalizeGalleryUrl(r.url) === selectedBase) continue;
     if (orderedUrls.length >= JUDGE_MAX_CANDIDATES) break;
     orderedUrls.push(r.url);
@@ -383,6 +468,7 @@ export async function confirmGalleryPickWithAiJudge(
   const candidates = orderedUrls.map((u) =>
     toCandidate(u, params.galleryAnalysis, scoreByBase.get(normalizeGalleryUrl(u))),
   );
+  const useVision = strictCaption && galleryJudgeVisionEnabled();
 
   const judgeFn = params.judgeFn ?? ((i: GalleryJudgeInput) => judgeGalleryMatch(i));
   const verdict = await judgeFn({
@@ -392,6 +478,7 @@ export async function confirmGalleryPickWithAiJudge(
     businessType: params.businessType,
     contentType: params.contentType,
     candidates,
+    useVision,
   });
 
   // Emit telemetry regardless of outcome (observability of the gate).
@@ -401,12 +488,15 @@ export async function confirmGalleryPickWithAiJudge(
     : undefined;
   let action: GalleryJudgeAction;
   if (!verdict) {
-    // Judge transport/parse failure: without a subject lock (or with theme risk)
-    // fail closed — do not ship an unverified meaning guess.
-    action = themeRisk || !subjectAligned ? 'reject' : 'accept';
+    // Transport failure: strict / theme / hard-veto / unlocked → fail closed.
+    action = (strictCaption || themeRisk || selectedHardVeto || !subjectAligned)
+      ? 'reject'
+      : 'accept';
   } else if (verdict.pickIndex == null || !decidedUrl || verdict.confidence < minConfidence) {
     action = 'reject';
-  } else if (normalizeGalleryUrl(decidedUrl) === selectedBase) {
+  } else if (isVetoed(decidedUrl)) {
+    action = 'reject';
+  } else if (normalizeGalleryUrl(decidedUrl) === normalizeGalleryUrl(params.selectedUrl)) {
     action = 'accept';
   } else {
     action = 'swap';
@@ -428,7 +518,8 @@ export async function confirmGalleryPickWithAiJudge(
         pipeline: 'gallery_ai_judge',
         promptTokens: verdict.usage?.prompt_tokens ?? undefined,
         completionTokens: verdict.usage?.completion_tokens ?? undefined,
-        detail: `decision=${action} conf=${verdict.confidence.toFixed(2)} det=${score ?? 'na'} subj=${canonicalSubject ?? 'na'}`,
+        detail: `decision=${action} conf=${verdict.confidence.toFixed(2)} det=${score ?? 'na'} `
+          + `subj=${canonicalSubject ?? 'na'} strict=${strictCaption ? 1 : 0} vision=${useVision ? 1 : 0}`,
       });
     } catch {
       // telemetry must never break production
@@ -444,25 +535,36 @@ export async function confirmGalleryPickWithAiJudge(
       candidateCount: candidates.length,
       confidence: verdict?.confidence ?? 0,
       reason: verdict?.reason
-        || (!verdict && themeRisk
-          ? 'theme risk and ai judge unavailable — fail closed'
-          : !verdict && !subjectAligned
-            ? 'no subject lock and ai judge unavailable — fail closed'
-            : 'ai judge rejected the pick'),
+        || (!verdict && strictCaption
+          ? 'strict caption and ai judge unavailable — fail closed'
+          : !verdict && themeRisk
+            ? 'theme risk and ai judge unavailable — fail closed'
+            : !verdict && !subjectAligned
+              ? 'no subject lock and ai judge unavailable — fail closed'
+              : 'ai judge rejected the pick'),
       rejectReason: verdict?.rejectReason
-        || (!verdict && themeRisk
-          ? 'ai_judge_required_for_theme'
-          : !verdict && !subjectAligned
-            ? 'ai_judge_required_without_subject_lock'
-            : `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`),
+        || (!verdict && strictCaption
+          ? 'ai_judge_required_for_strict_caption'
+          : !verdict && themeRisk
+            ? 'ai_judge_required_for_theme'
+            : !verdict && !subjectAligned
+              ? 'ai_judge_required_without_subject_lock'
+              : `judge confidence ${(verdict?.confidence ?? 0).toFixed(2)} < ${minConfidence}`),
       canonicalSubject: verdict?.canonicalSubject ?? canonicalSubject,
     };
   }
 
+  const finalUrl = decidedUrl
+    || (normalizeGalleryUrl(seedUrl) !== normalizeGalleryUrl(params.selectedUrl) ? seedUrl : params.selectedUrl);
+  const finalAction: GalleryJudgeAction = normalizeGalleryUrl(finalUrl)
+    === normalizeGalleryUrl(params.selectedUrl)
+    ? 'accept'
+    : 'swap';
+
   return {
     ...base,
-    url: action === 'swap' ? decidedUrl : params.selectedUrl,
-    action,
+    url: finalUrl,
+    action: finalAction,
     judged: Boolean(verdict),
     candidateCount: candidates.length,
     confidence: verdict?.confidence ?? 0.5,
@@ -473,13 +575,14 @@ export async function confirmGalleryPickWithAiJudge(
 
 /**
  * Judge when the pick is not a locked subject match — works for any caption.
- * Diversity / gray scores / cross-category risk always judge.
+ * Strict food/drink/product/nightlife captions always judge.
  */
 function batchAssignmentNeedsJudge(
   match: PhotoMatchResult,
   input: MatchPhotoInput,
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
 ): boolean {
+  if (captionRequiresAiGalleryJudge(input.caption, input.headline ?? '')) return true;
   if (match.reason === 'mission_diversity_fallback') return true;
   if (match.score < GIS_PILOT_MIN_SCORE) return true;
   const meta = resolveMetaForUrl(match.url, galleryAnalysis);
@@ -487,6 +590,7 @@ function batchAssignmentNeedsJudge(
   if (themeConflictNeedsAiJudge(captionBlob, buildGalleryPhotoSearchable(meta, match.url))) {
     return true;
   }
+  if (isHardGalleryThemeMismatch(input, meta, match.url)) return true;
   const subjectKey = input.subjectKey?.trim()
     || canonicalSubjectFromText(captionBlob);
   if (!subjectKey || !meta) return true;

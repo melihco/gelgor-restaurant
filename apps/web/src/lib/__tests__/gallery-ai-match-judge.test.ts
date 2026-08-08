@@ -34,7 +34,45 @@ function fixedJudge(verdict: GalleryJudgeVerdict | null) {
 const model = 'gpt-4o-mini';
 
 describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
-  it('subject-aligned strong score skips the judge (any sector)', async () => {
+  it('subject-aligned strong score still judges strict food captions (vision)', async () => {
+    const FOOD = 'https://cdn.example.com/plated-dish.jpg';
+    let called = false;
+    let sawVision = false;
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Dive into the rich flavors of our signature dishes!',
+      headline: 'Signature Dishes',
+      businessType: 'beach_club',
+      selectedUrl: FOOD,
+      deterministicScore: 70,
+      galleryAnalysis: {
+        [FOOD]: {
+          primarySubject: 'pasta_dish',
+          contentTags: ['food', 'dish', 'plate'],
+          description: 'Plated pasta.',
+        },
+      },
+      candidateUrls: [FOOD],
+      enabled: true,
+      judgeFn: async (input) => {
+        called = true;
+        sawVision = Boolean(input.useVision);
+        return {
+          pickIndex: 0,
+          confidence: 0.95,
+          reason: 'plated dish matches signature dishes',
+          model,
+          usage: null,
+        };
+      },
+    });
+    expect(called).toBe(true);
+    expect(sawVision).toBe(true);
+    expect(decision.action).toBe('accept');
+    expect(decision.judged).toBe(true);
+    expect(decision.url).toBe(FOOD);
+  });
+
+  it('subject-aligned strong product pick may skip judge (SKU meaning via subject_key, not keyword lists)', async () => {
     let called = false;
     const decision = await confirmGalleryPickWithAiJudge({
       caption: 'Doğal balımız',
@@ -45,6 +83,35 @@ describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
       deterministicScore: 70,
       galleryAnalysis: shopGallery(),
       candidateUrls: [HONEY, OLIVE_OIL],
+      enabled: true,
+      judgeFn: async () => {
+        called = true;
+        return null;
+      },
+    });
+    expect(decision.action).toBe('accept');
+    expect(decision.judged).toBe(false);
+    expect(called).toBe(false);
+  });
+
+  it('non-strict subject-aligned strong score skips the judge (gym)', async () => {
+    const MAT = 'https://cdn.example.com/yoga-mat.jpg';
+    let called = false;
+    const decision = await confirmGalleryPickWithAiJudge({
+      caption: 'Recover after training on the mat',
+      headline: 'Recovery',
+      subjectKey: 'yoga_mat',
+      businessType: 'gym',
+      selectedUrl: MAT,
+      deterministicScore: 70,
+      galleryAnalysis: {
+        [MAT]: {
+          primarySubject: 'yoga_mat',
+          contentTags: ['yoga', 'mat'],
+          description: 'Yoga mat on floor',
+        },
+      },
+      candidateUrls: [MAT],
       enabled: true,
       judgeFn: async () => {
         called = true;
@@ -133,15 +200,18 @@ describe('confirmGalleryPickWithAiJudge — fail-closed gate', () => {
       galleryAnalysis: shopGallery(),
       candidateUrls: [HONEY, OLIVE_OIL],
       enabled: true,
-      // candidates are [selected(HONEY), OLIVE_OIL] → index 1 is olive oil
-      judgeFn: fixedJudge({
-        pickIndex: 1,
-        confidence: 0.88,
-        canonicalSubject: 'olive_oil',
-        reason: 'olive oil bottle matches caption',
-        model,
-        usage: null,
-      }),
+      // Hard product veto prunes honey — shortlist is [OLIVE_OIL] only.
+      judgeFn: async (input) => {
+        expect(input.candidates.map((c) => c.url)).toEqual([OLIVE_OIL]);
+        return {
+          pickIndex: 0,
+          confidence: 0.88,
+          canonicalSubject: 'olive_oil',
+          reason: 'olive oil bottle matches caption',
+          model,
+          usage: null,
+        };
+      },
     });
     expect(decision.action).toBe('swap');
     expect(decision.url).toBe(OLIVE_OIL);
@@ -292,7 +362,9 @@ describe('confirmGalleryPickWithAiJudge — theme risk forces AI', () => {
       enabled: false,
     });
     expect(decision.action).toBe('reject');
-    expect(decision.rejectReason).toBe('ai_judge_required_for_theme');
+    // Cocktail is a strict category trigger — fail-closed reason may be strict or theme.
+    expect(['ai_judge_required_for_theme', 'ai_judge_required_for_strict_caption'])
+      .toContain(decision.rejectReason);
   });
 
   it('beach_club: rejects no-subject-lock pick when judge disabled (fail closed)', async () => {
@@ -341,17 +413,114 @@ describe('gatePhotoMatchResult — batch pre-assignment gate', () => {
     [HONEY]: { primarySubject: 'honey', contentTags: ['honey'], description: 'Honey.' },
   });
 
-  it('passes through subject-aligned strong scores without judging', async () => {
+  it('always judges strict food captions even at strong scores', async () => {
+    const FOOD = 'https://cdn.example.com/food-plate.jpg';
     let called = false;
     const out = await gatePhotoMatchResult(
-      { url: HONEY, score: 60, reason: 'strong', confidence: 0.9 },
-      { caption: 'Bal', headline: 'Süzme bal', businessType: 'local_products_shop', subjectKey: 'honey' },
-      gallery(),
-      [HONEY],
-      { enabled: true, judgeFn: async () => { called = true; return null; } },
+      { url: FOOD, score: 60, reason: 'strong', confidence: 0.9 },
+      {
+        caption: 'Signature dishes on the menu tonight',
+        headline: 'Signature Dishes',
+        businessType: 'beach_club',
+      },
+      {
+        [FOOD]: {
+          primarySubject: 'pasta_dish',
+          contentTags: ['food', 'dish'],
+          description: 'Plated dish.',
+        },
+      },
+      [FOOD],
+      {
+        enabled: true,
+        judgeFn: async (input) => {
+          called = true;
+          expect(input.useVision).toBe(true);
+          return {
+            pickIndex: 0,
+            confidence: 0.9,
+            reason: 'food ok',
+            model,
+            usage: null,
+          };
+        },
+      },
     );
-    expect(out?.url).toBe(HONEY);
-    expect(called).toBe(false);
+    expect(out?.url).toBe(FOOD);
+    expect(called).toBe(true);
+  });
+
+  it('beach_club: Signature Dishes rejects fashion portrait and swaps to food', async () => {
+    const FASHION = 'https://cdn.example.com/woman-dress.jpg';
+    const FOOD = 'https://cdn.example.com/plated-dish.jpg';
+    const out = await gatePhotoMatchResult(
+      { url: FASHION, score: 39, reason: 'people affinity', confidence: 0.5 },
+      {
+        caption:
+          'Dive into the rich flavors of our signature dishes! Every meal is a celebration.',
+        headline: 'Signature Dishes',
+        businessType: 'beach_club',
+      },
+      {
+        [FASHION]: {
+          contentTags: ['woman', 'dress', 'fashion', 'portrait'],
+          description: 'Woman in a silk dress posing on a patio.',
+          hasPeople: true,
+          suggestedAssetType: 'event_photo',
+        },
+        [FOOD]: {
+          contentTags: ['food', 'dish', 'plate', 'pasta'],
+          description: 'Plated gourmet pasta dish.',
+          suggestedAssetType: 'food_drink_photo',
+        },
+      },
+      [FASHION, FOOD],
+      {
+        enabled: true,
+        judgeFn: async (input) => {
+          expect(input.useVision).toBe(true);
+          // Fashion must not be in the shortlist when hard-vetoed.
+          expect(input.candidates.some((c) => c.url === FASHION)).toBe(false);
+          expect(input.candidates[0]?.url).toBe(FOOD);
+          return {
+            pickIndex: 0,
+            confidence: 0.93,
+            reason: 'plated dish matches signature dishes',
+            model,
+            usage: null,
+          };
+        },
+      },
+    );
+    expect(out?.url).toBe(FOOD);
+    expect(out?.reason).toMatch(/ai_judge_swap/);
+  });
+
+  it('beach_club: Signature Dishes with only fashion photos fails closed', async () => {
+    const FASHION = 'https://cdn.example.com/woman-dress-only.jpg';
+    const out = await gatePhotoMatchResult(
+      { url: FASHION, score: 39, reason: 'people', confidence: 0.5 },
+      {
+        caption: 'Signature dishes and Aegean flavors on the menu tonight.',
+        headline: 'Signature Dishes',
+        businessType: 'beach_club',
+      },
+      {
+        [FASHION]: {
+          contentTags: ['woman', 'dress', 'fashion', 'portrait'],
+          description: 'Fashion portrait of a guest in evening wear.',
+          hasPeople: true,
+        },
+      },
+      [FASHION],
+      {
+        enabled: true,
+        judgeFn: async () => {
+          throw new Error('judge must not run when every candidate is hard-vetoed');
+        },
+      },
+    );
+    expect(out).toBeNull();
   });
 
   it('judges strong scores when subject is not locked (gym)', async () => {
