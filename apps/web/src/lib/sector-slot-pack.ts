@@ -79,6 +79,35 @@ export function slotKeyForSector(sectorId: string, suffix: string): string {
   return `${sectorId}_${suffix}`;
 }
 
+/**
+ * Strip the sector-id prefix from a catalog slot key so classifiers match PURPOSE
+ * tokens only. Prevents `local_products_*` ⇒ product and `wedding_event_*` ⇒ event.
+ * Unknown / library keys are returned unchanged.
+ */
+export function catalogSlotPurposeKey(slotKey: string): string {
+  const key = String(slotKey ?? '').toLowerCase().trim();
+  if (!key) return '';
+  let bestPrefix = '';
+  for (const id of listSectorSlotPackIds()) {
+    const prefix = `${id.toLowerCase()}_`;
+    if (key.startsWith(prefix) && prefix.length > bestPrefix.length) {
+      bestPrefix = prefix;
+    }
+  }
+  return bestPrefix ? key.slice(bestPrefix.length) : key;
+}
+
+/** True when `token` appears as a `_`-delimited segment in the purpose stem. */
+export function slotKeyHasToken(slotKey: string, token: string): boolean {
+  const purpose = catalogSlotPurposeKey(slotKey);
+  const escaped = token.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?:^|_)${escaped}(?:_|$)`).test(purpose);
+}
+
+export function slotKeyHasAnyToken(slotKey: string, tokens: string[]): boolean {
+  return tokens.some((t) => slotKeyHasToken(slotKey, t));
+}
+
 export function parseFacilityFromTag(tag: string): keyof BrandSlotFacilities | null {
   if (!tag.startsWith(REQUIRES_PREFIX)) return null;
   const key = tag.slice(REQUIRES_PREFIX.length) as keyof BrandSlotFacilities;
@@ -254,7 +283,8 @@ export function slotEnabledByFacilities(
 }
 
 function inferDesignTemplateType(slotKey: string): string {
-  const key = slotKey.toLowerCase();
+  // Classify on purpose stem only — never sector-id tokens (products/event/…).
+  const key = catalogSlotPurposeKey(slotKey);
   if (/typography_poster/.test(key)) return 'campaign_announcement';
   if (/hiring|open_role|job_posting|join_the_team/.test(key)) return 'announcement_formal';
   if (/events_calendar/.test(key)) return 'event_special';
@@ -262,19 +292,35 @@ function inferDesignTemplateType(slotKey: string): string {
   if (/social_proof|testimonial|review|ugc|guest_social|client_testimonial|member_story/.test(key)) {
     return 'social_proof';
   }
-  if (/event|dj|live_music|private_event|aftermovie|wedding|bridal/.test(key)) {
+  // Origin / farm-visit before product.
+  if (/farm_visit|farm.?to.?table|orchard|grove|producer_visit/.test(key)) {
+    return 'daily_story';
+  }
+  if (
+    slotKeyHasAnyToken(slotKey, [
+      'event', 'events', 'dj', 'live_music', 'private_event', 'aftermovie', 'wedding', 'bridal',
+    ])
+    || /live_music|private_event|aftermovie/.test(key)
+  ) {
     return 'event_special';
   }
   if (/offer|sale|promo|flash|happy_hour|membership|daybed|day_pass|trial|campaign/.test(key)) {
     return 'campaign_announcement';
   }
-  if (/menu|dish|product|cocktail|retail|arrival|collection|unboxing|pastry|property|listing/.test(key)) {
+  if (
+    slotKeyHasAnyToken(slotKey, [
+      'product', 'menu', 'dish', 'cocktail', 'retail', 'arrival', 'collection',
+      'unboxing', 'pastry', 'property', 'listing', 'gift', 'bundle', 'hamper',
+      'new_arrival', 'product_hero', 'product_detail', 'product_range', 'limited_batch',
+      'gift_guide', 'gift_bundle',
+    ])
+  ) {
     return 'menu_highlight';
   }
   if (/ambiance|venue|facility|aerial|tour|atmosphere|lifestyle|pool|room|suite|interior/.test(key)) {
     return 'venue_showcase';
   }
-  if (/seasonal|summer|opening|ingredient|farm_to_table/.test(key)) {
+  if (/seasonal|summer|opening|ingredient/.test(key)) {
     return 'seasonal_promo';
   }
   if (/brand_story|brand_identity|stylist_intro|trainer_spotlight|barber_intro|agent_intro/.test(key)) {
@@ -326,7 +372,8 @@ function mergeKeywords(signals: Record<string, unknown>, extra: string[]): void 
  */
 function buildMatchSignals(slotKey: string, designType: string): Record<string, unknown> {
   const signals: Record<string, unknown> = { design_template_type: designType };
-  const key = slotKey.toLowerCase();
+  // Purpose stem only — sector prefixes must not inject product/event/social tokens.
+  const key = catalogSlotPurposeKey(slotKey);
 
   if (/hiring|open_role|job_posting|join_the_team/.test(key)) {
     signals.announcement_types = ['hiring', 'job_posting', 'open_role'];
@@ -390,13 +437,36 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
     signals.announcement_types = ['social_proof'];
     mergeKeywords(signals, ['yorum', 'review', 'testimonial', 'ugc', 'misafir', 'sosyal kanıt']);
   }
-  if (/product|new_arrival|limited_batch|unboxing|collection|retail|sku/.test(key)) {
+  // Farm / origin visit — force BTS (do not let sector prefix `*_products_*` stick product).
+  if (/farm_visit|farm.?to.?table|orchard|grove|producer_visit/.test(key)) {
+    signals.announcement_types = ['behind_the_scenes'];
+    mergeKeywords(signals, [
+      'farm visit', 'çiftlik ziyareti', 'çiftlik', 'orchard', 'grove', 'üretici',
+      'producer visit', 'hasat gezisi', 'bahçe',
+    ]);
+    return signals;
+  }
+  if (
+    slotKeyHasAnyToken(key, [
+      'product', 'new_arrival', 'limited_batch', 'unboxing', 'collection', 'retail', 'sku',
+      'product_hero', 'product_detail', 'product_range',
+    ])
+  ) {
     signals.announcement_types = signals.announcement_types ?? ['product_reveal', 'product_showcase'];
     mergeKeywords(signals, [
       'product', 'ürün', 'packaging', 'hero', 'yeni ürün', 'batch', 'sku', 'raf',
     ]);
   }
-  if (/menu|dish|pastry|recipe|plate|tasting/.test(key) && !/cocktail/.test(key)) {
+  if (slotKeyHasAnyToken(key, ['gift', 'bundle', 'hamper', 'hediye'])) {
+    signals.announcement_types = signals.announcement_types ?? ['product_reveal', 'product_showcase'];
+    mergeKeywords(signals, [
+      'gift', 'hediye', 'gift set', 'hediye seti', 'bundle', 'paket', 'hamper', 'set',
+    ]);
+  }
+  if (
+    slotKeyHasAnyToken(key, ['menu', 'dish', 'pastry', 'recipe', 'plate', 'tasting'])
+    && !/cocktail/.test(key)
+  ) {
     signals.announcement_types = signals.announcement_types ?? ['product_reveal', 'product_showcase'];
     mergeKeywords(signals, ['menu', 'menü', 'yemek', 'dish', 'plate', 'lezzet']);
   }
@@ -408,7 +478,7 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
     signals.announcement_types = signals.announcement_types ?? ['announcement', 'campaign_offer'];
     mergeKeywords(signals, ['rezervasyon', 'booking', 'randevu', 'appointment']);
   }
-  if (/bts|behind|process|craft|morning|tip|nutrition/.test(key)) {
+  if (/bts|behind|process|craft|morning|tip|nutrition/.test(key) && !/farm_visit/.test(key)) {
     signals.announcement_types = signals.announcement_types ?? ['behind_the_scenes'];
     mergeKeywords(signals, ['behind the scenes', 'süreç', 'craft', 'bts', 'yapım']);
   }

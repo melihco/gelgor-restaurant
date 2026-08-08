@@ -15,6 +15,7 @@ import {
   refreshProductionProviderCircuitsFromRedis,
 } from '@/lib/production-provider-preflight';
 import { serverConfig } from '@/lib/server-config';
+import { getCrewBackendBaseUrl } from '@/lib/crew-backend-url';
 import Redis from 'ioredis';
 
 export const runtime = 'nodejs';
@@ -27,9 +28,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!key || key !== INTERNAL_KEY) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
-  let body: { action?: string } = {};
+  let body: { action?: string; workspaceId?: string } = {};
   try {
-    body = (await req.json()) as { action?: string };
+    body = (await req.json()) as { action?: string; workspaceId?: string };
   } catch {
     body = {};
   }
@@ -44,9 +45,42 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   await refreshProductionProviderCircuitsFromRedis();
   clearProductionProviderBillingCircuits();
   const providerPreflight = getProductionProviderPreflight();
+
+  // Revive billing-exhausted factory jobs + kick drain so brands keep producing
+  // without a manual SQL requeue (multi-tenant; optional workspace scope).
+  let billingRequeue: Record<string, unknown> | null = null;
+  if (providerPreflight.ok) {
+    try {
+      const crewBase = getCrewBackendBaseUrl().replace(/\/$/, '');
+      const res = await fetch(`${crewBase}/internal/v1/production-jobs/requeue-billing`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Internal-Api-Key': INTERNAL_KEY,
+        },
+        body: JSON.stringify({
+          workspace_id: body.workspaceId || null,
+          lookback_hours: 72,
+          limit: 200,
+          kick_drain: true,
+        }),
+        signal: AbortSignal.timeout(45_000),
+      });
+      billingRequeue = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      billingRequeue.status = res.status;
+    } catch (err) {
+      billingRequeue = {
+        ok: false,
+        error: err instanceof Error ? err.message : 'requeue_billing_failed',
+      };
+    }
+  }
+
   return NextResponse.json({
     cleared: true,
     providerPreflight,
+    billingRequeue,
   });
 }
 

@@ -23,6 +23,7 @@ import {
   type BrandActiveSlot,
   type BrandActiveSlotSet,
 } from '@/lib/brand-active-slot-resolver';
+import { catalogSlotPurposeKey } from '@/lib/sector-slot-pack';
 
 export interface CatalogSlotPickerCandidate {
   slot_key: string;
@@ -79,10 +80,11 @@ DECISION FRAMEWORK (apply in order — no sector exceptions):
 1) TITLE is primary intent. Direction / mood / colors are supporting context only — never override the title's subject.
 2) Classify the brief into an intent_family, then prefer candidates with the same intent_family (or matching announcement_types / design_template_type).
 3) Named occasions ("X Night", "X Gecesi", party, concert, DJ, live music, wedding, launch event) → intent_family=event. Do NOT pick product_menu / cocktail / drink slots just because direction mentions drinks, tropical colors, or atmosphere.
-4) Product / dish / SKU / cocktail-or-menu AS THE SUBJECT → product_menu.
+4) Product / dish / SKU / cocktail-or-menu / gift-set / hediye paketi AS THE SUBJECT → product_menu.
 5) Discount, sale, day-pass, entry ticket, membership trial → offer_ticket.
 6) Place atmosphere with no named event → venue.
-7) Reviews / UGC → social_proof; jobs → hiring; process / craft / BTS → brand_bts.
+7) Reviews / UGC → social_proof; jobs → hiring; process / craft / BTS / farm-visit / producer-visit → brand_bts.
+   Never put gift-set / SKU promo briefs on farm_visit slots (and never farm-visit briefs on gift_bundle).
 8) If two slots fit, prefer the more specific purpose (dj_event over generic event; product_hero over generic campaign).
 9) Prefer has_template=true when intent is equal — slots without templates cannot render.
 10) Never invent keys. Never cross formats. Ignore any notion of "priority score" — semantic fit wins.
@@ -101,7 +103,8 @@ export function intentFamilyFromSignals(input: {
   slotKey?: string;
 }): string {
   const ann = (input.announcementTypes ?? []).map((a) => a.toLowerCase());
-  const key = String(input.slotKey ?? '').toLowerCase();
+  // Purpose stem only — ignores sector-id tokens (local_products / wedding_event / …).
+  const key = catalogSlotPurposeKey(String(input.slotKey ?? ''));
   const type = String(input.designTemplateType ?? '').toLowerCase();
   const kw = (input.keywords ?? []).map((k) => k.toLowerCase()).join(' ');
 
@@ -114,7 +117,7 @@ export function intentFamilyFromSignals(input: {
   if (
     ann.some((a) => a.includes('event') || a.includes('wedding'))
     || type === 'event_special'
-    || /(?:^|_)(event|dj|live_music|concert|wedding|bridal|aftermovie)(?:_|$)/.test(key)
+    || /(?:^|_)(event|events|dj|live_music|concert|wedding|bridal|aftermovie)(?:_|$)/.test(key)
     // Caption/keyword cues — ideas with drifted announcement labels still classify as event.
     || /\b(dj|live\s*set|live\s*music|line.?up|konser|afterparty|aftermovie|wedding|düğün)\b/.test(kw)
   ) {
@@ -130,16 +133,19 @@ export function intentFamilyFromSignals(input: {
   if (
     ann.some((a) => a.includes('behind_the_scenes') || a.includes('bts'))
     || type === 'daily_story'
-    || /(?:^|_)(bts|behind|process|craft)(?:_|$)/.test(key)
+    || /(?:^|_)(bts|behind|process|craft|farm_visit|orchard|grove|producer_visit)(?:_|$)/.test(key)
+    || /farm.?to.?table/.test(key)
+    // Origin / maker-visit cues — distinct from product SKU / gift-set promos.
+    || /\b(farm\s*visit|çiftlik\s*ziyaret|ciftlik\s*ziyaret|orchard|grove|producer\s*visit|üretici\s*ziyaret)\b/.test(kw)
   ) {
     return 'brand_bts';
   }
   if (
     ann.some((a) => a.includes('product') || a.includes('menu'))
     || type === 'menu_highlight'
-    || /(?:^|_)(product|menu|dish|cocktail|pastry|collection|arrival|vitrine|shelf)(?:_|$)/.test(key)
-    // Stem-friendly: Turkish plurals (ürünleri) and shelf/vitrine cues.
-    || /(?:^|\s)(cocktail|kokteyl|ürün|product|menu|menü|tabak|dish|reçel|zeytin|vitrin)/.test(` ${kw} `)
+    || /(?:^|_)(product|menu|dish|cocktail|pastry|collection|arrival|vitrine|shelf|gift|bundle|hamper)(?:_|$)/.test(key)
+    // Stem-friendly: Turkish plurals (ürünleri), shelf/vitrine, gift-set cues.
+    || /(?:^|\s)(cocktail|kokteyl|ürün|product|menu|menü|tabak|dish|reçel|zeytin|vitrin|hediye|gift\s*set|gift\s*bundle|hamper)/.test(` ${kw} `)
   ) {
     return 'product_menu';
   }

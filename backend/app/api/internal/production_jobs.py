@@ -54,3 +54,47 @@ async def complete_production_jobs(request: ProductionJobCompleteRequest) -> dic
         http_status=request.http_status,
     )
     return {"ok": True, **result}
+
+
+class RequeueBillingRequest(BaseModel):
+    workspace_id: str | None = None
+    lookback_hours: int = 72
+    limit: int = 200
+    kick_drain: bool = True
+
+
+@router.post("/requeue-billing")
+async def requeue_billing_exhausted(request: RequeueBillingRequest) -> dict:
+    """Revive billing/quota-exhausted factory jobs after circuits are cleared."""
+    from app.services import production_job_service as pj
+    from app.services.production_factory_service import schedule_drain
+
+    workspace_id: uuid.UUID | None = None
+    if request.workspace_id:
+        try:
+            workspace_id = uuid.UUID(request.workspace_id)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="invalid workspace_id")
+
+    pairs = await pj.requeue_billing_exhausted_recent(
+        workspace_id=workspace_id,
+        lookback_hours=max(1, min(int(request.lookback_hours), 168)),
+        limit=max(1, min(int(request.limit), 500)),
+    )
+    kicked = 0
+    if request.kick_drain:
+        for mission_id_s, workspace_id_s in pairs:
+            try:
+                mid = uuid.UUID(mission_id_s)
+                wid = uuid.UUID(workspace_id_s)
+            except (ValueError, TypeError):
+                continue
+            await pj.reclaim_inflight_jobs(mid)
+            schedule_drain(mid, wid, delay_sec=0.0, force=True, bypass_throttle=True)
+            kicked += 1
+    return {
+        "ok": True,
+        "requeuedMissions": len(pairs),
+        "kicked": kicked,
+        "missions": [{"missionId": m, "workspaceId": w} for m, w in pairs[:40]],
+    }

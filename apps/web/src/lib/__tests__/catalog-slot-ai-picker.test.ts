@@ -242,6 +242,30 @@ describe('intentFamilyFromSignals (sector-agnostic)', () => {
       }),
     ).toBe('product_menu');
   });
+
+  it('maps gift-set slots/keywords to product_menu and farm_visit to brand_bts', () => {
+    expect(
+      intentFamilyFromSignals({
+        slotKey: 'local_products_shop_gift_bundle_post',
+        designTemplateType: 'menu_highlight',
+        announcementTypes: ['product_showcase'],
+        keywords: ['hediye', 'gift set'],
+      }),
+    ).toBe('product_menu');
+    expect(
+      intentFamilyFromSignals({
+        keywords: ['tatlı hediye setlerimizle yazı tatlandır', 'reçel'],
+      }),
+    ).toBe('product_menu');
+    expect(
+      intentFamilyFromSignals({
+        slotKey: 'local_products_shop_farm_visit_story',
+        designTemplateType: 'daily_story',
+        announcementTypes: ['behind_the_scenes'],
+        keywords: ['çiftlik ziyareti', 'farm visit'],
+      }),
+    ).toBe('brand_bts');
+  });
 });
 
 describe('pack SSOT signals (beach_club + local_products_shop)', () => {
@@ -274,6 +298,36 @@ describe('pack SSOT signals (beach_club + local_products_shop)', () => {
         keywords: asKw(hero!.match_signals),
       }),
     ).toBe('product_menu');
+  });
+
+  it('synthesized shop gift vs farm_visit carry distinct strong families', () => {
+    const defs = synthesizeSectorSlotDefinitions('local_products_shop');
+    const gift = defs.find((d) => d.slot_key.endsWith('gift_bundle_post'));
+    const farm = defs.find((d) => d.slot_key.endsWith('farm_visit_story'));
+    expect(gift?.design_template_type).toBe('menu_highlight');
+    expect(farm?.design_template_type).toBe('daily_story');
+    expect(gift?.match_signals?.keywords).toEqual(
+      expect.arrayContaining(['hediye', 'gift']),
+    );
+    expect(farm?.match_signals?.keywords).toEqual(
+      expect.arrayContaining(['farm visit', 'çiftlik ziyareti']),
+    );
+    expect(
+      intentFamilyFromSignals({
+        slotKey: gift!.slot_key,
+        designTemplateType: String(gift!.design_template_type),
+        announcementTypes: asAnn(gift!.match_signals),
+        keywords: asKw(gift!.match_signals),
+      }),
+    ).toBe('product_menu');
+    expect(
+      intentFamilyFromSignals({
+        slotKey: farm!.slot_key,
+        designTemplateType: String(farm!.design_template_type),
+        announcementTypes: asAnn(farm!.match_signals),
+        keywords: asKw(farm!.match_signals),
+      }),
+    ).toBe('brand_bts');
   });
 });
 
@@ -466,6 +520,79 @@ describe('preferAiCatalogSlotsOnIdeas', () => {
 
     expect(ideas[0]).toEqual(idea);
     expect(createMock).toHaveBeenCalled();
+  });
+
+  it('rejects gift-set brief rematched onto farm_visit story (local_products_shop)', async () => {
+    createMock.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              catalog_slot_key: 'local_products_shop_farm_visit_story',
+              reason: 'jam jars → farm visit',
+            }),
+          },
+        },
+      ],
+      usage: { prompt_tokens: 80, completion_tokens: 20 },
+    });
+
+    const shopStorySlots: BrandActiveSlotSet = {
+      sectorId: 'local_products_shop',
+      workspaceId: 'ws-shop',
+      slots: [
+        slot({
+          slotKey: 'local_products_shop_new_arrival_story',
+          labelTr: 'Yeni gelen story',
+          labelEn: 'New arrival story',
+          format: 'story',
+          priority: 120,
+          slotRole: 'campaign_story_motion',
+          pipeline: 'fal_story',
+          designTemplateType: 'menu_highlight',
+          matchSignals: {
+            announcement_types: ['product_reveal', 'product_showcase'],
+            keywords: ['yeni ürün', 'product', 'arrival'],
+          },
+        }),
+        slot({
+          slotKey: 'local_products_shop_farm_visit_story',
+          labelTr: 'Çiftlik ziyareti story',
+          labelEn: 'Farm visit story',
+          format: 'story',
+          priority: 110,
+          slotRole: 'campaign_story_motion',
+          pipeline: 'fal_story',
+          designTemplateType: 'daily_story',
+          matchSignals: {
+            announcement_types: ['behind_the_scenes'],
+            keywords: ['farm visit', 'çiftlik ziyareti'],
+          },
+        }),
+      ],
+      enabledSlotKeys: new Set([
+        'local_products_shop_new_arrival_story',
+        'local_products_shop_farm_visit_story',
+      ]),
+      unassignedCatalogKeys: [],
+    };
+
+    const idea = {
+      headline: 'Tatlı Hediye Setlerimizle Yazı Tatlandır!',
+      caption_draft:
+        'Use a variety of jam jars and honey products photos — showcases our diverse gift offerings.',
+      format: 'story',
+      subject_key: 'jam',
+    };
+    const ideas = await preferAiCatalogSlotsOnIdeas({
+      ideas: [idea],
+      activeSlots: shopStorySlots,
+      sector: 'local_products_shop',
+    });
+
+    // AI picked farm_visit — product_menu vs brand_bts conflict → heuristic fallback.
+    expect(ideas[0]).toEqual(idea);
+    expect(ideas[0]!.catalog_slot_key).toBeUndefined();
   });
 
   it('rejects product_menu brief rematched onto event calendar slot', async () => {

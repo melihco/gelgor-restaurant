@@ -16,6 +16,7 @@ import {
   resolveReelArchetypeForProduction,
   reelArchetypeToRecipePartial,
 } from '@/lib/reel-canva-archetypes';
+import { catalogSlotPurposeKey } from '@/lib/sector-slot-pack';
 
 export const REEL_RECIPE_VERSION = 1 as const;
 
@@ -190,14 +191,16 @@ export function inferReelPolicyFromSlotSignals(input: {
   canvaArchetypeId?: string | null;
   sector?: string | null;
 }): ReelRecipePartial {
-  const key = `${input.catalogSlotKey ?? ''} ${input.templateType ?? ''} ${input.canvaArchetypeId ?? ''}`.toLowerCase();
+  const purposeKey = catalogSlotPurposeKey(String(input.catalogSlotKey ?? ''));
+  const key = `${purposeKey} ${input.templateType ?? ''} ${input.canvaArchetypeId ?? ''}`.toLowerCase();
 
   let reelJob: ReelJob = 'generic';
-  if (/cocktail|menu|drink|food|tasting|sip|product.?hero|product_highlight|product/.test(key)) {
+  if (/cocktail|menu|drink|food|tasting|sip|product.?hero|product_highlight|(?:^|\s|_)product(?:_|\s|$)/.test(key)) {
     reelJob = 'menu_highlight';
-  } else if (/event|dj|party|night|teaser|launch/.test(key)) reelJob = 'event_tease';
-  else if (/guest|review|social.?proof|testimonial|happy.?customer/.test(key)) reelJob = 'social_proof';
-  else if (/craft|behind|process|making|barista|chef/.test(key)) reelJob = 'craft_process';
+  } else if (/dj|party|night|teaser|launch|(?:^|\s|_)events?(?:_|\s|$)/.test(key)) {
+    reelJob = 'event_tease';
+  } else if (/guest|review|social.?proof|testimonial|happy.?customer/.test(key)) reelJob = 'social_proof';
+  else if (/craft|behind|process|making|barista|chef|farm_visit/.test(key)) reelJob = 'craft_process';
   else if (/offer|promo|discount|deal/.test(key)) reelJob = 'offer';
   else if (/venue|atmosphere|ambiance|pool|beach|terrace|sunset/.test(key)) reelJob = 'venue_mood';
 

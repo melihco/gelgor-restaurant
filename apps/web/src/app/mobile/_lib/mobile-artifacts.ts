@@ -9,7 +9,7 @@ import {
 import { mobileQueryDefaults } from './mobile-query';
 
 /** Default list cap — mission hub / nav badge recent pool. */
-export const MOBILE_ARTIFACT_LIST_LIMIT = 48;
+export const MOBILE_ARTIFACT_LIST_LIMIT = 96;
 
 /** Shared pool for mission hub, nav badges, and detail sheets — must match MobileArtifactsPoller on missions screen. */
 export const MOBILE_ARTIFACT_MISSION_POOL_LIMIT = MOBILE_ARTIFACT_LIST_LIMIT;

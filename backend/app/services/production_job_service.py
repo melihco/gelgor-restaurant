@@ -561,28 +561,36 @@ async def requeue_exhausted(
     *,
     attempts_ceiling: int = 12,
     include_gallery_theme_retry: bool = False,
+    include_billing_retry: bool = False,
 ) -> int:
     """Guaranteed-fill: give exhausted slots more retries (bounded) so the drainer
     can fill them (e.g. after the reel Remotion fallback is in place). Returns count
     of rows requeued. The attempts ceiling prevents infinite retry loops."""
-    # Permanent failures: do not auto-requeue (needs new gallery, templates, or billing top-up).
+    # Permanent failures: do not auto-requeue (needs new gallery or templates).
+    # Billing/quota: skipped unless include_billing_retry (operator kick / circuit clear).
     permanent_filter = """
+                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+    """
+    if not include_billing_retry:
+        permanent_filter += """
                   AND COALESCE(last_error, '') NOT ILIKE '%skip-no-fal-quota%'
                   AND COALESCE(last_error, '') NOT ILIKE '%provider_billing_circuit_open%'
                   AND COALESCE(last_error, '') NOT ILIKE '%balance exhausted%'
                   AND COALESCE(last_error, '') NOT ILIKE '%exhausted balance%'
                   AND COALESCE(last_error, '') NOT ILIKE '%insufficient_quota%'
-                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
-    """
+        """
     if not include_gallery_theme_retry:
         permanent_filter += """
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
         """
     attempts_filter = ""
-    if not include_gallery_theme_retry:
+    if not include_gallery_theme_retry and not include_billing_retry:
         attempts_filter = "AND attempts < :ceiling"
-    requeue_suffix = " [gallery-retry]" if include_gallery_theme_retry else " [requeued]"
+    requeue_suffix = (
+        " [gallery-retry]" if include_gallery_theme_retry
+        else (" [billing-retry]" if include_billing_retry else " [requeued]")
+    )
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
@@ -590,13 +598,21 @@ async def requeue_exhausted(
                 f"""
                 UPDATE production_jobs
                 SET status = 'pending',
-                    attempts = CASE WHEN :gallery_retry THEN 0 ELSE attempts END,
+                    attempts = CASE
+                        WHEN :gallery_retry OR :billing_retry THEN 0
+                        ELSE attempts
+                    END,
                     max_attempts = CASE
-                        WHEN :gallery_retry THEN GREATEST(max_attempts, :ceiling)
+                        WHEN :gallery_retry OR :billing_retry THEN GREATEST(max_attempts, :ceiling)
                         ELSE GREATEST(max_attempts, LEAST(:ceiling, attempts + 1))
                     END,
                     run_after = now(),
-                    last_error = COALESCE(last_error, '') || :requeue_suffix,
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    last_error = CASE
+                        WHEN :billing_retry THEN ''
+                        ELSE COALESCE(last_error, '') || :requeue_suffix
+                    END,
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'exhausted'
@@ -609,6 +625,7 @@ async def requeue_exhausted(
                 "mission_id": str(mission_id),
                 "ceiling": int(attempts_ceiling),
                 "gallery_retry": bool(include_gallery_theme_retry),
+                "billing_retry": bool(include_billing_retry),
                 "requeue_suffix": requeue_suffix,
             },
         )
@@ -620,11 +637,79 @@ async def requeue_exhausted(
             mission_id=str(mission_id),
             requeued=len(rows),
             gallery_theme_retry=include_gallery_theme_retry,
+            billing_retry=include_billing_retry,
         )
     if include_gallery_theme_retry and rows:
         await _clear_gallery_urls_from_job_payloads(mission_id, [str(r[0]) for r in rows])
         await _escalate_gallery_failed_jobs_to_fal_only(mission_id, [str(r[0]) for r in rows])
     return len(rows)
+
+
+async def requeue_billing_exhausted_recent(
+    *,
+    workspace_id: uuid.UUID | None = None,
+    lookback_hours: int = 72,
+    limit: int = 200,
+) -> list[tuple[str, str]]:
+    """After provider billing circuits are cleared — revive billing-exhausted factory jobs.
+
+    Multi-tenant safe: optional workspace scope; never brand-name branches.
+    Returns list of (mission_id, workspace_id) pairs that need a drain kick.
+    """
+    factory = _get_session_factory()
+    ws_clause = (
+        "AND workspace_id = CAST(:workspace_id AS UUID)"
+        if workspace_id is not None
+        else ""
+    )
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                f"""
+                UPDATE production_jobs
+                SET status = 'pending',
+                    attempts = 0,
+                    max_attempts = GREATEST(max_attempts, 3),
+                    run_after = now(),
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    last_error = '',
+                    updated_at = now()
+                WHERE id IN (
+                  SELECT id FROM production_jobs
+                  WHERE status IN ('exhausted', 'failed')
+                    AND updated_at > now() - make_interval(hours => :hours)
+                    AND (
+                      last_error ILIKE '%provider_billing%'
+                      OR last_error ILIKE '%skip-no-fal-quota%'
+                      OR last_error ILIKE '%balance exhausted%'
+                      OR last_error ILIKE '%exhausted balance%'
+                      OR last_error ILIKE '%insufficient_quota%'
+                    )
+                    {ws_clause}
+                  ORDER BY updated_at DESC
+                  LIMIT :lim
+                )
+                RETURNING mission_id::text, workspace_id::text
+                """
+            ),
+            {
+                "hours": int(lookback_hours),
+                "lim": int(limit),
+                **({"workspace_id": str(workspace_id)} if workspace_id is not None else {}),
+            },
+        )
+        rows = res.fetchall()
+        await db.commit()
+    pairs = list({(str(r[0]), str(r[1])) for r in rows})
+    if pairs:
+        logger.info(
+            "production_jobs.requeue_billing_exhausted_recent",
+            requeued=len(rows),
+            missions=len(pairs),
+            workspace_id=str(workspace_id) if workspace_id else None,
+        )
+    return pairs
 
 
 async def _escalate_gallery_failed_jobs_to_fal_only(
@@ -684,31 +769,45 @@ async def _clear_gallery_urls_from_job_payloads(
 
 async def requeue_failed(
     mission_id: uuid.UUID,
+    *,
+    include_billing_retry: bool = False,
 ) -> int:
     """Retry failed slots that still have attempts remaining (gallery gate / transient errors)."""
-    factory = _get_session_factory()
-    async with factory() as db:
-        res = await db.execute(
-            text(
-                """
-                UPDATE production_jobs
-                SET status = 'pending',
-                    run_after = now(),
-                    updated_at = now()
-                WHERE mission_id = CAST(:mission_id AS UUID)
-                  AND status = 'failed'
-                  AND attempts < max_attempts
-                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
-                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+    billing_filter = ""
+    if not include_billing_retry:
+        billing_filter = """
                   AND COALESCE(last_error, '') NOT ILIKE '%skip-no-fal-quota%'
                   AND COALESCE(last_error, '') NOT ILIKE '%provider_billing_circuit_open%'
                   AND COALESCE(last_error, '') NOT ILIKE '%balance exhausted%'
                   AND COALESCE(last_error, '') NOT ILIKE '%exhausted balance%'
+        """
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                f"""
+                UPDATE production_jobs
+                SET status = 'pending',
+                    attempts = CASE WHEN :billing_retry THEN 0 ELSE attempts END,
+                    run_after = now(),
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    last_error = CASE WHEN :billing_retry THEN '' ELSE last_error END,
+                    updated_at = now()
+                WHERE mission_id = CAST(:mission_id AS UUID)
+                  AND status = 'failed'
+                  AND (attempts < max_attempts OR :billing_retry)
+                  AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+                  {billing_filter}
                 RETURNING id
                 """
             ),
-            {"mission_id": str(mission_id)},
+            {
+                "mission_id": str(mission_id),
+                "billing_retry": bool(include_billing_retry),
+            },
         )
         rows = res.fetchall()
         await db.commit()
@@ -717,6 +816,7 @@ async def requeue_failed(
             "production_jobs.requeue_failed",
             mission_id=str(mission_id),
             requeued=len(rows),
+            billing_retry=include_billing_retry,
         )
     return len(rows)
 

@@ -29,6 +29,7 @@ import {
   type TenantSlotAssignment,
 } from '@/lib/production-slot-catalog';
 import {
+  catalogSlotPurposeKey,
   resolveBrandSlotFacilities,
   slotEnabledByFacilities,
   type BrandSlotFacilities,
@@ -569,22 +570,24 @@ function scoreSlotForIdea(
     String(idea.calendar_announcement_type ?? idea.announcement_type ?? idea.template_use_case ?? ''),
   );
   const hay = ideaHaystack(idea);
-  const key = slot.slotKey;
+  // Purpose stem for semantic scoring — sector-id tokens must not boost/penalize.
+  const key = catalogSlotPurposeKey(slot.slotKey);
+  const fullKey = slot.slotKey;
 
-  if (assignment?.catalog_slot_key && key === assignment.catalog_slot_key) {
+  if (assignment?.catalog_slot_key && fullKey === assignment.catalog_slot_key) {
     score += 60;
   }
   if (assignment?.library_slot_key && slot.librarySlotKey === assignment.library_slot_key) {
     score += 50;
   }
-  if (assignment?.library_slot_key && key === assignment.library_slot_key) {
+  if (assignment?.library_slot_key && fullKey === assignment.library_slot_key) {
     score += 55;
   }
   if (assignment?.slot_role && slot.slotRole === assignment.slot_role) {
     score += 20;
   }
 
-  const slotTokens = key.split('_');
+  const slotTokens = key.split('_').filter(Boolean);
   for (const token of slotTokens) {
     if (token.length >= 4 && hay.includes(token)) score += 8;
   }
@@ -599,7 +602,8 @@ function scoreSlotForIdea(
     }
     if (key.includes('offer') && /offer|campaign|promo/.test(announcement)) score += 25;
     if (key.includes('social') && announcement.includes('social')) score += 25;
-    if (key.includes('product') && /product|reveal|showcase/.test(announcement)) score += 20;
+    // Token match — `local_products_*` must not count as product.
+    if (/(?:^|_)product(?:_|$)/.test(key) && /product|reveal|showcase/.test(announcement)) score += 20;
     if (key.includes('venue') && announcement.includes('venue')) score += 20;
     if (key.includes('pool') && /pool|havuz/.test(hay)) score += 30;
     if (key.includes('pool') && !/pool|havuz/.test(hay)) score -= 40;
@@ -618,10 +622,23 @@ function scoreSlotForIdea(
     if (/dj|live_music|neon/.test(key)) score -= 35;
   }
   if (/(?:^|\s)(kokteyl|cocktail|ürün|product|menü|menu|tabak|dish|reçel|zeytin|vitrin)/.test(` ${hay} `)) {
-    if (/product|menu|dish|cocktail|signature|harvest|vitrine|shelf/.test(key)) score += 28;
+    if (
+      /(?:^|_)(product|menu|dish|cocktail|signature|harvest|vitrine|shelf|gift|bundle|arrival)(?:_|$)/.test(key)
+    ) {
+      score += 28;
+    }
     if (/dj|live_music|private_event|social_proof/.test(key) && !/cocktail/.test(key)) {
       score -= 30;
     }
+  }
+  // Gift-set / hediye promo ≠ farm-visit origin story (local shop + retail).
+  if (/\b(hediye|gift\s*set|gift\s*bundle|hamper|hediye\s*paket|hediye\s*set)\b/.test(hay)) {
+    if (/(?:^|_)(gift|bundle|hamper|product|arrival|collection|range)(?:_|$)/.test(key)) score += 34;
+    if (/farm_visit|orchard|grove|producer_visit/.test(key)) score -= 45;
+  }
+  if (/\b(farm\s*visit|çiftlik\s*ziyaret|ciftlik\s*ziyaret|orchard|grove|producer\s*visit|üretici\s*ziyaret)\b/.test(hay)) {
+    if (/farm_visit|orchard|grove|producer_visit|bts|behind|process|craft|maker/.test(key)) score += 34;
+    if (/(?:^|_)(gift|bundle|hamper|hediye)(?:_|$)/.test(key)) score -= 40;
   }
   if (/\b(day.?pass|daybed|indirim|offer|promo|rezerv|booking)\b/.test(hay)) {
     if (/offer|day_pass|daybed|promo|reservation|booking/.test(key)) score += 28;

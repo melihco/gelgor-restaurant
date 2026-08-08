@@ -159,8 +159,10 @@ class HubProductionPackageRequest(BaseModel):
 
 
 class RequeueFactoryJobsRequest(BaseModel):
-    """Operator recovery — optionally retry gallery-theme exhausted slots after a gallery fix deploy."""
+    """Operator recovery — retry gallery-theme and/or billing-exhausted slots after fixes."""
     include_gallery_theme_retry: bool = False
+    # Default on: after fal/OpenAI circuit clear, kick must revive billing-exhausted slots.
+    include_billing_retry: bool = True
 
 
 # MissionFeedProductionRequest lives in mission_feed_production_service (Sprint 2).
@@ -590,12 +592,17 @@ async def requeue_mission_factory_jobs(
     from app.services.production_factory_service import schedule_drain
 
     await _load_mission_or_404(db, workspace_id, mission_id)
+    req = body or RequeueFactoryJobsRequest()
     reclaimed = await pj.reclaim_inflight_jobs(mission_id)
     requeued_exhausted = await pj.requeue_exhausted(
         mission_id,
-        include_gallery_theme_retry=bool((body or RequeueFactoryJobsRequest()).include_gallery_theme_retry),
+        include_gallery_theme_retry=bool(req.include_gallery_theme_retry),
+        include_billing_retry=bool(req.include_billing_retry),
     )
-    requeued_failed = await pj.requeue_failed(mission_id)
+    requeued_failed = await pj.requeue_failed(
+        mission_id,
+        include_billing_retry=bool(req.include_billing_retry),
+    )
     requeued = requeued_exhausted + requeued_failed
     if requeued or reclaimed or await pj.has_open_jobs(mission_id):
         schedule_drain(mission_id, workspace_id, delay_sec=0.0, force=True, bypass_throttle=True)
