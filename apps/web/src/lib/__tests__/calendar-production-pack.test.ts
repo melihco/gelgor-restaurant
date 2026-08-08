@@ -34,6 +34,25 @@ describe('calendar-production-pack', () => {
     expect(idea.calendar_announcement_type).toBe('event_teaser');
     expect(idea.content_kind).toBe('instagram_story');
     expect(idea.posting_time_suggestion).toContain('July 1, 2026');
+    expect((idea.canva_field_copy as { headline?: string }).headline).toBe(
+      'Discover the stories behind our products',
+    );
+  });
+
+  it('unwraps Mission Hub quotes and paints tagline as canva headline', () => {
+    const idea = normalizeCalendarPlanToProductionIdea({
+      event_name: 'Erken Hasat Zeytinyağı',
+      tagline: '"Datça\'nın özgün tatları burada."',
+      format: 'post',
+      announcement_type: 'product_reveal',
+    }, 0);
+    expect(idea.tagline).toBe("Datça'nın özgün tatları burada.");
+    expect((idea.canva_field_copy as { headline?: string }).headline).toBe(
+      "Datça'nın özgün tatları burada.",
+    );
+    expect((idea.canva_field_copy as { subtitle?: string }).subtitle).toBe(
+      'Erken Hasat Zeytinyağı',
+    );
   });
 
   it('publish caption is tagline+headline copy — the visual brief never leaks into it', () => {

@@ -251,7 +251,12 @@ export function normalizeCalendarPlanToProductionIdea(
   const fmt = calendarItemFormat(plan);
   const headline = calendarItemHeadline(plan)
     || String(plan.event_name ?? plan.tagline ?? '').trim();
-  const tagline = String(plan.tagline ?? plan.subline ?? '').trim();
+  // Quoted Mission Hub line — strip wrapping quotes so production paints clean text.
+  const taglineRaw = String(plan.tagline ?? plan.subline ?? '').trim();
+  const tagline = taglineRaw
+    .replace(/^[«"„“‘']+/, '')
+    .replace(/[»"”’']+$/, '')
+    .trim();
   const contentBrief = String(
     plan.content_brief ?? plan.description ?? plan.brief ?? '',
   ).trim();

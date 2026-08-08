@@ -525,7 +525,9 @@ RULES:
 - Every row MUST include `"idea_index": <int>` matching the ideation list. Each index exactly once.
 - Prefer ideation `posting_time_suggestion` / `event_date` as hints; YOU set final `date` + `time`.
 - Keep event_name aligned with the idea headline (≤6 words). Do not invent a new concept.
-- tagline is the visual sub-line (≤10 words).
+- tagline is the ON-CANVAS punchline painted on the designed image (shown in quotes in the Mission Hub).
+  Write a complete, publishable marketing line (≤12 words) — not a planning label, not a caption fragment.
+  Production uses THIS exact tagline as the visual headline for that calendar item.
 - format: prefer the idea's format/content_type; only refine if clearly wrong (story|post|reel|carousel).
 - content_brief: 1-2 sentences for visual production (NOT the publish caption).
 - photo_mood: ideal background / scene mood.
@@ -539,7 +541,7 @@ Return a JSON array of {count} rows:
     "idea_index": 0,
     "announcement_type": "one of the types above",
     "event_name": "short headline aligned with the idea (≤6 words)",
-    "tagline": "visual sub-line (≤10 words)",
+    "tagline": "on-canvas punchline for this item (≤12 words)",
     "date": "publish date string",
     "time": "publish time e.g. 18:30",
     "venue_area": "optional area name, else ''",

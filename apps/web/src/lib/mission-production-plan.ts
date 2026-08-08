@@ -226,7 +226,11 @@ function enrichIdeationWithCalendarPlan(
   const overlay = calendarScheduleOverlayFields(plan, planIndex, ideaIndex);
   const eventDetails = mergeEventDetailsFromCalendar(idea, plan);
   const calHeadline = calendarItemHeadline(plan);
-  const tagline = String(plan.tagline ?? plan.subline ?? '').trim();
+  const taglineRaw = String(plan.tagline ?? plan.subline ?? '').trim();
+  const tagline = taglineRaw
+    .replace(/^[«"„“‘']+/, '')
+    .replace(/[»"”’']+$/, '')
+    .trim();
   const brief = String(
     plan.content_brief ?? plan.description ?? plan.brief ?? '',
   ).trim();

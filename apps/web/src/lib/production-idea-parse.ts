@@ -177,11 +177,24 @@ function looksLikePlanningOverlayLabel(line: string): boolean {
   return false;
 }
 
+/** Content-calendar / calendar-enriched ideas — quoted Mission Hub tagline is SSOT. */
+export function isCalendarIdeationRecord(rec: Record<string, unknown>): boolean {
+  if (rec.calendar_enriched === true) return true;
+  if (typeof rec.calendar_plan_index === 'number') return true;
+  if (String(rec.source_track ?? '') === 'calendar') return true;
+  if (String(rec.source_node ?? '') === 'content_calendar') return true;
+  const scope = String(rec.production_scope ?? '');
+  return scope === 'calendar_orphan' || scope === 'calendar_plan';
+}
+
 /**
  * Idea-specific on-canvas marketing line for designed production.
  * Prefers agent overlay fields (`canva_field_copy`, root `headline`, tagline)
  * over planning `concept_title` labels so painted text stays punchy and coherent
  * with the idea — not a season/slot label or a caption fragment.
+ *
+ * Content calendar: the quoted Mission Hub line (`tagline`) wins over event_name /
+ * concept_title / caption-derived canva when present.
  */
 export function resolveIdeationOverlayHeadline(rec: Record<string, unknown>): string {
   const canva = (rec.canva_field_copy ?? rec.canvaFieldCopy) as Record<string, unknown> | undefined;
@@ -205,6 +218,11 @@ export function resolveIdeationOverlayHeadline(rec: Record<string, unknown>): st
     'ideaTitle',
     'title',
   );
+
+  // Calendar rows: quoted tagline is the on-canvas punchline for every item.
+  if (isCalendarIdeationRecord(rec) && tagline && !looksLikePlanningOverlayLabel(tagline)) {
+    return unwrapIdeationQuote(tagline);
+  }
 
   const ranked = [fromCanva, fromLayers, tagline, marketing, planning]
     .map(unwrapIdeationQuote)

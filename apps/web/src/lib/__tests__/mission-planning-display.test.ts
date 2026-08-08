@@ -55,6 +55,26 @@ describe('resolveIdeationOverlayHeadline', () => {
       canva_field_copy: { headline: 'Doğal lezzetleri keşfet' },
     })).toBe('Doğal lezzetleri keşfet');
   });
+
+  it('content_calendar items use quoted tagline as on-canvas overlay', () => {
+    expect(resolveIdeationOverlayHeadline({
+      source_track: 'calendar',
+      source_node: 'content_calendar',
+      concept_title: 'Erken Hasat Vitrini',
+      headline: 'Erken Hasat Vitrini',
+      tagline: '"Datça\'nın özgün tatları burada."',
+      canva_field_copy: { headline: 'Caption-derived wrong line' },
+    })).toBe("Datça'nın özgün tatları burada.");
+  });
+
+  it('calendar_enriched ideation prefers tagline over event_name canva', () => {
+    expect(resolveIdeationOverlayHeadline({
+      calendar_enriched: true,
+      concept_title: 'Sunset Ritual',
+      tagline: 'Golden hour on the terrace',
+      canva_field_copy: { headline: 'Sunset Ritual' },
+    })).toBe('Golden hour on the terrace');
+  });
 });
 
 describe('buildMissionPlanningDisplayIdeas', () => {

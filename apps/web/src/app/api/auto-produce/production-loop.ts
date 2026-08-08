@@ -235,6 +235,7 @@ import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import {
   resolveIdeationHeadline,
   resolveIdeationOverlayHeadline,
+  resolveIdeationTagline,
 } from '@/lib/production-idea-parse';
 import {
   buildArtifactListTitle,
@@ -1345,13 +1346,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const originalIdeationCaption = caption;
     const rawPlanningHeadline = resolveIdeationHeadline(idea as Record<string, unknown>);
     const rawOverlayHeadline = resolveIdeationOverlayHeadline(idea as Record<string, unknown>);
+    const calendarTagline = resolveIdeationTagline(idea as Record<string, unknown>);
+    const isCalendarIdeaForHeadline = isCalendarProductionIdea(ideaRecord);
+    const calendarTaglinePublishable = Boolean(
+      isCalendarIdeaForHeadline
+      && calendarTagline
+      && !isMeaninglessBrandEchoHeadline(calendarTagline, resolvedBrandName)
+      && !isLabelStyleHeadline(calendarTagline)
+      && !isIncompleteOverlayPhrase(calendarTagline),
+    );
     const isFalDesignedPostSlotForHeadline =
       isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
       || assignment.slot_role === 'designed_typography'
       || assignment.slot_role === 'fal_designed_post';
-    // Designed slots seed from agent overlay fields; hub planning keeps concept_title.
-    const rawIdeationHeadline = isFalDesignedPostSlotForHeadline
+    // Designed slots + content_calendar: seed from overlay/tagline (quoted Hub line).
+    // Hub planning title (event_name) stays for metadata via resolveIdeationHeadline.
+    const rawIdeationHeadline = (isFalDesignedPostSlotForHeadline || isCalendarIdeaForHeadline)
       ? (rawOverlayHeadline || rawPlanningHeadline)
       : rawPlanningHeadline;
     let ideationHeadline = rawIdeationHeadline;
@@ -1369,7 +1380,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ?? '',
       ).trim(),
     );
-    if (isFalDesignedPostSlotForHeadline && visualDesignCards.length && !libraryCatalogPinned) {
+    // Calendar tagline is canvas SSOT — never let visual_design_cards replace it.
+    if (
+      isFalDesignedPostSlotForHeadline
+      && visualDesignCards.length
+      && !libraryCatalogPinned
+      && !calendarTaglinePublishable
+    ) {
       const chosen = pickMissionVisualDesignCard({
         cards: visualDesignCards,
         idea: ideaRecord,
@@ -1395,12 +1412,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     /** Design-card overlay only when agent idea copy is weak/missing. */
     let visualDesignCardOverlayApplied = Boolean(
       isFalDesignedPostSlotForHeadline
+      && !calendarTaglinePublishable
       && vdcHeadline
       && isUsableVisualDesignCardHeadline(vdcHeadline, resolvedBrandName)
       && !agentOverlayLooksPublishable,
     );
 
-    if (
+    if (calendarTaglinePublishable) {
+      ideationHeadline = enforceDisplayHeadline(calendarTagline, 72);
+      headline = ideationHeadline;
+      visualDesignCardOverlayApplied = false;
+      console.log(
+        `[auto-produce] content_calendar tagline → overlay: "${headline.slice(0, 48)}"`,
+      );
+    } else if (
       !rawIdeationHeadline
       || isMeaninglessBrandEchoHeadline(rawIdeationHeadline, resolvedBrandName)
       || isLabelStyleHeadline(rawIdeationHeadline)
@@ -1431,7 +1456,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       headline = ideationHeadline;
     }
     // Designed slots: card headline fills in only when agent overlay was not publishable.
-    if (visualDesignCardOverlayApplied && vdcHeadline) {
+    if (visualDesignCardOverlayApplied && vdcHeadline && !calendarTaglinePublishable) {
       const cardOverlay = enforceDisplayHeadline(vdcHeadline, 72);
       if (cardOverlay) {
         headline = cardOverlay;
@@ -1595,13 +1620,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || isFalOnlyPostPipeline(assignment.pipeline);
     /** When set, calendar event overlay must not demote punchline → event title. */
     let lockedFalPunchlineSource: string | null = null;
-    if (usesFalDesignCopy && caption.trim().length >= 16) {
+    // Content calendar quoted tagline = canvas punchline lock for the whole slot.
+    if (calendarTaglinePublishable) {
+      lockedFalPunchlineSource = 'mission_tagline';
+    }
+    if (usesFalDesignCopy && (caption.trim().length >= 16 || calendarTaglinePublishable)) {
       const falChannel =
         kind === 'instagram_reel' ? 'reel'
           : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 'story'
             : 'feed_post';
       // Card overlay wins over caption-derived fal design copy (avoids brief truncations).
-      if (visualDesignCardOverlayApplied && vdcHeadline) {
+      // Calendar tagline lock skips VDC — punchline stays the quoted Hub line.
+      if (visualDesignCardOverlayApplied && vdcHeadline && !calendarTaglinePublishable) {
         const cardOverlay = enforceDisplayHeadline(vdcHeadline, falChannel === 'reel' ? 22 : falChannel === 'story' ? 28 : 32);
         if (cardOverlay) {
           headline = cardOverlay;
