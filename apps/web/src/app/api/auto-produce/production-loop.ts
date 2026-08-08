@@ -364,6 +364,7 @@ import {
   getField,
   detectContentKind,
   nexusPersistableContentUrl,
+  isDataImageUrl,
   parseBrandGalleryPhotos,
   pickGalleryPhotoForIdea,
   captionHasExplicitBeautyService,
@@ -4667,6 +4668,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const bundleReadyNow = designedPosterReady || markyBranded;
 
     const designedStoryRequired = assignmentRequiresDesignedStoryVisual(assignment);
+
+    // Designed stills often arrive as data:image — Nexus ContentUrl can't hold them
+    // (varchar 1000), so without R2 upload the save path falls back to gallery and
+    // Feed shows a raw photo. Persist first; fail loud when design can't be stored.
+    if (isDataImageUrl(imageUrl)) {
+      const { ensurePersistableProductionImageUrl } = await import('@/lib/persist-enhanced-images');
+      const persistedStill = await ensurePersistableProductionImageUrl(imageUrl, workspaceId);
+      if (persistedStill) {
+        imageUrl = persistedStill;
+      } else {
+        const designedIntent = Boolean(
+          isFalDesignPost
+          || isFalOnlyPost
+          || isFalMissionVideo
+          || isFalOnlyVideo
+          || designedStoryRequired
+          || designedPosterReady
+          || markyBranded,
+        );
+        if (designedIntent) {
+          console.warn(
+            `[auto-produce] designed_image_persist_failed "${headline.slice(0, 50)}" — refusing gallery ContentUrl fallback`,
+          );
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'designed_image_persist_failed',
+            slotKey,
+          });
+          continue;
+        }
+        imageUrl = null;
+      }
+    }
+
     const nexusPrimaryContentUrl = videoUrl
       ?? imageUrl
       ?? (designedStoryRequired ? '' : (galleryPreviewUrl ?? ''));
@@ -5149,11 +5185,38 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       format: effectiveFmt,
     });
 
-    const persistContentUrl = nexusPersistableContentUrl(nexusPrimaryContentUrl, [
-      referenceUrl ?? '',
-      ...carouselGalleryUrls,
-      ...carouselUrls,
-    ]);
+    const designedStillIntent = Boolean(
+      isFalDesignPost
+      || isFalOnlyPost
+      || designedStoryRequired
+      || designedPosterReady
+      || markyBranded
+      || (Boolean(imageUrl) && (isFalMissionVideo || isFalOnlyVideo) && !isPlayableVideoUrl(videoUrl)),
+    );
+    // Never let designed stills fall back to a raw gallery URL in ContentUrl.
+    const persistContentUrl = designedStillIntent && !isPlayableVideoUrl(nexusPrimaryContentUrl)
+      ? nexusPersistableContentUrl(nexusPrimaryContentUrl, [])
+      : nexusPersistableContentUrl(nexusPrimaryContentUrl, [
+        referenceUrl ?? '',
+        ...carouselGalleryUrls,
+        ...carouselUrls,
+      ]);
+    if (
+      designedStillIntent
+      && !isPlayableVideoUrl(persistContentUrl)
+      && (isDataImageUrl(persistContentUrl) || !persistContentUrl.trim())
+    ) {
+      console.warn(
+        `[auto-produce] designed_image_persist_failed after nexus gate "${headline.slice(0, 50)}"`,
+      );
+      results.push({
+        title: headline,
+        imageUrl: '',
+        error: 'designed_image_persist_failed',
+        slotKey,
+      });
+      continue;
+    }
 
     // publishReady SSOT — stamp before save so feed filters see the same decision.
     // Prefer fal/grafiker success flags over bundleReadyNow alone (bundle flag is

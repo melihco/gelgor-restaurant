@@ -214,9 +214,39 @@ export function resolveFeedProducedMedia(
 /**
  * Feed preview only — prefer the fal/R2 export in `contentUrl` over gallery proxy stills
  * stored in `content.imageUrl` / `metadata.imageUrl`.
+ *
+ * When R2 persist failed, designed frames may only exist as `data:image` / `/api/media`
+ * on content while `contentUrl` fell back to a brand gallery photo — prefer the designed frame.
  */
 export function resolveFeedProducedStillUrl(artifact: OutputArtifact): string | null {
-  return resolveFeedProducedMedia(artifact, detectFeedArtifactKind(artifact)).imageUrl;
+  const kind = detectFeedArtifactKind(artifact);
+  const fromContentUrl = resolveFeedProducedMedia(artifact, kind).imageUrl;
+  if (fromContentUrl) return fromContentUrl;
+
+  if (kind === 'reel') return null;
+
+  const meta = parseArtifactMetadata(artifact.metadata);
+  if (!isFalProducedArtifact(meta)) return null;
+
+  const content = parseArtifactContent(artifact.content);
+  const contentUrl = String(artifact.contentUrl ?? '').trim();
+  const candidates = [
+    content.imageUrl,
+    meta.imageUrl,
+    content.posterUrl,
+    meta.poster_url,
+    meta.posterUrl,
+  ];
+  for (const candidate of candidates) {
+    const url = String(candidate ?? '').trim();
+    if (!url || isPlayableVideoUrl(url) || isGalleryProxyPreviewUrl(url)) continue;
+    // Prefer designed export over the gallery URL that Nexus stored as ContentUrl.
+    if (url === contentUrl) continue;
+    if (url.startsWith('data:image') || isPersistedR2ExportUrl(url)) {
+      return resolveClientMediaUrl(url) ?? url;
+    }
+  }
+  return null;
 }
 
 /** Feed story/reel viewer — prefer produced export video, then bundle video fields. */

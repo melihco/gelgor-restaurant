@@ -74,7 +74,27 @@ describe('resolveFeedProducedMedia', () => {
   it('ignores artifacts without persisted export in contentUrl', () => {
     expect(resolveFeedProducedStillUrl(falArtifact({
       contentUrl: '/api/media-proxy?url=https%3A%2F%2Fexample.com%2Fphoto.jpg',
+      content: JSON.stringify({
+        kind: 'post',
+        imageUrl: '/api/media-proxy?url=https%3A%2F%2Fsarnicbeach.com%2Fgaleri%2Fphoto.jpg',
+      }),
     }))).toBeNull();
+  });
+
+  it('prefers designed data: still when ContentUrl fell back to gallery', () => {
+    const designed = 'data:image/jpeg;base64,/9j/4AAQ';
+    expect(resolveFeedProducedStillUrl(falArtifact({
+      contentUrl: 'https://www.sarnicbeach.com/images/galeri/38.jpg',
+      content: JSON.stringify({
+        kind: 'story',
+        imageUrl: designed,
+      }),
+      metadata: {
+        pipeline: 'fal_story',
+        fal_designer_produced: true,
+        production_track: 'fal_ai',
+      },
+    }))).toBe(designed);
   });
 });
 

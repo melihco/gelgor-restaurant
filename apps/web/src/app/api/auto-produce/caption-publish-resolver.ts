@@ -118,6 +118,11 @@ export const NEXUS_CONTENT_URL_MAX = 1000;
 /** Gallery-only: never generate images from scratch in auto-produce (default true). */
 export const GALLERY_ONLY = serverConfig.autoProduce.galleryOnly;
 
+/** True when a URL is a raw data URI (cannot be stored in Nexus ContentUrl). */
+export function isDataImageUrl(url: string | null | undefined): boolean {
+  return Boolean(url && url.trim().startsWith('data:image/'));
+}
+
 export const GALLERY_EXCLUDE_PATTERNS = [
   'logo', 'icon', 'banner', 'footer', 'menu.', 'harita', 'map', 'franchise',
 ];

@@ -46,6 +46,27 @@ export async function persistEnhancedImageUrls(
   return out;
 }
 
+/**
+ * Designed stills must land as `/api/media` (or https) before Nexus save.
+ * `OutputArtifacts.ContentUrl` is varchar(1000) — data: URIs fall back to gallery
+ * and the Feed shows a raw photo instead of the designed frame.
+ */
+export async function ensurePersistableProductionImageUrl(
+  url: string | null | undefined,
+  workspaceId: string,
+): Promise<string | null> {
+  const trimmed = String(url ?? '').trim();
+  if (!trimmed) return null;
+  if (isPersistableEnhanceUrl(trimmed) && !trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+  if (!trimmed.startsWith('data:image/')) {
+    return trimmed;
+  }
+  const [persisted] = await persistEnhancedImageUrls([trimmed], workspaceId);
+  return persisted ?? null;
+}
+
 async function uploadDataImageUrl(
   dataUrl: string,
   workspaceId: string,
