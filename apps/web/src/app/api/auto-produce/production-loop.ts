@@ -273,6 +273,7 @@ import {
 import { runAutoProducePlanPhase } from '@/lib/auto-produce/plan-phase';
 import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-production-queue';
 import {
+  alignAssignmentToCatalogSlotKey,
   applyCatalogSlotBindingsToQueue,
   enrichProductionQueueWithBrandSlots,
   resolveSlotBackfillProductionLoop,
@@ -1237,6 +1238,47 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...assignment,
       pipeline: normalizeProductionPipeline(assignment.pipeline),
     };
+    // Catalog key format SSOT — repair fal_reel + *_story (day_pass_story) drift
+    // before gallery match / fal bind.
+    {
+      const aligned = alignAssignmentToCatalogSlotKey(
+        assignment,
+        assignment.catalog_slot_key
+          ?? (ideaRecord.catalog_slot_key as string | undefined),
+      );
+      if (
+        aligned.pipeline !== assignment.pipeline
+        || aligned.slot_role !== assignment.slot_role
+      ) {
+        console.log(
+          `[auto-produce] catalog/pipeline realign: `
+          + `${assignment.slot_role}/${assignment.pipeline} → ${aligned.slot_role}/${aligned.pipeline} `
+          + `key=${aligned.catalog_slot_key ?? '-'}`,
+        );
+        assignment = aligned;
+      }
+    }
+
+    // Fal video when fal circuit is open — exhaust without endless requeue.
+    // Posts/stories (incl. realigned day_pass_story) can still use OpenAI.
+    {
+      const needsFalVideo = isFalVideoPipeline(assignment.pipeline)
+        || isFalOnlyVideoPipeline(assignment.pipeline)
+        || assignment.pipeline === 'fal_reel';
+      if (needsFalVideo && liveProviderPreflight.providers.falCircuitOpen) {
+        const slotKey = `${ideaIndex}:${assignment.slot_role}`;
+        console.warn(
+          `[auto-produce] [skip-no-fal-quota] ${slotKey} — fal billing circuit open`,
+        );
+        results.push({
+          title: resolveIdeationHeadline(idea as Record<string, unknown>) || '(fal skipped)',
+          imageUrl: '',
+          error: 'provider_billing_circuit_open [skip-no-fal-quota]',
+          slotKey,
+        });
+        continue;
+      }
+    }
     const resolvedIdeaIndex = typeof ideaRecord.idea_index === 'number'
       ? ideaRecord.idea_index
       : ideaIndex;

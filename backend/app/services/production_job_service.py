@@ -565,9 +565,17 @@ async def requeue_exhausted(
     """Guaranteed-fill: give exhausted slots more retries (bounded) so the drainer
     can fill them (e.g. after the reel Remotion fallback is in place). Returns count
     of rows requeued. The attempts ceiling prevents infinite retry loops."""
-    permanent_filter = ""
+    # Permanent failures: do not auto-requeue (needs new gallery, templates, or billing top-up).
+    permanent_filter = """
+                  AND COALESCE(last_error, '') NOT ILIKE '%skip-no-fal-quota%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%provider_billing_circuit_open%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%balance exhausted%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%exhausted balance%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%insufficient_quota%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+    """
     if not include_gallery_theme_retry:
-        permanent_filter = """
+        permanent_filter += """
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
         """
@@ -692,6 +700,11 @@ async def requeue_failed(
                   AND attempts < max_attempts
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%skip-no-fal-quota%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%provider_billing_circuit_open%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%balance exhausted%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%exhausted balance%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
                 RETURNING id
                 """
             ),

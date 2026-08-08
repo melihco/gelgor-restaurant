@@ -154,7 +154,26 @@ export const falVideoHandler: ProductionPipelineHandler = {
     }
     if (!referenceUrl) return;
 
-    const falPipeline = inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
+    // Catalog key format wins over drifted assignment.pipeline (e.g. day_pass_story
+    // stamped on fal_reel_motion after slot backfill role repair).
+    const catalogKey = String(inputs.catalogSlotKey ?? '').toLowerCase();
+    const catalogImpliesStory = catalogKey.endsWith('_story') || catalogKey.includes('_story_');
+    const catalogImpliesReel = catalogKey.endsWith('_reel') || catalogKey.includes('_reel_');
+    let falPipeline: 'fal_reel' | 'fal_story' =
+      inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
+    if (catalogImpliesStory && falPipeline === 'fal_reel') {
+      console.warn(
+        `[auto-produce] [fal-track] catalog story key "${inputs.catalogSlotKey}" `
+        + 'overrode fal_reel pipeline → fal_story',
+      );
+      falPipeline = 'fal_story';
+    } else if (catalogImpliesReel && falPipeline === 'fal_story') {
+      console.warn(
+        `[auto-produce] [fal-track] catalog reel key "${inputs.catalogSlotKey}" `
+        + 'overrode fal_story pipeline → fal_reel',
+      );
+      falPipeline = 'fal_reel';
+    }
     const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
 
     const falBrand = resolveFalBrandInput({

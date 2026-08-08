@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
+  alignAssignmentToCatalogSlotKey,
   applyCatalogSlotBindingsToQueue,
   applyCatalogSlotToAssignment,
   filterDesignTemplatesToActiveSlots,
   formatFromSlotRole,
+  inferFormatFromCatalogSlotKey,
   matchIdeaToBrandCatalogSlot,
   enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
@@ -814,6 +816,28 @@ describe('applyCatalogSlotBindingsToQueue (Faz 5 — production_jobs.slot_key)',
     expect(queue[1]!.assignment.catalog_slot_key).toBe('beach_club_sunset_golden_story');
   });
 
+  it('realigns fal_reel assignment when binding a story catalog key', () => {
+    const item: ManifestProductionQueueItem = {
+      queueIndex: 8,
+      ideaIndex: 8,
+      idea: { headline: 'Day pass', content_type: 'instagram_reel' },
+      assignment: {
+        idea_index: 8,
+        slot_role: 'fal_reel_motion',
+        pipeline: 'fal_reel',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+      },
+    };
+    const queue = applyCatalogSlotBindingsToQueue(
+      [item],
+      { '8:fal_reel_motion': 'beach_club_day_pass_story' },
+    );
+    expect(queue[0]!.assignment.catalog_slot_key).toBe('beach_club_day_pass_story');
+    expect(queue[0]!.assignment.pipeline).toBe('fal_story');
+    expect(queue[0]!.assignment.slot_role).toBe('campaign_story_motion');
+  });
+
   it('leaves unbound rows untouched and is a no-op without bindings (local_products_shop)', () => {
     const items = [makeQueueItem(0, 'fal_designed_post'), makeQueueItem(1, 'designed_typography')];
     const partial = applyCatalogSlotBindingsToQueue(items, {
@@ -852,7 +876,76 @@ describe('applyCatalogSlotBindingsToQueue (Faz 5 — production_jobs.slot_key)',
   });
 });
 
+describe('alignAssignmentToCatalogSlotKey', () => {
+  it('infers format from catalog key suffixes (multi-tenant)', () => {
+    expect(inferFormatFromCatalogSlotKey('beach_club_day_pass_story')).toBe('story');
+    expect(inferFormatFromCatalogSlotKey('beach_club_event_aftermovie_reel')).toBe('reel');
+    expect(inferFormatFromCatalogSlotKey('local_products_shop_harvest_post')).toBe('post');
+  });
+
+  it('repairs fal_reel + day_pass_story drift to fal_story', () => {
+    const aligned = alignAssignmentToCatalogSlotKey(
+      {
+        idea_index: 8,
+        slot_role: 'campaign_story_motion',
+        pipeline: 'fal_reel',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'beach_club_day_pass_story',
+      },
+      'beach_club_day_pass_story',
+    );
+    expect(aligned.pipeline).toBe('fal_story');
+    expect(aligned.slot_role).toBe('campaign_story_motion');
+    expect(aligned.catalog_slot_key).toBe('beach_club_day_pass_story');
+  });
+
+  it('repairs fal_story + event_aftermovie_reel drift to fal_reel', () => {
+    const aligned = alignAssignmentToCatalogSlotKey(
+      {
+        idea_index: 6,
+        slot_role: 'campaign_story_motion',
+        pipeline: 'fal_story',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+      },
+      'local_products_shop_atelier_process_reel',
+    );
+    expect(aligned.pipeline).toBe('fal_reel');
+    expect(String(aligned.slot_role)).toMatch(/reel/);
+  });
+});
+
 describe('resolveSlotBackfillProductionLoop', () => {
+  it('repairs fal_reel_motion → campaign_story_motion with story catalog key pipeline', () => {
+    const queue: ManifestProductionQueueItem[] = [{
+      queueIndex: 8,
+      ideaIndex: 8,
+      idea: {
+        headline: 'Day pass',
+        content_type: 'instagram_story',
+        catalog_slot_key: 'beach_club_day_pass_story',
+      },
+      assignment: {
+        idea_index: 8,
+        slot_role: 'fal_reel_motion',
+        pipeline: 'fal_reel',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'beach_club_day_pass_story',
+      },
+    }];
+    const loop = resolveSlotBackfillProductionLoop(
+      queue,
+      ['8:campaign_story_motion'],
+      { '8:campaign_story_motion': 'beach_club_day_pass_story' },
+    );
+    expect(loop).toHaveLength(1);
+    expect(loop[0]!.assignment.slot_role).toBe('campaign_story_motion');
+    expect(loop[0]!.assignment.pipeline).toBe('fal_story');
+    expect(loop[0]!.assignment.catalog_slot_key).toBe('beach_club_day_pass_story');
+  });
+
   it('matches exact keys and repairs drifted slot_role by idea index', () => {
     const queue: ManifestProductionQueueItem[] = [
       {

@@ -44,6 +44,89 @@ const CATALOG_SLOT_REUSE_PENALTY_CAP = 66;
 const CATALOG_SLOT_RECENT_PENALTY = 18;
 const CATALOG_SLOT_RECENT_PENALTY_CAP = 54;
 
+/**
+ * Infer package format from catalog slot key suffix.
+ * Prevents story keys (day_pass_story) from binding as reel_cover when pipeline drifted.
+ */
+export function inferFormatFromCatalogSlotKey(
+  catalogSlotKey: string | null | undefined,
+): BrandActiveSlot['format'] | null {
+  const key = String(catalogSlotKey ?? '').trim().toLowerCase();
+  if (!key) return null;
+  if (key.endsWith('_reel') || key.includes('_reel_')) return 'reel';
+  if (key.endsWith('_story') || key.includes('_story_')) return 'story';
+  if (key.endsWith('_carousel') || key.includes('_carousel_')) return 'carousel';
+  if (key.endsWith('_post') || key.includes('_post_')) return 'post';
+  return null;
+}
+
+/**
+ * Realign role/pipeline when catalog key format disagrees with the assignment.
+ * Catalog key is SSOT for format — backfill/bindings must not leave fal_reel + *_story.
+ */
+export function alignAssignmentToCatalogSlotKey(
+  assignment: ProductionAssignment,
+  catalogSlotKey: string | null | undefined,
+): ProductionAssignment {
+  const key = String(catalogSlotKey ?? assignment.catalog_slot_key ?? '').trim();
+  if (!key) return assignment;
+  const format = inferFormatFromCatalogSlotKey(key);
+  if (!format) {
+    return { ...assignment, catalog_slot_key: key };
+  }
+
+  let slotRole = assignment.slot_role;
+  let pipeline = assignment.pipeline;
+
+  if (format === 'story') {
+    if (
+      pipeline === 'fal_reel'
+      || pipeline === 'fal_only_reel'
+      || String(slotRole).includes('reel')
+    ) {
+      pipeline = pipeline === 'fal_only_reel' ? 'fal_only_story' : 'fal_story';
+    }
+    if (
+      !String(slotRole).includes('story')
+      || String(slotRole).includes('reel')
+    ) {
+      slotRole = (pipeline === 'fal_only_story' ? 'fal_only_story' : 'campaign_story_motion') as ProductionSlotRole;
+    }
+  } else if (format === 'reel') {
+    if (
+      pipeline === 'fal_story'
+      || pipeline === 'fal_only_story'
+      || (String(slotRole).includes('story') && !String(slotRole).includes('reel'))
+    ) {
+      pipeline = pipeline === 'fal_only_story' ? 'fal_only_reel' : 'fal_reel';
+    }
+    if (!String(slotRole).includes('reel')) {
+      slotRole = (pipeline === 'fal_only_reel' ? 'fal_only_reel' : 'fal_reel_motion') as ProductionSlotRole;
+    }
+  } else if (format === 'post') {
+    if (
+      pipeline === 'fal_reel'
+      || pipeline === 'fal_story'
+      || pipeline === 'fal_only_reel'
+      || pipeline === 'fal_only_story'
+    ) {
+      // Keep designed-post track when a post catalog key lands on a video pipeline.
+      pipeline = pipeline.startsWith('fal_only') ? 'fal_only_post' : 'fal_design';
+    }
+    if (String(slotRole).includes('reel') || String(slotRole).includes('story')) {
+      slotRole = (pipeline === 'fal_only_post' ? 'fal_only_post' : 'fal_designed_post') as ProductionSlotRole;
+    }
+  }
+
+  return {
+    ...assignment,
+    catalog_slot_key: key,
+    slot_role: slotRole,
+    pipeline,
+    publish_channel: publishChannelForRole(slotRole),
+  };
+}
+
 export interface CatalogSlotMatchOptions {
   /** Catalog keys used in recent artifacts (most recent first) — soft variety. */
   recentCatalogSlotKeys?: string[];
@@ -619,15 +702,18 @@ export function applyCatalogSlotToAssignment(
 ): ProductionAssignment {
   const slotRole = (matched.slotRole || assignment.slot_role) as ProductionSlotRole;
   const pipeline = (matched.pipeline || assignment.pipeline) as ProductionPipeline;
-  return {
-    ...assignment,
-    catalog_slot_key: matched.slotKey,
-    catalog_slot_label: matched.labelTr,
-    library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
-    slot_role: slotRole,
-    pipeline,
-    publish_channel: publishChannelForRole(slotRole),
-  };
+  return alignAssignmentToCatalogSlotKey(
+    {
+      ...assignment,
+      catalog_slot_key: matched.slotKey,
+      catalog_slot_label: matched.labelTr,
+      library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
+      slot_role: slotRole,
+      pipeline,
+      publish_channel: publishChannelForRole(slotRole),
+    },
+    matched.slotKey,
+  );
 }
 
 /**
@@ -652,10 +738,14 @@ export function applyCatalogSlotBindingsToQueue(
       if (ideaMatches.length === 1) bound = ideaMatches[0]![1];
     }
     if (!bound) return item;
+    const assignment = alignAssignmentToCatalogSlotKey(
+      { ...item.assignment, catalog_slot_key: bound },
+      bound,
+    );
     return {
       ...item,
       idea: { ...item.idea, catalog_slot_key: bound },
-      assignment: { ...item.assignment, catalog_slot_key: bound },
+      assignment,
     };
   });
 }
@@ -722,16 +812,29 @@ export function resolveSlotBackfillProductionLoop(
         : null);
 
     repaired.push(`${plannedKey}←${base.ideaIndex}:${base.assignment.slot_role}`);
+    const repairedAssignment = alignAssignmentToCatalogSlotKey(
+      {
+        ...base.assignment,
+        slot_role: plannedRole as ProductionSlotRole,
+        ...(catalogKey ? { catalog_slot_key: catalogKey } : {}),
+      },
+      catalogKey,
+    );
+    // Planned backfill role wins when catalog key is missing; otherwise catalog
+    // format realignment (story/reel) is SSOT so day_pass_story never keeps fal_reel.
+    const assignment = catalogKey
+      ? repairedAssignment
+      : {
+          ...base.assignment,
+          slot_role: plannedRole as ProductionSlotRole,
+          publish_channel: publishChannelForRole(plannedRole as ProductionSlotRole),
+        };
     out.push({
       ...base,
       idea: catalogKey
         ? { ...base.idea, catalog_slot_key: catalogKey }
         : { ...base.idea },
-      assignment: {
-        ...base.assignment,
-        slot_role: plannedRole as ProductionSlotRole,
-        ...(catalogKey ? { catalog_slot_key: catalogKey } : {}),
-      },
+      assignment,
     });
   }
 
