@@ -3,35 +3,13 @@
 export type OpenAiErrorCode = 'openai_quota_exceeded' | 'billing_hard_limit' | 'openai_error';
 
 const QUOTA_COOLDOWN_MS = 30 * 60 * 1000;
-const REDIS_KEY = 'prod:provider_circuit:openai';
 
 let quotaBlockedUntil = 0;
 
-async function redisSetPx(ms: number): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    const r = getRedisClient();
-    if (!r || ms <= 0) return;
-    await r.set(REDIS_KEY, '1', 'PX', ms);
-  } catch {
-    /* best-effort */
-  }
-}
-
-async function redisDel(): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    await getRedisClient()?.del(REDIS_KEY);
-  } catch {
-    /* best-effort */
-  }
-}
-
-/** In-process + Redis cooldown — skip further enhance/produce after real quota hit. */
+/** In-process cooldown — skip further enhance calls in same Node process after quota hit. */
 export function markOpenAiQuotaBlocked(cooldownMs = QUOTA_COOLDOWN_MS): void {
   const ms = Math.max(1_000, cooldownMs);
   quotaBlockedUntil = Date.now() + ms;
-  void redisSetPx(ms);
 }
 
 export function isOpenAiQuotaBlocked(): boolean {
@@ -41,21 +19,14 @@ export function isOpenAiQuotaBlocked(): boolean {
 /** Test/ops helper — drop OpenAI quota circuit without waiting for TTL. */
 export function clearOpenAiQuotaBlockedForTests(): void {
   quotaBlockedUntil = 0;
-  void redisDel();
 }
 
-/** Sync local clock from Redis TTL (call at produce start / clear). */
-export async function refreshOpenAiQuotaCircuitFromRedis(): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    const r = getRedisClient();
-    if (!r) return;
-    const ttl = await r.pttl(REDIS_KEY);
-    if (ttl > 0) quotaBlockedUntil = Math.max(quotaBlockedUntil, Date.now() + ttl);
-    else if (ttl === -2) quotaBlockedUntil = 0;
-  } catch {
-    /* best-effort */
-  }
+/**
+ * Server-only sync from Redis TTL (production-provider-preflight).
+ * Kept free of redis imports so this module stays client-safe.
+ */
+export function syncOpenAiQuotaBlockedUntil(untilMs: number): void {
+  quotaBlockedUntil = Math.max(0, untilMs);
 }
 
 /**
