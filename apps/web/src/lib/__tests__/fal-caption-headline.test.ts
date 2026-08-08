@@ -416,6 +416,50 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(isIncompleteOverlayPhrase('DJ Performansı')).toBe(false);
   });
 
+  it('rejects English caption-prefix stubs seen on live EN brands', () => {
+    expect(isIncompleteOverlayPhrase('Indulge in Our')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our guests are the heart of')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our guests are')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our guests')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Guests make us who')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Guests make us')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our guests make us who we')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our Guests Love')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Our skilled mixologists craft')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Experience the best of live')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Taste the freshness and share')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Renkli ışıklar altında')).toBe(true);
+    // Closed punches still pass.
+    expect(isIncompleteOverlayPhrase('Join us')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Our Signature Dishes')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Signature Flavors')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Guest Moments')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Cocktail Hour Glow')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Latin Gece Ritmi')).toBe(false);
+
+    expect(fitPunchlineUnderBudget('Indulge in Our Signature Dishes', 22, 3)).not.toMatch(/Indulge in Our$/i);
+    expect(isIncompleteOverlayPhrase(fitPunchlineUnderBudget('Indulge in Our Signature Dishes', 22, 3) || 'x')).toBe(false);
+
+    const guestTheme = extractCaptionThemePunchline({
+      caption: 'Our guests are the heart of Sarnıç Beach! With every smile, we celebrate.',
+      language: 'en',
+      maxWords: 3,
+      maxLen: 28,
+    });
+    expect(guestTheme.toLowerCase()).toMatch(/guest/);
+    expect(isIncompleteOverlayPhrase(guestTheme)).toBe(false);
+
+    const dishTheme = extractCaptionThemePunchline({
+      caption: 'Dive into the rich flavors of our signature dishes at Scorpios Bodrum!',
+      language: 'en',
+      missionTitle: 'Indulge in Our Signature Dishes',
+      maxWords: 3,
+      maxLen: 28,
+    });
+    expect(dishTheme.toLowerCase()).toMatch(/signature|flavor/);
+    expect(isIncompleteOverlayPhrase(dishTheme)).toBe(false);
+  });
+
   it('rejects bare Detaylar-style overlay CTAs', () => {
     expect(isBareGenericOverlayCta('Detaylar')).toBe(true);
     expect(isBareGenericOverlayCta('Learn more')).toBe(true);

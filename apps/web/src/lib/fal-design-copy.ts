@@ -122,6 +122,8 @@ export function extractCaptionAlignedPunchline(input: {
   brandName: string;
   maxWords: number;
   maxLen: number;
+  language?: string | null;
+  missionTitle?: string | null;
 }): string {
   const caption = input.caption.trim();
   if (caption.length < 12) return '';
@@ -131,6 +133,8 @@ export function extractCaptionAlignedPunchline(input: {
     caption,
     maxWords: input.maxWords,
     maxLen: input.maxLen,
+    language: input.language,
+    missionTitle: input.missionTitle ?? undefined,
   });
   if (
     theme
@@ -579,12 +583,15 @@ export function resolveMissionFalDesignCopy(input: {
   }
 
   // 3) Caption-aligned short punchline — rescue only when agent overlay is weak.
+  // Prefer complete theme hooks over caption-prefix clamps (language-aware).
   if (caption.length >= 24) {
     const punch = extractCaptionAlignedPunchline({
       caption,
       brandName,
       maxWords: budget.maxWords,
       maxLen,
+      language: input.language,
+      missionTitle: input.ideationHeadline,
     });
     if (punch && acceptPlannedOverlayLine(punch)) {
       const subtitle = resolveFalSubtitle({
@@ -606,6 +613,8 @@ export function resolveMissionFalDesignCopy(input: {
       caption,
       maxWords: budget.maxWords,
       maxLen,
+      language: input.language,
+      missionTitle: input.ideationHeadline,
     });
     let headline = resolveFalProductionOverlayHeadline(
       themePunch || fromCaption.headline,

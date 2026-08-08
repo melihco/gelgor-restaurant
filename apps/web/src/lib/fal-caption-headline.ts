@@ -372,6 +372,8 @@ export function extractCaptionThemePunchline(input: {
   maxLen?: number;
   /** When set, prefer hooks that share theme with the mission/ideation headline. */
   missionTitle?: string;
+  /** Brand content language — wins over caption heuristic when set. */
+  language?: string | null;
 }): string {
   const caption = input.caption.trim();
   if (caption.length < 12) return '';
@@ -379,10 +381,14 @@ export function extractCaptionThemePunchline(input: {
   const maxWords = input.maxWords ?? 3;
   const lower = caption.toLowerCase();
   const missionLower = String(input.missionTitle ?? '').toLowerCase();
-  const looksEnglish = (
-    /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail|sunset|ready|night|glow)\b/i.test(caption)
-    || /\b(get|for|like|under|stars|music|dance)\b/i.test(caption)
-  ) && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe|gün\s*batım|altın\s*saat)/i.test(caption);
+  const lang = String(input.language ?? '').trim().toLowerCase();
+  const looksEnglish = lang.startsWith('en')
+    || ((!lang || lang === 'unknown')
+      && (
+        /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail|sunset|ready|night|glow)\b/i.test(caption)
+        || /\b(get|for|like|under|stars|music|dance)\b/i.test(caption)
+      )
+      && !/(ve|için|ile|bir|bu|kahvalt|lezzet|bahçe|gün\s*batım|altın\s*saat)/i.test(caption));
 
   // Order matters for multi-theme captions (sunset+cocktails+DJ): mission-aligned
   // scene hooks must beat generic product hooks so DJ photos don't get "Cocktail".
@@ -392,15 +398,22 @@ export function extractCaptionThemePunchline(input: {
     { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
     { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
     { pattern: /vazgeçemiyor|bayılıyor|favorimiz|favori\s+lezzet/i, tr: 'Vazgeçilmez Lezzet', en: 'They Keep Coming Back' },
+    { pattern: /guest|misafir|community|heart of|unforgettable memor|make us who/i, tr: 'Misafir Anları', en: 'Guest Moments', missionBoost: /guest|misafir|community|social/i },
+    { pattern: /signature\s+dish|signature\s+menu|rich flavors|flavours of our|imza\s+lezzet/i, tr: 'İmza Lezzetler', en: 'Signature Flavors', missionBoost: /signature|dish|menu|lezzet|flavor|flavour/i },
+    { pattern: /live\s+music|water\s+sport|music and exciting/i, tr: 'Canlı Yaz Ritmi', en: 'Live Summer Days', missionBoost: /music|sport|live|yaz/i },
+    { pattern: /daybed|sunbed|şezlong|sezlong|relaxatio|unwind|bitez/i, tr: 'Şezlong Keyfi', en: 'Bay Day Relax', missionBoost: /daybed|relax|bay|şezlong/i },
+    { pattern: /mixologist|bartend|craft\s+signature\s+cocktail/i, tr: 'Barın İmzası', en: 'Bar Craft Glow', missionBoost: /mixolog|cocktail|bar|craft/i },
     { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars', missionBoost: /\bdj\b|gece|night|star/i },
     { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow', missionBoost: /kokteyl|cocktail|drink|içecek/i },
     { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
     { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
     { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
+    { pattern: /latin|tropik|küba|cuba/i, tr: 'Latin Gece Ritmi', en: 'Latin Night Glow', missionBoost: /latin|cuba|küba|tropik/i },
   ];
 
   const scored: Array<{ candidate: string; score: number }> = [];
   for (const hook of themeHooks) {
+    // Caption must match — missionTitle only boosts score, never invents a theme alone.
     if (!hook.pattern.test(lower)) continue;
     const candidate = looksEnglish ? hook.en : hook.tr;
     const tight = tightenOverlayHeadline(candidate, maxLen, maxWords);
@@ -699,6 +712,65 @@ const DANGLING_TAIL_RX =
 const INCOMPLETE_MODIFIER_TAIL_RX =
   /\b(just|only|even|still|already|more|so|very|really|quite|about|almost|nearly|now|then|here|there|yet|also|too)\s*$/iu;
 
+/**
+ * English determiner / relative left dangling — "Indulge in Our", "Guests make us who".
+ * Marketing overlays never end on bare possessives or relative pronouns.
+ */
+const INCOMPLETE_EN_DETERMINER_TAIL_RX =
+  /\b(our|your|their|my|his|her|its|this|that|these|those)\s*$/iu;
+
+const INCOMPLETE_EN_RELATIVE_TAIL_RX =
+  /\b(who|whom|whose|which|what|where|when|how)\s*$/iu;
+
+/** Copula with no complement — "Our guests are", "Summer is". */
+const INCOMPLETE_EN_COPULA_TAIL_RX =
+  /\b(are|is|was|were|be|been|being|'re|'s)\s*$/iu;
+
+/**
+ * Transitive / open verb with no object — "Our Guests Love", "mixologists craft".
+ * Present-tense only — past participles often complete passives ("moments are shared").
+ * Keep closed punches like "Join us" (object pronoun) via a separate check.
+ */
+const INCOMPLETE_EN_TRANSITIVE_TAIL_RX =
+  /\b(love|loves|make|makes|craft|crafts|join|joins|discover|discovers|introducing|experience|experiences|enjoy|enjoys|meet|meets|taste|tastes|share|shares|bring|brings|create|creates|feel|feels|need|needs|want|wants|celebrate|celebrates)\s*$/iu;
+
+/** Causative + object pronoun with no complement — "Guests make us", "Let them". */
+const INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX =
+  /\b(make|makes|made|let|lets|help|helps|helped|keep|keeps|kept)\s+(us|them|you|me|him|her)\s*$/iu;
+
+/**
+ * Prenominal adjective after article/of — "best of live", "Experience the best",
+ * "refreshed summ…" survivors like "the new".
+ */
+const INCOMPLETE_EN_PRENOMINAL_TAIL_RX =
+  /\b(the|a|an|of|our|your)\s+(live|best|new|fresh|local|daily|special|signature|great|perfect|next|last|first|summer|winter|spring|autumn|fall)\s*$/iu;
+
+/** Coordinating fragment — "Taste the freshness and share". */
+const INCOMPLETE_EN_COORD_VERB_TAIL_RX =
+  /\band\s+(share|discover|enjoy|explore|celebrate|more|join)\s*$/iu;
+
+/** Subject pronoun left dangling — "…who we", "…and they". */
+const INCOMPLETE_EN_SUBJECT_PRONOUN_TAIL_RX =
+  /\b(we|they|i|he|she)\s*$/iu;
+
+/** Truncated relative clause — "make us who we". */
+const INCOMPLETE_EN_WHO_CLAUSE_TAIL_RX =
+  /\bwho\s+(we|they|you|i|he|she)\b/iu;
+
+/**
+ * Bare determiner+noun with no claim — "Our guests" after cutting "are the heart…".
+ * Allow 3+ word product punches ("Our Signature Dishes") via word-count gate below.
+ */
+const INCOMPLETE_EN_BARE_NP_SUBJECT_RX =
+  /^(the|our|your|my|their)\s+[\p{L}']+$/iu;
+
+/**
+ * Light/color locative cut before the cultural noun —
+ * "Renkli ışıklar altında" ← lost "Latin müziği".
+ */
+const INCOMPLETE_TR_LIGHT_LOCATIVE_RX =
+  /(ışıklar|renkler|yıldızlar|gölgeler|isiklar|yildizlar|golgeler)\s+(altında|üstünde|içinde|altinda|ustunde|icinde)\s*$/iu;
+
 /** Turkish present/past participles without object — "kartta yeni gelen", "menüde sunulan". */
 const INCOMPLETE_TR_PARTICIPLE_TAIL_RX =
   /\b(gelen|giden|olan|olacak|yapılan|sunulan|başlayan|bekleyen|edilen|paylaşılan|deneyebileceğiniz|keşfedebileceğiniz)\s*$/iu;
@@ -902,6 +974,16 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (!clean || clean.length < 4) return true;
   if (DANGLING_TAIL_RX.test(text.trim())) return true;
   if (INCOMPLETE_MODIFIER_TAIL_RX.test(text.trim())) return true;
+  if (INCOMPLETE_EN_DETERMINER_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_RELATIVE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_COPULA_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_PRENOMINAL_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_COORD_VERB_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_SUBJECT_PRONOUN_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_WHO_CLAUSE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_TRANSITIVE_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_LIGHT_LOCATIVE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_PARTICIPLE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_POSSESSIVE_TAIL_RX.test(clean)) return true;
@@ -914,6 +996,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
+  if (words.length === 2 && INCOMPLETE_EN_BARE_NP_SUBJECT_RX.test(clean)) return true;
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
   return false;
 }

@@ -177,6 +177,54 @@ describe('resolveMissionFalDesignCopy', () => {
     }
   });
 
+  it('rescues live EN caption-prefix stubs into complete theme punchlines', () => {
+    const guest = resolveMissionFalDesignCopy({
+      idea: {
+        concept_title: 'Customer Experiences',
+        headline: 'Customer Experiences',
+        tagline: 'Our guests are the heart of Sarnıç Beach',
+      },
+      ideationHeadline: 'Customer Experiences',
+      caption: 'Our guests are the heart of Sarnıç Beach! With every smile, we celebrate those unforgettable moments.',
+      brandName: 'Sarnıç Beach',
+      channel: 'feed_post',
+      language: 'en',
+      designIntensity: 'balanced',
+    });
+    expect(isIncompleteOverlayPhrase(guest.headline)).toBe(false);
+    expect(guest.headline.toLowerCase()).toMatch(/guest|smile|moment|heart/);
+    expect(guest.headline.toLowerCase()).not.toMatch(/^(our guests|the heart of)$/);
+
+    const dish = resolveMissionFalDesignCopy({
+      idea: { headline: 'Indulge in Our Signature Dishes' },
+      ideationHeadline: 'Indulge in Our Signature Dishes',
+      caption: 'Dive into the rich flavors of our signature dishes at Scorpios Bodrum! Every meal is a celebration.',
+      brandName: 'Scorpios Bodrum',
+      channel: 'feed_post',
+      language: 'en',
+      designIntensity: 'balanced',
+    });
+    expect(isIncompleteOverlayPhrase(dish.headline)).toBe(false);
+    expect(dish.headline.toLowerCase()).not.toBe('indulge in our');
+    expect(dish.headline.toLowerCase()).toMatch(/signature|flavor|dish/);
+
+    const community = resolveMissionFalDesignCopy({
+      idea: {
+        headline: "Our Community's Love",
+        tagline: 'Guests make us who we are',
+      },
+      ideationHeadline: "Our Community's Love",
+      caption: 'Our guests make us who we are! Thanks to each of you for being part of our Scorpios family.',
+      brandName: 'Scorpios Bodrum',
+      channel: 'story',
+      language: 'en',
+      designIntensity: 'balanced',
+    });
+    expect(isIncompleteOverlayPhrase(community.headline)).toBe(false);
+    expect(community.headline.toLowerCase()).toMatch(/guest|moment|community|love/);
+    expect(community.headline.toLowerCase()).not.toMatch(/who we|make us$/);
+  });
+
   it('shouldPreserveLockedPunchlineHeadline covers tagline + canva sources', () => {
     expect(shouldPreserveLockedPunchlineHeadline('mission_tagline')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('canva_field_copy')).toBe(true);
