@@ -82,7 +82,9 @@ import {
 import {
   countNewBriefArtifacts,
   isPendingBriefJobComplete,
+  isPendingBriefJobFailed,
   pendingBriefOutputLabel,
+  type PendingBriefJobStatus,
 } from '@/lib/pending-brief-job';
 import { useFeedPullToRefresh } from '../../_hooks/use-feed-pull-to-refresh';
 import { FeedLazyPostList } from '../FeedLazyPostList';
@@ -1793,6 +1795,7 @@ function PlatformFeedInner() {
   const feedRefreshNonce = useMobileStore((s) => s.feedRefreshNonce);
   const pendingBriefJobs = useMobileStore((s) => s.pendingBriefJobs);
   const clearPendingBriefJob = useMobileStore((s) => s.clearPendingBriefJob);
+  const updatePendingBriefJob = useMobileStore((s) => s.updatePendingBriefJob);
   const feedListLimit = useMobileStore((s) => s.feedListLimit);
   const setFeedListLimit = useMobileStore((s) => s.setFeedListLimit);
   const feedScrollRef = useRef<HTMLDivElement>(null);
@@ -1858,19 +1861,60 @@ function PlatformFeedInner() {
     if (pendingBriefJobs.length === 0) return;
     const now = Date.now();
     for (const job of pendingBriefJobs) {
+      // Keep failed jobs visible until dismiss / stale timeout.
+      if (isPendingBriefJobFailed(job)) {
+        if (now - job.startedAt > BRIEF_JOB_STALE_MS) clearPendingBriefJob(job.id);
+        continue;
+      }
       if (isPendingBriefJobComplete(rawArtifacts, job) || now - job.startedAt > BRIEF_JOB_STALE_MS) {
         clearPendingBriefJob(job.id);
       }
     }
   }, [rawArtifacts, pendingBriefJobs, clearPendingBriefJob]);
 
+  const pendingBriefJobKey = pendingBriefJobs.map((j) => j.id).join('|');
+
   useEffect(() => {
-    if (pendingBriefJobs.length === 0 || !tenantId) return;
+    if (!pendingBriefJobKey || !tenantId) return;
+
+    const pollStatus = async () => {
+      const jobs = useMobileStore.getState().pendingBriefJobs;
+      if (jobs.length === 0) return;
+      await refetchMobileFeedPool(queryClient, tenantId);
+      await Promise.all(jobs.map(async (job) => {
+        if (job.status === 'complete' || job.status === 'failed') return;
+        try {
+          const res = await fetch(
+            `/api/brief-produce/status?jobId=${encodeURIComponent(job.id)}`,
+            { headers: getTenantBffHeaders(tenantId) },
+          );
+          if (!res.ok) return;
+          const data = await res.json() as {
+            status?: PendingBriefJobStatus;
+            produced?: number;
+            error?: string;
+          };
+          if (!data.status) return;
+          updatePendingBriefJob(job.id, {
+            status: data.status,
+            produced: typeof data.produced === 'number' ? data.produced : job.produced,
+            ...(data.error ? { error: data.error } : {}),
+          });
+          if (data.status === 'complete' && (data.produced ?? 0) > 0) {
+            await refetchMobileFeedPool(queryClient, tenantId);
+          }
+        } catch {
+          // Keep polling — transient network errors should not clear the banner.
+        }
+      }));
+    };
+
+    void pollStatus();
     const interval = window.setInterval(() => {
-      void refetchMobileFeedPool(queryClient, tenantId);
+      void pollStatus();
     }, 15_000);
     return () => window.clearInterval(interval);
-  }, [pendingBriefJobs.length, tenantId, queryClient]);
+  }, [pendingBriefJobKey, tenantId, queryClient, updatePendingBriefJob]);
 
   const refreshFeed = useCallback(async () => {
     if (!tenantId) return;
@@ -3085,23 +3129,62 @@ function PlatformFeedInner() {
         }}>
           {pendingBriefJobs.map((job) => {
             const ready = countNewBriefArtifacts(rawArtifacts, job);
+            const failed = isPendingBriefJobFailed(job);
             return (
               <div key={job.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                 <div style={{
                   width: 10, height: 10, borderRadius: '50%', flexShrink: 0, marginTop: 3,
-                  border: '1.5px solid rgba(157,190,206,0.35)',
-                  borderTop: '1.5px solid #9DBECE',
-                  animation: ready < job.count ? 'spinSlow 1s linear infinite' : 'none',
+                  border: failed
+                    ? '1.5px solid rgba(251,113,133,0.55)'
+                    : '1.5px solid rgba(157,190,206,0.35)',
+                  borderTop: failed
+                    ? '1.5px solid #fb7185'
+                    : '1.5px solid #9DBECE',
+                  animation: !failed && ready < job.count ? 'spinSlow 1s linear infinite' : 'none',
+                  background: failed ? 'rgba(251,113,133,0.35)' : 'transparent',
                 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#9DBECE', marginBottom: 2 }}>
-                    Fikriniz üretiliyor
+                  <div style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: failed ? '#fb7185' : '#9DBECE',
+                    marginBottom: 2,
+                  }}>
+                    {failed ? 'Üretim başarısız' : 'Fikriniz üretiliyor'}
                   </div>
                   <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.55)', lineHeight: 1.5 }}>
                     <span style={{ fontWeight: 600, color: 'rgba(248,250,252,0.85)' }}>{job.title}</span>
-                    {' · '}{ready}/{job.count} {pendingBriefOutputLabel(job.outputType)}
-                    {ready < job.count ? ' — birkaç dakika sürebilir' : ' — Akış\'a eklendi'}
+                    {failed ? (
+                      <>
+                        {' · '}{job.error || 'İçerik üretilemedi. Tekrar deneyin.'}
+                      </>
+                    ) : (
+                      <>
+                        {' · '}{ready}/{job.count} {pendingBriefOutputLabel(job.outputType)}
+                        {ready < job.count ? ' — birkaç dakika sürebilir' : ' — Akış\'a eklendi'}
+                      </>
+                    )}
                   </div>
+                  {failed && (
+                    <button
+                      type="button"
+                      onClick={() => clearPendingBriefJob(job.id)}
+                      style={{
+                        marginTop: 8,
+                        padding: '6px 12px',
+                        borderRadius: 10,
+                        border: '0.5px solid rgba(251,113,133,0.35)',
+                        background: 'rgba(251,113,133,0.1)',
+                        color: '#fda4af',
+                        fontSize: 11,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        minHeight: 44,
+                      }}
+                    >
+                      Kapat
+                    </button>
+                  )}
                 </div>
               </div>
             );

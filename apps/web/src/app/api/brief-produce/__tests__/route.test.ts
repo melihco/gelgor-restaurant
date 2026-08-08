@@ -18,6 +18,7 @@ vi.mock('@/lib/server-config', () => ({
   serverConfig: {
     crewBackend: { baseUrl: 'http://crew.test' },
     internal: { apiKey: 'test-key' },
+    redis: { enabled: false, url: '' },
   },
 }));
 

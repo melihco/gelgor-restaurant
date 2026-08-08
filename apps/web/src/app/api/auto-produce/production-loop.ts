@@ -1115,8 +1115,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const fullProductionQueue = brandAwareQueue;
 
   if (adHocBrief) {
+    const adHocKeys = fullProductionQueue
+      .map((item) => String(item.assignment.catalog_slot_key ?? item.idea.catalog_slot_key ?? '').trim())
+      .filter(Boolean);
     console.log(
-      `[auto-produce] Ad-hoc New Brief → fal.ai art-director track (${manifestQueue.length} slots)`,
+      `[auto-produce] Ad-hoc New Brief → fal.ai art-director track (${fullProductionQueue.length} slots)`
+        + (adHocKeys.length ? ` catalog=[${[...new Set(adHocKeys)].join(',')}]` : ' catalog=unbound'),
     );
   }
 
@@ -3679,7 +3683,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         `layout=${calendarDesignLayout.layoutFamilyHint} source=${calendarDesignLayout.source}`,
       );
     }
-    const falDesignCtx = usesFalDesignerTrack && !adHocBrief
+    // Ad-hoc New Brief uses the same designed track as mission slots (catalog
+    // template + fal design context). Gate is usesFalDesignerTrack only.
+    const falDesignCtx = usesFalDesignerTrack
       ? resolveFalDesignPromptContext({
           caption,
           headline,
@@ -3798,7 +3804,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let falGridBackgroundOverride: TypographyBackgroundStyle | undefined;
     let slotFalGridSurface: FalGridSurfaceKind | null = null;
 
-    if (usesFalDesignerTrack && !adHocBrief && !isCalendarSlot) {
+    if (usesFalDesignerTrack && !isCalendarSlot) {
       const intensityChannel = falBriefFormat === 'post'
         ? 'post'
         : falBriefFormat === 'story'

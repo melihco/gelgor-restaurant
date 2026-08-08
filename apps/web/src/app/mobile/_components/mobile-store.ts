@@ -85,6 +85,7 @@ interface MobileStore {
   openFeedForMission: (missionId: string | null) => void;
   clearFeedMissionFilter: () => void;
   enqueueBriefProduction: (job: PendingBriefJob) => void;
+  updatePendingBriefJob: (jobId: string, patch: Partial<PendingBriefJob>) => void;
   clearPendingBriefJob: (jobId: string) => void;
   bumpFeedRefresh: () => void;
   goBack: () => void;
@@ -238,7 +239,20 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
 
   enqueueBriefProduction: (job) =>
     set((s) => ({
-      pendingBriefJobs: [...s.pendingBriefJobs.filter((j) => j.id !== job.id), job],
+      pendingBriefJobs: [
+        ...s.pendingBriefJobs.filter((j) => j.id !== job.id),
+        { status: 'queued' as const, ...job },
+      ],
+      // Ad-hoc new_brief artifacts have mission_id null — clear mission chip
+      // so produced cards are visible in Akış.
+      feedMissionFilterId: null,
+    })),
+
+  updatePendingBriefJob: (jobId, patch) =>
+    set((s) => ({
+      pendingBriefJobs: s.pendingBriefJobs.map((j) => (
+        j.id === jobId ? { ...j, ...patch } : j
+      )),
     })),
 
   clearPendingBriefJob: (jobId) =>

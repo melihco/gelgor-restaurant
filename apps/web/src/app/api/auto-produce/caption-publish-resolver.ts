@@ -48,6 +48,13 @@ export interface ParsedIdea {
   hashtags?: string[] | string;
   content_type?: string;
   content_kind?: string;
+  /** Package format for slot matching (post|story|reel|carousel). */
+  format?: string;
+  publish_schedule_format?: string;
+  calendar_announcement_type?: string;
+  announcement_type?: string;
+  /** User brief title + description — haystack for catalog slot match. */
+  content_brief?: string;
   selected_gallery_url?: string;
   visual_production_spec?: {
     selected_gallery_url?: string;

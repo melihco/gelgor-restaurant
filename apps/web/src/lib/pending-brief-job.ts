@@ -2,12 +2,18 @@ import type { OutputArtifact } from '@/types';
 
 export type PendingBriefOutputType = 'story' | 'reel' | 'post';
 
+export type PendingBriefJobStatus = 'queued' | 'running' | 'complete' | 'failed';
+
 export interface PendingBriefJob {
   id: string;
   title: string;
   outputType: PendingBriefOutputType;
   count: number;
   startedAt: number;
+  /** Server-polled status from GET /api/brief-produce/status */
+  status?: PendingBriefJobStatus;
+  error?: string;
+  produced?: number;
 }
 
 const START_SLACK_MS = 5_000;
@@ -28,7 +34,13 @@ export function isPendingBriefJobComplete(
   artifacts: OutputArtifact[],
   job: PendingBriefJob,
 ): boolean {
+  if (job.status === 'complete' && (job.produced ?? 0) > 0) return true;
+  if (job.status === 'failed') return false;
   return countNewBriefArtifacts(artifacts, job) >= job.count;
+}
+
+export function isPendingBriefJobFailed(job: PendingBriefJob): boolean {
+  return job.status === 'failed';
 }
 
 export function pendingBriefOutputLabel(outputType: PendingBriefOutputType): string {

@@ -59,7 +59,7 @@ const OUTPUT_TYPES: {
 const COUNT_OPTIONS = ['1', '2', '3'] as const;
 
 export function NewBrief() {
-  const { goBack, navigate, enqueueBriefProduction } = useMobileStore();
+  const { goBack, navigate, enqueueBriefProduction, clearFeedMissionFilter } = useMobileStore();
   const { officeId, tenantId } = useWorkspaceStore();
   const queryClient = useQueryClient();
 
@@ -269,12 +269,14 @@ export function NewBrief() {
         return;
       }
       persistCurrentDraft();
+      clearFeedMissionFilter();
       enqueueBriefProduction({
         id: data.jobId,
         title: title.trim(),
         outputType: outputType as PendingBriefOutputType,
         count: parseInt(count, 10) || 1,
         startedAt: Date.now(),
+        status: 'queued',
       });
       refreshFeedArtifacts();
       setStep('form');

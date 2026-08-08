@@ -3,6 +3,7 @@ import {
   buildBriefProduceIdeas,
   clampBriefIdeaCount,
   mapBriefOutputToContentType,
+  resolveBriefAnnouncementType,
   validateBriefProduceRequest,
 } from '../brief-produce-plan';
 import { buildAutoProduceProductionQueue } from '../auto-produce/build-production-queue';
@@ -58,6 +59,22 @@ describe('mapBriefOutputToContentType', () => {
   });
 });
 
+describe('resolveBriefAnnouncementType', () => {
+  it('maps beach_club DJ night copy to event_teaser', () => {
+    expect(resolveBriefAnnouncementType({
+      title: 'DJ Night',
+      extraDirection: 'Live DJ set under the stars',
+    })).toBe('event_teaser');
+  });
+
+  it('maps local_products_shop shelf copy to product_reveal', () => {
+    expect(resolveBriefAnnouncementType({
+      title: 'Haftalık reçel vitrini',
+      extraDirection: 'Ev yapımı ürünler — reçel ve zeytin',
+    })).toBe('product_reveal');
+  });
+});
+
 describe('buildBriefProduceIdeas', () => {
   it('builds N rule-based ideas for the selected format', () => {
     const ideas = buildBriefProduceIdeas({
@@ -71,9 +88,38 @@ describe('buildBriefProduceIdeas', () => {
     expect(ideas).toHaveLength(3);
     for (const idea of ideas) {
       expect(idea.content_type).toBe('story');
+      expect(idea.format).toBe('story');
+      expect(idea.publish_schedule_format).toBe('story');
+      expect(idea.content_brief).toContain('Yaz Balları');
       expect(idea.headline).toBe('Yaz Balları');
       expect(idea.force_attached_photos).toBeUndefined();
     }
+  });
+
+  it('stamps event announcement for beach_club DJ brief', () => {
+    const ideas = buildBriefProduceIdeas({
+      title: 'DJ Night',
+      extraDirection: 'Live DJ set this Friday',
+      outputType: 'post',
+      count: 1,
+      photoUrls: [],
+      bcd: null,
+    });
+    expect(ideas[0]!.calendar_announcement_type).toBe('event_teaser');
+    expect(ideas[0]!.format).toBe('post');
+  });
+
+  it('stamps product announcement for local_products_shop brief', () => {
+    const ideas = buildBriefProduceIdeas({
+      title: 'Haftalık reçel vitrini',
+      extraDirection: 'Yeni sezon ürünleri rafta',
+      outputType: 'post',
+      count: 1,
+      photoUrls: [],
+      bcd: null,
+    });
+    expect(ideas[0]!.calendar_announcement_type).toBe('product_reveal');
+    expect(ideas[0]!.content_brief).toContain('reçel');
   });
 
   it('uses BCD copy when present and keeps selected content_type', () => {

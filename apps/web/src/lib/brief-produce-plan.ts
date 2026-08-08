@@ -21,6 +21,52 @@ export function clampBriefIdeaCount(count: string | number | undefined): number 
   return Math.min(Math.max(parsed, 1), 10);
 }
 
+/**
+ * Light, sector-agnostic announcement signal from title + description (+ BCD cues).
+ * Used so catalog stamp / AI picker can idea-fit without a mission calendar label.
+ */
+export function resolveBriefAnnouncementType(input: {
+  title: string;
+  extraDirection: string;
+  strategicPurpose?: string;
+  sceneHint?: string;
+  mood?: string;
+}): string | null {
+  const hay = [
+    input.title,
+    input.extraDirection,
+    input.strategicPurpose,
+    input.sceneHint,
+    input.mood,
+  ].join(' ').toLowerCase();
+
+  if (
+    /\b(dj|live\s*set|live\s*music|line.?up|konser|afterparty|aftermovie|wedding|düğün|etkinlik|event|party|gece)\b/.test(hay)
+  ) {
+    return 'event_teaser';
+  }
+  if (
+    /\b(guest\s*review|customer\s*review|testimonial|what\s*guests|misafir\s*yorum|memnuniyet)\b/.test(hay)
+  ) {
+    return 'social_proof';
+  }
+  if (
+    /\b(indirim|offer|promo|day.?pass|daybed|kampanya|fırsat|discount|%|ticket|rezerv)\b/.test(hay)
+  ) {
+    return 'offer_campaign';
+  }
+  if (
+    /(?:^|\s)(ürün|product|reçel|zeytin|menu|menü|kokteyl|cocktail|tabak|dish|vitrin|bal|product\s*spotlight)/.test(` ${hay} `)
+    || /\b(product\s*spotlight|ürün\s*vitrin|shelf|hero\s*product)\b/.test(hay)
+  ) {
+    return 'product_reveal';
+  }
+  if (/\b(venue|mekan|atmosfer|ambiance|havuz|pool|sunset|manzara|aerial)\b/.test(hay)) {
+    return 'venue_showcase';
+  }
+  return null;
+}
+
 export function attachUserPhotosToIdea(
   idea: ParsedIdea,
   photoUrls: string[],
@@ -30,6 +76,39 @@ export function attachUserPhotosToIdea(
   idea.attached_photo_urls = photoUrls;
   idea.force_attached_photos = true;
   idea.selected_gallery_url = photoUrls[slotIndex % photoUrls.length];
+}
+
+function enrichBriefIdeaForSlotMatch(
+  idea: ParsedIdea,
+  input: {
+    title: string;
+    extraDirection: string;
+    outputType: BriefOutputType;
+  },
+): ParsedIdea {
+  const contentBrief = [input.title.trim(), input.extraDirection.trim()]
+    .filter(Boolean)
+    .join('\n');
+  const announcement = resolveBriefAnnouncementType({
+    title: input.title,
+    extraDirection: input.extraDirection,
+    strategicPurpose: idea.strategic_purpose,
+    sceneHint: idea.scene_hint,
+    mood: idea.mood,
+  });
+
+  return {
+    ...idea,
+    format: input.outputType,
+    publish_schedule_format: input.outputType,
+    content_brief: contentBrief || undefined,
+    ...(announcement
+      ? {
+          calendar_announcement_type: announcement,
+          announcement_type: announcement,
+        }
+      : {}),
+  };
 }
 
 export function buildBriefProduceIdeas(input: {
@@ -56,7 +135,7 @@ export function buildBriefProduceIdeas(input: {
         motion_cue: input.bcd.motionCue,
       };
       attachUserPhotosToIdea(idea, input.photoUrls, i);
-      return idea;
+      return enrichBriefIdeaForSlotMatch(idea, input);
     }
 
     const intent = resolveBriefIntent({
@@ -73,7 +152,7 @@ export function buildBriefProduceIdeas(input: {
       mood: intent.mood,
     };
     attachUserPhotosToIdea(idea, input.photoUrls, i);
-    return idea;
+    return enrichBriefIdeaForSlotMatch(idea, input);
   });
 }
 

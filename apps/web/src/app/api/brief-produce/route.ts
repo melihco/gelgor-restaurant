@@ -20,8 +20,28 @@ import {
   clampBriefIdeaCount,
   validateBriefProduceRequest,
 } from '@/lib/brief-produce-plan';
+import { setBriefJobStatus } from '@/lib/brief-job-status';
 import { serverConfig } from '@/lib/server-config';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
+
+function catalogKeysFromArtifacts(
+  artifacts: Array<Record<string, unknown>>,
+): string[] {
+  const keys: string[] = [];
+  for (const art of artifacts) {
+    const meta = (art.metadata && typeof art.metadata === 'object'
+      ? art.metadata
+      : {}) as Record<string, unknown>;
+    const key = String(
+      meta.catalog_slot_key
+      ?? art.catalog_slot_key
+      ?? art.catalogSlotKey
+      ?? '',
+    ).trim();
+    if (key && !keys.includes(key)) keys.push(key);
+  }
+  return keys;
+}
 
 export const runtime = 'nodejs';
 /** Sync brief-produce waits on full auto-produce (image gen can exceed 5 min). */
@@ -222,17 +242,53 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   if (background) {
     const jobId = crypto.randomUUID();
+    await setBriefJobStatus({
+      jobId,
+      workspaceId: resolvedWorkspaceId,
+      status: 'queued',
+      produced: 0,
+    });
+
     after(async () => {
       try {
+        await setBriefJobStatus({
+          jobId,
+          workspaceId: resolvedWorkspaceId,
+          status: 'running',
+          produced: 0,
+        });
         const result = await executeBriefProduction(productionParams);
+        const catalogSlotKeys = catalogKeysFromArtifacts(result.artifacts);
         if (result.produced === 0) {
           console.error('[brief-produce] background job produced 0:', jobId, result.error);
+          await setBriefJobStatus({
+            jobId,
+            workspaceId: resolvedWorkspaceId,
+            status: 'failed',
+            produced: 0,
+            error: result.error ?? 'İçerik üretilemedi',
+            catalogSlotKeys,
+          });
         } else {
           console.info('[brief-produce] background job complete:', jobId, `produced=${result.produced}`);
+          await setBriefJobStatus({
+            jobId,
+            workspaceId: resolvedWorkspaceId,
+            status: 'complete',
+            produced: result.produced,
+            catalogSlotKeys,
+          });
         }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'background production failed';
         console.error('[brief-produce] background job failed:', jobId, message);
+        await setBriefJobStatus({
+          jobId,
+          workspaceId: resolvedWorkspaceId,
+          status: 'failed',
+          produced: 0,
+          error: message,
+        });
       }
     });
 

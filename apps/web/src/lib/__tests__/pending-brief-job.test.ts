@@ -3,6 +3,7 @@ import type { OutputArtifact } from '@/types';
 import {
   countNewBriefArtifacts,
   isPendingBriefJobComplete,
+  isPendingBriefJobFailed,
   pendingBriefOutputLabel,
 } from '../pending-brief-job';
 
@@ -57,5 +58,19 @@ describe('pending-brief-job', () => {
     expect(pendingBriefOutputLabel('story')).toBe('story');
     expect(pendingBriefOutputLabel('reel')).toBe('reel');
     expect(pendingBriefOutputLabel('post')).toBe('gönderi');
+  });
+
+  it('treats server complete status as done and failed as not complete', () => {
+    expect(isPendingBriefJobComplete([], {
+      ...job,
+      status: 'complete',
+      produced: 2,
+    })).toBe(true);
+    expect(isPendingBriefJobComplete([], {
+      ...job,
+      status: 'failed',
+      error: 'boom',
+    })).toBe(false);
+    expect(isPendingBriefJobFailed({ ...job, status: 'failed' })).toBe(true);
   });
 });
