@@ -10,14 +10,20 @@ Multi-tenant: checks table/column presence only — no brand/tenant branches.
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Literal
 
 import structlog
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 logger = structlog.get_logger()
+
+# Render private-network boots can briefly refuse Postgres before DNS/routing is ready.
+_SCHEMA_GATE_CONNECT_ATTEMPTS = 12
+_SCHEMA_GATE_CONNECT_BASE_DELAY_S = 1.5
 
 SchemaGateMode = Literal["fail", "warn", "off"]
 
@@ -233,6 +239,29 @@ async def apply_additive_factory_ddl(engine: AsyncEngine) -> None:
             await conn.execute(text(statement))
 
 
+async def _inspect_schema_with_retry(engine: AsyncEngine) -> SchemaGateReport:
+    """Retry inspect on transient connection refused / DB unavailable."""
+    last_exc: BaseException | None = None
+    for attempt in range(1, _SCHEMA_GATE_CONNECT_ATTEMPTS + 1):
+        try:
+            return await inspect_schema(engine)
+        except (ConnectionRefusedError, OSError, TimeoutError, OperationalError, DBAPIError) as exc:
+            last_exc = exc
+            delay = min(20.0, _SCHEMA_GATE_CONNECT_BASE_DELAY_S * attempt)
+            logger.warning(
+                "schema_gate_db_connect_retry",
+                attempt=attempt,
+                max_attempts=_SCHEMA_GATE_CONNECT_ATTEMPTS,
+                delay_s=round(delay, 1),
+                error=str(exc)[:200],
+            )
+            if attempt >= _SCHEMA_GATE_CONNECT_ATTEMPTS:
+                break
+            await asyncio.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
+
+
 async def run_schema_gate(
     engine: AsyncEngine,
     *,
@@ -249,19 +278,20 @@ async def run_schema_gate(
     if mode == "off":
         return SchemaGateReport(ok=True)
 
-    report = await inspect_schema(engine)
+    report = await _inspect_schema_with_retry(engine)
     if report.ok:
         logger.info("schema_gate_ok", checked=len(REQUIRED_COLUMNS))
         return report
 
-    if apply_additive and report.missing_columns:
+    # CREATE TABLE IF NOT EXISTS lives in ADDITIVE_DDL — run when tables OR columns missing.
+    if apply_additive and (report.missing_columns or report.missing_tables):
         logger.warning(
             "schema_gate_applying_additive_ddl",
             missing=report.missing[:20],
         )
         try:
             await apply_additive_factory_ddl(engine)
-            report = await inspect_schema(engine)
+            report = await _inspect_schema_with_retry(engine)
             report.applied_additive = True
         except Exception as exc:
             logger.error("schema_gate_additive_ddl_failed", error=str(exc)[:300])
