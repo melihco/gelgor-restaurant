@@ -137,7 +137,7 @@ export function evaluateCaptionDesignPostCoherence(
     const resolved = resolveFalDisplayHeadline({
       caption,
       missionTitle: '', // ignore briefing-style mission title — derive from caption only
-      brandName: brandName || undefined,
+      brandName: brandName || '',
       maxLen,
     });
     const captionClause = caption
