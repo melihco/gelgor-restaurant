@@ -1,7 +1,9 @@
 /**
  * Image-provider preflight + billing circuit breaker for auto-produce.
  *
- * Server-oriented: may touch Redis. Do not import from client components.
+ * In-process circuits only (no Redis) so this module stays free of ioredis /
+ * node:net and can be dynamically imported from shared libs without breaking
+ * the Next client bundle.
  *
  * Circuit-open status strings must NOT re-arm the circuit (poison pill).
  */
@@ -10,13 +12,10 @@ import {
   clearOpenAiQuotaBlockedForTests,
   isOpenAiQuotaBlocked,
   markOpenAiQuotaBlocked,
-  syncOpenAiQuotaBlockedUntil,
 } from '@/lib/openai-error-utils';
 import { serverConfig } from '@/lib/server-config';
 
 const FAL_BILLING_COOLDOWN_MS = 30 * 60 * 1000;
-const REDIS_FAL_KEY = 'prod:provider_circuit:fal';
-const REDIS_OPENAI_KEY = 'prod:provider_circuit:openai';
 
 let falBillingBlockedUntil = 0;
 
@@ -38,32 +37,8 @@ export type ProductionProviderPreflight = {
   };
 };
 
-async function redisSetPx(key: string, ms: number): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    const r = getRedisClient();
-    if (!r || ms <= 0) return;
-    await r.set(key, '1', 'PX', ms);
-  } catch {
-    /* best-effort */
-  }
-}
-
-async function redisDel(...keys: string[]): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    const r = getRedisClient();
-    if (!r || keys.length === 0) return;
-    await r.del(...keys);
-  } catch {
-    /* best-effort */
-  }
-}
-
 export function markFalBillingBlocked(cooldownMs = FAL_BILLING_COOLDOWN_MS): void {
-  const ms = Math.max(1_000, cooldownMs);
-  falBillingBlockedUntil = Date.now() + ms;
-  void redisSetPx(REDIS_FAL_KEY, ms);
+  falBillingBlockedUntil = Date.now() + Math.max(1_000, cooldownMs);
 }
 
 export function isFalBillingBlocked(): boolean {
@@ -72,32 +47,16 @@ export function isFalBillingBlocked(): boolean {
 
 export function clearFalBillingCircuitForTests(): void {
   falBillingBlockedUntil = 0;
-  void redisDel(REDIS_FAL_KEY);
 }
 
 export function clearProductionProviderBillingCircuits(): void {
   falBillingBlockedUntil = 0;
   clearOpenAiQuotaBlockedForTests();
-  void redisDel(REDIS_FAL_KEY, REDIS_OPENAI_KEY);
 }
 
-/** Pull Redis TTLs into local clocks (call at produce start). */
+/** No-op placeholder — circuits are in-process; kept for produce-loop call sites. */
 export async function refreshProductionProviderCircuitsFromRedis(): Promise<void> {
-  try {
-    const { getRedisClient } = await import('@/lib/redis-client');
-    const r = getRedisClient();
-    if (!r) return;
-    const [falTtl, oaTtl] = await Promise.all([
-      r.pttl(REDIS_FAL_KEY),
-      r.pttl(REDIS_OPENAI_KEY),
-    ]);
-    if (falTtl > 0) falBillingBlockedUntil = Math.max(falBillingBlockedUntil, Date.now() + falTtl);
-    else if (falTtl === -2) falBillingBlockedUntil = 0;
-    if (oaTtl > 0) syncOpenAiQuotaBlockedUntil(Date.now() + oaTtl);
-    else if (oaTtl === -2) syncOpenAiQuotaBlockedUntil(0);
-  } catch {
-    /* best-effort */
-  }
+  return;
 }
 
 function isCircuitStatusMessage(lower: string): boolean {
@@ -139,7 +98,6 @@ export function recordProductionProviderBillingFailure(
     return 'fal';
   }
   markOpenAiQuotaBlocked();
-  void redisSetPx(REDIS_OPENAI_KEY, FAL_BILLING_COOLDOWN_MS);
   return 'openai';
 }
 

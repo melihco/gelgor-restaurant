@@ -22,14 +22,6 @@ export function clearOpenAiQuotaBlockedForTests(): void {
 }
 
 /**
- * Server-only sync from Redis TTL (production-provider-preflight).
- * Kept free of redis imports so this module stays client-safe.
- */
-export function syncOpenAiQuotaBlockedUntil(untilMs: number): void {
-  quotaBlockedUntil = Math.max(0, untilMs);
-}
-
-/**
  * True for real quota/billing exhaustion only.
  * Generic HTTP 429 / rate_limit_exceeded must NOT trip the 30m billing circuit —
  * those are transient and often mention "billing" in OpenAI copy.

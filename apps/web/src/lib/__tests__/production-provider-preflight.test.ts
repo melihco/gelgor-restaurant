@@ -12,7 +12,6 @@ vi.mock('@/lib/openai-error-utils', () => ({
   isOpenAiQuotaBlocked: vi.fn(() => false),
   markOpenAiQuotaBlocked: vi.fn(),
   clearOpenAiQuotaBlockedForTests: vi.fn(),
-  syncOpenAiQuotaBlockedUntil: vi.fn(),
 }));
 
 import { serverConfig } from '@/lib/server-config';
