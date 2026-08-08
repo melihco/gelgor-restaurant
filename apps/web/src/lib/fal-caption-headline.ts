@@ -745,13 +745,29 @@ const INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX =
 const INCOMPLETE_EN_PRENOMINAL_TAIL_RX =
   /\b(the|a|an|of|our|your)\s+(live|best|new|fresh|local|daily|special|signature|great|perfect|next|last|first|summer|winter|spring|autumn|fall)\s*$/iu;
 
+/**
+ * Caption-prefix clamp mid-adjective phrase — "Dive into our delightful new",
+ * "Get ready for exciting live" (noun cut by maxLen).
+ */
+const INCOMPLETE_EN_ADJ_OPEN_TAIL_RX =
+  /\b(delightful|refreshing|exciting|amazing|beautiful|authentic|signature|vibrant|delicious|wonderful|perfect|special)\s+(new|live|best|fresh)\s*$/iu;
+
+/** Determiner + any adjective + open prenominal — "our delightful new". */
+const INCOMPLETE_EN_DET_ADJ_OPEN_TAIL_RX =
+  /\b(the|a|an|our|your|their|my)\s+[\p{L}']+\s+(new|live|best|fresh)\s*$/iu;
+
 /** Coordinating fragment — "Taste the freshness and share". */
 const INCOMPLETE_EN_COORD_VERB_TAIL_RX =
   /\band\s+(share|discover|enjoy|explore|celebrate|more|join)\s*$/iu;
 
-/** Subject pronoun left dangling — "…who we", "…and they". */
+/**
+ * Subject pronoun left dangling — "…who we", "…and they".
+ * JS `\b` is ASCII-only, so bare `(i)` falsely matched the trailing "i" in
+ * Turkish words like "Tazeliği" (ğ is non-word for `\b`). Use a Unicode
+ * lookbehind so only real English pronoun tokens match.
+ */
 const INCOMPLETE_EN_SUBJECT_PRONOUN_TAIL_RX =
-  /\b(we|they|i|he|she)\s*$/iu;
+  /(?<!\p{L})(we|they|i|he|she)\s*$/iu;
 
 /** Truncated relative clause — "make us who we". */
 const INCOMPLETE_EN_WHO_CLAUSE_TAIL_RX =
@@ -955,6 +971,29 @@ const INCOMPLETE_TR_GENITIVE_MODIFIER_RX =
   /\b[\p{L}']+(nın|nin|nun|nün|'nın|'nin|'nun|'nün)\s+(el\s+yapımı|doğal|taze|yeni|özel|organik)\s*$/iu;
 
 /**
+ * Quantifier left dangling after caption clamp — "Zeytinyağı, sağlığımıza birçok"
+ * (lost "fayda sağlar"). Never a closed social punchline.
+ */
+const INCOMPLETE_TR_QUANTIFIER_TAIL_RX =
+  /\b(birçok|biraz|bazı|birkaç|her|tüm|bütün|daha|çok)\s*$/iu;
+
+/**
+ * Dative / directional object left dangling on longer clauses —
+ * "Zeytinyağımızın üretim sürecine" (verb cut). Short 1–2 word place CTAs
+ * ("sofraya", "Yula'ya") stay allowed via the word-count gate below.
+ */
+const INCOMPLETE_TR_DATIVE_TAIL_RX =
+  /\b[\p{L}']+(ına|ine|una|üne|ya|ye|na|ne|ımıza|imize|umuza|ümüze|larınıza|lerinize)\s*$/iu;
+
+/**
+ * Softened accusative noun ending a longer clause without a verb —
+ * "Yaz boyunca sağlık ve lezzeti" (lost "sunar"). 1–2 word product hooks
+ * ("Doğanın Tazeliği") stay allowed via the word-count gate below.
+ */
+const INCOMPLETE_TR_SOFT_ACCUSATIVE_TAIL_RX =
+  /\b[\p{L}']+(atı|eti|iti|uti|ütü|ağı|eği|ığı|iği|uğu|üğü)\s*$/iu;
+
+/**
  * Ablative case left dangling — "Müşterilerimiz kahvaltımızdan" (verb cut by maxLen).
  * Marketing overlays almost never end on ablative alone.
  */
@@ -979,6 +1018,8 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_EN_COPULA_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_PRENOMINAL_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_ADJ_OPEN_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_DET_ADJ_OPEN_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_COORD_VERB_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_SUBJECT_PRONOUN_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_WHO_CLAUSE_TAIL_RX.test(clean)) return true;
@@ -993,10 +1034,14 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_SEASON_CTA_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_TR_WHILE_CLAUSE_RX.test(clean)) return true;
   if (INCOMPLETE_TR_GENITIVE_MODIFIER_RX.test(clean)) return true;
+  if (INCOMPLETE_TR_QUANTIFIER_TAIL_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
   if (words.length === 2 && INCOMPLETE_EN_BARE_NP_SUBJECT_RX.test(clean)) return true;
+  // Longer clauses ending mid-case (dative / soft accusative) are caption clamps.
+  if (words.length >= 3 && INCOMPLETE_TR_DATIVE_TAIL_RX.test(clean)) return true;
+  if (words.length >= 3 && INCOMPLETE_TR_SOFT_ACCUSATIVE_TAIL_RX.test(clean)) return true;
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
   return false;
 }

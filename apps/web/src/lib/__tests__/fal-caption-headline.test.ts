@@ -416,6 +416,28 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(isIncompleteOverlayPhrase('DJ Performansı')).toBe(false);
   });
 
+  it('rejects Turkish caption-prefix clamps from live Karaman/Sarnıç feeds', () => {
+    // Quantifier / dative / soft-accusative cut mid-sentence (painted on canvas).
+    expect(isIncompleteOverlayPhrase('Zeytinyağı, sağlığımıza birçok')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Zeytinyağımızın üretim sürecine')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Yaz boyunca sağlık ve lezzeti')).toBe(true);
+    expect(isMeaningfulFalOverlayText('Zeytinyağı, sağlığımıza birçok')).toBe(false);
+
+    const rescued = resolveFalDisplayHeadline({
+      caption: 'Zeytinyağı, sağlığımıza birçok fayda sağlar. Erken hasat, soğuk sıkım — Karaman Datça.',
+      missionTitle: 'Yaz Kampanyası',
+      brandName: 'Karaman Datça',
+      language: 'tr',
+    });
+    expect(isIncompleteOverlayPhrase(rescued.headline)).toBe(false);
+    expect(rescued.headline.toLowerCase()).not.toMatch(/birçok\s*$/);
+    expect(rescued.headline.length).toBeGreaterThan(6);
+
+    // Closed short product punches still pass.
+    expect(isIncompleteOverlayPhrase('Doğanın Tazeliği')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Ballarımızı Deneyin!')).toBe(false);
+  });
+
   it('rejects English caption-prefix stubs seen on live EN brands', () => {
     expect(isIncompleteOverlayPhrase('Indulge in Our')).toBe(true);
     expect(isIncompleteOverlayPhrase('Our guests are the heart of')).toBe(true);
@@ -429,6 +451,10 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(isIncompleteOverlayPhrase('Experience the best of live')).toBe(true);
     expect(isIncompleteOverlayPhrase('Taste the freshness and share')).toBe(true);
     expect(isIncompleteOverlayPhrase('Renkli ışıklar altında')).toBe(true);
+    // Live feed clamps: adjective left open after maxLen cut.
+    expect(isIncompleteOverlayPhrase('Dive into our delightful new')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Dive into our refreshing new')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Get ready for exciting live')).toBe(true);
     // Closed punches still pass.
     expect(isIncompleteOverlayPhrase('Join us')).toBe(false);
     expect(isIncompleteOverlayPhrase('Our Signature Dishes')).toBe(false);
@@ -436,6 +462,9 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(isIncompleteOverlayPhrase('Guest Moments')).toBe(false);
     expect(isIncompleteOverlayPhrase('Cocktail Hour Glow')).toBe(false);
     expect(isIncompleteOverlayPhrase('Latin Gece Ritmi')).toBe(false);
+    // Turkish product hooks must NOT trip ASCII `\bi` pronoun false-positive.
+    expect(isIncompleteOverlayPhrase('Doğanın Tazeliği')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Balın Doğallığı')).toBe(false);
 
     expect(fitPunchlineUnderBudget('Indulge in Our Signature Dishes', 22, 3)).not.toMatch(/Indulge in Our$/i);
     expect(isIncompleteOverlayPhrase(fitPunchlineUnderBudget('Indulge in Our Signature Dishes', 22, 3) || 'x')).toBe(false);
