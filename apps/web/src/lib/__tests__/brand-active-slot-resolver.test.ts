@@ -250,6 +250,79 @@ describe('matchIdeaToBrandCatalogSlot', () => {
     });
     expect(matched?.slotKey).toBe('beach_club_aerial_venue_post');
   });
+
+  it('soft-penalizes recent catalog keys across beach_club + local_products_shop', () => {
+    for (const [sector, sticky, peer, announcement, headline] of [
+      [
+        'beach_club',
+        'beach_club_sunset_ambiance_post',
+        'beach_club_aerial_venue_post',
+        'venue_showcase',
+        'Mekan manzarası',
+      ],
+      [
+        'local_products_shop',
+        'local_products_shop_atelier_story_post',
+        'local_products_shop_shelf_vitrine_post',
+        'product_reveal',
+        'Haftalık vitrin',
+      ],
+    ] as const) {
+      const a = mockSlot(sticky, 'post', {
+        match_signals: { announcement_types: [announcement] },
+      });
+      const b = mockSlot(peer, 'post', {
+        match_signals: { announcement_types: [announcement] },
+      });
+      const set = resolveBrandActiveSlotKeys({
+        workspaceId: `ws-${sector}-recent`,
+        sector,
+        sectorSlots: [a, b],
+        tenantAssignments: [
+          mockAssignment(a.slot_key, true, a),
+          mockAssignment(b.slot_key, true, b),
+        ],
+      });
+      const matched = matchIdeaToBrandCatalogSlot({
+        idea: {
+          calendar_announcement_type: announcement,
+          headline,
+          content_type: 'instagram_post',
+        },
+        activeSlots: set,
+        recentCatalogSlotKeys: [sticky],
+      });
+      expect(matched?.slotKey).toBe(peer);
+    }
+  });
+
+  it('prefers dj-specific event shell over blanket events_calendar', () => {
+    const calendar = mockSlot('beach_club_events_calendar_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const dj = mockSlot('beach_club_dj_night_teaser_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-dj-specificity',
+      sector: 'beach_club',
+      sectorSlots: [calendar, dj],
+      tenantAssignments: [
+        mockAssignment(calendar.slot_key, true, calendar),
+        mockAssignment(dj.slot_key, true, dj),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'event_teaser',
+        headline: 'DJ Night under the stars',
+        caption: 'Live DJ set this Friday',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+    });
+    expect(matched?.slotKey).toBe('beach_club_dj_night_teaser_post');
+  });
 });
 
 describe('filterDesignTemplatesToActiveSlots', () => {
@@ -335,6 +408,75 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     // not the full catalog id — so LIBRARY_SLOT_TO_TEMPLATE_TYPES still resolves.
     expect(queue[0]!.assignment.library_slot_key).toBe('event_story');
     expect(queue[0]!.assignment.library_slot_key).not.toBe('beach_club_dj_night_teaser_post');
+  });
+
+  it('rematches soft-preferred recent keys but keeps durable plan pins', () => {
+    const sticky = mockSlot('beach_club_events_calendar_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const peer = mockSlot('beach_club_private_event_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-rematch',
+      sector: 'beach_club',
+      sectorSlots: [sticky, peer],
+      tenantAssignments: [
+        mockAssignment(sticky.slot_key, true, sticky),
+        mockAssignment(peer.slot_key, true, peer),
+      ],
+    });
+
+    const softRematch = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Weekend gathering',
+          calendar_announcement_type: 'event_teaser',
+          content_type: 'instagram_post',
+          catalog_slot_key: sticky.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: sticky.slot_key,
+        },
+      }],
+      activeSet,
+      { recentCatalogSlotKeys: [sticky.slot_key] },
+    );
+    expect(softRematch[0]!.assignment.catalog_slot_key).toBe(peer.slot_key);
+
+    const durable = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Weekend gathering',
+          calendar_announcement_type: 'event_teaser',
+          content_type: 'instagram_post',
+          catalog_slot_key: sticky.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: sticky.slot_key,
+        },
+      }],
+      activeSet,
+      {
+        recentCatalogSlotKeys: [sticky.slot_key],
+        durablePreferredKeys: new Set(['0:fal_designed_post']),
+      },
+    );
+    expect(durable[0]!.assignment.catalog_slot_key).toBe(sticky.slot_key);
   });
 
   it('dedupes repeated preferred catalog keys across designed posts (restaurant_cafe)', () => {

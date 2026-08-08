@@ -209,10 +209,21 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     let { toProcess } = planOutcome.plan;
     const { maxIdeas, manifestMissionType, pkgLimits, productionProfile } = planOutcome.plan;
+
+    const galleryAnalysis = (body as { galleryAnalysis?: Record<string, unknown> })
+      .galleryAnalysis ?? null;
+    const gctx = await fetchGalleryContext(
+      workspaceId,
+      pctx.raw,
+      galleryAnalysis as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta> | null,
+      pctx.brandBusinessType,
+    );
+
     if (brandActiveSlots) {
       toProcess = stampIdeasWithBrandCatalogSlots(
         toProcess as Record<string, unknown>[],
         brandActiveSlots,
+        { recentCatalogSlotKeys: gctx.recentCatalogSlotKeys },
       );
     }
 
@@ -227,17 +238,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       packageSlug: pkgLimits.packageSlug,
     });
     const productionQueue = brandActiveSlots
-      ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots)
+      ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots, {
+        recentCatalogSlotKeys: gctx.recentCatalogSlotKeys,
+      })
       : manifestQueue;
-
-    const galleryAnalysis = (body as { galleryAnalysis?: Record<string, unknown> })
-      .galleryAnalysis ?? null;
-    const gctx = await fetchGalleryContext(
-      workspaceId,
-      pctx.raw,
-      galleryAnalysis as Record<string, import('@/lib/gallery-photo-matcher').GalleryPhotoMeta> | null,
-      pctx.brandBusinessType,
-    );
+    // Plan-time has no factory durable bindings yet — recent rematch applies to soft stamps.
     const missionGalleryAssignments = await buildMissionGalleryAssignments({
       workspaceId,
       missionId,

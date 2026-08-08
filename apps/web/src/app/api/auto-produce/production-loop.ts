@@ -225,7 +225,11 @@ import {
   isInternalStrategyBriefing,
   resolveFalOverlayCopy,
 } from '@/lib/fal-caption-headline';
-import { resolveMissionFalDesignCopy, type FalDesignCopyIdea } from '@/lib/fal-design-copy';
+import {
+  resolveMissionFalDesignCopy,
+  shouldPreserveLockedPunchlineHeadline,
+  type FalDesignCopyIdea,
+} from '@/lib/fal-design-copy';
 import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
 import {
@@ -867,6 +871,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     });
   }
 
+  // Stamp without recent-key memory — gallery context loads next; enrich applies
+  // cross-mission catalog variety via recentCatalogSlotKeys.
   const brandAwareToProcess = brandActiveSlots
     ? stampIdeasWithBrandCatalogSlots(ideasForStamp, brandActiveSlots)
     : ideasForStamp;
@@ -1069,7 +1075,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const boundQueue = applyCatalogSlotBindingsToQueue(manifestQueue, catalogSlotBindings);
 
   const brandAwareQueue = brandActiveSlots
-    ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots)
+    ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots, {
+      recentCatalogSlotKeys: gctx.recentCatalogSlotKeys,
+      durablePreferredKeys: new Set(Object.keys(catalogSlotBindings ?? {})),
+    })
     : boundQueue;
 
   if (brandActiveSlots && brandActiveSlots.enabledSlotKeys.size > 0) {
@@ -1484,6 +1493,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || isFalDesignPipeline(assignment.pipeline)
       || isFalOnlyVideoPipeline(assignment.pipeline)
       || isFalOnlyPostPipeline(assignment.pipeline);
+    /** When set, calendar event overlay must not demote punchline → event title. */
+    let lockedFalPunchlineSource: string | null = null;
     if (usesFalDesignCopy && caption.trim().length >= 16) {
       const falChannel =
         kind === 'instagram_reel' ? 'reel'
@@ -1539,6 +1550,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             );
           }
           headline = designCopy.headline;
+          if (shouldPreserveLockedPunchlineHeadline(designCopy.source)) {
+            lockedFalPunchlineSource = designCopy.source;
+          }
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {
           librarySlot: falDesignLibrarySlot,
@@ -3667,21 +3681,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         canvaArchetypeId: calendarDesignLayout?.canvaArchetypeId,
       })
       : null;
-    if (calendarEventOverlay?.headline && calendarEventOverlay.headline !== headline) {
+    if (
+      calendarEventOverlay?.headline
+      && calendarEventOverlay.headline !== headline
+      && !shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+    ) {
       headline = calendarEventOverlay.headline;
       ideationHeadline = calendarEventOverlay.headline;
+    } else if (
+      calendarEventOverlay?.headline
+      && shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+    ) {
+      console.log(
+        `[auto-produce] keep locked punchline (${lockedFalPunchlineSource}) — `
+        + `skip event title "${calendarEventOverlay.headline.slice(0, 36)}"`,
+      );
     }
     const falTypoSlot = assignment.library_slot_key
       ? getLibrarySlotByKey(templateLibrary, assignment.library_slot_key)
       : undefined;
+    // Punchline already on headline → keep schedule only (drop redundant tagline support).
     const falCalendarSubtitleRaw = isCalendarSlot
       ? (
-        calendarEventOverlay?.subtitle
-        ?? String(
-          ideaRecord.tagline ?? ideaRecord.subline
-          ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
-          ?? '',
-        ).trim()
+        shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+          ? (
+            calendarEventOverlay?.subtitle?.split('|')[0]?.trim()
+            || undefined
+          )
+          : (
+            calendarEventOverlay?.subtitle
+            ?? String(
+              ideaRecord.tagline ?? ideaRecord.subline
+              ?? (idea.event_details as Record<string, unknown> | undefined)?.tagline
+              ?? '',
+            ).trim()
+          )
       ) || undefined
       : undefined;
     // Library slot showSubline=false → never paint calendar support line.

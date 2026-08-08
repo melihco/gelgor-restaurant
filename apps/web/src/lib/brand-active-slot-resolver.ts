@@ -40,6 +40,44 @@ import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization'
 const CATALOG_SLOT_REUSE_PENALTY = 22;
 const CATALOG_SLOT_REUSE_PENALTY_CAP = 66;
 
+/** Soft penalty when this catalog key appeared in recent produced artifacts. */
+const CATALOG_SLOT_RECENT_PENALTY = 18;
+const CATALOG_SLOT_RECENT_PENALTY_CAP = 54;
+
+export interface CatalogSlotMatchOptions {
+  /** Catalog keys used in recent artifacts (most recent first) — soft variety. */
+  recentCatalogSlotKeys?: string[];
+  /**
+   * Plan/factory durable pins (`${ideaIndex}:${slot_role}`) — never rematch these
+   * even when the catalog key is in recent history.
+   */
+  durablePreferredKeys?: Set<string>;
+}
+
+function recentCatalogSlotPenalty(
+  slotKey: string,
+  recentKeys: string[] | undefined,
+): number {
+  if (!recentKeys?.length) return 0;
+  const idx = recentKeys.indexOf(slotKey);
+  if (idx < 0) return 0;
+  // Newer = stronger penalty (idx 0 most recent).
+  const band = Math.max(1, 3 - Math.floor(idx / 4));
+  return Math.min(CATALOG_SLOT_RECENT_PENALTY_CAP, band * CATALOG_SLOT_RECENT_PENALTY);
+}
+
+/** Stable idea-salted tie-break — avoids always picking the alphabetically first key. */
+function catalogSlotTieBreakRank(slotKey: string, idea: Record<string, unknown>): number {
+  const hay = ideaHaystack(idea).slice(0, 96);
+  const seed = `${hay}|${slotKey}`;
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 export interface BrandActiveSlot {
   slotKey: string;
   labelTr: string;
@@ -355,6 +393,7 @@ function scoreSlotForIdea(
   idea: Record<string, unknown>,
   assignment?: ProductionAssignment,
   usageCount = 0,
+  recentCatalogSlotKeys?: string[],
 ): number {
   let score = slot.priority;
 
@@ -375,33 +414,47 @@ function scoreSlotForIdea(
     String(idea.calendar_announcement_type ?? idea.announcement_type ?? idea.template_use_case ?? ''),
   );
   const hay = ideaHaystack(idea);
+  const key = slot.slotKey;
 
-  if (assignment?.catalog_slot_key && slot.slotKey === assignment.catalog_slot_key) {
+  if (assignment?.catalog_slot_key && key === assignment.catalog_slot_key) {
     score += 60;
   }
   if (assignment?.library_slot_key && slot.librarySlotKey === assignment.library_slot_key) {
     score += 50;
   }
-  if (assignment?.library_slot_key && slot.slotKey === assignment.library_slot_key) {
+  if (assignment?.library_slot_key && key === assignment.library_slot_key) {
     score += 55;
   }
   if (assignment?.slot_role && slot.slotRole === assignment.slot_role) {
     score += 20;
   }
 
-  const slotTokens = slot.slotKey.split('_');
+  const slotTokens = key.split('_');
   for (const token of slotTokens) {
     if (token.length >= 4 && hay.includes(token)) score += 8;
   }
 
   if (announcement) {
-    if (slot.slotKey.includes('event') && /event|teaser|dj|night/.test(announcement)) score += 25;
-    if (slot.slotKey.includes('offer') && /offer|campaign|promo/.test(announcement)) score += 25;
-    if (slot.slotKey.includes('social') && announcement.includes('social')) score += 25;
-    if (slot.slotKey.includes('product') && /product|reveal|showcase/.test(announcement)) score += 20;
-    if (slot.slotKey.includes('venue') && announcement.includes('venue')) score += 20;
-    if (slot.slotKey.includes('pool') && /pool|havuz/.test(hay)) score += 30;
-    if (slot.slotKey.includes('pool') && !/pool|havuz/.test(hay)) score -= 40;
+    // Event family: prefer specific shells (dj/private/calendar) over blanket *event* ties.
+    if (/event|teaser|dj|night/.test(announcement)) {
+      if (/dj|live_music|neon|night/.test(key)) score += 42;
+      else if (/private_event|vip|guestlist/.test(key)) score += 38;
+      else if (/events_calendar|event_announcement|calendar/.test(key)) score += 34;
+      else if (key.includes('event')) score += 18;
+    }
+    if (key.includes('offer') && /offer|campaign|promo/.test(announcement)) score += 25;
+    if (key.includes('social') && announcement.includes('social')) score += 25;
+    if (key.includes('product') && /product|reveal|showcase/.test(announcement)) score += 20;
+    if (key.includes('venue') && announcement.includes('venue')) score += 20;
+    if (key.includes('pool') && /pool|havuz/.test(hay)) score += 30;
+    if (key.includes('pool') && !/pool|havuz/.test(hay)) score -= 40;
+  }
+
+  if (/dj|live music|konser|party|gece/.test(hay)) {
+    if (/dj|live_music|night|neon/.test(key)) score += 28;
+  }
+  if (/private|özel|wedding|düğün|vip/.test(hay)) {
+    if (/private_event|vip|guestlist/.test(key)) score += 28;
   }
 
   score += scoreMatchSignals(slot, idea, announcement, hay);
@@ -415,6 +468,7 @@ function scoreSlotForIdea(
   if (usageCount > 0) {
     score -= Math.min(CATALOG_SLOT_REUSE_PENALTY_CAP, usageCount * CATALOG_SLOT_REUSE_PENALTY);
   }
+  score -= recentCatalogSlotPenalty(key, recentCatalogSlotKeys);
 
   return score;
 }
@@ -429,6 +483,8 @@ export interface CatalogSlotMatchInput {
   slotUsageCounts?: Map<string, number>;
   /** Explicit catalog key from ideation/calendar — honored when enabled. */
   preferredCatalogSlotKey?: string | null;
+  /** Soft variety — keys hard-pinned in recent artifacts (most recent first). */
+  recentCatalogSlotKeys?: string[];
 }
 
 /**
@@ -440,7 +496,9 @@ export interface CatalogSlotMatchInput {
 export function matchIdeaToBrandCatalogSlot(
   input: CatalogSlotMatchInput,
 ): BrandActiveSlot | null {
-  const { activeSlots, idea, assignment, usedSlotKeys, slotUsageCounts } = input;
+  const {
+    activeSlots, idea, assignment, usedSlotKeys, slotUsageCounts, recentCatalogSlotKeys,
+  } = input;
   const preferred = input.preferredCatalogSlotKey
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
@@ -454,13 +512,26 @@ export function matchIdeaToBrandCatalogSlot(
     }
   }
 
-  let best: { slot: BrandActiveSlot; score: number } | null = null;
+  let best: { slot: BrandActiveSlot; score: number; usage: number; recentIdx: number; tie: number } | null = null;
   for (const slot of activeSlots.slots) {
     if (usedSlotKeys?.has(slot.slotKey)) continue;
     const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
-    const score = scoreSlotForIdea(slot, idea, assignment, usage);
+    const score = scoreSlotForIdea(slot, idea, assignment, usage, recentCatalogSlotKeys);
     if (score <= 0) continue;
-    if (!best || score > best.score) best = { slot, score };
+    const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
+    const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
+    if (
+      !best
+      || score > best.score
+      || (score === best.score && usage < best.usage)
+      || (score === best.score && usage === best.usage && (
+        (recentIdx < 0 && best.recentIdx >= 0)
+        || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
+        || (recentIdx === best.recentIdx && tie < best.tie)
+      ))
+    ) {
+      best = { slot, score, usage, recentIdx, tie };
+    }
   }
 
   if (best) return best.slot;
@@ -501,14 +572,17 @@ export function filterDesignTemplatesToActiveSlots(
 export function stampIdeasWithBrandCatalogSlots(
   ideas: Record<string, unknown>[],
   activeSlots: BrandActiveSlotSet,
+  opts?: CatalogSlotMatchOptions,
 ): Record<string, unknown>[] {
   const usage = new Map<string, number>();
+  const recentCatalogSlotKeys = opts?.recentCatalogSlotKeys;
   return ideas.map((idea) => {
     const usedKeys = new Set(usage.keys());
     let matched = matchIdeaToBrandCatalogSlot({
       idea,
       activeSlots,
       usedSlotKeys: usedKeys,
+      recentCatalogSlotKeys,
     });
     // Prefer unused first; if catalog is smaller than idea count, reuse with soft penalty.
     if (!matched && activeSlots.slots.length > 0) {
@@ -516,6 +590,7 @@ export function stampIdeasWithBrandCatalogSlots(
         idea,
         activeSlots,
         slotUsageCounts: usage,
+        recentCatalogSlotKeys,
       });
     }
     if (!matched) return idea;
@@ -680,25 +755,53 @@ export function resolveSlotBackfillProductionLoop(
 export function enrichProductionQueueWithBrandSlots(
   queue: ManifestProductionQueueItem[],
   activeSlots: BrandActiveSlotSet,
+  opts?: CatalogSlotMatchOptions,
 ): ManifestProductionQueueItem[] {
   const usage = new Map<string, number>();
   const out: ManifestProductionQueueItem[] = [];
+  const recentCatalogSlotKeys = opts?.recentCatalogSlotKeys;
+  const durablePreferredKeys = opts?.durablePreferredKeys;
 
   for (const item of queue) {
     const usedKeys = new Set(usage.keys());
+    const durableKey = `${item.ideaIndex}:${item.assignment.slot_role}`;
+    const isDurablePin = Boolean(durablePreferredKeys?.has(durableKey));
+    const preferredKey = String(
+      item.assignment.catalog_slot_key
+      ?? (item.idea as Record<string, unknown>).catalog_slot_key
+      ?? '',
+    ).trim() || null;
+    // Soft stamp / FD pick that already ran recently → re-score for variety.
+    // Plan/factory durable bindings keep their exact shell.
+    const rematchRecent = Boolean(
+      !isDurablePin
+      && preferredKey
+      && recentCatalogSlotKeys?.includes(preferredKey),
+    );
+    const ideaForMatch = rematchRecent
+      ? { ...(item.idea as Record<string, unknown>), catalog_slot_key: undefined }
+      : (item.idea as Record<string, unknown>);
+    const assignmentForMatch = rematchRecent
+      ? { ...item.assignment, catalog_slot_key: undefined }
+      : item.assignment;
+
     let matched = matchIdeaToBrandCatalogSlot({
-      idea: item.idea,
-      assignment: item.assignment,
+      idea: ideaForMatch,
+      assignment: assignmentForMatch,
       activeSlots,
       usedSlotKeys: usedKeys,
+      recentCatalogSlotKeys,
+      preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
     });
     // Content packages often exceed enabled catalog size — rotate with soft penalty, never drop.
     if (!matched && activeSlots.slots.length > 0) {
       matched = matchIdeaToBrandCatalogSlot({
-        idea: item.idea,
-        assignment: item.assignment,
+        idea: ideaForMatch,
+        assignment: assignmentForMatch,
         activeSlots,
         slotUsageCounts: usage,
+        recentCatalogSlotKeys,
+        preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
       });
     }
     if (!matched) {

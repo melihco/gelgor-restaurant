@@ -12,6 +12,8 @@ import {
   FAL_FEED_OVERLAY_MAX_CHARS,
   areFalOverlayTextsRedundant,
   fitMissionOverlayToTemplateBudget,
+  fitPunchlineUnderBudget,
+  isAcceptablePunchlineStem,
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
   resolveFalDisplayHeadline,
@@ -331,10 +333,23 @@ function resolvePlannedOverlayLine(
   });
   // Quoted punchlines that already fit the budget stay verbatim.
   const words = planned.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
-  if (words.length <= budget.maxWords && planned.length <= budget.maxLen) {
+  if (
+    words.length <= budget.maxWords
+    && planned.length <= budget.maxLen
+    && !isIncompleteOverlayPhrase(planned)
+  ) {
     return planned;
   }
-  return tightenOverlayHeadline(planned, budget.maxLen, budget.maxWords) || planned;
+  return fitPunchlineUnderBudget(planned, budget.maxLen, budget.maxWords)
+    || tightenOverlayHeadline(planned, budget.maxLen, budget.maxWords)
+    || planned;
+}
+
+/** Mission tagline / canva punchline already locked as canvas headline — do not demote to event title. */
+export function shouldPreserveLockedPunchlineHeadline(
+  source: string | null | undefined,
+): boolean {
+  return source === 'mission_tagline' || source === 'canva_field_copy';
 }
 
 function extractMissionTagline(idea: FalDesignCopyIdea): string {
@@ -420,37 +435,67 @@ export function resolveMissionFalDesignCopy(input: {
     typeBudget: input.typeBudget,
   };
 
-  // 1) Mission tagline / subline — quoted line from calendar & ideation cards.
+  // 1) Mission tagline / punchline — lock as canvas headline under type_budget.
+  // Never fall through to mission title when a publishable tagline exists.
+  // Locale: tagline language wins (caption may flip to TR from brand names like Datça).
   const missionTagline = unwrapQuotedOverlayLine(extractMissionTagline(input.idea));
-  if (missionTagline && isPublishableOverlayLine(missionTagline, brandName, captionLoc)) {
-    const headline = resolvePlannedOverlayLine(
+  const taglineLoc = missionTagline ? detectOverlayLocale(missionTagline) : 'unknown';
+  if (
+    missionTagline
+    && isPublishableOverlayLine(
+      missionTagline,
+      brandName,
+      taglineLoc === 'unknown' ? captionLoc : taglineLoc,
+    )
+  ) {
+    const ideationTitle = unwrapQuotedOverlayLine(
+      input.ideationHeadline.trim()
+        || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim(),
+    );
+    const plannedHeadline = resolvePlannedOverlayLine(
       missionTagline,
       [],
       channel,
       input.designIntensity,
       input.sampleHeadline,
       input.typeBudget,
-    );
-    if (headline && acceptPlannedOverlayLine(headline)) {
-      const ideationTitle = unwrapQuotedOverlayLine(
-        input.ideationHeadline.trim()
-          || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim(),
-      );
-      const subtitle = ideationTitle
-        && ideationTitle.length <= 36
-        && !areFalOverlayTextsRedundant(headline, ideationTitle)
-        && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
-        && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
-        ? resolvePlannedOverlayLine(
-          ideationTitle,
-          [headline],
-          channel,
-          input.designIntensity,
-          input.sampleHeadline,
-          input.typeBudget,
-        ) || undefined
-        : undefined;
-      return lockToTemplate({ headline, subtitle, source: 'mission_tagline' });
+    ) || fitPunchlineUnderBudget(missionTagline, budget.maxLen, budget.maxWords)
+      || missionTagline;
+    const subtitleSeed = ideationTitle
+      && ideationTitle.length <= 36
+      && !areFalOverlayTextsRedundant(plannedHeadline, ideationTitle)
+      && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
+      && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
+      ? resolvePlannedOverlayLine(
+        ideationTitle,
+        [plannedHeadline],
+        channel,
+        input.designIntensity,
+        input.sampleHeadline,
+        input.typeBudget,
+      ) || undefined
+      : undefined;
+    const locked = lockToTemplate({
+      headline: plannedHeadline || missionTagline,
+      subtitle: subtitleSeed,
+      source: 'mission_tagline',
+    });
+    let headline = locked.headline;
+    if (!headline || !isAcceptablePunchlineStem(headline)) {
+      headline = fitPunchlineUnderBudget(missionTagline, budget.maxLen, budget.maxWords);
+    }
+    if (
+      headline
+      && isAcceptablePunchlineStem(headline)
+      && !isSoullessMenuHourHeadline(headline)
+      && !isMeaninglessBrandEchoHeadline(headline, brandName)
+      && !localesClash(taglineLoc, detectOverlayLocale(headline))
+    ) {
+      return {
+        headline,
+        subtitle: locked.subtitle,
+        source: 'mission_tagline',
+      };
     }
   }
 

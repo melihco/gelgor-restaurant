@@ -27,6 +27,8 @@ import {
   isFalCanvasMetaOnlyHeadline,
   isBareGenericOverlayCta,
   fitMissionOverlayToTemplateBudget,
+  fitPunchlineUnderBudget,
+  isAcceptablePunchlineStem,
 } from '../fal-caption-headline';
 import { resolveFalCanvasChannel } from '../fal-designer-production';
 
@@ -430,6 +432,30 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(fitted.subtitle).toBeUndefined();
     expect(fitted.headline.length).toBeGreaterThan(0);
     expect(isIncompleteOverlayPhrase(fitted.headline)).toBe(false);
+  });
+
+  it('fits punchline stems under tight operator budgets without dangling tails', () => {
+    const stem = fitPunchlineUnderBudget(
+      'Join us for a fun-filled evening under the stars!',
+      18,
+      2,
+    );
+    expect(stem).toBe('Join us');
+    expect(isAcceptablePunchlineStem(stem)).toBe(true);
+    expect(isIncompleteOverlayPhrase(stem)).toBe(false);
+
+    const fitted = fitMissionOverlayToTemplateBudget({
+      headline: 'Join us for a fun-filled evening under the stars!',
+      channel: 'feed_post',
+      designIntensity: 'balanced',
+      typeBudget: {
+        headline: { maxChars: 18, maxWords: 2, maxLines: 1 },
+        subtitle: null,
+        source: 'operator',
+      },
+    });
+    expect(fitted.headline).toBe('Join us');
+    expect(fitted.budget.source).toBe('operator_type_budget');
   });
 
   it('corrects misplaced apostrophes in plural suffixes', () => {

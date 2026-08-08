@@ -27,7 +27,10 @@ import {
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { serverConfig } from '@/lib/server-config';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
-import { fetchRecentTemplateIds } from '@/lib/template-usage-tracker';
+import {
+  fetchRecentCatalogSlotKeys,
+  fetchRecentTemplateIds,
+} from '@/lib/template-usage-tracker';
 import {
   filterGalleryAnalysisKeys,
   parseBrandReferenceUrls,
@@ -59,6 +62,9 @@ export interface GalleryContext {
 
   /** Template IDs recently used — for rotation / deduplication. */
   readonly recentTemplateIds: string[];
+
+  /** Catalog slot keys recently hard-pinned — rotate brand design shells across missions. */
+  readonly recentCatalogSlotKeys: string[];
 
   /** Per-batch used URL tracker — local to this request, not persisted. */
   batchUsedByType: Record<PostTypeBucket, string[]>;
@@ -128,12 +134,13 @@ export async function fetchGalleryContext(
   // only probe external / unknown-origin URLs to avoid probe timeouts blocking production.
   const trustedBrandPhotos = candidates.filter(isBrandDomainUrl);
   const needProbe = candidates.filter((u) => !isBrandDomainUrl(u));
-  const [health, galleryUsageBundle, recentTemplateIds] = await Promise.all([
+  const [health, galleryUsageBundle, recentTemplateIds, recentCatalogSlotKeys] = await Promise.all([
     needProbe.length > 0
       ? filterReachableGalleryUrls(needProbe, { maxProbe: 40, concurrency: 12 })
       : Promise.resolve({ urls: [] as string[], rejected: [] as { url: string; reason: string }[] }),
     fetchGalleryProductionUsage(workspaceId, opts?.missionId),
     fetchRecentTemplateIds(workspaceId),
+    fetchRecentCatalogSlotKeys(workspaceId),
   ]);
   const usage = galleryUsageBundle.usage;
   const missionSiblingUrls = galleryUsageBundle.missionSiblingUrls;
@@ -198,6 +205,7 @@ export async function fetchGalleryContext(
     hasPhotos: photos.length > 0,
     usage,
     recentTemplateIds,
+    recentCatalogSlotKeys,
     batchUsedByType: { feed: [], story: [], reel: [], carousel: [] },
     missionSiblingUrls,
   };

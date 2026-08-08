@@ -69,6 +69,69 @@ export function buildRecentTemplateIds(artifacts: Record<string, unknown>[]): st
   return recent;
 }
 
+/** Extract catalog_slot_key from a production artifact (brand design hard-pin trail). */
+export function extractCatalogSlotKeysFromArtifact(artifact: Record<string, unknown>): string[] {
+  if (isRejectedReviewStatus(artifact.reviewStatus ?? artifact.ReviewStatus)) return [];
+
+  const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+  const content = parseJsonRecord(artifact.content ?? artifact.Content);
+  const keys = new Set<string>();
+
+  for (const key of [
+    'catalogSlotKey', 'catalog_slot_key',
+    'catalogKey', 'catalog_key',
+  ]) {
+    pushId(keys, meta[key]);
+    pushId(keys, content[key]);
+  }
+
+  const bundle = parseJsonRecord(meta.productionBundle ?? content.productionBundle);
+  pushId(keys, bundle.catalogSlotKey);
+  pushId(keys, bundle.catalog_slot_key);
+
+  const assignment = parseJsonRecord(meta.assignment ?? content.assignment);
+  pushId(keys, assignment.catalog_slot_key);
+  pushId(keys, assignment.catalogSlotKey);
+
+  return [...keys];
+}
+
+export function buildRecentCatalogSlotKeys(artifacts: Record<string, unknown>[]): string[] {
+  const recent: string[] = [];
+  const seen = new Set<string>();
+
+  for (const artifact of artifacts) {
+    for (const key of extractCatalogSlotKeysFromArtifact(artifact)) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recent.push(key);
+      if (recent.length >= MAX_RECENT) return recent;
+    }
+  }
+  return recent;
+}
+
+export async function fetchRecentCatalogSlotKeys(
+  workspaceId: string,
+  nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
+  internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
+): Promise<string[]> {
+  try {
+    const res = await fetch(`${nexusApi}/api/artifacts`, {
+      headers: {
+        'X-Tenant-Id': workspaceId,
+        'X-Internal-Api-Key': internalKey,
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return [];
+    const artifacts = (await res.json()) as Record<string, unknown>[];
+    return buildRecentCatalogSlotKeys(Array.isArray(artifacts) ? artifacts : []);
+  } catch {
+    return [];
+  }
+}
+
 export async function fetchRecentTemplateIds(
   workspaceId: string,
   nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),

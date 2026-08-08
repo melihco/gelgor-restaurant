@@ -6,6 +6,7 @@ import {
 import {
   extractCaptionAlignedPunchline,
   resolveMissionFalDesignCopy,
+  shouldPreserveLockedPunchlineHeadline,
 } from '../fal-design-copy';
 import {
   isIncompleteOverlayPhrase,
@@ -129,6 +130,58 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.source).toBe('mission_tagline');
     expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
     expect(result.headline.toLowerCase()).toMatch(/discover|cocktail|art/);
+  });
+
+  it('locks punchline as headline under operator type_budget (beach_club + local_products)', () => {
+    const typeBudget = {
+      headline: { maxChars: 18, maxWords: 2, maxLines: 1 },
+      subtitle: null,
+      source: 'operator' as const,
+    };
+    for (const [businessType, brandName, tagline, title] of [
+      [
+        'beach_club',
+        'Scorpios Bodrum',
+        'Join us for a fun-filled evening under the stars!',
+        'Summer Sunset Gathering',
+      ],
+      [
+        'local_products_shop',
+        'Karaman Datça',
+        'Where friends gather and moments are shared.',
+        'Haftalık Vitrin Hikayesi',
+      ],
+    ] as const) {
+      const result = resolveMissionFalDesignCopy({
+        idea: {
+          concept_title: title,
+          headline: title,
+          tagline,
+          caption_draft: `${tagline} Visit ${brandName} this weekend.`,
+        },
+        ideationHeadline: title,
+        caption: `${tagline} Visit ${brandName} this weekend.`,
+        brandName,
+        channel: 'feed_post',
+        businessType,
+        designIntensity: 'balanced',
+        typeBudget,
+      });
+      expect(result.source).toBe('mission_tagline');
+      expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(2);
+      expect(result.headline.length).toBeLessThanOrEqual(18);
+      expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
+      // Must stay punchline stem — never demote to mission title.
+      expect(result.headline.toLowerCase()).not.toMatch(/summer sunset|haftalık|vitrin|gathering/);
+      expect(result.headline.toLowerCase()).toMatch(/join|evening|friends|gather|moments|shared/);
+    }
+  });
+
+  it('shouldPreserveLockedPunchlineHeadline covers tagline + canva sources', () => {
+    expect(shouldPreserveLockedPunchlineHeadline('mission_tagline')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('canva_field_copy')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('agent_headline')).toBe(false);
+    expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });
 
   it('prefers canva_field_copy marketing line over series-style ideation', () => {

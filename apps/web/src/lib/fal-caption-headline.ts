@@ -764,6 +764,77 @@ export function stripDanglingOverlayTail(text: string): string {
   return result;
 }
 
+/**
+ * Accept a punchline stem under a tight type_budget.
+ * Softer than isMeaningfulFalOverlayText so "Join us" (7 chars) can still lock.
+ */
+export function isAcceptablePunchlineStem(text: string): boolean {
+  const clean = sanitizeFalOverlayText(text);
+  if (!clean || clean.length < 6) return false;
+  if (isInternalStrategyBriefing(clean)) return false;
+  if (isIncompleteOverlayPhrase(clean)) return false;
+  if (isFalCanvasMetaOnlyHeadline(clean)) return false;
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  if (words.length === 1) {
+    return clean.length >= 8 && /[aeiouıöüAEIOUİÖÜ]/i.test(clean);
+  }
+  return true;
+}
+
+/**
+ * Fit a mission punchline/tagline under word+char budget without dangling tails.
+ * Prefer a complete shorter stem over rejecting the punchline into the mission title.
+ */
+export function fitPunchlineUnderBudget(
+  text: string,
+  maxLen: number,
+  maxWords: number,
+): string {
+  const clean = correctTurkishSpelling(sanitizeFalOverlayText(text));
+  if (!clean) return '';
+  const bare = clean.replace(/[!?.…]+$/g, '').trim();
+  const words = bare.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '';
+
+  if (
+    words.length <= maxWords
+    && bare.length <= maxLen
+    && isAcceptablePunchlineStem(bare)
+  ) {
+    return bare;
+  }
+
+  // Prefix windows first (preserve punchline opening).
+  for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
+    const candidate = stripDanglingOverlayTail(words.slice(0, n).join(' '));
+    if (
+      candidate
+      && candidate.length <= maxLen
+      && candidate.split(/\s+/).filter(Boolean).length <= maxWords
+      && isAcceptablePunchlineStem(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  // Sliding windows when the opening is weak under a tiny budget.
+  for (let n = Math.min(maxWords, words.length); n >= 2; n -= 1) {
+    for (let i = 1; i <= words.length - n; i += 1) {
+      const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
+      if (
+        candidate
+        && candidate.length <= maxLen
+        && isAcceptablePunchlineStem(candidate)
+      ) {
+        return candidate;
+      }
+    }
+  }
+
+  return tightenOverlayHeadline(clean, maxLen, maxWords) || '';
+}
+
 /** Vision/OCR readback — reject truncated or briefing text painted on canvas. */
 export function isRenderedOverlayTextIncomplete(detected: string | undefined | null): boolean {
   if (!detected?.trim()) return false;
@@ -1126,6 +1197,27 @@ export function fitMissionOverlayToTemplateBudget(input: {
   if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
     headline = truncateAtWordBoundary(rawH, budget.headline.maxLen);
   }
+  // Operator type_budget: recover a complete punchline stem inside the zone
+  // ("Join us for…" → "Join us") instead of emptying and falling back to title.
+  if (
+    !allowSoftFloor
+    && (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline))
+  ) {
+    const stem = fitPunchlineUnderBudget(
+      rawH,
+      budget.headline.maxLen,
+      budget.headline.maxWords,
+    );
+    if (stem) headline = stem;
+  }
+  const headlineOk = (line: string): boolean => (
+    Boolean(line)
+    && (
+      isMeaningfulFalOverlayText(line)
+      || (!allowSoftFloor && isAcceptablePunchlineStem(line))
+    )
+    && !isIncompleteOverlayPhrase(line)
+  );
   // Tiny template samples ("DJ Night", ≤8 chars) often cannot hold a long English
   // mission line. Prefer a mission-aligned scene punch with a soft floor, then the
   // template sample itself — never an empty string that lets GPT invent "Cocktail".
@@ -1174,7 +1266,7 @@ export function fitMissionOverlayToTemplateBudget(input: {
       headline = sceneTight;
     }
   }
-  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+  if (!headlineOk(headline)) {
     const sampleH = String(input.sampleHeadline ?? '').trim();
     if (
       sampleH
@@ -1186,18 +1278,14 @@ export function fitMissionOverlayToTemplateBudget(input: {
   }
   // Last resort: prefer empty over mid-word / incomplete junk ("doy...", "Yazın tadını").
   // Downstream fal/GPT paths invent less harmfully than shipping a truncated stub.
-  if (!headline || !isMeaningfulFalOverlayText(headline) || isIncompleteOverlayPhrase(headline)) {
+  // Operator punchline stems ("Join us") stay via headlineOk / isAcceptablePunchlineStem.
+  if (!headlineOk(headline)) {
     const fallbackLen = allowSoftFloor
       ? Math.max(budget.headline.maxLen, 18)
       : budget.headline.maxLen;
-    const fallback = truncateAtWordBoundary(rawH, fallbackLen);
-    headline = (
-      fallback
-      && isMeaningfulFalOverlayText(fallback)
-      && !isIncompleteOverlayPhrase(fallback)
-    )
-      ? fallback
-      : '';
+    const fallback = fitPunchlineUnderBudget(rawH, fallbackLen, budget.headline.maxWords)
+      || truncateAtWordBoundary(rawH, fallbackLen);
+    headline = headlineOk(fallback) ? fallback : '';
   }
 
   if (!budget.subtitle || !budget.showSubline) {

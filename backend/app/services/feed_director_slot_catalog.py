@@ -247,8 +247,17 @@ def score_catalog_slot_for_idea(
         bump(36, "offer", "promo", "campaign", "brunch", "reservation", "rezerv")
     if any(t in announcement for t in ("educational", "behind_the_scenes", "bts")):
         bump(36, "seasonal", "ingredient", "farm", "kitchen", "bts", "malzeme")
-    if any(t in announcement for t in ("event_teaser", "event")):
-        bump(36, "event", "etkinlik")
+    if any(t in announcement for t in ("event_teaser", "event_announcement", "event")):
+        # Prefer specific event shells — bare "event" substring was an equal-score
+        # magnet that always collapsed to the alphabetically first *event* key.
+        if any(n in blob for n in ("dj", "live_music", "neon", "night_teaser", "dj_night")):
+            score += 42
+        elif any(n in blob for n in ("private_event", "vip", "guestlist")):
+            score += 38
+        elif any(n in blob for n in ("events_calendar", "event_announcement", "calendar")):
+            score += 34
+        elif "event" in blob or "etkinlik" in blob:
+            score += 18
 
     if any(t in hay for t in ("müşteri", "yorum", "review", "feedback", "geri bildirim")):
         bump(28, "customer", "review", "social", "yorum")
@@ -260,8 +269,32 @@ def score_catalog_slot_for_idea(
         bump(24, "cocktail", "bar", "drink")
     if any(t in hay for t in ("malzeme", "ingredient", "hasat", "farm")):
         bump(24, "seasonal", "ingredient", "farm", "malzeme")
+    if any(t in hay for t in ("dj", "live music", "konser", "party", "gece")):
+        bump(28, "dj", "live_music", "night", "neon")
+    if any(t in hay for t in ("private", "özel", "wedding", "düğün", "vip")):
+        bump(28, "private_event", "vip", "guestlist")
 
     return score
+
+
+def _catalog_tie_break_rank(idea: dict[str, Any] | None, slot_key: str) -> int:
+    """Stable per-idea salt so equal scores don't always pick alpha-first keys."""
+    import hashlib
+
+    hay = _idea_match_haystack(idea)[:120]
+    digest = hashlib.sha1(f"{hay}|{slot_key}".encode("utf-8")).hexdigest()
+    return int(digest[:8], 16)
+
+
+def _recent_catalog_penalty(slot_key: str, recent_keys: list[str] | None) -> int:
+    if not recent_keys or not slot_key:
+        return 0
+    try:
+        idx = recent_keys.index(slot_key)
+    except ValueError:
+        return 0
+    band = max(1, 3 - (idx // 4))
+    return min(54, band * 18)
 
 
 def pick_catalog_slot_key(
@@ -270,6 +303,7 @@ def pick_catalog_slot_key(
     catalog_slots: list[dict[str, str]],
     used_keys: set[str],
     idea: dict[str, Any] | None = None,
+    recent_keys: list[str] | None = None,
 ) -> str | None:
     target = target_format_for_assignment(role, pipeline)
     if target is None or not catalog_slots:
@@ -299,7 +333,11 @@ def pick_catalog_slot_key(
 
     pool.sort(
         key=lambda s: (
-            -score_catalog_slot_for_idea(s, idea),
+            -(
+                score_catalog_slot_for_idea(s, idea)
+                - _recent_catalog_penalty(str(s.get("slot_key") or ""), recent_keys)
+            ),
+            _catalog_tie_break_rank(idea, str(s.get("slot_key") or "")),
             str(s.get("slot_key") or ""),
         )
     )
@@ -311,6 +349,7 @@ def resolve_catalog_slot_key(
     catalog_slots: list[dict[str, str]] | None,
     used_keys: set[str],
     idea: dict[str, Any] | None = None,
+    recent_keys: list[str] | None = None,
 ) -> str | None:
     if not catalog_slots:
         return None
@@ -319,13 +358,17 @@ def resolve_catalog_slot_key(
     existing = str(entry.get("catalog_slot_key") or "").strip()
     # Keep FD's pick only when unique in this mission — duplicates force a rematch
     # so three posts don't hard-pin the same onboarding template.
+    # Soft variety: if the FD pick is already in recent mission history, rematch.
     if (
         existing
         and existing not in used_keys
         and catalog_slot_key_valid(existing, role, pipeline, catalog_slots)
+        and not (recent_keys and existing in recent_keys)
     ):
         return existing
-    return pick_catalog_slot_key(role, pipeline, catalog_slots, used_keys, idea=idea)
+    return pick_catalog_slot_key(
+        role, pipeline, catalog_slots, used_keys, idea=idea, recent_keys=recent_keys,
+    )
 
 
 def apply_catalog_slot_to_entry(
@@ -333,8 +376,11 @@ def apply_catalog_slot_to_entry(
     catalog_slots: list[dict[str, str]] | None,
     used_keys: set[str],
     idea: dict[str, Any] | None = None,
+    recent_keys: list[str] | None = None,
 ) -> None:
-    key = resolve_catalog_slot_key(entry, catalog_slots, used_keys, idea=idea)
+    key = resolve_catalog_slot_key(
+        entry, catalog_slots, used_keys, idea=idea, recent_keys=recent_keys,
+    )
     if key:
         entry["catalog_slot_key"] = key
         used_keys.add(key)

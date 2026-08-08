@@ -184,6 +184,103 @@ def test_pick_catalog_slot_key_rotates_story_slots():
     }
 
 
+def test_pick_catalog_slot_key_penalizes_recent_keys():
+    from app.services.feed_director_slot_catalog import score_catalog_slot_for_idea
+
+    event_catalog = [
+        {
+            "slot_key": "beach_club_events_calendar_post",
+            "label_tr": "Takvim",
+            "format": "post",
+            "pipeline": "fal_design",
+            "slot_role": "fal_designed_post",
+            "design_template_type": "event_special",
+        },
+        {
+            "slot_key": "beach_club_dj_night_teaser_post",
+            "label_tr": "DJ gece",
+            "format": "post",
+            "pipeline": "fal_design",
+            "slot_role": "fal_designed_post",
+            "design_template_type": "event_special",
+        },
+    ]
+    idea = {
+        "announcement_type": "event_teaser",
+        "headline": "DJ Night under the stars",
+        "caption_draft": "Live DJ set this Friday",
+    }
+    # Specific DJ shell should beat generic calendar when idea mentions DJ.
+    picked = pick_catalog_slot_key(
+        "fal_designed_post", "fal_design", event_catalog, set(), idea=idea,
+    )
+    assert picked == "beach_club_dj_night_teaser_post"
+
+    # Equal-ish peers: recent calendar key loses.
+    peers = [
+        {
+            "slot_key": "restaurant_cafe_dining_ambiance_post",
+            "label_tr": "Atmosfer",
+            "format": "post",
+            "pipeline": "fal_design",
+            "slot_role": "fal_designed_post",
+            "design_template_type": "venue_showcase",
+        },
+        {
+            "slot_key": "restaurant_cafe_signature_dish_post",
+            "label_tr": "İmza",
+            "format": "post",
+            "pipeline": "fal_design",
+            "slot_role": "fal_designed_post",
+            "design_template_type": "menu_highlight",
+        },
+    ]
+    ambiance_idea = {
+        "announcement_type": "venue_showcase",
+        "caption_draft": "Bahçede akşam atmosferi",
+    }
+    sticky = "restaurant_cafe_dining_ambiance_post"
+    rematch = pick_catalog_slot_key(
+        "fal_designed_post",
+        "fal_design",
+        peers,
+        set(),
+        idea=ambiance_idea,
+        recent_keys=[sticky],
+    )
+    assert rematch != sticky
+
+    # score helper still ranks social proof for review announcements
+    review_slot = next(
+        s for s in RESTAURANT_CATALOG if s["slot_key"] == "restaurant_cafe_customer_review_post"
+    )
+    assert score_catalog_slot_for_idea(
+        review_slot,
+        {"announcement_type": "social_proof", "caption_draft": "Müşteri yorumu"},
+    ) > 0
+
+
+def test_resolve_catalog_slot_key_rematches_recent_fd_pick():
+    used: set[str] = set()
+    entry = {
+        "slot_role": "fal_designed_post",
+        "pipeline": "fal_design",
+        "catalog_slot_key": "restaurant_cafe_signature_dish_post",
+    }
+    idea = {
+        "announcement_type": "social_proof",
+        "caption_draft": "Müşterilerimizden gelen geri bildirimlere kulak veriyoruz.",
+    }
+    key = resolve_catalog_slot_key(
+        entry,
+        RESTAURANT_CATALOG,
+        used,
+        idea=idea,
+        recent_keys=["restaurant_cafe_signature_dish_post"],
+    )
+    assert key == "restaurant_cafe_customer_review_post"
+
+
 def test_catalog_slot_key_valid_rejects_format_mismatch():
     assert not catalog_slot_key_valid(
         "restaurant_cafe_brunch_offer_post",
