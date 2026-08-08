@@ -156,23 +156,15 @@ export const falVideoHandler: ProductionPipelineHandler = {
 
     // Catalog key format wins over drifted assignment.pipeline (e.g. day_pass_story
     // stamped on fal_reel_motion after slot backfill role repair).
-    const catalogKey = String(inputs.catalogSlotKey ?? '').toLowerCase();
-    const catalogImpliesStory = catalogKey.endsWith('_story') || catalogKey.includes('_story_');
-    const catalogImpliesReel = catalogKey.endsWith('_reel') || catalogKey.includes('_reel_');
-    let falPipeline: 'fal_reel' | 'fal_story' =
+    const { resolveFalVideoPipelineFromCatalog } = await import('@/lib/fal-catalog-format');
+    const hinted: 'fal_reel' | 'fal_story' =
       inputs.pipeline === 'fal_reel' ? 'fal_reel' : 'fal_story';
-    if (catalogImpliesStory && falPipeline === 'fal_reel') {
+    const falPipeline = resolveFalVideoPipelineFromCatalog(inputs.catalogSlotKey, hinted);
+    if (falPipeline !== hinted) {
       console.warn(
-        `[auto-produce] [fal-track] catalog story key "${inputs.catalogSlotKey}" `
-        + 'overrode fal_reel pipeline → fal_story',
+        `[auto-produce] [fal-track] catalog key "${inputs.catalogSlotKey}" `
+        + `overrode ${hinted} → ${falPipeline}`,
       );
-      falPipeline = 'fal_story';
-    } else if (catalogImpliesReel && falPipeline === 'fal_story') {
-      console.warn(
-        `[auto-produce] [fal-track] catalog reel key "${inputs.catalogSlotKey}" `
-        + 'overrode fal_story pipeline → fal_reel',
-      );
-      falPipeline = 'fal_reel';
     }
     const intensityChannel = falPipeline === 'fal_reel' ? ('reel' as const) : ('story' as const);
 
@@ -414,6 +406,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
           state.imageUrl = poster.imageUrl;
           state.falGrafikerScore = poster.grafikerScore;
           state.falGrafikerPass = poster.grafikerPass;
+          // Mark designed story stills so Feed telemetry is not fal_designer_produced=false.
+          state.falDesignEngine = poster.typographyModel || 'fal_story_poster';
           state.videoProduceMeta = { source: 'fal_video' };
           state.costDelta += 0.08;
           console.log(
@@ -653,6 +647,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
           : {}),
       };
       state.costDelta += 0.18;
+      state.falDesignEngine = designer.typographyModel || 'fal_designer_video';
       if (templateBinding.matched) {
         state.brandDesignTemplateId = templateBinding.matched.id;
         state.brandDesignTemplateType = templateBinding.matched.templateType;
@@ -707,6 +702,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.imageUrl = poster.imageUrl;
         state.falGrafikerScore = poster.grafikerScore;
         state.falGrafikerPass = poster.grafikerPass;
+        state.falDesignEngine = poster.typographyModel || 'fal_reel_still';
         state.costDelta += 0.08;
 
         // Same locked I2V path as primary designer track — never pass headline into motion

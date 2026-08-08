@@ -295,6 +295,7 @@ import {
   getProductionProviderPreflight,
   httpStatusForProviderPreflight,
   recordProductionProviderBillingFailure,
+  refreshProductionProviderCircuitsFromRedis,
 } from '@/lib/production-provider-preflight';
 import {
   resolveArtifactPublishReady,
@@ -645,8 +646,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  // Fail loud before draining slots when image providers are missing or billing
-  // circuits are open (avoids half-mission queues on exhausted fal/OpenAI).
+  // Fail loud before draining slots when image providers are missing or BOTH
+  // billing circuits are open. Single-provider circuit → degraded continue
+  // (fal-video slots skip; posts/stories use the other key).
+  await refreshProductionProviderCircuitsFromRedis();
   const providerPreflight = getProductionProviderPreflight();
   if (!providerPreflight.ok) {
     console.warn(
@@ -660,6 +663,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         produced: 0,
       }, pipelineRun),
       { status: httpStatusForProviderPreflight(providerPreflight.code) },
+    );
+  }
+  if (providerPreflight.falDegraded) {
+    console.warn(
+      `[auto-produce:${workspaceId}] provider preflight degraded: ${providerPreflight.reason}`,
     );
   }
 
@@ -827,6 +835,41 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
       let designTemplates = await loadWorkspaceDesignTemplates(workspaceId);
+      // Provisional slot set (may have hasTemplate=false gaps) → clone keyed shells
+      // BEFORE brief stamp so new clones also receive assignment purpose briefs.
+      const provisionalSlots = await loadBrandActiveSlotSet(
+        workspaceId,
+        brandSector,
+        designTemplates,
+        readBrandSlotFacilitiesFromTheme(brandTheme as Record<string, unknown> | null),
+      );
+      const { parseSlotCreativeCustomization } = await import(
+        '@/lib/slot-creative-customization'
+      );
+      const briefByKey = new Map<string, import('@/lib/slot-creative-customization').SlotCreativeCustomization>();
+      for (const a of briefSeed.assignments) {
+        if (!a.enabled || !a.slot_key) continue;
+        const brief = parseSlotCreativeCustomization(a.customization);
+        if (brief) briefByKey.set(a.slot_key, brief);
+      }
+      const { ensureKeyedDesignTemplatesForEnabledSlots } = await import(
+        '@/lib/ensure-keyed-design-templates'
+      );
+      const keyedFill = await ensureKeyedDesignTemplatesForEnabledSlots({
+        workspaceId,
+        enabledSlots: provisionalSlots.slots,
+        activeTemplates: designTemplates,
+        brandSeed: {
+          brandName: resolvedBrandName,
+          location: brandLocation || undefined,
+          visualDna: typeof brandTheme?.visual_dna === 'string' ? brandTheme.visual_dna : undefined,
+          brandTone: typeof brandTheme?.tone === 'string' ? brandTheme.tone : undefined,
+        },
+        briefByKey,
+      });
+      if (keyedFill.cloned > 0) {
+        designTemplates = await loadWorkspaceDesignTemplates(workspaceId);
+      }
       const stamp = await stampAssignmentBriefsOntoKeyedTemplates(
         workspaceId,
         designTemplates,
@@ -4845,6 +4888,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ? 'gpt_image_designed_post'
             : 'fal_designer_post';
         }
+        // Designed fal_story / fal_only_story still (no video) — library poster path.
+        if (
+          (isFalMissionVideo || isFalOnlyVideo)
+          && imageUrl
+          && falDesignEngine
+          && !videoUrl
+        ) {
+          if (falDesignEngine === 'satori_local') return 'local_typography';
+          return assignment.pipeline.includes('reel') || falDesignEngine.includes('reel')
+            ? 'fal_designer_reel_still'
+            : 'fal_designer_story';
+        }
         if (videoUrl) return 'fal_reel';
         if (missionVisualDesignRendered) return 'mission_visual_design_card';
         if (designedPosterSyncUrl) return 'designed_poster_sync';
@@ -4891,13 +4946,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           : {}),
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,
-      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)),
+      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)) || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)),
       hero_reel_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
       fal_video_produced: isPlayableVideoUrl(videoUrl) && (isFalMissionVideo || isFalOnlyVideo),
       fal_reel_still_fallback: falReelStillFallback,
+      // Story/reel fal stills set falDesignEngine (poster path); posts already did.
       fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo))
         || falReelStillFallback
-        || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+        || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine))
+        || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)),
       ...(falDesignEngine === 'satori_local' ? { typography_model: 'satori_local' } : {}),
       ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
       ...(videoProduceMeta ? {

@@ -11,12 +11,14 @@ vi.mock('@/lib/server-config', () => ({
 vi.mock('@/lib/openai-error-utils', () => ({
   isOpenAiQuotaBlocked: vi.fn(() => false),
   markOpenAiQuotaBlocked: vi.fn(),
+  clearOpenAiQuotaBlockedForTests: vi.fn(),
 }));
 
 import { serverConfig } from '@/lib/server-config';
 import { isOpenAiQuotaBlocked, markOpenAiQuotaBlocked } from '@/lib/openai-error-utils';
 import {
   clearFalBillingCircuitForTests,
+  clearProductionProviderBillingCircuits,
   getProductionProviderPreflight,
   httpStatusForProviderPreflight,
   isProviderBillingFailureMessage,
@@ -28,6 +30,7 @@ describe('production-provider-preflight', () => {
   beforeEach(() => {
     clearFalBillingCircuitForTests();
     vi.mocked(isOpenAiQuotaBlocked).mockReturnValue(false);
+    vi.mocked(markOpenAiQuotaBlocked).mockClear();
     (serverConfig as { imageProvider: string }).imageProvider = 'flux';
     (serverConfig.openai as { configured: boolean }).configured = true;
     (serverConfig.fal as { configured: boolean }).configured = true;
@@ -52,7 +55,16 @@ describe('production-provider-preflight', () => {
     expect(httpStatusForProviderPreflight(p.code)).toBe(503);
   });
 
-  it('fails when fal billing circuit is open for flux primary', () => {
+  it('fal circuit open with OpenAI available → degraded continue (not hard block)', () => {
+    markFalBillingBlocked(60_000);
+    const p = getProductionProviderPreflight();
+    expect(p.ok).toBe(true);
+    expect(p.falDegraded).toBe(true);
+    expect(p.code).toBeUndefined();
+  });
+
+  it('fal circuit open without OpenAI → hard block', () => {
+    (serverConfig.openai as { configured: boolean }).configured = false;
     markFalBillingBlocked(60_000);
     const p = getProductionProviderPreflight();
     expect(p.ok).toBe(false);
@@ -60,19 +72,30 @@ describe('production-provider-preflight', () => {
     expect(httpStatusForProviderPreflight(p.code)).toBe(402);
   });
 
-  it('openai primary: circuit open fails closed', () => {
+  it('openai primary: both circuits open fails closed', () => {
     (serverConfig as { imageProvider: string }).imageProvider = 'openai';
     vi.mocked(isOpenAiQuotaBlocked).mockReturnValue(true);
+    markFalBillingBlocked(60_000);
     const p = getProductionProviderPreflight();
     expect(p.ok).toBe(false);
     expect(p.code).toBe('provider_billing_circuit_open');
+  });
+
+  it('openai circuit alone with fal available → continue', () => {
+    (serverConfig as { imageProvider: string }).imageProvider = 'openai';
+    vi.mocked(isOpenAiQuotaBlocked).mockReturnValue(true);
+    const p = getProductionProviderPreflight();
+    expect(p.ok).toBe(true);
   });
 
   it('classifies fal balance exhausted and trips fal circuit', () => {
     const msg = 'enqueue failed 403: fal.ai balance exhausted — top up at fal.ai/dashboard/billing';
     expect(isProviderBillingFailureMessage(msg)).toBe(true);
     expect(recordProductionProviderBillingFailure(msg)).toBe('fal');
-    expect(getProductionProviderPreflight().ok).toBe(false);
+    const p = getProductionProviderPreflight();
+    // openai still configured → degraded ok
+    expect(p.ok).toBe(true);
+    expect(p.falDegraded).toBe(true);
   });
 
   it('classifies OpenAI quota and trips openai circuit', () => {
@@ -84,5 +107,27 @@ describe('production-provider-preflight', () => {
   it('ignores non-billing slot errors', () => {
     expect(recordProductionProviderBillingFailure('gallery_theme_mismatch')).toBeNull();
     expect(getProductionProviderPreflight().ok).toBe(true);
+  });
+
+  it('does not re-arm circuit from provider_billing_circuit_open poison pill', () => {
+    expect(isProviderBillingFailureMessage('provider_billing_circuit_open')).toBe(false);
+    expect(
+      recordProductionProviderBillingFailure('provider_billing_circuit_open [skip-no-fal-quota]'),
+    ).toBeNull();
+    expect(markOpenAiQuotaBlocked).not.toHaveBeenCalled();
+    expect(getProductionProviderPreflight().ok).toBe(true);
+  });
+
+  it('does not treat bare "billing" copy as exhaustion', () => {
+    expect(
+      isProviderBillingFailureMessage('Please check your plan and billing details (rate_limit)'),
+    ).toBe(false);
+  });
+
+  it('clearProductionProviderBillingCircuits drops fal cooldown', () => {
+    markFalBillingBlocked(60_000);
+    clearProductionProviderBillingCircuits();
+    expect(getProductionProviderPreflight().ok).toBe(true);
+    expect(getProductionProviderPreflight().falDegraded).toBeFalsy();
   });
 });

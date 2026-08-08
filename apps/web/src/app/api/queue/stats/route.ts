@@ -9,13 +9,46 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getProductionQueue } from '@/lib/queue-client';
 import { productionGlobalInflightMax } from '@/lib/production-global-inflight';
 import { getProductionQueueWorkerSnapshot } from '@/lib/production-queue-health';
-import { getProductionProviderPreflight } from '@/lib/production-provider-preflight';
+import {
+  clearProductionProviderBillingCircuits,
+  getProductionProviderPreflight,
+  refreshProductionProviderCircuitsFromRedis,
+} from '@/lib/production-provider-preflight';
 import { serverConfig } from '@/lib/server-config';
 import Redis from 'ioredis';
 
 export const runtime = 'nodejs';
 
 const INTERNAL_KEY = serverConfig.internal.apiKey;
+
+/** POST { "action": "clear_provider_billing_circuits" } — ops recovery when keys are topped up. */
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  const key = req.headers.get('x-internal-api-key');
+  if (!key || key !== INTERNAL_KEY) {
+    return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  let body: { action?: string } = {};
+  try {
+    body = (await req.json()) as { action?: string };
+  } catch {
+    body = {};
+  }
+  if (body.action !== 'clear_provider_billing_circuits') {
+    return NextResponse.json(
+      { error: 'unsupported_action', hint: 'clear_provider_billing_circuits' },
+      { status: 400 },
+    );
+  }
+  clearProductionProviderBillingCircuits();
+  // Ensure Redis keys are gone before reporting (async del is fire-and-forget in clear).
+  await refreshProductionProviderCircuitsFromRedis();
+  clearProductionProviderBillingCircuits();
+  const providerPreflight = getProductionProviderPreflight();
+  return NextResponse.json({
+    cleared: true,
+    providerPreflight,
+  });
+}
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const key = req.headers.get('x-internal-api-key');
@@ -41,6 +74,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const workerSnap = await getProductionQueueWorkerSnapshot();
     const workerCount = workerSnap.workerCount;
     const backlog = (counts.waiting ?? 0) + (counts.delayed ?? 0);
+    await refreshProductionProviderCircuitsFromRedis();
     const providerPreflight = getProductionProviderPreflight();
 
     let globalInflight: number | null = null;

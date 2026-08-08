@@ -16,6 +16,11 @@ describe('humanizeProductionSlotError', () => {
     ).toMatch(/bakiyesi tükendi/);
   });
 
+  it('maps circuit-open status without claiming balance is empty', () => {
+    expect(humanizeProductionSlotError('provider_billing_circuit_open')).toMatch(/kilitli|tekrar dene/i);
+    expect(humanizeProductionSlotError('provider_billing_circuit_open')).not.toMatch(/bakiyesi tükendi/);
+  });
+
   it('maps missing library template', () => {
     expect(
       humanizeProductionSlotError(

@@ -415,6 +415,31 @@ export const falOnlyHandler: ProductionPipelineHandler = {
   name: 'fal_only',
   canRun: (ctx) => ctx.inputs.isFalOnlyPost || ctx.inputs.isFalOnlyVideo,
   run: async ({ inputs, state }) => {
+    const { resolveFalIntensityChannel } = await import('@/lib/fal-catalog-format');
+    // Catalog key beats drifted fal_only_reel + *_story (or reverse) before bind.
+    const intensityChannel = resolveFalIntensityChannel({
+      catalogSlotKey: inputs.catalogSlotKey,
+      pipeline: inputs.pipeline,
+      slotRole: inputs.slotRole,
+      isFalOnlyPost: inputs.isFalOnlyPost,
+    });
+    if (
+      intensityChannel === 'story'
+      && (inputs.pipeline.includes('reel') || String(inputs.slotRole).includes('reel'))
+    ) {
+      console.warn(
+        `[auto-produce] [fal-only] catalog story key "${inputs.catalogSlotKey}" `
+        + `overrode reel-ish ${inputs.pipeline}/${inputs.slotRole} → story bind`,
+      );
+    } else if (
+      intensityChannel === 'reel'
+      && (inputs.pipeline.includes('story') || String(inputs.slotRole).includes('story'))
+    ) {
+      console.warn(
+        `[auto-produce] [fal-only] catalog reel key "${inputs.catalogSlotKey}" `
+        + `overrode story-ish ${inputs.pipeline}/${inputs.slotRole} → reel bind`,
+      );
+    }
     const falBrand = resolveFalBrandInput({
       brandTheme: inputs.brandTheme,
       templateLibrary: inputs.templateLibrary,
@@ -425,7 +450,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       headline: inputs.headline,
       referencePhotoUrl: inputs.referenceUrl || undefined,
       sceneHint: inputs.sceneHint || undefined,
-      format: inputs.isFalOnlyPost ? 'post' : inputs.pipeline.includes('reel') ? 'reel' : 'story',
+      format: intensityChannel,
       visualDna: inputs.visualDna,
       brandTone: inputs.brandTone,
       brandDescription: inputs.brandDescription,
@@ -435,7 +460,7 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       workspaceId: inputs.workspaceId,
       slotRole: inputs.slotRole,
       librarySlotKey: inputs.librarySlotKey,
-      format: inputs.isFalOnlyPost ? 'post' : inputs.pipeline.includes('reel') ? 'reel' : 'story',
+      format: intensityChannel,
       caption: inputs.caption,
       headline: inputs.headline,
       subtitle: inputs.cta,

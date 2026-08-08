@@ -49,10 +49,16 @@ export function humanizeProductionSlotError(error?: string | null): string | nul
   if (
     lower.includes('fal.ai balance exhausted')
     || lower.includes('exhausted balance')
-    || lower.includes('provider_billing_circuit_open')
+    || lower.includes('balance exhausted')
     || lower.includes('image generation provider billing')
+    || lower.includes('insufficient_quota')
+    || lower.includes('billing_hard_limit')
   ) {
     return 'fal.ai / OpenAI bakiyesi tükendi — billing’den yükleme gerekir';
+  }
+  // Circuit status is often a sticky false-positive after top-up — tell ops to clear/retry.
+  if (lower.includes('provider_billing_circuit_open')) {
+    return 'Görsel sağlayıcı geçici olarak kilitli — birkaç dakika sonra tekrar dene';
   }
   if (lower.includes('image_provider_not_configured')) {
     return 'Görsel sağlayıcı yapılandırılmamış — OPENAI_API_KEY veya FAL_API_KEY gerekli';
