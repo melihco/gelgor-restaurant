@@ -1787,7 +1787,8 @@ export async function produceFalDesignerStill(
         );
       }
     } catch (groundedErr) {
-      if (input.templateReplica) {
+      // Template lock: prefer Ideogram-with-layout-ref over hard fail (line must not clog).
+      if (input.templateReplica && !input.templateLayoutImageUrl && !input.libraryQualityFalFallback) {
         throw new Error(
           `library template replica grounded compose failed — Ideogram disabled when template is locked: ${
             groundedErr instanceof Error ? groundedErr.message : String(groundedErr)
@@ -1802,7 +1803,16 @@ export async function produceFalDesignerStill(
   }
 
   // Library Fal fallback may continue to quality Ideogram when GPT grounded fails.
-  if ((groundedOnly || input.templateReplica) && !input.libraryQualityFalFallback) {
+  // Template replica + approved layout image → Ideogram may still paint using that shell
+  // as reference (smarter than exhausting the slot with no artifact).
+  const allowTemplateLayoutIdeogram = Boolean(
+    input.templateReplica && input.templateLayoutImageUrl,
+  );
+  if (
+    (groundedOnly || input.templateReplica)
+    && !input.libraryQualityFalFallback
+    && !allowTemplateLayoutIdeogram
+  ) {
     throw new Error(
       input.templateReplica
         ? 'library template replica: grounded gallery design failed — synthetic Ideogram fallback disabled when a library template is locked'
@@ -1815,6 +1825,10 @@ export async function produceFalDesignerStill(
   if (input.libraryQualityFalFallback && groundedOnly) {
     console.warn(
       '[fal-designer] library quality Fal fallback — continuing to purpose-built Ideogram after grounded GPT miss',
+    );
+  } else if (allowTemplateLayoutIdeogram && !input.libraryQualityFalFallback) {
+    console.warn(
+      '[fal-designer] template replica grounded miss — Ideogram with locked layout reference (avoid slot exhaust)',
     );
   }
 

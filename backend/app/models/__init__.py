@@ -31,6 +31,7 @@ from app.models.production_cost import (  # noqa: F401
     MissionCostRollup,
     MissionSlotCostRollup,
 )
+from app.models.production_slot_event import ProductionSlotEvent  # noqa: F401
 from app.models.slot_catalog import (  # noqa: F401
     CanonicalSector,
     ProductionSlotDefinition,

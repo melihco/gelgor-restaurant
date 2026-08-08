@@ -85,6 +85,7 @@ async def upsert_jobs(
 
     factory = _get_session_factory()
     inserted = 0
+    inserted_rows: list[dict[str, Any]] = []
     async with factory() as db:
         for slot in slots:
             idea_index = int(slot.get("idea_index", slot.get("ideaIndex", 0)) or 0)
@@ -117,7 +118,8 @@ async def upsert_jobs(
                         :max_attempts, CAST(:payload AS JSONB)
                     )
                     ON CONFLICT (mission_id, idea_index, slot_role) DO NOTHING
-                    RETURNING id
+                    RETURNING id, workspace_id, mission_id, idea_index, slot_role,
+                              slot_key, format, pipeline, status, attempts
                     """
                 ),
                 {
@@ -134,9 +136,17 @@ async def upsert_jobs(
                     "payload": json.dumps(payload) if payload is not None else None,
                 },
             )
-            if res.first() is not None:
+            row = res.first()
+            if row is not None:
                 inserted += 1
+                inserted_rows.append(_row_to_dict(row))
         await db.commit()
+
+    if inserted_rows:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        for row in inserted_rows:
+            await emit_from_job_row(row, "queued", status="pending")
 
     logger.info(
         "production_jobs.upsert",
@@ -180,6 +190,11 @@ async def claim_batch(
                 SET status = 'claimed',
                     claimed_at = now(),
                     claimed_by = :worker,
+                    started_at = NULL,
+                    queue_wait_ms = GREATEST(
+                        0,
+                        (EXTRACT(EPOCH FROM (now() - j.created_at)) * 1000)::int
+                    ),
                     updated_at = now()
                 FROM claimable c
                 WHERE j.id = c.id
@@ -196,6 +211,15 @@ async def claim_batch(
         rows = [_row_to_dict(r) for r in res.fetchall()]
         await db.commit()
     if rows:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        for row in rows:
+            await emit_from_job_row(
+                row,
+                "claimed",
+                status="claimed",
+                worker_id=_WORKER_ID,
+            )
         logger.info(
             "production_jobs.claim",
             mission_id=str(mission_id) if mission_id else None,
@@ -207,18 +231,29 @@ async def claim_batch(
 
 async def mark_running(job_id: str | uuid.UUID) -> None:
     factory = _get_session_factory()
+    row_dict: dict[str, Any] | None = None
     async with factory() as db:
-        await db.execute(
+        res = await db.execute(
             text(
                 """
                 UPDATE production_jobs
-                SET status = 'running', updated_at = now()
+                SET status = 'running',
+                    started_at = now(),
+                    updated_at = now()
                 WHERE id = CAST(:id AS UUID)
+                RETURNING *
                 """
             ),
             {"id": str(job_id)},
         )
+        row = res.first()
+        if row is not None:
+            row_dict = _row_to_dict(row)
         await db.commit()
+    if row_dict:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        await emit_from_job_row(row_dict, "running", status="running")
 
 
 async def mark_ready(
@@ -227,8 +262,9 @@ async def mark_ready(
     artifact_id: str | uuid.UUID | None = None,
 ) -> None:
     factory = _get_session_factory()
+    row_dict: dict[str, Any] | None = None
     async with factory() as db:
-        await db.execute(
+        res = await db.execute(
             text(
                 """
                 UPDATE production_jobs
@@ -237,15 +273,31 @@ async def mark_ready(
                                        ELSE CAST(:artifact_id AS UUID) END,
                     attempts = attempts + 1,
                     last_error = NULL,
+                    completed_at = now(),
+                    duration_ms = CASE
+                        WHEN started_at IS NOT NULL THEN
+                            GREATEST(0, (EXTRACT(EPOCH FROM (now() - started_at)) * 1000)::int)
+                        WHEN claimed_at IS NOT NULL THEN
+                            GREATEST(0, (EXTRACT(EPOCH FROM (now() - claimed_at)) * 1000)::int)
+                        ELSE duration_ms
+                    END,
                     claimed_at = NULL,
                     claimed_by = NULL,
                     updated_at = now()
                 WHERE id = CAST(:id AS UUID)
+                RETURNING *
                 """
             ),
             {"id": str(job_id), "artifact_id": str(artifact_id) if artifact_id else None},
         )
+        row = res.first()
+        if row is not None:
+            row_dict = _row_to_dict(row)
         await db.commit()
+    if row_dict:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        await emit_from_job_row(row_dict, "ready", status="ready")
 
 
 async def mark_deferred(
@@ -256,8 +308,9 @@ async def mark_deferred(
 ) -> None:
     """Re-queue without burning an attempt — e.g. auto-produce 409 production lock."""
     factory = _get_session_factory()
+    row_dict: dict[str, Any] | None = None
     async with factory() as db:
-        await db.execute(
+        res = await db.execute(
             text(
                 """
                 UPDATE production_jobs
@@ -268,6 +321,7 @@ async def mark_deferred(
                     run_after = now() + make_interval(secs => :delay_sec),
                     updated_at = now()
                 WHERE id = CAST(:id AS UUID)
+                RETURNING *
                 """
             ),
             {
@@ -276,7 +330,21 @@ async def mark_deferred(
                 "delay_sec": max(5.0, float(delay_sec)),
             },
         )
+        row = res.first()
+        if row is not None:
+            row_dict = _row_to_dict(row)
         await db.commit()
+    if row_dict:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        await emit_from_job_row(
+            row_dict,
+            "deferred",
+            status="pending",
+            error_code="deferred",
+            error_message=reason,
+            meta={"delay_sec": max(5.0, float(delay_sec))},
+        )
 
 
 async def mark_failed(
@@ -290,6 +358,7 @@ async def mark_failed(
     Returns the resulting status ('failed' or 'exhausted').
     """
     factory = _get_session_factory()
+    row_dict: dict[str, Any] | None = None
     async with factory() as db:
         res = await db.execute(
             text(
@@ -297,6 +366,14 @@ async def mark_failed(
                 UPDATE production_jobs
                 SET attempts = attempts + 1,
                     last_error = :error,
+                    completed_at = now(),
+                    duration_ms = CASE
+                        WHEN started_at IS NOT NULL THEN
+                            GREATEST(0, (EXTRACT(EPOCH FROM (now() - started_at)) * 1000)::int)
+                        WHEN claimed_at IS NOT NULL THEN
+                            GREATEST(0, (EXTRACT(EPOCH FROM (now() - claimed_at)) * 1000)::int)
+                        ELSE duration_ms
+                    END,
                     claimed_at = NULL,
                     claimed_by = NULL,
                     status = CASE
@@ -308,7 +385,7 @@ async def mark_failed(
                     ),
                     updated_at = now()
                 WHERE id = CAST(:id AS UUID)
-                RETURNING status
+                RETURNING *
                 """
             ),
             {
@@ -320,25 +397,54 @@ async def mark_failed(
             },
         )
         row = res.first()
+        if row is not None:
+            row_dict = _row_to_dict(row)
         await db.commit()
-    return str(row[0]) if row else "failed"
+    status = str(row_dict["status"]) if row_dict else "failed"
+    if row_dict:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        event = "exhausted" if status == "exhausted" else "failed"
+        await emit_from_job_row(
+            row_dict,
+            event,
+            status=status,
+            error_message=error,
+            meta={"retryable": bool(retryable)},
+        )
+    return status
 
 
 async def mark_skipped(job_id: str | uuid.UUID, reason: str = "") -> None:
     factory = _get_session_factory()
+    row_dict: dict[str, Any] | None = None
     async with factory() as db:
-        await db.execute(
+        res = await db.execute(
             text(
                 """
                 UPDATE production_jobs
                 SET status = 'skipped', last_error = :reason,
+                    completed_at = now(),
                     claimed_at = NULL, claimed_by = NULL, updated_at = now()
                 WHERE id = CAST(:id AS UUID)
+                RETURNING *
                 """
             ),
             {"id": str(job_id), "reason": (reason or "")[:500]},
         )
+        row = res.first()
+        if row is not None:
+            row_dict = _row_to_dict(row)
         await db.commit()
+    if row_dict:
+        from app.services.production_line_telemetry_service import emit_from_job_row
+
+        await emit_from_job_row(
+            row_dict,
+            "skipped",
+            status="skipped",
+            error_message=reason,
+        )
 
 
 async def mission_job_summary(mission_id: uuid.UUID, *, enrich: bool = True) -> dict[str, Any]:

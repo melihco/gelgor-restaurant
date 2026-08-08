@@ -106,6 +106,15 @@ services:
       # Acil geri dönüş: value'yu `http` yap (senkron drain, web'i yükler).
       - key: PRODUCTION_EXECUTOR
         value: bullmq
+      # Fair-share drain — 1000 tenant: bir workspace diğerlerini ezmesin.
+      - key: PRODUCTION_FAIR_SHARE_ENABLED
+        value: "true"
+      - key: PRODUCTION_MAX_CONCURRENT_PER_WORKSPACE
+        value: "1"
+      - key: PRODUCTION_DRAIN_TICK_LIMIT
+        value: "50"
+      - key: PRODUCTION_FACTORY_DRAIN_BATCH
+        value: "1"
 
   - type: web
     name: smartagency-api
@@ -267,12 +276,17 @@ services:
           name: smartagency-redis
           type: keyvalue
           property: connectionString
+      # Stats / shared Redis cap — keep in sync with production-worker.
+      - key: PRODUCTION_GLOBAL_MAX_INFLIGHT
+        value: "8"
 
   # Üretim worker'ı — BullMQ consumer + kendi özel Next.js instance'ı (127.0.0.1).
   # Üretim yükü (sharp/satori/fal) bu container'da koşar; kullanıcıya bakan
-  # smartagency-web hiç üretim çalıştırmaz. Yüzlerce tenant için numInstances'ı
-  # artırmak yeterli — worker'lar Redis üzerinden koordine olur (BullMQ kuyruğu,
-  # global inflight cap, workspace üretim kilitleri).
+  # smartagency-web hiç üretim çalıştırmaz.
+  #
+  # Phase-1 (~5 müşteri) düşük maliyet: 2×Standard ≈ $50/ay, concurrency 2 → ~4 paralel.
+  # Büyümede: numInstances 4–6 (≈$100–150) veya peak 10; inflight provider kotasına göre.
+  # Peak: POST .../scale {"numInstances":10}
   # Aktif etmek için: smartagency-crew'da PRODUCTION_EXECUTOR=bullmq yap.
   - type: worker
     name: smartagency-production-worker
@@ -286,11 +300,15 @@ services:
       - fromGroup: smartagency-shared
       - key: PORT
         value: "3000"
-      # BullMQ tüketici ayarları — instance başına 2 paralel slot batch.
+      # BullMQ — phase-1: 2 instance × 2 concurrency; cluster inflight 8.
       - key: PRODUCTION_WORKER_CONCURRENCY
         value: "2"
       - key: PRODUCTION_GLOBAL_MAX_INFLIGHT
-        value: "12"
+        value: "8"
+      - key: PRODUCTION_WORKER_RATE_MAX
+        value: "20"
+      - key: PRODUCTION_WORKER_RATE_DURATION_MS
+        value: "60000"
       - key: SHARP_CONCURRENCY
         value: "2"
       - key: FAL_API_KEY

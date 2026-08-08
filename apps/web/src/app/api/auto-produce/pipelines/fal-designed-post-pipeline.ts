@@ -403,25 +403,30 @@ export async function produceFalDesignedPost(
         break;
       }
       }
-      // Purpose-pinned shells (hard/soft): stay on gpt-image replica — never Ideogram redesign.
+      // Purpose-pinned shells (hard/soft): prefer gpt-image replica. If GPT is exhausted,
+      // fall through to Ideogram *with* the locked layout image as reference — hard withhold
+      // was exhausting factory slots with no feed artifact.
       const purposePinned = Boolean(
         binding?.matched
         && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
       );
       if (!imageUrl && purposePinned) {
+        const layoutRef = templateLayoutReferenceUrl(binding);
+        if (!layoutRef || !serverConfig.fal.configured) {
+          console.warn(
+            `[auto-produce] [fal-design] purpose-pinned "${binding?.matched?.templateName ?? '-'}" `
+            + `gpt-image exhausted — no layout ref / fal for Ideogram fall-through`,
+          );
+          throw new Error(
+            'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
+          );
+        }
         console.warn(
           `[auto-produce] [fal-design] purpose-pinned "${binding?.matched?.templateName ?? '-'}" `
-          + `gpt-image exhausted — withholding (no Ideogram fall-through)`,
-        );
-        throw new Error(
-          'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
+          + `gpt-image exhausted — Ideogram with locked layout ref`,
         );
       }
-      if (!imageUrl && input.requireGroundedGallery) {
-        throw new Error(
-          'Brand gallery design failed — could not compose on the matched venue photo (OpenAI API/billing).',
-        );
-      }
+      // Do not throw on requireGroundedGallery yet — Ideogram+layout may still recover.
     } else if (input.requireGroundedGallery) {
       throw new Error('Brand gallery photo required for New Brief designed post.');
     } else if (groundedGalleryRef && !imageUrl) {
@@ -430,16 +435,20 @@ export async function produceFalDesignedPost(
       );
     }
 
-    // Fallback engine — fal Ideogram V4 typography still. Never used for purpose-pinned
-    // hard/soft shells (those withhold above). Soft/format_fallback without pin may still use it.
+    // Fallback engine — fal Ideogram V4 typography still.
+    // Purpose-pinned hard/soft: allowed only when GPT replica failed and a layout
+    // reference exists (Ideogram paints against the approved shell, not a blank canvas).
+    const purposePinnedForIdeogram = Boolean(
+      binding?.matched
+      && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
+    );
+    const layoutRefForIdeogram = templateLayoutReferenceUrl(binding);
+    const allowPinnedIdeogram = purposePinnedForIdeogram && Boolean(layoutRefForIdeogram);
     if (
-      (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef))
+      (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef) || allowPinnedIdeogram)
       && !imageUrl
       && serverConfig.fal.configured
-      && !(
-        binding?.matched
-        && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft')
-      )
+      && (!purposePinnedForIdeogram || allowPinnedIdeogram)
     ) {
       const still = await produceFalDesignedPostStill({
         workspaceId: input.workspaceId,
@@ -486,8 +495,10 @@ export async function produceFalDesignedPost(
           captionDrivenGenerated: input.captionDrivenGenerated,
         }),
         designIntensityLevel: input.designIntensityLevel,
-        templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+        templateLayoutImageUrl: layoutRefForIdeogram,
+        // Keep replica spec so Ideogram path can use layout-ref fallback in fal-designer.
         templateReplica: templateReplicaSpecFromBinding(binding),
+        libraryQualityFalFallback: allowPinnedIdeogram,
       });
       imageUrl = still.imageUrl;
       falGrafikerScore = still.grafikerScore;

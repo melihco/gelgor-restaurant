@@ -671,14 +671,16 @@ async def drain_production_jobs(
             pass
         # endregion
 
-        if batch_reason == "production_in_flight":
+        if _is_ops_defer_reason(batch_reason):
+            delay = _bullmq_defer_delay_sec(batch_reason)
             for job in batch:
-                await jobs.mark_deferred(job["id"], batch_reason, delay_sec=45.0)
+                await jobs.mark_deferred(job["id"], batch_reason, delay_sec=delay)
             logger.info(
                 "production_factory.batch_deferred",
                 mission_id=str(mission_id),
                 slots=slot_keys,
                 reason=batch_reason,
+                delay_sec=delay,
             )
         else:
             for job, key in zip(batch, slot_keys):
@@ -692,6 +694,17 @@ async def drain_production_jobs(
                     )
                 else:
                     slot_reason = _resolve_slot_failure_reason(produce_data, key, batch_reason)
+                    if _is_ops_defer_reason(slot_reason):
+                        delay = _bullmq_defer_delay_sec(slot_reason)
+                        await jobs.mark_deferred(job["id"], slot_reason, delay_sec=delay)
+                        logger.info(
+                            "production_factory.slot_deferred",
+                            mission_id=str(mission_id),
+                            slot=key,
+                            reason=slot_reason[:160],
+                            delay_sec=delay,
+                        )
+                        continue
                     status = await _mark_slot_failed(job["id"], produce_data, key, batch_reason)
                     failed_total += 1
                     logger.info(
@@ -838,6 +851,46 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
     return summary_after
 
 
+def _is_ops_defer_reason(reason: str) -> bool:
+    """Transient ops blocks — defer without burning attempts (line must not clog).
+
+    Billing circuits, monthly SA Kredi, daily budget, and workspace locks clear
+    themselves or via ops; exhausting slots on these traps the mission.
+    """
+    lower = (reason or "").strip().lower()
+    if not lower:
+        return False
+    markers = (
+        "production_in_flight",
+        "provider_billing_circuit_open",
+        "skip-no-fal-quota",
+        "aylık kredi",
+        "sa kredi",
+        "token_wallet",
+        "günlük api bütçesi",
+        "günlük içerik limiti",
+        "daily_budget",
+        "budget_exhausted",
+        "auto_produce_unreachable",
+        "production_worker_offline",
+        "enqueue_failed",
+        "bullmq enqueue failed",
+        "route_still_running",
+        # Quality / template — defer without burning attempts so the line
+        # does not clog while overlay repair or layout-ref Ideogram recovers.
+        "overlay_ungrounded",
+        "caption–tasarım–görsel tutarsız",
+        "caption-tasarım-görsel tutarsız",
+        "caption_design_incoherent",
+        "library template replica",
+        "library_template_replica_failed",
+        "library_template_required",
+        "grounded gallery design failed",
+        "ideogram fallback disabled",
+    )
+    return any(m in lower for m in markers)
+
+
 def _resolve_bullmq_batch_reason(
     produce_data: dict | None,
     http_status: int | None = None,
@@ -845,6 +898,13 @@ def _resolve_bullmq_batch_reason(
     """Map worker HTTP status + auto-produce body → batch reason for slot disposition."""
     if http_status == 409:
         return "production_in_flight"
+    if http_status == 429:
+        err = str(
+            (produce_data or {}).get("reason")
+            or (produce_data or {}).get("error")
+            or ""
+        ).strip()
+        return err[:500] if err else "budget_exhausted"
     if http_status == 0:
         err = str((produce_data or {}).get("error") or "").strip()
         return err[:500] if err else "auto_produce_unreachable"
@@ -854,8 +914,13 @@ def _resolve_bullmq_batch_reason(
     reason = str((produce_data or {}).get("reason") or "")
     if reason == "production_in_flight":
         return reason
+    # Prefer explicit error text when it is an ops defer (credit / billing).
+    err = str((produce_data or {}).get("error") or "")
+    if _is_ops_defer_reason(err):
+        return err[:500]
+    if _is_ops_defer_reason(reason):
+        return reason[:500]
     if http_status and http_status >= 400 and not reason:
-        err = str((produce_data or {}).get("error") or "")
         if err:
             return err[:500]
     return reason or "no_artifact"
@@ -863,6 +928,22 @@ def _resolve_bullmq_batch_reason(
 
 def _bullmq_defer_delay_sec(reason: str) -> float:
     """Backoff before re-claiming deferred BullMQ slots."""
+    lower = (reason or "").strip().lower()
+    if "aylık kredi" in lower or "sa kredi" in lower or "token_wallet" in lower:
+        return 180.0
+    if "provider_billing" in lower or "skip-no-fal-quota" in lower:
+        return 90.0
+    if "budget" in lower or "günlük" in lower:
+        return 120.0
+    if (
+        "overlay_ungrounded" in lower
+        or "caption" in lower and "tutarsız" in lower
+        or "library_template" in lower
+        or "library template" in lower
+        or "grounded gallery" in lower
+        or "caption_design_incoherent" in lower
+    ):
+        return 60.0
     if reason == "production_in_flight":
         return 45.0
     if reason == "auto_produce_unreachable":
@@ -883,6 +964,7 @@ def _bullmq_defer_reasons() -> frozenset[str]:
         "enqueue_failed",
         "bullmq enqueue failed",
         "route_still_running",
+        "budget_exhausted",
     })
 
 
@@ -926,7 +1008,7 @@ async def apply_bullmq_completion(
 
     ready = failed = deferred = 0
     defer_reasons = _bullmq_defer_reasons()
-    if reason in defer_reasons:
+    if reason in defer_reasons or _is_ops_defer_reason(reason):
         delay = _bullmq_defer_delay_sec(reason)
         for fj in factory_jobs:
             job_id = fj.get("id")
@@ -953,8 +1035,13 @@ async def apply_bullmq_completion(
                 ready += 1
             else:
                 slot_reason = _resolve_slot_failure_reason(produce_data, key, reason)
-                await _mark_slot_failed(job_uuid, produce_data, key, reason)
-                failed += 1
+                if _is_ops_defer_reason(slot_reason):
+                    delay = _bullmq_defer_delay_sec(slot_reason)
+                    await jobs.mark_deferred(job_uuid, slot_reason, delay_sec=delay)
+                    deferred += 1
+                else:
+                    await _mark_slot_failed(job_uuid, produce_data, key, reason)
+                    failed += 1
 
     summary_after = await _finalize_mission_production_state(mission_id)
 

@@ -131,6 +131,18 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
           skipped: true,
           produced: 0,
         };
+      } else if (httpStatus === 429) {
+        // Budget / monthly SA Kredi — Python defers without burning attempts.
+        const budgetReason = String(
+          produceData.reason || produceData.error || 'budget_exhausted',
+        );
+        produceData = {
+          ...produceData,
+          reason: budgetReason,
+          error: budgetReason,
+          skipped: true,
+          produced: 0,
+        };
       }
     } catch (err) {
       produceData = { error: err instanceof Error ? err.message : 'auto-produce fetch failed' };

@@ -195,6 +195,11 @@ export async function produceFalOnlySlot(
         logoPlacement: binding?.logoPlacement ?? binding?.matched?.logoPlacement ?? input.logoPlacement,
         templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
         templateReplica: templateReplicaSpecFromBinding(binding),
+        // Layout-ref Ideogram if grounded replica fails — avoid factory exhaust.
+        libraryQualityFalFallback: Boolean(
+          templateReplicaSpecFromBinding(binding)
+          && templateLayoutReferenceUrl(binding),
+        ),
         productionTier: input.productionTier,
       });
       console.log(
@@ -251,6 +256,10 @@ export async function produceFalOnlySlot(
           occasion: binding?.occasion,
           templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
           templateReplica: templateReplicaSpecFromBinding(binding),
+          libraryQualityFalFallback: Boolean(
+            templateReplicaSpecFromBinding(binding)
+            && templateLayoutReferenceUrl(binding),
+          ),
         });
         const motion = await generateStoryMotionPlate({
           imageUrl: poster.imageUrl,
@@ -373,6 +382,10 @@ export async function produceFalOnlySlot(
         occasion: binding?.occasion,
         templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
         templateReplica: templateReplicaSpecFromBinding(binding),
+        libraryQualityFalFallback: Boolean(
+          templateReplicaSpecFromBinding(binding)
+          && templateLayoutReferenceUrl(binding),
+        ),
       });
       console.log(
         `[auto-produce] [fal-only] post designed: "${still.resolvedHeadline ?? input.headline.slice(0, 40)}" ` +

@@ -110,6 +110,30 @@ def test_resolve_bullmq_batch_reason_unreachable_not_in_flight() -> None:
     assert pfs._resolve_bullmq_batch_reason(None, http_status=409) == "production_in_flight"
 
 
+def test_ops_defer_reasons_cover_billing_and_credit() -> None:
+    assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is True
+    assert pfs._is_ops_defer_reason(
+        "Aylık kredi limiti doldu (25,689 / 25,000 SA Kredi)",
+    ) is True
+    assert pfs._is_ops_defer_reason("production_in_flight") is True
+    assert pfs._is_ops_defer_reason("budget_exhausted") is True
+    assert pfs._is_ops_defer_reason(
+        "Caption–tasarım–görsel tutarsız (overlay_ungrounded)",
+    ) is True
+    assert pfs._is_ops_defer_reason(
+        "library template replica: grounded gallery design failed — synthetic Ideogram fallback disabled",
+    ) is True
+    assert pfs._is_ops_defer_reason("withheld_quality_gate") is False
+    assert pfs._is_ops_defer_reason("no_artifact") is False
+    assert pfs._bullmq_defer_delay_sec("Aylık kredi limiti doldu") == 180.0
+    assert pfs._bullmq_defer_delay_sec("provider_billing_circuit_open") == 90.0
+    assert pfs._bullmq_defer_delay_sec("Caption–tasarım–görsel tutarsız (overlay_ungrounded)") == 60.0
+    assert pfs._resolve_bullmq_batch_reason(
+        {"error": "Aylık kredi limiti doldu (1 / 1 SA Kredi)"},
+        http_status=429,
+    ).startswith("Aylık kredi")
+
+
 # ── Drain flow helpers ───────────────────────────────────────────────────────
 
 

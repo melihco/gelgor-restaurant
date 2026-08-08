@@ -59,19 +59,49 @@ Python job'ları `deferred` yapar (60s sonra yeniden dener).
 - Üretim yükü (sharp, satori/Resvg, fal/OpenAI çağrıları) worker container'ında koşar;
   kullanıcıya bakan `smartagency-web` yalnızca UI/API servis eder — 502 riski kalkar.
 - Worker'lar Redis üzerinden koordine olur: BullMQ kuyruğu, global inflight cap
-  (`PRODUCTION_GLOBAL_MAX_INFLIGHT`), workspace üretim kilitleri. Yüzlerce tenant
-  için `numInstances` artırmak yeterli.
+  (`PRODUCTION_GLOBAL_MAX_INFLIGHT`), workspace üretim kilitleri. Binlerce tenant
+  için `numInstances` artırmak yeterli (fair-share drain Crew tarafında açık).
 - İzleme: `GET /api/queue/stats` → `workerCount`, `alerts.workerOffline` /
-  `alerts.noWorkers` (internal key).
+  `alerts.noWorkers` (internal key). Platform Admin → Maliyet → Üretim hattı.
+
+### Kapasite / maliyet (phase-1 → scale)
+
+| Aşama | Instances | Concurrency | Inflight | ≈ Render/ay | Paralel slot |
+|-------|-----------|-------------|----------|-------------|--------------|
+| **Phase-1 (~5 müşteri)** | **2** | **2** | **8** | **~$50** | ~4 |
+| Büyüme (~50) | 4–6 | 2 | 12–20 | ~$100–150 | ~8–12 |
+| Peak (~1000 hazırlık) | 10 | 2–3 | provider %50–70 | ~$250 | ~20 |
+
+Scale (Render API):
+
+```bash
+# Phase-1 (düşük maliyet)
+curl -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" \
+  "https://api.render.com/v1/services/srv-d9b9mjflk1mc73fe5t10/scale" \
+  -d '{"numInstances":2}'
+
+# Peak
+curl -X POST -H "Authorization: Bearer $RENDER_API_KEY" \
+  -H "Content-Type: application/json" \
+  "https://api.render.com/v1/services/srv-d9b9mjflk1mc73fe5t10/scale" \
+  -d '{"numInstances":10}'
+```
+
+Sağlık: `workerCount` ≈ instance sayısı; `globalInflight` ≤ `globalInflightMax`;
+`alerts.providerBillingCircuit=false`. Billing circuit açılırsa önce kota, sonra
+`POST /api/queue/stats` `{action: clear_provider_billing_circuits}`.
 
 **Deploy checklist:**
 
-1. Blueprint sync → `smartagency-production-worker` ayakta (`numInstances` ≥ 1).
-2. Worker `sync: false` env'leri web ile aynı (fal/OpenAI/R2):
+1. Blueprint sync → `smartagency-production-worker` ayakta (`numInstances` ≥ 2 phase-1).
+2. Worker capacity env: `PRODUCTION_WORKER_CONCURRENCY=2`,
+   `PRODUCTION_GLOBAL_MAX_INFLIGHT=8`, `PRODUCTION_WORKER_RATE_MAX=20`.
+3. Worker `sync: false` env'leri web ile aynı (fal/OpenAI/R2):
    `python3 scripts/sync-render-env-from-local.py` veya dashboard.
-3. Worker log: `started. queue=production-slots` + private Next ready.
-4. Crew'da `PRODUCTION_EXECUTOR=bullmq` (blueprint default).
-5. Acil geri dönüş: crew'da `PRODUCTION_EXECUTOR=http` — senkron drain web'e biner.
+4. Worker log: `started. queue=production-slots concurrency=2` + private Next ready.
+5. Crew'da `PRODUCTION_EXECUTOR=bullmq` (blueprint default).
+6. Acil geri dönüş: crew'da `PRODUCTION_EXECUTOR=http` — senkron drain web'e biner.
 
 ## Maliyet notu
 

@@ -21,9 +21,9 @@ logger = structlog.get_logger()
 
 SchemaGateMode = Literal["fail", "warn", "off"]
 
-# Factory blast-radius columns (keep in sync with migrations 0024–0042).
+# Factory blast-radius columns (keep in sync with migrations 0024–0043).
 REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
-    "production_jobs": ("priority", "slot_key"),
+    "production_jobs": ("priority", "slot_key", "started_at", "duration_ms", "queue_wait_ms"),
     "production_slot_definitions": ("optional_tags", "owner_workspace_id", "is_active"),
     "brand_contexts": ("brand_service_profile", "brand_theme"),
     "brand_design_templates": ("catalog_slot_key",),
@@ -38,6 +38,7 @@ REQUIRED_TABLES: tuple[str, ...] = (
     "tenant_slot_assignments",
     "brand_contexts",
     "brand_design_templates",
+    "production_slot_events",
 )
 
 # Idempotent additive DDL — safe to re-run; mirrors migration snippets.
@@ -49,6 +50,61 @@ ADDITIVE_DDL: tuple[str, ...] = (
     """
     ALTER TABLE production_jobs
         ADD COLUMN IF NOT EXISTS slot_key VARCHAR(128)
+    """,
+    """
+    ALTER TABLE production_jobs
+        ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ
+    """,
+    """
+    ALTER TABLE production_jobs
+        ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+    """,
+    """
+    ALTER TABLE production_jobs
+        ADD COLUMN IF NOT EXISTS duration_ms INTEGER
+    """,
+    """
+    ALTER TABLE production_jobs
+        ADD COLUMN IF NOT EXISTS queue_wait_ms INTEGER
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS production_slot_events (
+        id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        job_id          UUID NOT NULL REFERENCES production_jobs(id) ON DELETE CASCADE,
+        workspace_id    UUID NOT NULL,
+        mission_id      UUID NOT NULL,
+        idea_index      INTEGER,
+        slot_role       TEXT,
+        slot_key        VARCHAR(128),
+        format          TEXT,
+        pipeline        TEXT,
+        event_type      VARCHAR(32) NOT NULL,
+        status          VARCHAR(32),
+        attempt         INTEGER,
+        queue_wait_ms   INTEGER,
+        duration_ms     INTEGER,
+        provider        VARCHAR(64),
+        model           VARCHAR(96),
+        artifact_id     UUID,
+        error_code      VARCHAR(96),
+        error_message   TEXT,
+        source_system   VARCHAR(32) NOT NULL DEFAULT 'factory',
+        worker_id       TEXT,
+        meta            JSONB NOT NULL DEFAULT '{}'::jsonb,
+        recorded_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_production_slot_events_mission_time
+        ON production_slot_events (mission_id, recorded_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_production_slot_events_workspace_time
+        ON production_slot_events (workspace_id, recorded_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_production_slot_events_job_time
+        ON production_slot_events (job_id, recorded_at DESC)
     """,
     """
     ALTER TABLE production_slot_definitions

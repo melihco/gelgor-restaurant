@@ -3,9 +3,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import {
+  formatProductionDuration,
   getAdminMissionCostEvents,
   getAdminMissionCostProduction,
+  getAdminMissionProductionLine,
   getAdminWorkspaceCostSummary,
+  getAdminWorkspaceProductionLine,
 } from '@/lib/platform-admin-cost-client';
 import { AdminSectionTitle, AdminSurface } from '@/components/platform-admin/admin-ui';
 import { CostMetric, formatScopeLabel, formatUsd } from '@/components/platform-admin/OverviewTab';
@@ -30,11 +33,26 @@ export function CostTab({
     staleTime: 30_000,
   });
 
+  const lineQuery = useQuery({
+    queryKey: ['admin-workspace-production-line', workspaceId],
+    queryFn: () => getAdminWorkspaceProductionLine(workspaceId, 24),
+    enabled: Boolean(workspaceId),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+
   const missionQuery = useQuery({
     queryKey: ['admin-mission-cost', workspaceId, selectedMissionId],
     queryFn: () => getAdminMissionCostProduction(workspaceId, selectedMissionId!),
     enabled: Boolean(workspaceId && selectedMissionId),
     staleTime: 30_000,
+  });
+
+  const missionLineQuery = useQuery({
+    queryKey: ['admin-mission-production-line', workspaceId, selectedMissionId],
+    queryFn: () => getAdminMissionProductionLine(workspaceId, selectedMissionId!),
+    enabled: Boolean(workspaceId && selectedMissionId),
+    staleTime: 15_000,
   });
 
   const eventsQuery = useQuery({
@@ -45,7 +63,9 @@ export function CostTab({
   });
 
   const ws = workspaceQuery.data;
+  const line = lineQuery.data;
   const mission = missionQuery.data;
+  const missionLine = missionLineQuery.data;
   const rollup = mission?.rollup;
 
   return (
@@ -63,6 +83,74 @@ export function CostTab({
         </select>
         <span className="text-xs text-gray-500 dark:text-gray-400">Workspace: {workspaceId.slice(0, 8)}…</span>
       </div>
+
+      {line && (
+        <AdminSurface>
+          <AdminSectionTitle
+            title="Üretim hattı"
+            subtitle="Son 24 saat — kuyruk bekleme, süre, başarı; maliyet cost_events’ten"
+          />
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <CostMetric label="Canlı job" value={String(line.live.active_count)} hint={Object.entries(line.live.by_status).map(([k, v]) => `${k}:${v}`).join(' · ') || 'idle'} />
+            <CostMetric label="p50 süre" value={formatProductionDuration(line.period.p50_duration_ms)} hint={`ort ${formatProductionDuration(line.period.avg_duration_ms)}`} />
+            <CostMetric label="p50 kuyruk" value={formatProductionDuration(line.period.p50_queue_wait_ms)} hint={`ort ${formatProductionDuration(line.period.avg_queue_wait_ms)}`} />
+            <CostMetric
+              label="Başarı / maliyet"
+              value={`${line.period.success_rate != null ? `${Math.round(line.period.success_rate * 100)}%` : '—'} · ${formatUsd(line.period.cost_usd)}`}
+              hint={`${line.period.cost_line_count} cost satırı`}
+            />
+          </div>
+          {(line.live.jobs ?? []).length > 0 && (
+            <div className="mb-4 max-h-56 overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800 text-xs">
+              <table className="min-w-full text-left">
+                <thead className="sticky top-0 bg-gray-50 dark:bg-white/[0.05] text-[10px] uppercase text-gray-500 dark:text-gray-400">
+                  <tr>
+                    <th className="px-3 py-2">Durum</th>
+                    <th className="px-3 py-2">Slot</th>
+                    <th className="px-3 py-2">Pipeline</th>
+                    <th className="px-3 py-2">Mission</th>
+                    <th className="px-3 py-2">Hata</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {line.live.jobs.slice(0, 40).map((j) => (
+                    <tr key={j.id} className="border-t border-gray-100 dark:border-gray-800">
+                      <td className="px-3 py-2 text-gray-700 dark:text-gray-200">{j.status}</td>
+                      <td className="px-3 py-2 font-mono text-gray-600 dark:text-gray-300">
+                        {j.idea_index ?? '?'}::{j.slot_role ?? j.slot_key ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{j.pipeline ?? j.format ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          className="font-mono text-amber-200/90 hover:underline"
+                          onClick={() => onSelectMission(j.mission_id)}
+                        >
+                          {j.mission_id.slice(0, 8)}…
+                        </button>
+                      </td>
+                      <td className="max-w-[220px] truncate px-3 py-2 text-rose-300/80">{j.last_error || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {(line.recent_events ?? []).length > 0 && (
+            <div className="max-h-40 space-y-1 overflow-y-auto text-xs text-gray-500 dark:text-gray-400">
+              {line.recent_events.slice(0, 12).map((ev) => (
+                <div key={ev.id} className="flex flex-wrap gap-2 border-b border-gray-100 dark:border-gray-800 py-1">
+                  <span className="font-mono">{ev.recorded_at?.slice(11, 19) ?? '—'}</span>
+                  <span className="text-gray-700 dark:text-gray-200">{ev.event_type}</span>
+                  <span className="font-mono">{ev.idea_index ?? '?'}::{ev.slot_role ?? '—'}</span>
+                  {ev.duration_ms != null && <span>{formatProductionDuration(ev.duration_ms)}</span>}
+                  {ev.error_message && <span className="truncate text-rose-300/70">{ev.error_message.slice(0, 80)}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </AdminSurface>
+      )}
 
       {workspaceQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Maliyet verisi yükleniyor…</p>}
       {workspaceQuery.isError && <p className="text-sm text-rose-300">Workspace maliyet özeti alınamadı.</p>}
@@ -167,6 +255,19 @@ export function CostTab({
           />
 
           {missionQuery.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Mission rollup yükleniyor…</p>}
+
+          {missionLine && (
+            <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <CostMetric
+                label="Slot başarı"
+                value={`${missionLine.totals.ready}/${missionLine.totals.jobs}`}
+                hint={missionLine.totals.success_rate != null ? `%${Math.round(missionLine.totals.success_rate * 100)}` : undefined}
+              />
+              <CostMetric label="p50 süre" value={formatProductionDuration(missionLine.timing.p50_duration_ms)} />
+              <CostMetric label="p50 kuyruk" value={formatProductionDuration(missionLine.timing.p50_queue_wait_ms)} />
+              <CostMetric label="Hattı maliyet" value={formatUsd(missionLine.cost.total_usd)} hint={`${missionLine.cost.line_count} satır`} />
+            </div>
+          )}
 
           {rollup && (
             <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

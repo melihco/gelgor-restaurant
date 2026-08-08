@@ -18,8 +18,11 @@ import {
   rebiasUngroundedOverlayCopy,
 } from '@/lib/overlay-caption-grounding';
 import {
+  extractCaptionThemePunchline,
   isMeaningfulFalOverlayText,
   isIncompleteOverlayPhrase,
+  resolveFalDisplayHeadline,
+  resolveFalProductionOverlayHeadline,
 } from '@/lib/fal-caption-headline';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -118,6 +121,55 @@ export function evaluateCaptionDesignPostCoherence(
         overlay = rebiased.headline;
         repaired = true;
       }
+    }
+  }
+
+  // Second pass — force a caption-derived punchline so overlay_ungrounded does not
+  // exhaust the factory slot when a short theme line exists in the publish caption.
+  if (overlayLooksBad(overlay, brandName, caption, input.businessType) && caption.length >= 24) {
+    const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
+    const themePunch = extractCaptionThemePunchline({
+      caption,
+      maxLen,
+      maxWords: 3,
+      missionTitle: overlay,
+    });
+    const resolved = resolveFalDisplayHeadline({
+      caption,
+      missionTitle: '', // ignore briefing-style mission title — derive from caption only
+      brandName: brandName || undefined,
+      maxLen,
+    });
+    const captionClause = caption
+      .replace(/[#@]\S+/g, ' ')
+      .split(/[.!?\n|—–\-]+/)
+      .map((s) => s.trim())
+      .find((s) => s.length >= 8);
+    // Prefer 2–3 caption words (not char-truncated mid-phrase — that fails incomplete checks).
+    const clauseHook = captionClause
+      ? captionClause.split(/\s+/).filter(Boolean).slice(0, 3).join(' ')
+      : '';
+    const candidates = [themePunch, resolved.headline, clauseHook]
+      .filter((v): v is string => Boolean(v && v.trim()))
+      .filter((v) =>
+        overlayHeadlineGroundedInCaption(v, caption)
+        && !isOffTopicTourismOverlay(v, caption, input.businessType)
+        && !overlayLooksBad(v, brandName, caption, input.businessType),
+      );
+    const forced = candidates[0]
+      ? resolveFalProductionOverlayHeadline(
+          candidates[0],
+          candidates,
+          channel,
+        )
+      : '';
+    if (forced && !overlayLooksBad(forced, brandName, caption, input.businessType)) {
+      overlay = forced;
+      repaired = true;
+    } else if (clauseHook && overlayHeadlineGroundedInCaption(clauseHook, caption)) {
+      // Last resort: 2–3 caption words — grounded by construction.
+      overlay = clauseHook;
+      repaired = true;
     }
   }
 

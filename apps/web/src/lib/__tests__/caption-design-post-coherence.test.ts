@@ -87,4 +87,22 @@ describe('caption-design-post-coherence', () => {
       expect(result.breaks.length).toBeGreaterThan(0);
     }
   });
+
+  it('force-repairs briefing-style overlay via caption punchline (second pass)', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Live music sunset session on the beach — cocktails and golden hour vibes.',
+      overlayHeadline: 'Optimize engagement with exclusive hospitality storytelling',
+      brandName: 'Scorpios',
+      businessType: 'beach_club',
+      photoUrl: 'https://cdn.example.com/sunset.jpg',
+      galleryMeta: {
+        contentTags: ['sunset', 'beach', 'music'],
+        description: 'Sunset beach live music with crowd',
+        suggestedAssetType: 'event_photo',
+      },
+    });
+    expect(result.overlayHeadline.toLowerCase()).not.toMatch(/optimize|engagement|storytelling/);
+    // Prefer ship after force punchline when caption has scene nouns.
+    expect(result.ok || result.repaired).toBe(true);
+  });
 });
