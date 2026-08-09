@@ -785,7 +785,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandName: resolvedBrandName,
     brandLocation,
     brandDescription: brandCtxForVisual.description ?? undefined,
-    brandLanguages: brandCtx.languages ?? brandCtx.inferred_language ?? undefined,
+    brandLanguages: normalizeBrandLanguagesInput(
+      brandCtx.languages ?? brandCtx.inferred_language,
+    ),
     pipelineRun,
   });
 

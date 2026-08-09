@@ -34,6 +34,7 @@ import {
   resolveQueueGalleryCapacityReroutes,
 } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
+import { normalizeBrandLanguagesInput } from '@/lib/cta-localization';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -198,7 +199,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       brandName: pctx.brandName,
       brandLocation: pctx.brandLocation,
       brandDescription: pctx.brandCtxForVisual.description ?? undefined,
-      brandLanguages: (pctx.raw.languages ?? pctx.raw.inferred_language) as string | undefined,
+      brandLanguages: normalizeBrandLanguagesInput(
+        pctx.raw.languages ?? pctx.raw.inferred_language,
+      ),
     });
 
     if (planOutcome.status === 'blocked') {
