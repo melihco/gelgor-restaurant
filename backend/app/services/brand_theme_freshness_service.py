@@ -106,6 +106,7 @@ def build_soft_vibe_from_signals(ctx: Any) -> dict[str, Any] | None:
             "style": voice.get("writing_style"),
             "emoji_usage": voice.get("emoji_usage"),
             "length": voice.get("caption_length"),
+            "writing_rules": caption_rules,
             "rules": caption_rules,
         },
         "grading": {
