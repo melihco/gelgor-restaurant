@@ -64,13 +64,26 @@ export function summarizeCatalogTemplateHardPinCoverage(
  * Template-row view for BRS when active-slot set is not loaded:
  * among unique catalog_slot_keys on active templates, count provisioned keys.
  */
+type TemplateRowForCoverage = {
+  status?: string | null;
+  template_type?: string | null;
+  catalog_slot_key?: string | null;
+  format?: string | null;
+  /** Index-friendly — BrandDesignTemplateRecord.design_spec uses `[key: string]: unknown`. */
+  design_spec?: { [key: string]: unknown; catalogSlotKey?: unknown } | null;
+};
+
+function catalogSlotKeyFromTemplate(t: TemplateRowForCoverage): string {
+  const fromSpec = t.design_spec?.catalogSlotKey;
+  return String(
+    t.catalog_slot_key
+    ?? (typeof fromSpec === 'string' ? fromSpec : '')
+    ?? '',
+  ).trim();
+}
+
 export function summarizeTemplateRowsHardPinHealth(
-  templates: Array<{
-    status?: string | null;
-    catalog_slot_key?: string | null;
-    format?: string | null;
-    design_spec?: { catalogSlotKey?: string } | null;
-  }>,
+  templates: TemplateRowForCoverage[],
 ): {
   activeCount: number;
   keyedCount: number;
@@ -81,11 +94,7 @@ export function summarizeTemplateRowsHardPinHealth(
   const active = templates.filter((t) => String(t.status ?? 'active') !== 'archived');
   const byKey = new Map<string, boolean>();
   for (const t of active) {
-    const key = String(
-      t.catalog_slot_key
-      ?? t.design_spec?.catalogSlotKey
-      ?? '',
-    ).trim();
+    const key = catalogSlotKeyFromTemplate(t);
     if (!key) continue;
     const ok = Boolean(t.format && isProduceFormat(t.format));
     byKey.set(key, (byKey.get(key) ?? false) || ok);
@@ -121,12 +130,7 @@ export type DesignTemplateTypeCoverage = {
  * Distinct fal template_type coverage vs sector policy floor.
  */
 export function summarizeDesignTemplateTypeCoverage(
-  templates: Array<{
-    status?: string | null;
-    template_type?: string | null;
-    catalog_slot_key?: string | null;
-    design_spec?: { catalogSlotKey?: string } | null;
-  }>,
+  templates: TemplateRowForCoverage[],
   sector: string | null | undefined,
 ): DesignTemplateTypeCoverage {
   const policy = resolveDesignTemplateTypePolicy(sector);
@@ -136,12 +140,7 @@ export function summarizeDesignTemplateTypeCoverage(
   for (const t of active) {
     const tt = String(t.template_type ?? '').trim().toLowerCase();
     if (tt) types.add(tt);
-    const key = String(
-      t.catalog_slot_key
-      ?? t.design_spec?.catalogSlotKey
-      ?? '',
-    ).trim();
-    if (key) keyedCount += 1;
+    if (catalogSlotKeyFromTemplate(t)) keyedCount += 1;
   }
   const distinctTypes = [...types].sort();
   const typeCount = distinctTypes.length;

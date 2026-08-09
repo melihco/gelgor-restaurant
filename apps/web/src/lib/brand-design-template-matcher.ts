@@ -42,6 +42,8 @@ export interface BrandDesignTemplateRecord {
     galleryRef?: string | null;
     intent?: string;
     prominentLogo?: boolean;
+    /** Legacy mirror of catalog_slot_key when column was empty. */
+    catalogSlotKey?: string;
     [key: string]: unknown;
   };
   status: string;

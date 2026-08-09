@@ -296,8 +296,11 @@ function inferDesignTemplateType(slotKey: string): string {
   if (/farm_visit|farm.?to.?table|orchard|grove|producer_visit/.test(key)) {
     return 'daily_story';
   }
+  // IMPORTANT: token checks must use purpose stem (`key`), never full slot_key —
+  // sector ids like `local_products_shop` contain "product" and would collapse
+  // every slot into menu_highlight.
   if (
-    slotKeyHasAnyToken(slotKey, [
+    slotKeyHasAnyToken(key, [
       'event', 'events', 'dj', 'live_music', 'private_event', 'aftermovie', 'wedding', 'bridal',
     ])
     || /live_music|private_event|aftermovie/.test(key)
@@ -308,7 +311,7 @@ function inferDesignTemplateType(slotKey: string): string {
     return 'campaign_announcement';
   }
   if (
-    slotKeyHasAnyToken(slotKey, [
+    slotKeyHasAnyToken(key, [
       'product', 'menu', 'dish', 'cocktail', 'retail', 'arrival', 'collection',
       'unboxing', 'pastry', 'property', 'listing', 'gift', 'bundle', 'hamper',
       'new_arrival', 'product_hero', 'product_detail', 'product_range', 'limited_batch',
@@ -862,22 +865,22 @@ const SECTOR_SLOT_PACKS_BASE: SectorSlotPack[] = [
     aliases: ['local_shop', 'artisan_shop', 'farm_shop', 'handmade_shop'],
     sortOrder: 48,
     instances: [
-      { suffix: 'product_hero_post', labelTr: 'Ürün hero', labelEn: 'Product hero', format: 'post' },
-      { suffix: 'maker_story_post', labelTr: 'Üretici hikayesi', labelEn: 'Maker story', format: 'post' },
-      { suffix: 'seasonal_harvest_post', labelTr: 'Mevsimsel hasat', labelEn: 'Seasonal harvest', format: 'post' },
-      { suffix: 'shop_ambiance_post', labelTr: 'Dükkan atmosferi', labelEn: 'Shop ambiance', format: 'post' },
-      { suffix: 'customer_favorite_post', labelTr: 'Müşteri favorisi', labelEn: 'Customer favorite', format: 'post' },
-      { suffix: 'limited_batch_post', labelTr: 'Sınırlı parti', labelEn: 'Limited batch', format: 'post' },
-      { suffix: 'gift_bundle_post', labelTr: 'Hediye paketi', labelEn: 'Gift bundle', format: 'post' },
-      { suffix: 'market_day_post', labelTr: 'Pazar günü', labelEn: 'Market day', format: 'post' },
-      { suffix: 'new_arrival_story', labelTr: 'Yeni gelen story', labelEn: 'New arrival story', format: 'story' },
-      { suffix: 'production_bts_story', labelTr: 'Üretim kulis story', labelEn: 'Production BTS story', format: 'story' },
-      { suffix: 'farm_visit_story', labelTr: 'Çiftlik ziyareti story', labelEn: 'Farm visit story', format: 'story' },
-      { suffix: 'weekend_hours_story', labelTr: 'Hafta sonu saat story', labelEn: 'Weekend hours story', format: 'story' },
-      { suffix: 'product_detail_reel', labelTr: 'Ürün detay reel', labelEn: 'Product detail reel', format: 'reel' },
-      { suffix: 'shop_tour_reel', labelTr: 'Dükkan turu reel', labelEn: 'Shop tour reel', format: 'reel' },
-      { suffix: 'craft_process_reel', labelTr: 'El işi süreç reel', labelEn: 'Craft process reel', format: 'reel' },
-      { suffix: 'product_range_carousel', labelTr: 'Ürün yelpazesi carousel', labelEn: 'Product range carousel', format: 'carousel' },
+      { suffix: 'product_hero_post', labelTr: 'Ürün hero', labelEn: 'Product hero', format: 'post', designTemplateType: 'menu_highlight' },
+      { suffix: 'maker_story_post', labelTr: 'Üretici hikayesi', labelEn: 'Maker story', format: 'post', designTemplateType: 'daily_story' },
+      { suffix: 'seasonal_harvest_post', labelTr: 'Mevsimsel hasat', labelEn: 'Seasonal harvest', format: 'post', designTemplateType: 'seasonal_promo' },
+      { suffix: 'shop_ambiance_post', labelTr: 'Dükkan atmosferi', labelEn: 'Shop ambiance', format: 'post', designTemplateType: 'venue_showcase' },
+      { suffix: 'customer_favorite_post', labelTr: 'Müşteri favorisi', labelEn: 'Customer favorite', format: 'post', designTemplateType: 'social_proof' },
+      { suffix: 'limited_batch_post', labelTr: 'Sınırlı parti', labelEn: 'Limited batch', format: 'post', designTemplateType: 'campaign_announcement' },
+      { suffix: 'gift_bundle_post', labelTr: 'Hediye paketi', labelEn: 'Gift bundle', format: 'post', designTemplateType: 'menu_highlight' },
+      { suffix: 'market_day_post', labelTr: 'Pazar günü', labelEn: 'Market day', format: 'post', designTemplateType: 'event_special' },
+      { suffix: 'new_arrival_story', labelTr: 'Yeni gelen story', labelEn: 'New arrival story', format: 'story', designTemplateType: 'menu_highlight' },
+      { suffix: 'production_bts_story', labelTr: 'Üretim kulis story', labelEn: 'Production BTS story', format: 'story', designTemplateType: 'daily_story' },
+      { suffix: 'farm_visit_story', labelTr: 'Çiftlik ziyareti story', labelEn: 'Farm visit story', format: 'story', designTemplateType: 'daily_story' },
+      { suffix: 'weekend_hours_story', labelTr: 'Hafta sonu saat story', labelEn: 'Weekend hours story', format: 'story', designTemplateType: 'announcement_formal' },
+      { suffix: 'product_detail_reel', labelTr: 'Ürün detay reel', labelEn: 'Product detail reel', format: 'reel', designTemplateType: 'menu_highlight' },
+      { suffix: 'shop_tour_reel', labelTr: 'Dükkan turu reel', labelEn: 'Shop tour reel', format: 'reel', designTemplateType: 'venue_showcase' },
+      { suffix: 'craft_process_reel', labelTr: 'El işi süreç reel', labelEn: 'Craft process reel', format: 'reel', designTemplateType: 'daily_story' },
+      { suffix: 'product_range_carousel', labelTr: 'Ürün yelpazesi carousel', labelEn: 'Product range carousel', format: 'carousel', designTemplateType: 'menu_highlight' },
     ],
   },
   {
