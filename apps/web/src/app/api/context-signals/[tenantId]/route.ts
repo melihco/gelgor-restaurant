@@ -21,6 +21,7 @@ interface BrandContextRaw {
   business_name?: string | null;
   description?: string | null;
   location?: string | null;
+  languages?: string | null;
 }
 
 function num(v: string | null): number | undefined {
@@ -49,9 +50,11 @@ export async function GET(
   );
   const ctx = ctxRes.ok ? ctxRes.data ?? {} : {};
 
+  const languages = ctx.languages ?? undefined;
   const result = buildActiveSignals({
     date: Number.isNaN(date.getTime()) ? new Date() : date,
     region: 'TR',
+    languages,
     businessType: ctx.business_type ?? undefined,
     brandName: ctx.business_name ?? undefined,
     brandDescription: ctx.description ?? undefined,
@@ -64,6 +67,7 @@ export async function GET(
   const brandDynamics = computeBrandDynamics({
     date: Number.isNaN(date.getTime()) ? new Date() : date,
     region: 'TR',
+    languages,
     businessType: ctx.business_type ?? undefined,
     brandName: ctx.business_name ?? undefined,
     brandDescription: ctx.description ?? undefined,

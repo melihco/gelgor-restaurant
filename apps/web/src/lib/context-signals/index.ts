@@ -25,22 +25,25 @@ import {
   goldenHourSignal,
 } from './calculators';
 import { resolveSectorPack, sectorPackSignals } from './sector-packs';
+import { resolveSignalLanguage, type SignalLanguage } from './language';
 import {
   resolveBrandOperatingProfile,
   signalConflictsWithOperatingProfile,
-  type BrandOperatingProfile,
 } from '@/lib/brand-operating-profile';
 
 export * from './types';
 export { moonPhase, nextFullMoon } from './lunar';
 export { resolveSectorPack, SECTOR_PACKS } from './sector-packs';
 export type { SectorPackId, SectorPack } from './sector-packs';
+export { resolveSignalLanguage } from './language';
+export type { SignalLanguage } from './language';
 
 const DEFAULT_HORIZON = 14;
 
 export function buildActiveSignals(input: ContextSignalInputs): ContextSignalResult {
   const date = input.date ?? new Date();
   const region = input.region ?? 'TR';
+  const language = resolveSignalLanguage(input.languages);
   const horizonDays = input.horizonDays ?? DEFAULT_HORIZON;
   const hasCoords = typeof input.lat === 'number' && typeof input.lng === 'number';
   const operatingProfile = input.operatingProfile ?? resolveBrandOperatingProfile({
@@ -76,24 +79,26 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
     signals.push(...produced);
   };
 
-  const season = seasonSignal(date);
-  const lunar = lunarSignals(date, horizonDays);
+  const season = seasonSignal(date, language);
+  const lunar = lunarSignals(date, horizonDays, language);
   const fullMoonActive = lunar.length > 0;
 
   run('season', true, () => [season]);
-  run('day_of_week', true, () => [dayOfWeekSignal(date)]);
-  run('weekly_rhythm', true, () => weeklyRhythmSignals(date, operatingProfile));
+  run('day_of_week', true, () => [dayOfWeekSignal(date, language)]);
+  run('weekly_rhythm', true, () => weeklyRhythmSignals(date, operatingProfile, language));
   run('holiday', true, () => holidaySignals(date, horizonDays, region));
   run('lunar', true, () => lunar);
-  run('solstice_equinox', true, () => solsticeSignals(date, horizonDays));
+  run('solstice_equinox', true, () => solsticeSignals(date, horizonDays, language));
   run(
     'golden_hour',
     hasCoords,
     () => {
-      const s = goldenHourSignal(date, input.lat, input.lng);
+      const s = goldenHourSignal(date, input.lat, input.lng, language);
       return s ? [s] : [];
     },
-    hasCoords ? undefined : 'Koordinat (lat/lng) yok',
+    hasCoords
+      ? undefined
+      : (language === 'en' ? 'Missing coordinates (lat/lng)' : 'Koordinat (lat/lng) yok'),
   );
 
   // Sector pack — resolve from business_type + brand name + description for richer detection.
@@ -105,6 +110,7 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
     isWeekend: dow === 0 || dow === 6,
     dayOfWeek: dow,
     fullMoonActive,
+    language,
   }));
 
   // Boost confidence of universal signals the sector emphasises.
@@ -131,7 +137,7 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
     (s) => Date.parse(s.windowStart) <= weekEnd.getTime(),
   ).length;
 
-  const promptBlock = buildStrategistSignalBlock(filteredSignals, pack.label, date);
+  const promptBlock = buildStrategistSignalBlock(filteredSignals, pack.label, date, language);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -161,18 +167,34 @@ export function buildStrategistSignalBlock(
   signals: SignalRecord[],
   sectorLabel: string,
   date: Date,
+  language: SignalLanguage = 'tr',
 ): string {
   if (signals.length === 0) return '';
   const lines: string[] = [];
-  lines.push('=== BAĞLAM SİNYALLERİ (deterministik, gerçek tarih/astronomi) ===');
-  lines.push(`Sektör: ${sectorLabel} · Referans tarih: ${date.toISOString().slice(0, 10)}`);
-  lines.push('Bu sinyalleri içerik fikirlerini gerçek dünyaya bağlamak için kullan. ');
-  lines.push('"verified: true" = gerçek/doğrulanmış (kullanmaktan çekinme); "false" = ritim/çıkarım (uygunsa kullan).');
-  lines.push('');
-  for (const s of signals.slice(0, 12)) {
-    const flag = s.verified ? '✓doğrulanmış' : '~çıkarım';
-    const hooks = s.contentHooks.slice(0, 2).join(' / ');
-    lines.push(`- [${Math.round(s.confidence * 100)}% ${flag}] ${s.title}${hooks ? ` → ${hooks}` : ''}`);
+  const dateIso = date.toISOString().slice(0, 10);
+  if (language === 'en') {
+    lines.push('=== CONTEXT SIGNALS (deterministic, real date/astronomy) ===');
+    lines.push(`Sector: ${sectorLabel} · Reference date: ${dateIso}`);
+    lines.push('Use these signals to ground content ideas in the real world.');
+    lines.push('"verified: true" = fact (use freely); "false" = rhythm/inference (use when relevant).');
+    lines.push('CRITICAL: All mission titles, headlines, captions, and hooks MUST be written in English.');
+    lines.push('');
+    for (const s of signals.slice(0, 12)) {
+      const flag = s.verified ? '✓verified' : '~inferred';
+      const hooks = s.contentHooks.slice(0, 2).join(' / ');
+      lines.push(`- [${Math.round(s.confidence * 100)}% ${flag}] ${s.title}${hooks ? ` → ${hooks}` : ''}`);
+    }
+  } else {
+    lines.push('=== BAĞLAM SİNYALLERİ (deterministik, gerçek tarih/astronomi) ===');
+    lines.push(`Sektör: ${sectorLabel} · Referans tarih: ${dateIso}`);
+    lines.push('Bu sinyalleri içerik fikirlerini gerçek dünyaya bağlamak için kullan. ');
+    lines.push('"verified: true" = gerçek/doğrulanmış (kullanmaktan çekinme); "false" = ritim/çıkarım (uygunsa kullan).');
+    lines.push('');
+    for (const s of signals.slice(0, 12)) {
+      const flag = s.verified ? '✓doğrulanmış' : '~çıkarım';
+      const hooks = s.contentHooks.slice(0, 2).join(' / ');
+      lines.push(`- [${Math.round(s.confidence * 100)}% ${flag}] ${s.title}${hooks ? ` → ${hooks}` : ''}`);
+    }
   }
   return lines.join('\n');
 }

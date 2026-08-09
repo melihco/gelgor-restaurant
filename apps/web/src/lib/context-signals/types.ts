@@ -45,6 +45,11 @@ export interface ContextSignalInputs {
   date: Date;
   /** IANA-ish region for holidays; v1 supports 'TR'. */
   region?: string;
+  /**
+   * Brand content language (`languages` field). Drives TR vs EN signal hooks
+   * so English brands never receive Turkish season/rhythm copy.
+   */
+  languages?: string | null;
   businessType?: string;
   /** Brand name — used alongside businessType for richer sector detection. */
   brandName?: string;

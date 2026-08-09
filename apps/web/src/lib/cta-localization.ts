@@ -7,13 +7,27 @@ const CTA_TR_TO_EN: Record<string, string> = {
   'hemen incele': 'Explore now',
   'detaylari incele': 'See details',
   'detayları incele': 'See details',
+  detaylar: 'See details',
   'rezervasyon yap': 'Book now',
+  'hemen rezervasyon': 'Book now',
+  'masani ayir': 'Reserve a table',
+  'masanı ayır': 'Reserve a table',
+  'randevu al': 'Book an appointment',
+  'yerini ayir': 'Save your spot',
+  'yerini ayır': 'Save your spot',
   'yerini ayirt': 'Reserve your spot',
   'yerini ayırt': 'Reserve your spot',
+  'hemen siparis ver': 'Order now',
+  'hemen sipariş ver': 'Order now',
   'siparis ver': 'Order now',
   'sipariş ver': 'Order now',
+  incele: 'Explore',
+  'bizi ziyaret et': 'Visit us',
+  'yolunu dusur': 'Stop by',
+  'yolunu düşür': 'Stop by',
   'iletisime gec': 'Get in touch',
   'iletişime geç': 'Get in touch',
+  'bilgi al': 'Get info',
   'bize katil': 'Join us',
   'bize katıl': 'Join us',
   'takip et': 'Follow us',
@@ -21,24 +35,32 @@ const CTA_TR_TO_EN: Record<string, string> = {
   'bugün dene': 'Try today',
   'menuyu gor': 'View menu',
   'menüyü gör': 'View menu',
-  'kacirma': "Don't miss out",
-  'kaçırma': "Don't miss out",
-  'kesfet': 'Discover',
-  'keşfet': 'Discover',
+  kacirma: "Don't miss out",
+  kaçırma: "Don't miss out",
+  kesfet: 'Discover',
+  keşfet: 'Discover',
+  'daha fazla': 'Learn more',
 };
 
 const CTA_EN_TO_TR: Record<string, string> = {
   'explore now': 'Hemen incele',
+  explore: 'İncele',
   'learn more': 'Detayları incele',
   'see details': 'Detayları incele',
   'discover more': 'Keşfet',
   discover: 'Keşfet',
   'book now': 'Rezervasyon yap',
   'reserve now': 'Rezervasyon yap',
+  'reserve a table': 'Masanı ayır',
+  'book an appointment': 'Randevu al',
+  'save your spot': 'Yerini ayır',
   'reserve your spot': 'Yerini ayırt',
   'order now': 'Sipariş ver',
+  'visit us': 'Bizi ziyaret et',
+  'stop by': 'Yolunu düşür',
   'get in touch': 'İletişime geç',
   'contact us': 'İletişime geç',
+  'get info': 'Bilgi al',
   'join us': 'Bize katıl',
   'follow us': 'Takip et',
   'try today': 'Bugün dene',
@@ -74,7 +96,7 @@ function stripCtaPhrases(text: string): string {
   return cleaned;
 }
 
-function detectTextLanguage(text: string): 'en' | 'tr' {
+export function detectCtaLanguage(text: string): 'en' | 'tr' {
   const raw = text.trim();
   if (!raw) return 'en';
 
@@ -101,11 +123,72 @@ export function localizeCta(cta: string, targetLang: 'en' | 'tr'): string {
   if (!trimmed) return trimmed;
   const key = normalizeCtaKey(trimmed);
   if (targetLang === 'en') {
-    if (detectTextLanguage(trimmed) === 'en') return trimmed;
+    if (detectCtaLanguage(trimmed) === 'en') return trimmed;
     return CTA_TR_TO_EN[key] ?? trimmed;
   }
-  if (detectTextLanguage(trimmed) === 'tr') return trimmed;
+  if (detectCtaLanguage(trimmed) === 'tr') return trimmed;
   return CTA_EN_TO_TR[key] ?? trimmed;
+}
+
+export function localizeCtas(ctas: string[], targetLang: 'en' | 'tr'): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of ctas) {
+    const loc = localizeCta(String(c), targetLang);
+    if (!loc || seen.has(loc.toLowerCase())) continue;
+    seen.add(loc.toLowerCase());
+    out.push(loc);
+  }
+  return out;
+}
+
+export function parseCtaList(raw: unknown): string[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) {
+    return raw.map((c) => String(c).trim()).filter(Boolean);
+  }
+  if (typeof raw === 'string') {
+    const text = raw.trim();
+    if (!text) return [];
+    if (text.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(text) as unknown;
+        if (Array.isArray(parsed)) {
+          return parsed.map((c) => String(c).trim()).filter(Boolean);
+        }
+      } catch {
+        /* fall through */
+      }
+    }
+    if (text.includes('|')) {
+      return text.split('|').map((p) => p.trim()).filter(Boolean);
+    }
+    return [text];
+  }
+  return [];
+}
+
+/**
+ * Pick a CTA from brand `default_ctas` in the brand content language.
+ * Prefers native-language entries, else localizes known Turkish presets.
+ */
+export function pickLocalizedCta(
+  ctas: unknown,
+  brandLanguages?: unknown,
+  fallback?: string,
+): string {
+  const target = resolveBrandLanguageCode(brandLanguages);
+  const items = parseCtaList(ctas);
+  if (items.length === 0) {
+    if (fallback?.trim()) return localizeCta(fallback, target);
+    return target === 'en' ? 'Learn more' : 'Daha fazla';
+  }
+  for (const c of items) {
+    if (detectCtaLanguage(c) === target) return c;
+  }
+  const localized = localizeCtas(items, target);
+  if (localized[0]) return localized[0];
+  return localizeCta(items[0]!, target);
 }
 
 function replaceEmbeddedCta(text: string, oldCta: string, newCta: string): string {
@@ -149,7 +232,7 @@ export function resolveBrandLanguageCode(raw: unknown): 'tr' | 'en' {
   return 'tr';
 }
 
-/** Align caption + CTA to the same language (caption wins on mismatch). */
+/** Align caption + CTA to brand language. Works even when caption is empty. */
 export function harmonizeCaptionAndCta(
   caption: string,
   cta: string,
@@ -157,15 +240,14 @@ export function harmonizeCaptionAndCta(
 ): { caption: string; cta: string } {
   const cap = caption.trim();
   const rawCta = cta.trim();
-  if (!cap || !rawCta) return { caption: cap, cta: rawCta };
+  if (!rawCta) return { caption: cap, cta: rawCta };
 
   const brandLang = resolveBrandLanguageCode(brandLanguages);
-  // Brand language setting wins — tenant choice overrides detected caption language
-  const effectiveLang = brandLang;
-  const newCta = localizeCta(rawCta, effectiveLang);
+  const newCta = localizeCta(rawCta, brandLang);
   if (!newCta || normalizeCtaKey(newCta) === normalizeCtaKey(rawCta)) {
     return { caption: cap, cta: rawCta };
   }
+  if (!cap) return { caption: cap, cta: newCta };
   return {
     caption: replaceEmbeddedCta(cap, rawCta, newCta),
     cta: newCta,

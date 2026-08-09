@@ -11,6 +11,7 @@
  */
 
 import type { SignalRecord, SignalType } from './types';
+import { normalizeSeasonKey, type SignalLanguage } from './language';
 
 export type SectorPackId =
   | 'beach_hospitality'
@@ -173,12 +174,14 @@ export function resolveSectorPack(
 
 export interface SectorContext {
   date: Date;
-  /** 'Kış' | 'İlkbahar' | 'Yaz' | 'Sonbahar' */
+  /** Canonical season key (`summer`) or legacy TR label (`Yaz`). */
   season: string;
   isWeekend: boolean;
   dayOfWeek: number;
   /** A full-moon lunar signal is active within the horizon. */
   fullMoonActive: boolean;
+  /** Brand content language — drives TR vs EN sector hooks. */
+  language?: SignalLanguage;
 }
 
 function isoDate(d: Date): string {
@@ -208,61 +211,177 @@ function sig(
   };
 }
 
+type Localized = { tr: [string, string[]]; en: [string, string[]] };
+
+function pick(lang: SignalLanguage, loc: Localized): [string, string[]] {
+  return lang === 'en' ? loc.en : loc.tr;
+}
+
 /**
  * Emit sector-specific signals from the resolved pack + current context facts.
  * These ride on top of the universal signals and make triggers concrete.
  */
 export function sectorPackSignals(pack: SectorPack, ctx: SectorContext): SignalRecord[] {
   const out: SignalRecord[] = [];
-  const isSummer = ctx.season === 'Yaz';
-  const isSpring = ctx.season === 'İlkbahar';
+  const lang: SignalLanguage = ctx.language ?? 'tr';
+  const seasonKey = normalizeSeasonKey(ctx.season);
+  const isSummer = seasonKey === 'summer';
+  const isSpring = seasonKey === 'spring';
+  const push = (
+    key: string,
+    loc: Localized,
+    confidence: number,
+    formats?: string[],
+  ) => {
+    const [title, hooks] = pick(lang, loc);
+    out.push(sig(pack.id, key, ctx.date, title, hooks, confidence, formats));
+  };
 
   switch (pack.id) {
     case 'beach_hospitality': {
-      if (ctx.fullMoonActive) out.push(sig(pack.id, 'full_moon_party', ctx.date, 'Full moon beach party', ['Dolunay sahil partisi / özel gece', 'Full moon DJ & kokteyl konsepti'], 0.9));
-      if (isSummer) out.push(sig(pack.id, 'pool_day', ctx.date, 'Yaz zirvesi — plaj/havuz günü', ['Gündüz plaj/havuz keyfi', 'Serinletici kokteyl & meze'], 0.8));
-      if (isSpring) out.push(sig(pack.id, 'season_opening', ctx.date, 'Sezon açılışı', ['Yeni sezon açılış duyurusu', 'İlk güneşli hafta sonu daveti'], 0.75));
-      if (ctx.isWeekend) out.push(sig(pack.id, 'sunset_session', ctx.date, 'Gün batımı seansı', ['Gün batımı DJ / sunset oturumu', 'Altın saat manzara içeriği'], 0.7));
+      if (ctx.fullMoonActive) {
+        push('full_moon_party', {
+          tr: ['Full moon beach party', ['Dolunay sahil partisi / özel gece', 'Full moon DJ & kokteyl konsepti']],
+          en: ['Full moon beach party', ['Full moon beach party / special night', 'Full moon DJ & cocktail concept']],
+        }, 0.9);
+      }
+      if (isSummer) {
+        push('pool_day', {
+          tr: ['Yaz zirvesi — plaj/havuz günü', ['Gündüz plaj/havuz keyfi', 'Serinletici kokteyl & meze']],
+          en: ['Summer peak — beach/pool day', ['Daytime beach/pool vibes', 'Refreshing cocktails & meze']],
+        }, 0.8);
+      }
+      if (isSpring) {
+        push('season_opening', {
+          tr: ['Sezon açılışı', ['Yeni sezon açılış duyurusu', 'İlk güneşli hafta sonu daveti']],
+          en: ['Season opening', ['New season opening announcement', 'First sunny weekend invitation']],
+        }, 0.75);
+      }
+      if (ctx.isWeekend) {
+        push('sunset_session', {
+          tr: ['Gün batımı seansı', ['Gün batımı DJ / sunset oturumu', 'Altın saat manzara içeriği']],
+          en: ['Sunset session', ['Sunset DJ / golden-hour set', 'Golden-hour view content']],
+        }, 0.7);
+      }
       break;
     }
     case 'nightlife': {
-      if (ctx.fullMoonActive) out.push(sig(pack.id, 'full_moon', ctx.date, 'Dolunay özel gece', ['Dolunay temalı parti', 'Guest DJ / özel performans'], 0.85));
-      if (ctx.dayOfWeek === 5 || ctx.dayOfWeek === 6) out.push(sig(pack.id, 'weekend_lineup', ctx.date, 'Hafta sonu lineup', ['Bu hafta sonu DJ kadrosu', 'Masa rezervasyon çağrısı'], 0.8));
+      if (ctx.fullMoonActive) {
+        push('full_moon', {
+          tr: ['Dolunay özel gece', ['Dolunay temalı parti', 'Guest DJ / özel performans']],
+          en: ['Full moon special night', ['Full-moon themed party', 'Guest DJ / special performance']],
+        }, 0.85);
+      }
+      if (ctx.dayOfWeek === 5 || ctx.dayOfWeek === 6) {
+        push('weekend_lineup', {
+          tr: ['Hafta sonu lineup', ['Bu hafta sonu DJ kadrosu', 'Masa rezervasyon çağrısı']],
+          en: ['Weekend lineup', ['This weekend DJ lineup', 'Table reservation CTA']],
+        }, 0.8);
+      }
       break;
     }
     case 'urban_restaurant': {
-      if (ctx.dayOfWeek === 0) out.push(sig(pack.id, 'sunday_brunch', ctx.date, 'Pazar brunch', ['Pazar brunch menüsü daveti', 'Geç kahvaltı / aile masası'], 0.75));
-      if (ctx.dayOfWeek === 5) out.push(sig(pack.id, 'weekend_reservation', ctx.date, 'Hafta sonu rezervasyon', ['Cuma/Cumartesi rezervasyon çağrısı', 'Şefin özel menüsü'], 0.7));
-      out.push(sig(pack.id, 'daily_special', ctx.date, 'Günün özel menüsü', ['Günün tabağı / şef önerisi'], 0.5, ['story', 'post']));
+      if (ctx.dayOfWeek === 0) {
+        push('sunday_brunch', {
+          tr: ['Pazar brunch', ['Pazar brunch menüsü daveti', 'Geç kahvaltı / aile masası']],
+          en: ['Sunday brunch', ['Sunday brunch menu invitation', 'Late breakfast / family table']],
+        }, 0.75);
+      }
+      if (ctx.dayOfWeek === 5) {
+        push('weekend_reservation', {
+          tr: ['Hafta sonu rezervasyon', ['Cuma/Cumartesi rezervasyon çağrısı', 'Şefin özel menüsü']],
+          en: ['Weekend reservation', ['Friday/Saturday reservation CTA', "Chef's special menu"]],
+        }, 0.7);
+      }
+      push('daily_special', {
+        tr: ['Günün özel menüsü', ['Günün tabağı / şef önerisi']],
+        en: ["Today's special", ["Dish of the day / chef's pick"]],
+      }, 0.5, ['story', 'post']);
       break;
     }
     case 'hotel': {
-      if (isSummer) out.push(sig(pack.id, 'peak_season', ctx.date, 'Yüksek sezon', ['Son dakika konaklama / paket', 'Havuz & spa deneyimi'], 0.75));
-      if (!isSummer) out.push(sig(pack.id, 'off_season_spa', ctx.date, 'Sezon dışı spa/keyif', ['Sezon dışı spa & wellness paketi', 'Hafta sonu kaçamağı'], 0.6));
+      if (isSummer) {
+        push('peak_season', {
+          tr: ['Yüksek sezon', ['Son dakika konaklama / paket', 'Havuz & spa deneyimi']],
+          en: ['Peak season', ['Last-minute stay / package', 'Pool & spa experience']],
+        }, 0.75);
+      }
+      if (!isSummer) {
+        push('off_season_spa', {
+          tr: ['Sezon dışı spa/keyif', ['Sezon dışı spa & wellness paketi', 'Hafta sonu kaçamağı']],
+          en: ['Off-season spa escape', ['Off-season spa & wellness package', 'Weekend getaway']],
+        }, 0.6);
+      }
       break;
     }
     case 'wellness': {
-      if (isSpring) out.push(sig(pack.id, 'spring_glow', ctx.date, 'Bahar bakımı', ['Bahara hazırlık bakım paketi'], 0.7));
-      if (isSummer) out.push(sig(pack.id, 'summer_ready', ctx.date, 'Yaza hazırlık', ['Yaza hazırlık / vücut bakımı'], 0.7));
+      if (isSpring) {
+        push('spring_glow', {
+          tr: ['Bahar bakımı', ['Bahara hazırlık bakım paketi']],
+          en: ['Spring glow care', ['Spring-prep wellness package']],
+        }, 0.7);
+      }
+      if (isSummer) {
+        push('summer_ready', {
+          tr: ['Yaza hazırlık', ['Yaza hazırlık / vücut bakımı']],
+          en: ['Summer ready', ['Summer-ready body care']],
+        }, 0.7);
+      }
       break;
     }
     case 'clinic': {
-      out.push(sig(pack.id, 'seasonal_health', ctx.date, `${ctx.season} sağlık önerisi`, [`${ctx.season} dönemine özel sağlık tavsiyesi`], 0.5, ['post', 'story']));
+      const seasonLabel = lang === 'en'
+        ? (seasonKey ?? 'season')
+        : (ctx.season || 'Sezon');
+      push('seasonal_health', {
+        tr: [`${seasonLabel} sağlık önerisi`, [`${seasonLabel} dönemine özel sağlık tavsiyesi`]],
+        en: [`${seasonLabel} health tip`, [`Seasonal health advice for ${seasonLabel}`]],
+      }, 0.5, ['post', 'story']);
       break;
     }
     case 'retail': {
-      if (ctx.isWeekend) out.push(sig(pack.id, 'weekend_offer', ctx.date, 'Hafta sonu fırsatı', ['Hafta sonu kampanyası', 'Yeni koleksiyon vitrin'], 0.65));
+      if (ctx.isWeekend) {
+        push('weekend_offer', {
+          tr: ['Hafta sonu fırsatı', ['Hafta sonu kampanyası', 'Yeni koleksiyon vitrin']],
+          en: ['Weekend offer', ['Weekend campaign', 'New collection showcase']],
+        }, 0.65);
+      }
       break;
     }
     case 'local_artisan': {
-      if (isSpring || isSummer) out.push(sig(pack.id, 'seasonal_harvest', ctx.date, 'Sezon ürünleri', ['Yeni sezon yöresel ürünler / taze stok', 'El yapımı koleksiyon tanıtımı'], 0.75, ['post', 'story']));
-      if (ctx.isWeekend) out.push(sig(pack.id, 'weekend_market', ctx.date, 'Pazar piyasası', ['Hafta sonu yerel pazar / butik vitrin', 'Sipariş al / kapıda teslim içeriği'], 0.65, ['post', 'story']));
-      if (ctx.fullMoonActive) out.push(sig(pack.id, 'full_moon_local', ctx.date, 'Dolunay alışverişi', ['Özel dolunay indirimi / sınırlı seri'], 0.55));
+      if (isSpring || isSummer) {
+        push('seasonal_harvest', {
+          tr: ['Sezon ürünleri', ['Yeni sezon yöresel ürünler / taze stok', 'El yapımı koleksiyon tanıtımı']],
+          en: ['Seasonal products', ['New-season local goods / fresh stock', 'Handmade collection highlight']],
+        }, 0.75, ['post', 'story']);
+      }
+      if (ctx.isWeekend) {
+        push('weekend_market', {
+          tr: ['Pazar piyasası', ['Hafta sonu yerel pazar / butik vitrin', 'Sipariş al / kapıda teslim içeriği']],
+          en: ['Weekend market', ['Weekend local market / boutique display', 'Order / pickup content']],
+        }, 0.65, ['post', 'story']);
+      }
+      if (ctx.fullMoonActive) {
+        push('full_moon_local', {
+          tr: ['Dolunay alışverişi', ['Özel dolunay indirimi / sınırlı seri']],
+          en: ['Full moon shopping', ['Special full-moon deal / limited series']],
+        }, 0.55);
+      }
       break;
     }
     case 'professional_service': {
-      if (ctx.isWeekend) out.push(sig(pack.id, 'weekend_insight', ctx.date, 'Hafta sonu içgörüsü', ['Sektöre özel haftalık bilgi paylaşımı', 'Müşteri başarı hikayesi'], 0.55, ['post', 'story']));
-      if (isSpring) out.push(sig(pack.id, 'spring_planning', ctx.date, 'Sezon planlaması', ['Yeni çeyrek / sezon strateji ipuçları'], 0.5, ['post']));
+      if (ctx.isWeekend) {
+        push('weekend_insight', {
+          tr: ['Hafta sonu içgörüsü', ['Sektöre özel haftalık bilgi paylaşımı', 'Müşteri başarı hikayesi']],
+          en: ['Weekend insight', ['Sector weekly tip', 'Customer success story']],
+        }, 0.55, ['post', 'story']);
+      }
+      if (isSpring) {
+        push('spring_planning', {
+          tr: ['Sezon planlaması', ['Yeni çeyrek / sezon strateji ipuçları']],
+          en: ['Season planning', ['New quarter / season strategy tips']],
+        }, 0.5, ['post']);
+      }
       break;
     }
     case 'generic':

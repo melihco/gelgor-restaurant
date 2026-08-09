@@ -168,7 +168,22 @@ def test_context_updates_sync_business_type_and_turkish_ctas():
         "description": "Drink & Chill beach club kokteyl",
         "website_summary": "Beach club sahilde kokteyl ve şarap.",
     })
-    updates = context_updates_from_service_profile(profile)
+    updates = context_updates_from_service_profile(profile, languages="tr")
     assert updates["business_type"] == "beach_club"
     ctas = json.loads(updates["default_ctas"])
     assert "Rezervasyon Yap" in ctas
+
+
+def test_context_updates_write_english_ctas_for_en_brands():
+    profile = heuristic_service_profile({
+        "business_name": "Coastal Beach Club",
+        "business_type": "beach_club",
+        "description": "beach club hospitality cocktails",
+        "website_summary": "Beach club by the sea with cocktails and sunset.",
+    })
+    updates = context_updates_from_service_profile(profile, languages="en")
+    ctas = json.loads(updates["default_ctas"])
+    blob = " ".join(ctas).lower()
+    assert "book now" in blob or "reserve a table" in blob
+    assert "rezervasyon" not in blob
+    assert "masanı" not in blob and "masani" not in blob

@@ -198,6 +198,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       brandName: pctx.brandName,
       brandLocation: pctx.brandLocation,
       brandDescription: pctx.brandCtxForVisual.description ?? undefined,
+      brandLanguages: (pctx.raw.languages ?? pctx.raw.inferred_language) as string | undefined,
     });
 
     if (planOutcome.status === 'blocked') {

@@ -157,7 +157,10 @@ async def update_brand_context(
         merged_sp = {**existing_sp, **incoming_sp}
         ctx.brand_service_profile = merged_sp
         ctx.brand_service_profile_updated_at = _dt.now(_tz.utc)
-        for field, value in context_updates_from_service_profile(merged_sp).items():
+        languages_for_ctas = updates.get("languages") or getattr(ctx, "languages", None)
+        for field, value in context_updates_from_service_profile(
+            merged_sp, languages=languages_for_ctas,
+        ).items():
             # Explicit PATCH fields win over SP-derived sync.
             if field not in updates:
                 setattr(ctx, field, value)
@@ -792,7 +795,9 @@ async def persist_brand_service_profile(
 
     from app.services.brand_service_profile_service import context_updates_from_service_profile
 
-    for field, value in context_updates_from_service_profile(profile).items():
+    for field, value in context_updates_from_service_profile(
+        profile, languages=getattr(ctx, "languages", None),
+    ).items():
         setattr(ctx, field, value)
 
     await db.commit()

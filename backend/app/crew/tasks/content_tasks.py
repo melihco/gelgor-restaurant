@@ -619,8 +619,10 @@ def create_content_calendar_task(
         getattr(brand, "learning_context", "") or ""
     )
     # Extract just the signals block if present
-    if "BAĞLAM SİNYALLERİ" in signals_summary:
-        start = signals_summary.find("=== BAĞLAM")
+    if "BAĞLAM SİNYALLERİ" in signals_summary or "CONTEXT SIGNALS" in signals_summary:
+        start_tr = signals_summary.find("=== BAĞLAM")
+        start_en = signals_summary.find("=== CONTEXT SIGNALS")
+        start = start_tr if start_tr > -1 else start_en
         end = signals_summary.find("===", start + 4) + 3 if start > -1 else -1
         signals_summary = signals_summary[start:end] if start > -1 and end > 3 else ""
     else:

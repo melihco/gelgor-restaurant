@@ -172,10 +172,23 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
     - canva_field_copy: synthesise {headline, cta, subtitle} from concept copy.
     - asset_intent: infer a sensible default from template_use_case.
     """
+    from app.crew.cta_localization import localize_cta, pick_localized_cta, resolve_language_code
+    brand_lang = resolve_language_code(getattr(brand, "languages", None))
+
     for item in concepts:
         if not isinstance(item, dict):
             continue
         content_type = str(item.get("content_type") or item.get("content_kind") or "post")
+
+        # Prefer brand-language CTA from default_ctas when missing / mismatched seed.
+        raw_cta = str(item.get("cta") or item.get("call_to_action") or "").strip()
+        if raw_cta:
+            item["cta"] = localize_cta(raw_cta, brand_lang)
+        else:
+            item["cta"] = pick_localized_cta(
+                getattr(brand, "default_ctas", None),
+                getattr(brand, "languages", None),
+            )
 
         # 0. template_use_case fallback (required for renderer routing + ICS)
         if not str(item.get("template_use_case") or "").strip():
@@ -213,25 +226,16 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
             if not ed.get("tagline") and tl.get("subtitle"):
                 ed["tagline"] = str(tl["subtitle"])[:40]
             if not ed.get("cta_text"):
+                from app.crew.cta_localization import localize_cta, pick_localized_cta, resolve_language_code
                 cta = str(item.get("cta") or tl.get("cta") or "").strip()
+                lang = resolve_language_code(getattr(brand, "languages", None))
                 if cta:
-                    ed["cta_text"] = cta[:25]
+                    ed["cta_text"] = localize_cta(cta, lang)[:25]
                 else:
-                    from app.crew.cta_localization import resolve_language_code
-                    lang = resolve_language_code(getattr(brand, "languages", None))
-                    default_ctas = getattr(brand, "default_ctas", None) or []
-                    if isinstance(default_ctas, str):
-                        try:
-                            import json as _json
-                            default_ctas = _json.loads(default_ctas)
-                        except Exception:
-                            default_ctas = []
-                    if isinstance(default_ctas, list) and default_ctas:
-                        ed["cta_text"] = str(default_ctas[0])[:25]
-                    elif lang == "en":
-                        ed["cta_text"] = "Learn More"
-                    else:
-                        ed["cta_text"] = "Daha Fazla"
+                    ed["cta_text"] = pick_localized_cta(
+                        getattr(brand, "default_ctas", None),
+                        getattr(brand, "languages", None),
+                    )[:25]
             # audio_mood: derive from idea mood if missing
             if not ed.get("audio_mood"):
                 mood_val = str(item.get("mood") or item.get("tone") or "").lower()
@@ -257,9 +261,14 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
                         cat = "EVENT" if treatment == "story_event" else "KAMPANYA" if treatment == "campaign_offer" else "DUYURU"
                 ed["category_label"] = cat
             item["event_details"] = ed
-            # Mirror top-level cta from event_details for easy access
-            if not item.get("cta") and ed.get("cta_text"):
-                item["cta"] = ed["cta_text"]
+            # Mirror top-level cta from event_details for easy access (localized)
+            if ed.get("cta_text"):
+                from app.crew.cta_localization import localize_cta, resolve_language_code
+                lang = resolve_language_code(getattr(brand, "languages", None))
+                localized_ed_cta = localize_cta(str(ed["cta_text"]), lang)
+                ed["cta_text"] = localized_ed_cta[:25]
+                if not item.get("cta"):
+                    item["cta"] = localized_ed_cta
             # Auto-populate cta_url from brand website when CTA implies booking/reservation
             if not ed.get("cta_url"):
                 cta_lower = ed.get("cta_text", "").lower()
@@ -880,8 +889,9 @@ def run_content_ideation(
                 content_pillars, autonomy_mode, llm, mission_id,
             )
             total_tokens += topup_tokens
-            concepts = harmonize_content_concepts(concepts, brand.languages)
             concepts = _enforce_idea_completeness(concepts, brand)
+            # Harmonize AFTER enforce — enforce may refill cta from default_ctas.
+            concepts = harmonize_content_concepts(concepts, brand.languages)
             concepts = dedupe_ideation_by_headline(concepts)
             concepts = _enforce_strategist_idea_diversity(concepts, brand, count)
             # ── Hallucination & scope guard (deterministic, no LLM) ─────────
@@ -933,8 +943,8 @@ def run_content_ideation(
                             max_topups=1,
                         )
                         total_tokens += revision_topup_tokens
-                        revised_concepts = harmonize_content_concepts(revised_concepts, brand.languages)
                         revised_concepts = _enforce_idea_completeness(revised_concepts, brand)
+                        revised_concepts = harmonize_content_concepts(revised_concepts, brand.languages)
                         revised_concepts = dedupe_ideation_by_headline(revised_concepts)
                         revised_concepts = _enforce_strategist_idea_diversity(revised_concepts, brand, count)
                         revised_concepts, _ = enforce_confirmed_pillar_coverage(

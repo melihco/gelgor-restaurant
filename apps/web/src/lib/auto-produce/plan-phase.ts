@@ -109,6 +109,8 @@ export interface AutoProducePlanInput {
   brandName?: string | null;
   brandLocation?: string | null;
   brandDescription?: string | null;
+  /** Brand content language (`languages`) — keeps brand-dynamics hooks localized. */
+  brandLanguages?: string | null;
   pipelineRun?: ProductionPipelineRun;
 }
 
@@ -131,6 +133,7 @@ export async function runAutoProducePlanPhase(
     brandName,
     brandLocation,
     brandDescription,
+    brandLanguages,
     pipelineRun,
   } = input;
 
@@ -174,6 +177,7 @@ export async function runAutoProducePlanPhase(
     brandName: brandName ?? undefined,
     brandDescription: brandDescription ?? undefined,
     location: brandLocation ?? undefined,
+    languages: brandLanguages ?? undefined,
     themeClusterCounts: Object.fromEntries(headlineHistory.themeClusterCounts),
   });
   const rawSlice = applyCrossMissionHeadlineDedupe(

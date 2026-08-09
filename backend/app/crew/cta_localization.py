@@ -36,18 +36,32 @@ _LANG_MAP = {
     "es": "Spanish",
 }
 
-# Canonical TR → EN (extend as needed)
+# Canonical TR → EN (covers brand_service_profile _CTA_PRESETS + common seeds)
 _CTA_TR_TO_EN: dict[str, str] = {
     "hemen incele": "Explore now",
     "detayları incele": "See details",
     "detaylari incele": "See details",
+    "detaylar": "See details",
     "rezervasyon yap": "Book now",
+    "hemen rezervasyon": "Book now",
+    "masanı ayır": "Reserve a table",
+    "masani ayir": "Reserve a table",
+    "randevu al": "Book an appointment",
+    "yerini ayır": "Save your spot",
+    "yerini ayir": "Save your spot",
     "yerini ayırt": "Reserve your spot",
     "yerini ayirt": "Reserve your spot",
+    "hemen sipariş ver": "Order now",
+    "hemen siparis ver": "Order now",
     "sipariş ver": "Order now",
     "siparis ver": "Order now",
+    "incele": "Explore",
+    "bizi ziyaret et": "Visit us",
+    "yolunu düşür": "Stop by",
+    "yolunu dusur": "Stop by",
     "iletişime geç": "Get in touch",
     "iletisime gec": "Get in touch",
+    "bilgi al": "Get info",
     "bize katıl": "Join us",
     "bize katil": "Join us",
     "takip et": "Follow us",
@@ -59,21 +73,28 @@ _CTA_TR_TO_EN: dict[str, str] = {
     "kacirma": "Don't miss out",
     "keşfet": "Discover",
     "kesfet": "Discover",
-    "hemen rezervasyon": "Book now",
+    "daha fazla": "Learn more",
 }
 
 _CTA_EN_TO_TR: dict[str, str] = {
     "explore now": "Hemen incele",
+    "explore": "İncele",
     "learn more": "Detayları incele",
     "see details": "Detayları incele",
     "discover more": "Keşfet",
     "discover": "Keşfet",
     "book now": "Rezervasyon yap",
     "reserve now": "Rezervasyon yap",
+    "reserve a table": "Masanı ayır",
+    "book an appointment": "Randevu al",
+    "save your spot": "Yerini ayır",
     "reserve your spot": "Yerini ayırt",
     "order now": "Sipariş ver",
+    "visit us": "Bizi ziyaret et",
+    "stop by": "Yolunu düşür",
     "get in touch": "İletişime geç",
     "contact us": "İletişime geç",
+    "get info": "Bilgi al",
     "join us": "Bize katıl",
     "follow us": "Takip et",
     "try today": "Bugün dene",
@@ -188,6 +209,55 @@ def localize_ctas(ctas: list[str], target_lang: str) -> list[str]:
             seen.add(loc.lower())
             out.append(loc)
     return out
+
+
+def parse_cta_list(raw: Any) -> list[str]:
+    """Normalize brand default_ctas from list / JSON string / pipe string."""
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(c).strip() for c in raw if str(c).strip()]
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return []
+        if text.startswith("["):
+            try:
+                import json as _json
+                parsed = _json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(c).strip() for c in parsed if str(c).strip()]
+            except Exception:
+                pass
+        if "|" in text:
+            return [p.strip() for p in text.split("|") if p.strip()]
+        return [text]
+    return []
+
+
+def pick_localized_cta(ctas: Any, languages: str | None, *, fallback: str | None = None) -> str:
+    """
+    Pick a CTA from the brand array in the brand content language.
+
+    Prefers entries already in the target language, else localizes the first
+    known phrase. Never returns a mismatched-language preset when a mapping exists.
+    """
+    target = resolve_language_code(languages)
+    items = parse_cta_list(ctas)
+    if not items:
+        if fallback:
+            return localize_cta(fallback, target)
+        return "Learn more" if target == "en" else "Daha fazla"
+
+    # Prefer an entry already in the brand language.
+    for c in items:
+        if detect_text_language(c) == target:
+            return c
+
+    localized = localize_ctas(items, target)
+    if localized:
+        return localized[0]
+    return localize_cta(items[0], target)
 
 
 def _replace_embedded_cta(text: str, old_cta: str, new_cta: str) -> str:

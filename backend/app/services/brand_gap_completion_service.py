@@ -426,7 +426,9 @@ async def complete_brand_gaps(
                         "category_reason": f"Sector sync: align SP to operator sector {stored}",
                     }
                     ctx.brand_service_profile = merged
-                    for field, value in context_updates_from_service_profile(merged).items():
+                    for field, value in context_updates_from_service_profile(
+                        merged, languages=getattr(ctx, "languages", None),
+                    ).items():
                         setattr(ctx, field, value)
                     await db.flush()
                     synced = True

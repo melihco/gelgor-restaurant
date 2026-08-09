@@ -11,6 +11,7 @@
 import { buildActiveSignals, buildStrategistSignalBlock } from '@/lib/context-signals';
 import type { SignalRecord, SignalType } from '@/lib/context-signals/types';
 import { resolveSectorPack } from '@/lib/context-signals/sector-packs';
+import { resolveSignalLanguage } from '@/lib/context-signals/language';
 import {
   resolveBrandOperatingProfile,
   buildBrandOperatingProfileDirective,
@@ -50,6 +51,8 @@ export interface BrandDynamicsAngle {
 export interface BrandDynamicsInput {
   date?: Date;
   region?: string;
+  /** Brand `languages` — keeps signal hooks in the brand content language. */
+  languages?: string | null;
   businessType?: string;
   brandName?: string;
   brandDescription?: string;
@@ -209,6 +212,7 @@ export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsRe
   const signalResult = buildActiveSignals({
     date,
     region: input.region ?? 'TR',
+    languages: input.languages,
     businessType: input.businessType,
     brandName: input.brandName,
     brandDescription: input.brandDescription,
@@ -241,10 +245,12 @@ export function computeBrandDynamics(input: BrandDynamicsInput): BrandDynamicsRe
   );
 
   const operatingBlock = buildBrandOperatingProfileDirective(operatingProfile);
+  const signalLanguage = resolveSignalLanguage(input.languages);
   const baseSignals = buildStrategistSignalBlock(
     signalResult.signals,
     signalResult.sectorPack.label,
     date,
+    signalLanguage,
   );
   const mandatoryBlock = buildMandatoryAnglesBlock(mandatoryAngles);
   const avoidBlock = buildAvoidThemesBlock(avoidThemeClusters, countsObj);

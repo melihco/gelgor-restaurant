@@ -72,7 +72,12 @@ export function buildArtifactListTitle(input: {
   const brand = pickStr(input.brandName) || 'İçerik';
   const fmt = pickStr(input.format) || 'post';
 
-  if (concept && !isVisionAnalysisDescription(concept) && !isGalleryTagHeadline(concept)) {
+  if (
+    concept
+    && !isVisionAnalysisDescription(concept)
+    && !isGalleryTagHeadline(concept)
+    && !isLabelStyleHeadline(concept)
+  ) {
     return concept.slice(0, 72);
   }
   if (hasPublishableIdeationHeadline(ideation, brand)) {

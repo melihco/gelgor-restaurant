@@ -89,18 +89,36 @@ def _get_upcoming_holidays(today: date, horizon_days: int = 21) -> list[str]:
     return [f"{name} ({delta} gün sonra)" for delta, name in hits]
 
 
-def _get_current_season(today: date, location: str = "") -> str:
-    """Return the current season as a Turkish string."""
+def _resolve_signal_language(brand: "BrandInfo | None" = None, languages: str | None = None) -> str:
+    """Brand content language for signal copy — mirrors TS resolveSignalLanguage."""
+    from app.crew.cta_localization import resolve_language_code
+
+    raw = languages
+    if raw is None and brand is not None:
+        raw = getattr(brand, "languages", None)
+    code = resolve_language_code(raw)
+    return "en" if code == "en" else "tr"
+
+
+def _get_current_season(today: date, location: str = "", language: str = "tr") -> str:
+    """Return the current season label in the brand content language."""
     m = today.month
     if m in (12, 1, 2):
-        season = "Kış"
+        key = "winter"
     elif m in (3, 4, 5):
-        season = "İlkbahar"
+        key = "spring"
     elif m in (6, 7, 8):
-        season = "Yaz"
+        key = "summer"
     else:
-        season = "Sonbahar"
-    return season
+        key = "autumn"
+    labels = {
+        "winter": ("Kış", "Winter"),
+        "spring": ("İlkbahar", "Spring"),
+        "summer": ("Yaz", "Summer"),
+        "autumn": ("Sonbahar", "Autumn"),
+    }
+    tr, en = labels[key]
+    return en if language == "en" else tr
 
 
 _BREAKFAST_RX = re.compile(
@@ -137,9 +155,15 @@ def _resolve_operating_profile(business_type: str, description: str = "") -> dic
     return {"rejects_nightlife": rejects_night, "prefers_breakfast": prefers_breakfast}
 
 
-def _operating_model_directive(profile: dict[str, bool]) -> str:
+def _operating_model_directive(profile: dict[str, bool], language: str = "tr") -> str:
     if not profile.get("rejects_nightlife"):
         return ""
+    if language == "en":
+        return (
+            "=== BRAND OPERATING MODEL (deterministic) ===\n"
+            "This venue is breakfast / daytime focused — do NOT use nightlife, DJ, or night-peak themes.\n"
+            "Prefer morning, spread breakfast, garden, family table, weekend brunch angles."
+        )
     return (
         "=== MARKA İŞLETİM MODELİ (deterministik) ===\n"
         "Bu mekan kahvaltı / gündüz odaklı — gece hayatı, DJ veya gece yoğunluğu temaları KULLANMA.\n"
@@ -147,23 +171,42 @@ def _operating_model_directive(profile: dict[str, bool]) -> str:
     )
 
 
-def _get_weekday_signal(today: date, business_type: str = "", description: str = "") -> str:
+def _get_weekday_signal(
+    today: date,
+    business_type: str = "",
+    description: str = "",
+    language: str = "tr",
+) -> str:
     """Return a weekday rhythm hint relevant to the business type."""
-    day_names = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
-    day_name = day_names[today.weekday()]
+    day_names_tr = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+    day_names_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_name = (day_names_en if language == "en" else day_names_tr)[today.weekday()]
     day_no = today.weekday()  # 0=Mon … 6=Sun
+    en = language == "en"
 
     btype = (business_type or "").lower()
     profile = _resolve_operating_profile(btype, description)
 
     if day_no == 0:
-        return f"Bugün {day_name} — Hafta başlangıcı: motivasyonel ve hedef odaklı içerikler iyi performans gösterir."
+        return (
+            f"Today is {day_name} — week start: motivational, goal-focused content performs well."
+            if en else
+            f"Bugün {day_name} — Hafta başlangıcı: motivasyonel ve hedef odaklı içerikler iyi performans gösterir."
+        )
     if day_no == 4:
         if profile.get("prefers_breakfast"):
             return (
+                f"Today is {day_name} — pre-weekend: Saturday/Sunday breakfast and reservation invites."
+                if en else
                 f"Bugün {day_name} — Hafta sonu öncesi: Cumartesi/Pazar kahvaltı ve rezervasyon daveti içerikleri."
             )
         fomo = "restoran" in btype or "beach" in btype or "nightlife" in btype or "bar" in btype
+        if en:
+            return (
+                f"Today is {day_name} — pre-weekend: reservation and event reminders convert well."
+                if fomo else
+                f"Today is {day_name} — pre-weekend: light, fun content draws attention."
+            )
         return (
             f"Bugün {day_name} — Haftasonu öncesi: rezervasyon ve etkinlik hatırlatma içerikleri yüksek dönüşüm sağlar."
             if fomo else
@@ -172,14 +215,32 @@ def _get_weekday_signal(today: date, business_type: str = "", description: str =
     if day_no == 5:
         if profile.get("rejects_nightlife"):
             return (
+                f"Today is {day_name} — weekend breakfast: spread breakfast invite, garden table, family content."
+                if en else
                 f"Bugün {day_name} — Hafta sonu kahvaltı: serpme kahvaltı daveti, bahçe masası, aile içeriği."
             )
-        return f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
+        return (
+            f"Today is {day_name} — weekend: visual, experience-led content stands out."
+            if en else
+            f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
+        )
     if day_no == 6:
         if profile.get("prefers_breakfast"):
-            return f"Bugün {day_name} — Pazar brunch / geç kahvaltı daveti içerikleri optimal."
-        return f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
-    return f"Bugün {day_name} — Haftanın ortası: eğitici ve değer sunan içerikler etkileşim alır."
+            return (
+                f"Today is {day_name} — Sunday brunch / late breakfast invites perform best."
+                if en else
+                f"Bugün {day_name} — Pazar brunch / geç kahvaltı daveti içerikleri optimal."
+            )
+        return (
+            f"Today is {day_name} — weekend: visual, experience-led content stands out."
+            if en else
+            f"Bugün {day_name} — Haftasonu: görsel ağırlıklı, deneyim odaklı içerikler öne çıkar."
+        )
+    return (
+        f"Today is {day_name} — mid-week: educational, value-first content drives engagement."
+        if en else
+        f"Bugün {day_name} — Haftanın ortası: eğitici ve değer sunan içerikler etkileşim alır."
+    )
 
 
 def _resolve_sector_pack(business_type: str, description: str = "") -> str:
@@ -224,56 +285,125 @@ def _resolve_sector_pack(business_type: str, description: str = "") -> str:
     return "generic"
 
 
-def _sector_pack_signals(pack_id: str, today: date, btype: str) -> list[str]:
+def _sector_pack_signals(pack_id: str, today: date, btype: str, language: str = "tr") -> list[str]:
     """Emit sector-specific content hooks (mirrors TS sectorPackSignals)."""
     m = today.month
     is_summer = m in (6, 7, 8)
     is_spring = m in (3, 4, 5)
     is_weekend = today.weekday() in (5, 6)
+    en = language == "en"
     hints: list[str] = []
 
     if pack_id == "beach_hospitality":
         if is_summer:
-            hints.append("Yaz zirvesi — plaj/havuz günü, serinletici kokteyl & meze içerikleri")
+            hints.append(
+                "Summer peak — beach/pool day, refreshing cocktails & meze"
+                if en else
+                "Yaz zirvesi — plaj/havuz günü, serinletici kokteyl & meze içerikleri"
+            )
         if is_spring:
-            hints.append("Sezon açılışı — yeni sezon duyurusu, ilk güneşli hafta sonu daveti")
+            hints.append(
+                "Season opening — new season announcement, first sunny weekend invite"
+                if en else
+                "Sezon açılışı — yeni sezon duyurusu, ilk güneşli hafta sonu daveti"
+            )
         if is_weekend:
-            hints.append("Gün batımı seansı — sunset DJ / golden hour manzara içeriği")
+            hints.append(
+                "Sunset session — sunset DJ / golden-hour view content"
+                if en else
+                "Gün batımı seansı — sunset DJ / golden hour manzara içeriği"
+            )
     elif pack_id == "nightlife":
         if is_weekend:
-            hints.append("Hafta sonu lineup — DJ kadrosu, masa rezervasyon çağrısı")
+            hints.append(
+                "Weekend lineup — DJ roster, table reservation CTA"
+                if en else
+                "Hafta sonu lineup — DJ kadrosu, masa rezervasyon çağrısı"
+            )
     elif pack_id == "urban_restaurant":
         if today.weekday() == 6:
-            hints.append("Pazar brunch menüsü daveti — aile masası, geç kahvaltı")
+            hints.append(
+                "Sunday brunch menu invite — family table, late breakfast"
+                if en else
+                "Pazar brunch menüsü daveti — aile masası, geç kahvaltı"
+            )
         if today.weekday() == 4:
-            hints.append("Hafta sonu rezervasyon çağrısı — şefin özel menüsü")
-        hints.append("Günün tabağı / şef önerisi — story/post fırsatı")
+            hints.append(
+                "Weekend reservation CTA — chef's special menu"
+                if en else
+                "Hafta sonu rezervasyon çağrısı — şefin özel menüsü"
+            )
+        hints.append(
+            "Dish of the day / chef's pick — story/post opportunity"
+            if en else
+            "Günün tabağı / şef önerisi — story/post fırsatı"
+        )
     elif pack_id == "hotel":
         if is_summer:
-            hints.append("Yüksek sezon — son dakika konaklama, havuz & spa deneyimi")
+            hints.append(
+                "Peak season — last-minute stay, pool & spa experience"
+                if en else
+                "Yüksek sezon — son dakika konaklama, havuz & spa deneyimi"
+            )
         else:
-            hints.append("Sezon dışı spa & wellness paketi — hafta sonu kaçamağı")
+            hints.append(
+                "Off-season spa & wellness package — weekend getaway"
+                if en else
+                "Sezon dışı spa & wellness paketi — hafta sonu kaçamağı"
+            )
     elif pack_id == "wellness":
         if is_spring:
-            hints.append("Bahara hazırlık bakım paketi — bahar cilt/vücut bakımı")
+            hints.append(
+                "Spring-prep care package — spring skin/body care"
+                if en else
+                "Bahara hazırlık bakım paketi — bahar cilt/vücut bakımı"
+            )
         if is_summer:
-            hints.append("Yaza hazırlık — vücut bakımı, bronzlaşma bakım serisi")
+            hints.append(
+                "Summer ready — body care, sun-prep series"
+                if en else
+                "Yaza hazırlık — vücut bakımı, bronzlaşma bakım serisi"
+            )
     elif pack_id == "local_artisan":
         if is_spring or is_summer:
-            hints.append("Sezon ürünleri — yeni hasat, taze stok, el yapımı koleksiyon tanıtımı")
+            hints.append(
+                "Seasonal products — new harvest, fresh stock, handmade collection"
+                if en else
+                "Sezon ürünleri — yeni hasat, taze stok, el yapımı koleksiyon tanıtımı"
+            )
         if is_weekend:
-            hints.append("Hafta sonu yerel pazar — butik vitrin, sipariş al / kapıda teslim")
+            hints.append(
+                "Weekend local market — boutique display, order / pickup"
+                if en else
+                "Hafta sonu yerel pazar — butik vitrin, sipariş al / kapıda teslim"
+            )
     elif pack_id == "professional_service":
         if is_weekend:
-            hints.append("Sektöre özel haftalık bilgi paylaşımı — müşteri başarı hikayesi")
+            hints.append(
+                "Sector weekly tip — customer success story"
+                if en else
+                "Sektöre özel haftalık bilgi paylaşımı — müşteri başarı hikayesi"
+            )
         if is_spring:
-            hints.append("Yeni çeyrek / sezon strateji ipuçları")
+            hints.append(
+                "New quarter / season strategy tips"
+                if en else
+                "Yeni çeyrek / sezon strateji ipuçları"
+            )
     elif pack_id == "retail":
         if is_weekend:
-            hints.append("Hafta sonu kampanyası — yeni koleksiyon vitrin")
+            hints.append(
+                "Weekend campaign — new collection showcase"
+                if en else
+                "Hafta sonu kampanyası — yeni koleksiyon vitrin"
+            )
     elif pack_id == "clinic":
-        season = _get_current_season(today)
-        hints.append(f"{season} dönemine özel sağlık tavsiyesi")
+        season = _get_current_season(today, language=language)
+        hints.append(
+            f"Seasonal health advice for {season}"
+            if en else
+            f"{season} dönemine özel sağlık tavsiyesi"
+        )
 
     return hints
 
@@ -300,12 +430,17 @@ def _next_full_moon(from_date: date) -> date:
     return from_date + timedelta(days=days_ahead)
 
 
-def _lunar_signal_lines(today: date, horizon_days: int = 14) -> list[str]:
+def _lunar_signal_lines(today: date, horizon_days: int = 14, language: str = "tr") -> list[str]:
     full = _next_full_moon(today)
     days_to_full = (full - today).days
     if days_to_full > horizon_days or days_to_full < -1:
         return []
     confidence = max(50, int((1 - abs(days_to_full) / (horizon_days + 1)) * 100))
+    if language == "en":
+        return [
+            f"✓verified [{confidence}%] Full moon — {full.isoformat()} → "
+            "Full-moon night event / beach party / special menu",
+        ]
     return [
         f"✓doğrulanmış [{confidence}%] Dolunay — {full.isoformat()} → "
         "Dolunay temalı gece etkinliği / sahil partisi / özel menü",
@@ -318,6 +453,7 @@ def _build_mandatory_angles_block(
     location: str,
     btype: str,
     profile: dict[str, bool] | None = None,
+    language: str = "tr",
 ) -> str:
     """Deterministic mandatory diversity angles (mirrors TS brand-dynamics.ts)."""
     profile = profile or _resolve_operating_profile(btype, "")
@@ -326,53 +462,112 @@ def _build_mandatory_angles_block(
     m = today.month
     is_summer = m in (6, 7, 8)
     is_weekend = today.weekday() in (5, 6)
+    en = language == "en"
     coastal = any(k in (location or "").lower() for k in (
         "sahil", "plaj", "beach", "deniz", "coast", "marina", "bodrum", "antalya",
     ))
 
-    lunar = _lunar_signal_lines(today)
+    lunar = _lunar_signal_lines(today, language=language)
     if lunar and pack_id in ("beach_hospitality", "nightlife", "hotel") and not profile.get("rejects_nightlife"):
         angles.append(lunar[0])
 
     if pack_id == "beach_hospitality" and not profile.get("rejects_nightlife"):
         if is_summer:
-            angles.append("~çıkarım [80%] Yaz zirvesi — plaj/havuz günü → Serinletici kokteyl & meze")
+            angles.append(
+                "~inferred [80%] Summer peak — beach/pool day → Refreshing cocktails & meze"
+                if en else
+                "~çıkarım [80%] Yaz zirvesi — plaj/havuz günü → Serinletici kokteyl & meze"
+            )
         if is_weekend:
-            angles.append("~çıkarım [70%] Gün batımı seansı → Sunset DJ / altın saat manzara")
+            angles.append(
+                "~inferred [70%] Sunset session → Sunset DJ / golden-hour view"
+                if en else
+                "~çıkarım [70%] Gün batımı seansı → Sunset DJ / altın saat manzara"
+            )
         if lunar and coastal:
-            angles.append("~çıkarım [90%] Full moon beach party → Dolunay sahil konsepti")
+            angles.append(
+                "~inferred [90%] Full moon beach party → Full-moon beach concept"
+                if en else
+                "~çıkarım [90%] Full moon beach party → Dolunay sahil konsepti"
+            )
     elif pack_id == "nightlife" and not profile.get("rejects_nightlife"):
         if is_weekend:
-            angles.append("~çıkarım [80%] Hafta sonu lineup → DJ kadrosu / masa rezervasyonu")
+            angles.append(
+                "~inferred [80%] Weekend lineup → DJ roster / table reservation"
+                if en else
+                "~çıkarım [80%] Hafta sonu lineup → DJ kadrosu / masa rezervasyonu"
+            )
         if lunar:
-            angles.append("~çıkarım [85%] Dolunay özel gece → Guest DJ / özel performans")
+            angles.append(
+                "~inferred [85%] Full moon special night → Guest DJ / special performance"
+                if en else
+                "~çıkarım [85%] Dolunay özel gece → Guest DJ / özel performans"
+            )
     elif pack_id == "urban_restaurant":
         if today.weekday() == 5 and profile.get("prefers_breakfast"):
-            angles.append("~çıkarım [75%] Cumartesi kahvaltı → Serpme kahvaltı / bahçe masası")
+            angles.append(
+                "~inferred [75%] Saturday breakfast → Spread breakfast / garden table"
+                if en else
+                "~çıkarım [75%] Cumartesi kahvaltı → Serpme kahvaltı / bahçe masası"
+            )
         elif today.weekday() == 6:
-            angles.append("~çıkarım [75%] Pazar brunch → Geç kahvaltı / aile masası")
+            angles.append(
+                "~inferred [75%] Sunday brunch → Late breakfast / family table"
+                if en else
+                "~çıkarım [75%] Pazar brunch → Geç kahvaltı / aile masası"
+            )
         if today.weekday() == 4 and not profile.get("rejects_nightlife"):
-            angles.append("~çıkarım [70%] Hafta sonu rezervasyon → Şefin özel menüsü")
+            angles.append(
+                "~inferred [70%] Weekend reservation → Chef's special menu"
+                if en else
+                "~çıkarım [70%] Hafta sonu rezervasyon → Şefin özel menüsü"
+            )
     elif pack_id == "hotel":
         if is_summer:
-            angles.append("~çıkarım [75%] Yüksek sezon → Son dakika konaklama / havuz & spa")
+            angles.append(
+                "~inferred [75%] Peak season → Last-minute stay / pool & spa"
+                if en else
+                "~çıkarım [75%] Yüksek sezon → Son dakika konaklama / havuz & spa"
+            )
         else:
-            angles.append("~çıkarım [60%] Sezon dışı wellness → Hafta sonu kaçamağı")
+            angles.append(
+                "~inferred [60%] Off-season wellness → Weekend getaway"
+                if en else
+                "~çıkarım [60%] Sezon dışı wellness → Hafta sonu kaçamağı"
+            )
     elif pack_id == "wellness":
         if is_summer:
-            angles.append("~çıkarım [70%] Yaza hazırlık → Vücut bakımı serisi")
+            angles.append(
+                "~inferred [70%] Summer ready → Body care series"
+                if en else
+                "~çıkarım [70%] Yaza hazırlık → Vücut bakımı serisi"
+            )
     elif pack_id == "local_artisan":
         if is_summer or m in (3, 4, 5):
-            angles.append("~çıkarım [75%] Sezon ürünleri → Yeni hasat / taze stok")
+            angles.append(
+                "~inferred [75%] Seasonal products → New harvest / fresh stock"
+                if en else
+                "~çıkarım [75%] Sezon ürünleri → Yeni hasat / taze stok"
+            )
 
     if not angles:
         return ""
 
-    lines.append("=== MARKA DİNAMİKLERİ — ZORUNLU ÇEŞİTLİLİK AÇILARI ===")
-    lines.append("Bu haftanın misyon önerisinde aşağıdaki açılardan EN AZ BİRİ ana tema olmalıdır:")
-    for i, a in enumerate(angles[:3], 1):
-        lines.append(f"{i}. {a}")
-    lines.append("→ trigger_signal ve creative_brief bu açılardan birine dayanmalı; DJ+deniz ürünü tekrarı kabul edilmez.")
+    if en:
+        lines.append("=== BRAND DYNAMICS — MANDATORY DIVERSITY ANGLES ===")
+        lines.append("At least ONE of the following angles must be a primary theme this week:")
+        for i, a in enumerate(angles[:3], 1):
+            lines.append(f"{i}. {a}")
+        lines.append(
+            "→ trigger_signal and creative_brief must rest on one of these; "
+            "DJ+seafood repetition is not accepted. Write all titles/hooks in English."
+        )
+    else:
+        lines.append("=== MARKA DİNAMİKLERİ — ZORUNLU ÇEŞİTLİLİK AÇILARI ===")
+        lines.append("Bu haftanın misyon önerisinde aşağıdaki açılardan EN AZ BİRİ ana tema olmalıdır:")
+        for i, a in enumerate(angles[:3], 1):
+            lines.append(f"{i}. {a}")
+        lines.append("→ trigger_signal ve creative_brief bu açılardan birine dayanmalı; DJ+deniz ürünü tekrarı kabul edilmez.")
     return "\n".join(lines)
 
 
@@ -387,11 +582,14 @@ def build_brand_dynamics_block(brand: "BrandInfo") -> str:
     location = getattr(brand, "location", None) or getattr(brand, "city", None) or ""
     btype = brand.business_type or ""
     description = getattr(brand, "description", "") or ""
+    language = _resolve_signal_language(brand)
     pack_id = _resolve_sector_pack(btype, description)
     profile = _resolve_operating_profile(btype, description)
-    mandatory = _build_mandatory_angles_block(pack_id, today, location, btype, profile)
+    mandatory = _build_mandatory_angles_block(
+        pack_id, today, location, btype, profile, language=language,
+    )
     parts = [base]
-    operating = _operating_model_directive(profile)
+    operating = _operating_model_directive(profile, language=language)
     if operating:
         parts.append(operating)
     if mandatory:
@@ -437,31 +635,54 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
     location = getattr(brand, "location", None) or getattr(brand, "city", None) or ""
     btype = brand.business_type or ""
     description = getattr(brand, "description", "") or ""
+    language = _resolve_signal_language(brand)
+    en = language == "en"
+    season = _get_current_season(today, location, language=language)
 
-    lines: list[str] = [
-        "=== BAĞLAM SİNYALLERİ (deterministik, gerçek tarih/astronomi) ===",
-        f"Tarih: {today.isoformat()} | Sezon: {_get_current_season(today, location)}" +
-        (f" | Lokasyon: {location}" if location else ""),
-    ]
+    if en:
+        lines = [
+            "=== CONTEXT SIGNALS (deterministic, real date/astronomy) ===",
+            f"Date: {today.isoformat()} | Season: {season}"
+            + (f" | Location: {location}" if location else ""),
+            "CRITICAL: All mission titles, headlines, captions, and hooks MUST be written in English.",
+        ]
+    else:
+        lines = [
+            "=== BAĞLAM SİNYALLERİ (deterministik, gerçek tarih/astronomi) ===",
+            f"Tarih: {today.isoformat()} | Sezon: {season}"
+            + (f" | Lokasyon: {location}" if location else ""),
+        ]
 
     # Weekday rhythm
-    weekday_signal = _get_weekday_signal(today, btype, description)
-    lines.append(f"✓doğrulanmış | Haftanın günü: {weekday_signal}")
+    weekday_signal = _get_weekday_signal(today, btype, description, language=language)
+    lines.append(
+        (f"✓verified | Day of week: {weekday_signal}" if en else f"✓doğrulanmış | Haftanın günü: {weekday_signal}")
+    )
 
-    operating = _operating_model_directive(_resolve_operating_profile(btype, description))
+    operating = _operating_model_directive(
+        _resolve_operating_profile(btype, description),
+        language=language,
+    )
     if operating:
         lines.append("")
         lines.append(operating)
 
-    # Upcoming holidays
+    # Upcoming holidays (names stay TR for TR region — factual; EN brands get English framing)
     holidays = _get_upcoming_holidays(today, horizon_days=21)
     if holidays:
-        lines.append("✓doğrulanmış | Yaklaşan tatiller/bayramlar: " + " | ".join(holidays))
+        lines.append(
+            ("✓verified | Upcoming holidays: " if en else "✓doğrulanmış | Yaklaşan tatiller/bayramlar: ")
+            + " | ".join(holidays)
+        )
     else:
-        lines.append("Yaklaşan 21 günde belirgin tatil/bayram yok.")
+        lines.append(
+            "No major holidays in the next 21 days."
+            if en else
+            "Yaklaşan 21 günde belirgin tatil/bayram yok."
+        )
 
     # Lunar / full moon (astronomical — beach & nightlife sectors)
-    lunar_lines = _lunar_signal_lines(today, horizon_days=14)
+    lunar_lines = _lunar_signal_lines(today, horizon_days=14, language=language)
     for ll in lunar_lines:
         lines.append(ll)
 
@@ -476,33 +697,41 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
             key_msg = phase.get("key_message") or phase.get("content_theme") or ""
             upcoming = cal.get("upcoming_triggers") or []
             if phase_name:
-                lines.append(f"~çıkarım | Sektör takvimi aktif fazı: {phase_name}" + (f" (Aciliyet: {urgency})" if urgency else ""))
+                prefix = "~inferred | Active industry phase: " if en else "~çıkarım | Sektör takvimi aktif fazı: "
+                urgency_label = f" (Urgency: {urgency})" if urgency and en else (f" (Aciliyet: {urgency})" if urgency else "")
+                lines.append(f"{prefix}{phase_name}{urgency_label}")
             if key_msg:
-                lines.append(f"  Kilit mesaj: {key_msg}")
+                lines.append(("  Key message: " if en else "  Kilit mesaj: ") + key_msg)
             if upcoming and isinstance(upcoming, list):
                 next_triggers = [t.get("name") or str(t) for t in upcoming[:3] if t]
                 if next_triggers:
-                    lines.append("  Yaklaşan sektör tetikleyicileri: " + ", ".join(next_triggers))
+                    lines.append(
+                        ("  Upcoming sector triggers: " if en else "  Yaklaşan sektör tetikleyicileri: ")
+                        + ", ".join(next_triggers)
+                    )
         except Exception:
             pass
 
     # Sector-specific signals (new — mirrors TS sector-packs.ts)
     pack_id = _resolve_sector_pack(btype, description)
-    sector_hints = _sector_pack_signals(pack_id, today, btype)
+    sector_hints = _sector_pack_signals(pack_id, today, btype, language=language)
     if sector_hints:
         pack_labels = {
-            "beach_hospitality": "Beach / Sahil",
-            "nightlife": "Gece Hayatı",
-            "urban_restaurant": "Restoran / Kafe",
-            "hotel": "Otel / Resort",
-            "wellness": "Wellness / Güzellik",
-            "clinic": "Klinik / Sağlık",
-            "retail": "Perakende",
-            "local_artisan": "Yerel Ürünler / Butik",
-            "professional_service": "Profesyonel Hizmet",
-            "generic": "Genel",
+            "beach_hospitality": "Beach / Coastal",
+            "nightlife": "Nightlife" if en else "Gece Hayatı",
+            "urban_restaurant": "Restaurant / Cafe",
+            "hotel": "Hotel / Resort",
+            "wellness": "Wellness / Beauty",
+            "clinic": "Clinic / Health",
+            "retail": "Retail",
+            "local_artisan": "Local Products / Boutique",
+            "professional_service": "Professional Service",
+            "generic": "General",
         }
-        lines.append(f"~çıkarım | Sektör paketi: {pack_labels.get(pack_id, pack_id)}")
+        lines.append(
+            ("~inferred | Sector pack: " if en else "~çıkarım | Sektör paketi: ")
+            + pack_labels.get(pack_id, pack_id)
+        )
         for hint in sector_hints:
             lines.append(f"  → {hint}")
 
@@ -513,5 +742,9 @@ def build_python_context_signals(brand: "BrandInfo") -> str:
         lines.append(diversity)
 
     lines.append("")
-    lines.append("Bu sinyallere dayanarak misyon önerisini tarih ve sektör dinamiklerine göre özelleştir.")
+    lines.append(
+        "Ground the mission proposal in these date and sector dynamics. Write all copy in English."
+        if en else
+        "Bu sinyallere dayanarak misyon önerisini tarih ve sektör dinamiklerine göre özelleştir."
+    )
     return "\n".join(lines)

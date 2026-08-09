@@ -2,83 +2,114 @@
  * Universal temporal calculators (Sprint 5).
  *
  * Season, day-of-week, day-part, weekly rhythm, solstice/equinox and golden
- * hour (sunset) — all deterministic. Northern-hemisphere / Türkiye defaults.
+ * hour (sunset) — all deterministic. Copy language follows brand `languages`
+ * (TR default for TR brands; EN for English content brands).
  */
 
 import type { SignalRecord } from './types';
+import {
+  resolveCanonicalSeason,
+  type CanonicalSeason,
+  type SignalLanguage,
+} from './language';
+import type { BrandOperatingProfile } from '@/lib/brand-operating-profile';
 
 function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+const SEASON_LABEL: Record<CanonicalSeason, { tr: string; en: string }> = {
+  winter: { tr: 'Kış', en: 'Winter' },
+  spring: { tr: 'İlkbahar', en: 'Spring' },
+  summer: { tr: 'Yaz', en: 'Summer' },
+  autumn: { tr: 'Sonbahar', en: 'Autumn' },
+};
+
+const SEASON_HOOKS: Record<CanonicalSeason, { tr: string[]; en: string[] }> = {
+  winter: {
+    tr: ['Sıcak içecek / kış menüsü', 'İç mekân sıcak atmosfer', 'Kış kampanyası'],
+    en: ['Warm drinks / winter menu', 'Cozy indoor atmosphere', 'Winter campaign'],
+  },
+  spring: {
+    tr: ['Sezon açılışı / taze menü', 'Açık hava ilk günler', 'Bahar tazeliği teması'],
+    en: ['Season opening / fresh menu', 'First outdoor days', 'Spring freshness theme'],
+  },
+  summer: {
+    tr: ['Yaz sezonu / serinletici menü', 'Açık hava / sahil / teras', 'Tatil & turist içeriği'],
+    en: ['Summer season / refreshing menu', 'Outdoor / beach / terrace', 'Holiday & visitor content'],
+  },
+  autumn: {
+    tr: ['Sezon kapanışı / sonbahar menüsü', 'Sıcak tonlar / hasat teması', 'Okula dönüş kampanyası'],
+    en: ['Season wind-down / autumn menu', 'Warm tones / harvest theme', 'Back-to-routine campaign'],
+  },
+};
+
 // ── Season ───────────────────────────────────────────────────────────────────
 
-export function seasonSignal(date: Date): SignalRecord {
-  const m = date.getUTCMonth(); // 0-11
-  let season: string;
-  let hooks: string[];
-  if (m === 11 || m <= 1) {
-    season = 'Kış';
-    hooks = ['Sıcak içecek / kış menüsü', 'İç mekân sıcak atmosfer', 'Kış kampanyası'];
-  } else if (m <= 4) {
-    season = 'İlkbahar';
-    hooks = ['Sezon açılışı / taze menü', 'Açık hava ilk günler', 'Bahar tazeliği teması'];
-  } else if (m <= 7) {
-    season = 'Yaz';
-    hooks = ['Yaz sezonu / serinletici menü', 'Açık hava / sahil / teras', 'Tatil & turist içeriği'];
-  } else {
-    season = 'Sonbahar';
-    hooks = ['Sezon kapanışı / sonbahar menüsü', 'Sıcak tonlar / hasat teması', 'Okula dönüş kampanyası'];
-  }
+export function seasonSignal(date: Date, language: SignalLanguage = 'tr'): SignalRecord {
+  const en = language === 'en';
+  const seasonKey = resolveCanonicalSeason(date);
+  const seasonLabel = en ? SEASON_LABEL[seasonKey].en : SEASON_LABEL[seasonKey].tr;
+  const hooks = en ? SEASON_HOOKS[seasonKey].en : SEASON_HOOKS[seasonKey].tr;
   const year = date.getUTCFullYear();
   return {
-    id: `season:${season}:${year}`,
+    id: `season:${seasonKey}:${year}`,
     type: 'season',
-    title: `Mevsim — ${season}`,
+    title: en ? `Season — ${seasonLabel}` : `Mevsim — ${seasonLabel}`,
     windowStart: isoDate(date),
     windowEnd: isoDate(new Date(date.getTime() + 30 * 86_400_000)),
     confidence: 0.9,
     verified: true,
     contentHooks: hooks,
     applicableFormats: ['post', 'story', 'reel'],
-    meta: { season },
+    // Canonical key for sector packs; label is display-only.
+    meta: { season: seasonKey, seasonLabel, language },
   };
 }
 
 // ── Day of week + weekly rhythm ─────────────────────────────────────────────────
 
 const TR_DAYS = ['Pazar', 'Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi'];
+const EN_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-export function dayOfWeekSignal(date: Date): SignalRecord {
+export function dayOfWeekSignal(date: Date, language: SignalLanguage = 'tr'): SignalRecord {
   const dow = date.getUTCDay();
   const isWeekend = dow === 0 || dow === 6;
+  const en = language === 'en';
+  const dayName = en ? EN_DAYS[dow] : TR_DAYS[dow];
   return {
     id: `dow:${isoDate(date)}`,
     type: 'day_of_week',
-    title: `${TR_DAYS[dow]}${isWeekend ? ' (hafta sonu)' : ''}`,
+    title: en
+      ? `${dayName}${isWeekend ? ' (weekend)' : ''}`
+      : `${dayName}${isWeekend ? ' (hafta sonu)' : ''}`,
     windowStart: isoDate(date),
     windowEnd: isoDate(date),
     confidence: 0.6,
     verified: true,
     contentHooks: isWeekend
-      ? ['Hafta sonu yoğunluğu / rezervasyon çağrısı']
-      : ['Hafta içi sakin atmosfer / günlük menü'],
+      ? (en
+        ? ['Weekend energy / reservation CTA']
+        : ['Hafta sonu yoğunluğu / rezervasyon çağrısı'])
+      : (en
+        ? ['Weekday calm atmosphere / daily menu']
+        : ['Hafta içi sakin atmosfer / günlük menü']),
     applicableFormats: ['story', 'post'],
-    meta: { dayOfWeek: dow, isWeekend },
+    meta: { dayOfWeek: dow, isWeekend, language },
   };
 }
-
-import type { BrandOperatingProfile } from '@/lib/brand-operating-profile';
 
 /** Sector-agnostic weekly rhythms (Friday night, Sunday brunch, quiet Monday). */
 export function weeklyRhythmSignals(
   date: Date,
   operatingProfile?: BrandOperatingProfile,
+  language: SignalLanguage = 'tr',
 ): SignalRecord[] {
   const dow = date.getUTCDay();
   const out: SignalRecord[] = [];
   const rejectsNight = operatingProfile?.rejectsNightlifeThemes === true;
   const prefersBreakfast = operatingProfile?.prefersBreakfastBrunch === true;
+  const en = language === 'en';
   const push = (key: string, title: string, hooks: string[], confidence: number) => {
     out.push({
       id: `weekly:${key}:${isoDate(date)}`,
@@ -90,43 +121,89 @@ export function weeklyRhythmSignals(
       verified: false,
       contentHooks: hooks,
       applicableFormats: ['story', 'reel', 'post'],
-      meta: { rhythm: key, dayOfWeek: dow },
+      meta: { rhythm: key, dayOfWeek: dow, language },
     });
   };
   if (dow === 5 && !rejectsNight) {
-    push('friday_night', 'Cuma akşamı ritmi', ['Cuma akşamı / hafta sonu açılışı', 'Canlı müzik / özel program'], 0.75);
+    push(
+      'friday_night',
+      en ? 'Friday night rhythm' : 'Cuma akşamı ritmi',
+      en
+        ? ['Friday night / weekend kickoff', 'Live music / special program']
+        : ['Cuma akşamı / hafta sonu açılışı', 'Canlı müzik / özel program'],
+      0.75,
+    );
   }
   if (dow === 6) {
     if (prefersBreakfast || rejectsNight) {
       push(
         'saturday_brunch',
-        'Cumartesi kahvaltı ritmi',
-        ['Cumartesi serpme kahvaltı daveti', 'Hafta sonu aile masası / bahçe kahvaltı'],
+        en ? 'Saturday breakfast rhythm' : 'Cumartesi kahvaltı ritmi',
+        en
+          ? ['Saturday breakfast invitation', 'Weekend family table / garden breakfast']
+          : ['Cumartesi serpme kahvaltı daveti', 'Hafta sonu aile masası / bahçe kahvaltı'],
         0.75,
       );
     } else {
-      push('saturday_night', 'Cumartesi gece ritmi', ['Cumartesi gece yoğunluğu', 'DJ / etkinlik / özel menü'], 0.75);
+      push(
+        'saturday_night',
+        en ? 'Saturday night rhythm' : 'Cumartesi gece ritmi',
+        en
+          ? ['Saturday night peak', 'DJ / event / special menu']
+          : ['Cumartesi gece yoğunluğu', 'DJ / etkinlik / özel menü'],
+        0.75,
+      );
     }
   }
-  if (dow === 0) push('sunday_brunch', 'Pazar brunch ritmi', ['Pazar brunch daveti', 'Aile / geç kahvaltı içeriği'], 0.7);
-  if (dow === 1) push('quiet_monday', 'Sakin Pazartesi', ['Pazartesi sakin atmosfer / indirim', 'Haftaya yumuşak başlangıç'], 0.5);
+  if (dow === 0) {
+    push(
+      'sunday_brunch',
+      en ? 'Sunday brunch rhythm' : 'Pazar brunch ritmi',
+      en
+        ? ['Sunday brunch invitation', 'Family / late breakfast content']
+        : ['Pazar brunch daveti', 'Aile / geç kahvaltı içeriği'],
+      0.7,
+    );
+  }
+  if (dow === 1) {
+    push(
+      'quiet_monday',
+      en ? 'Quiet Monday' : 'Sakin Pazartesi',
+      en
+        ? ['Monday calm atmosphere / soft offer', 'Gentle start to the week']
+        : ['Pazartesi sakin atmosfer / indirim', 'Haftaya yumuşak başlangıç'],
+      0.5,
+    );
+  }
   return out;
 }
 
 // ── Solstice / equinox (approximate fixed dates) ─────────────────────────────────
 
-const ASTRO_EVENTS: { name: string; month: number; day: number; hooks: string[] }[] = [
+const ASTRO_EVENTS_TR: { name: string; month: number; day: number; hooks: string[] }[] = [
   { name: 'İlkbahar Ekinoksu', month: 3, day: 20, hooks: ['Bahar başlangıcı teması'] },
   { name: 'Yaz Gündönümü', month: 6, day: 21, hooks: ['Yılın en uzun günü / yaz zirvesi', 'Gün batımı geç saat içeriği'] },
   { name: 'Sonbahar Ekinoksu', month: 9, day: 22, hooks: ['Sonbahar geçişi teması'] },
   { name: 'Kış Gündönümü', month: 12, day: 21, hooks: ['Yılın en kısa günü / kış teması'] },
 ];
 
-export function solsticeSignals(date: Date, horizonDays: number): SignalRecord[] {
+const ASTRO_EVENTS_EN: { name: string; month: number; day: number; hooks: string[] }[] = [
+  { name: 'Spring Equinox', month: 3, day: 20, hooks: ['Spring beginning theme'] },
+  { name: 'Summer Solstice', month: 6, day: 21, hooks: ['Longest day / summer peak', 'Late sunset content'] },
+  { name: 'Autumn Equinox', month: 9, day: 22, hooks: ['Autumn transition theme'] },
+  { name: 'Winter Solstice', month: 12, day: 21, hooks: ['Shortest day / winter theme'] },
+];
+
+export function solsticeSignals(
+  date: Date,
+  horizonDays: number,
+  language: SignalLanguage = 'tr',
+): SignalRecord[] {
   const out: SignalRecord[] = [];
   const year = date.getUTCFullYear();
+  const events = language === 'en' ? ASTRO_EVENTS_EN : ASTRO_EVENTS_TR;
   for (const y of [year, year + 1]) {
-    for (const e of ASTRO_EVENTS) {
+    for (const e of events) {
       const when = new Date(Date.UTC(y, e.month - 1, e.day));
       const d = (when.getTime() - date.getTime()) / 86_400_000;
       if (d < -1 || d > horizonDays) continue;
@@ -140,7 +217,7 @@ export function solsticeSignals(date: Date, horizonDays: number): SignalRecord[]
         verified: true,
         contentHooks: e.hooks,
         applicableFormats: ['post', 'story'],
-        meta: { date: isoDate(when) },
+        meta: { date: isoDate(when), language },
       });
     }
   }
@@ -178,7 +255,12 @@ export function sunsetUtcHours(date: Date, lat: number, lng: number): number | n
   return ((sunsetUtc % 24) + 24) % 24;
 }
 
-export function goldenHourSignal(date: Date, lat?: number, lng?: number): SignalRecord | null {
+export function goldenHourSignal(
+  date: Date,
+  lat?: number,
+  lng?: number,
+  language: SignalLanguage = 'tr',
+): SignalRecord | null {
   if (typeof lat !== 'number' || typeof lng !== 'number') return null;
   const sunset = sunsetUtcHours(date, lat, lng);
   if (sunset == null) return null;
@@ -187,19 +269,25 @@ export function goldenHourSignal(date: Date, lat?: number, lng?: number): Signal
   const hh = Math.floor(localSunset);
   const mm = Math.round((localSunset - hh) * 60);
   const timeStr = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  const en = language === 'en';
   return {
     id: `golden_hour:${isoDate(date)}`,
     type: 'golden_hour',
-    title: `Altın saat / gün batımı ~${timeStr}`,
+    title: en ? `Golden hour / sunset ~${timeStr}` : `Altın saat / gün batımı ~${timeStr}`,
     windowStart: isoDate(date),
     windowEnd: isoDate(date),
     confidence: 0.6,
     verified: true,
-    contentHooks: [
-      `Gün batımı (~${timeStr}) altın saat içeriği`,
-      'Teras / sahil / manzara gün batımı çekimi',
-    ],
+    contentHooks: en
+      ? [
+        `Sunset (~${timeStr}) golden-hour content`,
+        'Terrace / beach / view sunset shot',
+      ]
+      : [
+        `Gün batımı (~${timeStr}) altın saat içeriği`,
+        'Teras / sahil / manzara gün batımı çekimi',
+      ],
     applicableFormats: ['story', 'reel', 'post'],
-    meta: { sunsetLocal: timeStr },
+    meta: { sunsetLocal: timeStr, language },
   };
 }

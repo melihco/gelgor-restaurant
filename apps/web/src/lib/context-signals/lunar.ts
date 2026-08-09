@@ -7,6 +7,7 @@
  */
 
 import type { SignalRecord } from './types';
+import type { SignalLanguage } from './language';
 
 const SYNODIC_MONTH = 29.530588853; // days
 // Known new moon: 2000-01-06 18:14 UTC
@@ -74,15 +75,28 @@ const TR_MONTHS = [
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
 ];
 
+const EN_MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
 function trDate(d: Date): string {
   return `${d.getUTCDate()} ${TR_MONTHS[d.getUTCMonth()]}`;
+}
+
+function enDate(d: Date): string {
+  return `${d.getUTCDate()} ${EN_MONTHS[d.getUTCMonth()]}`;
 }
 
 /**
  * Emit a lunar signal when a full moon is within the horizon (or tonight).
  * Nightlife / beach / rooftop brands care most; verified=true (astronomical).
  */
-export function lunarSignals(date: Date, horizonDays: number): SignalRecord[] {
+export function lunarSignals(
+  date: Date,
+  horizonDays: number,
+  language: SignalLanguage = 'tr',
+): SignalRecord[] {
   const full = nextFullMoon(date);
   const daysToFull = (full.getTime() - date.getTime()) / 86_400_000;
 
@@ -92,21 +106,33 @@ export function lunarSignals(date: Date, horizonDays: number): SignalRecord[] {
     const confidence = Math.max(0.5, 1 - Math.abs(daysToFull) / (horizonDays + 1));
     const windowStart = new Date(full.getTime() - 86_400_000);
     const windowEnd = new Date(full.getTime() + 86_400_000);
+    const en = language === 'en';
     signals.push({
       id: `lunar:full:${isoDate(full)}`,
       type: 'lunar',
-      title: `Dolunay — ${trDate(full)}`,
+      title: en ? `Full moon — ${enDate(full)}` : `Dolunay — ${trDate(full)}`,
       windowStart: isoDate(windowStart),
       windowEnd: isoDate(windowEnd),
       confidence: Math.round(confidence * 100) / 100,
       verified: true,
-      contentHooks: [
-        'Dolunay temalı gece etkinliği / özel menü',
-        'Gün batımı sonrası dolunay manzarası içeriği',
-        'Full moon party / rooftop / sahil konsepti',
-      ],
+      contentHooks: en
+        ? [
+          'Full-moon night event / special menu',
+          'Post-sunset full-moon view content',
+          'Full moon party / rooftop / beach concept',
+        ]
+        : [
+          'Dolunay temalı gece etkinliği / özel menü',
+          'Gün batımı sonrası dolunay manzarası içeriği',
+          'Full moon party / rooftop / sahil konsepti',
+        ],
       applicableFormats: ['story', 'reel', 'post'],
-      meta: { phase: 'full', daysToFull: Math.round(daysToFull * 10) / 10, fullMoonDate: isoDate(full) },
+      meta: {
+        phase: 'full',
+        daysToFull: Math.round(daysToFull * 10) / 10,
+        fullMoonDate: isoDate(full),
+        language,
+      },
     });
   }
   return signals;

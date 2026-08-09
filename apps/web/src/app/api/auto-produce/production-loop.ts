@@ -82,6 +82,7 @@ import { resolveCanonicalBrandName } from '@/lib/resolve-brand-name';
 import {
   harmonizeCaptionAndCta,
   normalizeBrandLanguagesInput,
+  pickLocalizedCta,
   resolveBrandLanguageCode,
 } from '@/lib/cta-localization';
 import {
@@ -784,6 +785,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     brandName: resolvedBrandName,
     brandLocation,
     brandDescription: brandCtxForVisual.description ?? undefined,
+    brandLanguages: brandCtx.languages ?? brandCtx.inferred_language ?? undefined,
     pipelineRun,
   });
 
@@ -1528,14 +1530,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     activeGallerySubjectKey = ideationSubjectKey;
     let hashtags = normalizeHashtags(idea.hashtags);
+    const brandLangInput = normalizeBrandLanguagesInput(
+      brandCtx.languages ?? brandCtx.inferred_language,
+    );
     let cta = getField(idea, 'cta', 'call_to_action');
-    if (caption && cta) {
-      const harmonized = harmonizeCaptionAndCta(
-        caption,
-        cta,
-        normalizeBrandLanguagesInput(brandCtx.languages ?? brandCtx.inferred_language),
-      );
-      caption = harmonized.caption;
+    if (!cta.trim()) {
+      cta = pickLocalizedCta(brandCtx.default_ctas, brandLangInput);
+    } else {
+      const harmonized = harmonizeCaptionAndCta(caption, cta, brandLangInput);
+      caption = harmonized.caption || caption;
       cta = harmonized.cta;
     }
 

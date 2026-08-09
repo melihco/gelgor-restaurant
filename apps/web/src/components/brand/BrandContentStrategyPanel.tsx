@@ -11,6 +11,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { CREATIVE_CONTENT_NEEDS, type CreativeIntent } from '@/lib/creative-production-contracts';
 import { deriveContentNeedsFromSectorPack } from '@/lib/slot-content-needs-bridge';
+import { resolveBrandLanguageCode } from '@/lib/cta-localization';
 
 const EXTRA_PILLAR_LABELS: Record<string, string> = {
   daily_story: 'Günlük story / mekan',
@@ -207,6 +208,11 @@ export function BrandContentStrategyPanel({
     return [...new Set([...fromSlots, ...fromAnalysis])] as CreativeIntent[];
   }, [sector, initialPillars]);
 
+  const brandLang = resolveBrandLanguageCode(pyCtx?.languages);
+  const ctaSuggestions = brandLang === 'en'
+    ? ['Book now', 'Discover', 'Explore now', 'Book an appointment', 'Order now', 'See details']
+    : ['Rezervasyon Yap', 'Keşfet', 'Hemen İncele', 'Randevu Al', 'Sipariş Ver', 'Detaylar'];
+
   const persist = useCallback(async (nextPillars: string[], nextCtas: string[]) => {
     if (!tenantId) return;
     setSaving(true);
@@ -318,16 +324,10 @@ export function BrandContentStrategyPanel({
           t={t}
           items={ctas}
           onChange={onCtasChange}
-          placeholder='örn. Rezervasyon Yap, Keşfet… (Enter)'
-          suggestions={[
-            'Rezervasyon Yap',
-            'Keşfet',
-            'Hemen İncele',
-            'Randevu Al',
-            'Sipariş Ver',
-            'Detaylar',
-            ...initialCtas,
-          ]}
+          placeholder={brandLang === 'en'
+            ? 'e.g. Book now, Discover… (Enter)'
+            : 'örn. Rezervasyon Yap, Keşfet… (Enter)'}
+          suggestions={[...ctaSuggestions, ...initialCtas]}
           maxSuggestions={6}
         />
       </div>

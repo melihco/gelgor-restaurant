@@ -118,12 +118,21 @@ _CATEGORY_RULES: list[dict[str, Any]] = [
     },
 ]
 
+# Canonical TR seeds — always localized via brand.languages before writing default_ctas.
 _CTA_PRESETS: dict[str, list[str]] = {
     "reservation": ["Rezervasyon Yap", "Masanı Ayır"],
     "booking": ["Randevu Al", "Yerini Ayır"],
     "ecommerce": ["Hemen Sipariş Ver", "İncele"],
     "visit": ["Bizi Ziyaret Et", "Yolunu Düşür"],
     "contact": ["İletişime Geç", "Bilgi Al"],
+}
+
+_CTA_PRESETS_EN: dict[str, list[str]] = {
+    "reservation": ["Book now", "Reserve a table"],
+    "booking": ["Book an appointment", "Save your spot"],
+    "ecommerce": ["Order now", "Explore"],
+    "visit": ["Visit us", "Stop by"],
+    "contact": ["Get in touch", "Get info"],
 }
 
 # Canonical CTA style per category (derived from _CATEGORY_RULES). A category is the
@@ -174,12 +183,29 @@ def canonical_sector_from_category(category: str) -> str:
     return _CATEGORY_TO_CANONICAL_SECTOR.get(key, key)
 
 
-def context_updates_from_service_profile(profile: dict[str, Any]) -> dict[str, Any]:
+def _localized_cta_presets(cta_style: str, languages: str | None = None) -> list[str]:
+    """Return CTA seeds in the brand content language (never force Turkish on EN brands)."""
+    from app.crew.cta_localization import localize_ctas, resolve_language_code
+
+    style = str(cta_style or "").strip()
+    lang = resolve_language_code(languages)
+    if lang == "en" and style in _CTA_PRESETS_EN:
+        return list(_CTA_PRESETS_EN[style])
+    seeds = list(_CTA_PRESETS.get(style, _CTA_PRESETS["contact"]))
+    return localize_ctas(seeds, lang)
+
+
+def context_updates_from_service_profile(
+    profile: dict[str, Any],
+    *,
+    languages: str | None = None,
+) -> dict[str, Any]:
     """
     Flat brand_context fields to sync from a validated service profile.
 
     Keeps ``business_type`` and ``default_ctas`` aligned with authoritative
     positioning so agent prompts and Nexus industry hydration stay consistent.
+    CTA array is written in the brand content language (``languages``).
     """
     updates: dict[str, Any] = {}
     category = str(profile.get("category") or "").strip()
@@ -191,8 +217,20 @@ def context_updates_from_service_profile(profile: dict[str, Any]) -> dict[str, A
         updates["business_type"] = canonical
 
     cta_style = str(profile.get("cta_style") or "").strip()
-    if cta_style in _CTA_PRESETS:
-        updates["default_ctas"] = json.dumps(_CTA_PRESETS[cta_style], ensure_ascii=False)
+    primary = profile.get("primary_ctas")
+    if isinstance(primary, list) and any(str(c).strip() for c in primary):
+        from app.crew.cta_localization import localize_ctas, resolve_language_code
+
+        lang = resolve_language_code(languages)
+        updates["default_ctas"] = json.dumps(
+            localize_ctas([str(c) for c in primary if str(c).strip()], lang),
+            ensure_ascii=False,
+        )
+    elif cta_style in _CTA_PRESETS or cta_style in _CTA_PRESETS_EN:
+        updates["default_ctas"] = json.dumps(
+            _localized_cta_presets(cta_style, languages),
+            ensure_ascii=False,
+        )
 
     return updates
 
@@ -379,7 +417,7 @@ def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
         ' "category_confidence": 0.0-1.0,\n'
         ' "signature_offerings": ["3-6 concrete things this brand sells/offers, in the brand language"],\n'
         f' "cta_style": "one of {list(VALID_CTA_STYLES)}",\n'
-        ' "primary_ctas": ["2-3 CTA phrases in Turkish (tr) matching cta_style"],\n'
+        ' "primary_ctas": ["2-3 CTA phrases in the brand content language matching cta_style"],\n'
         f' "seasonality": "one of {list(VALID_SEASONALITY)}",\n'
         ' "value_props": ["2-4 differentiators"],\n'
         ' "content_guardrails": ["2-4 things content MUST NOT do, given the real positioning"]}'
