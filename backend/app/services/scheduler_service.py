@@ -35,6 +35,186 @@ logger = structlog.get_logger()
 _scheduler: AsyncIOScheduler | None = None
 
 
+async def _weekly_visual_identity_job() -> None:
+    """Soft-enrich thin vibes + re-derive theme waterfall for active brands."""
+    import asyncio as _asyncio
+
+    from sqlalchemy import select
+
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.brand_theme_freshness_service import ensure_brand_theme_waterfall
+
+    logger.info("visual_identity_job_start")
+    ok = skip = fail = 0
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(select(BrandContext.workspace_id, BrandContext.business_name))
+            targets = [
+                (r[0], r[1])
+                for r in rows.all()
+                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+            ]
+        for workspace_id, business_name in targets:
+            try:
+                async with async_session_factory() as db:
+                    result = await ensure_brand_theme_waterfall(db, workspace_id, force=False)
+                if result.get("skipped"):
+                    skip += 1
+                elif result.get("ok"):
+                    ok += 1
+                else:
+                    fail += 1
+                await _asyncio.sleep(1)
+            except Exception as exc:
+                fail += 1
+                logger.error(
+                    "visual_identity_job_workspace_failed",
+                    workspace_id=str(workspace_id),
+                    business=business_name,
+                    error=str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.error("visual_identity_job_failed", error=str(exc)[:300])
+        return
+    logger.info("visual_identity_job_complete", ok=ok, skipped=skip, failed=fail)
+
+
+async def _weekly_competitor_brief_job() -> None:
+    """Refresh competitor_brief from competitors or suggested_competitors (7d TTL)."""
+    import asyncio as _asyncio
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.config import get_settings
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.competitor_intelligence_service import build_competitor_brief
+    from app.services.competitor_resolve import (
+        extract_verified_handles_from_brief,
+        resolve_competitors_raw,
+    )
+
+    settings = get_settings()
+    if not settings.apify_api_key:
+        logger.info("competitor_brief_job_skip", reason="apify_missing")
+        return
+
+    logger.info("competitor_brief_job_start")
+    ok = skip = fail = 0
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(select(BrandContext))
+            contexts = [
+                c for c in rows.scalars().all()
+                if (c.business_name or "").strip().lower() not in {"brand", "test", "demo"}
+            ]
+
+        for ctx in contexts:
+            try:
+                raw = resolve_competitors_raw(ctx.competitors, ctx.suggested_competitors)
+                if not raw:
+                    skip += 1
+                    continue
+                # competitor_brief has no dedicated updated_at — refresh if empty or force weekly
+                if (ctx.competitor_brief or "").strip() and len(ctx.competitor_brief or "") > 200:
+                    # Soft skip when brief looks populated; still refresh empty/short ones
+                    # Use market_intelligence_updated_at as proxy when present
+                    age_raw = getattr(ctx, "market_intelligence_updated_at", None)
+                    if age_raw:
+                        try:
+                            s = str(age_raw).replace("Z", "+00:00")
+                            age_dt = datetime.fromisoformat(s)
+                            if age_dt.tzinfo is None:
+                                age_dt = age_dt.replace(tzinfo=timezone.utc)
+                            if (datetime.now(timezone.utc) - age_dt).days < 7 and len(ctx.competitor_brief or "") > 400:
+                                skip += 1
+                                continue
+                        except Exception:
+                            pass
+
+                brief = await build_competitor_brief(
+                    brand_name=ctx.business_name or "",
+                    competitors_raw=raw,
+                    api_key=settings.apify_api_key,
+                    timeout=settings.apify_timeout_seconds,
+                    brand_type=ctx.business_type or "business",
+                    openai_api_key=settings.openai_api_key or "",
+                )
+                if not brief:
+                    fail += 1
+                    await _asyncio.sleep(5)
+                    continue
+
+                async with async_session_factory() as db:
+                    row = await db.get(BrandContext, ctx.id)
+                    if not row:
+                        continue
+                    row.competitor_brief = brief
+                    handles = extract_verified_handles_from_brief(brief)
+                    if handles and not (row.competitors or "").strip():
+                        row.competitors = ", ".join(f"@{h}" for h in handles)
+                    await db.commit()
+                ok += 1
+                await _asyncio.sleep(8)
+            except Exception as exc:
+                fail += 1
+                logger.error(
+                    "competitor_brief_job_workspace_failed",
+                    workspace_id=str(ctx.workspace_id),
+                    error=str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.error("competitor_brief_job_failed", error=str(exc)[:300])
+        return
+    logger.info("competitor_brief_job_complete", ok=ok, skipped=skip, failed=fail)
+
+
+async def _weekly_google_signals_job() -> None:
+    """Fill empty Google review signals for brands with a maps URL or name+location."""
+    import asyncio as _asyncio
+
+    from sqlalchemy import select
+
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.google_business_refresh_service import refresh_google_business_signals
+
+    logger.info("google_signals_job_start")
+    ok = skip = fail = 0
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(select(BrandContext.workspace_id, BrandContext.business_name))
+            targets = [
+                (r[0], r[1])
+                for r in rows.all()
+                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+            ]
+        for workspace_id, _name in targets:
+            try:
+                async with async_session_factory() as db:
+                    result = await refresh_google_business_signals(db, workspace_id, force=False)
+                if result.get("skipped"):
+                    skip += 1
+                elif result.get("ok"):
+                    ok += 1
+                else:
+                    skip += 1
+                await _asyncio.sleep(6)
+            except Exception as exc:
+                fail += 1
+                logger.error(
+                    "google_signals_job_workspace_failed",
+                    workspace_id=str(workspace_id),
+                    error=str(exc)[:200],
+                )
+    except Exception as exc:
+        logger.error("google_signals_job_failed", error=str(exc)[:300])
+        return
+    logger.info("google_signals_job_complete", ok=ok, skipped=skip, failed=fail)
+
+
 async def _weekly_instagram_intelligence_job() -> None:
     """
     Weekly Instagram caption + voice intelligence refresh for tenants with handles.
@@ -1474,6 +1654,39 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=900,
+    )
+
+    # Every Sunday 19:00 UTC — Visual identity / theme waterfall
+    _scheduler.add_job(
+        _weekly_visual_identity_job,
+        trigger=CronTrigger(day_of_week="sun", hour=19, minute=0, timezone="UTC"),
+        id="weekly_visual_identity",
+        name="Weekly Visual Identity / Theme Waterfall",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=7200,
+    )
+
+    # Every Sunday 20:00 UTC — Competitor brief refresh
+    _scheduler.add_job(
+        _weekly_competitor_brief_job,
+        trigger=CronTrigger(day_of_week="sun", hour=20, minute=0, timezone="UTC"),
+        id="weekly_competitor_brief",
+        name="Weekly Competitor Brief Refresh",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=7200,
+    )
+
+    # Every Sunday 20:30 UTC — Google review signals
+    _scheduler.add_job(
+        _weekly_google_signals_job,
+        trigger=CronTrigger(day_of_week="sun", hour=20, minute=30, timezone="UTC"),
+        id="weekly_google_signals",
+        name="Weekly Google Business Signals",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=7200,
     )
 
     # Every Sunday 21:00 UTC — Instagram voice intelligence (before DNA at 23:00)

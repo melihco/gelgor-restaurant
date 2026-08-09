@@ -963,6 +963,7 @@ async def fetch_google_business_apify(url_or_name: str, api_key: str, timeout: i
         "address": "",
         "rating": None,
         "review_count": None,
+        "reviews": [],
         "raw_fetch_ok": False,
         "source": "apify",
     }
@@ -970,13 +971,12 @@ async def fetch_google_business_apify(url_or_name: str, api_key: str, timeout: i
     if not url_or_name:
         return result
 
-    # Accept both full Maps URLs and plain business names/queries
-    if url_or_name.startswith("http"):
-        search_input = [{"url": url_or_name}]
-    else:
-        search_input = [{"searchString": url_or_name}]
-
-    actor_input: dict = {"maxCrawledPlaces": 1, "language": "tr"}
+    actor_input: dict = {
+        "maxCrawledPlaces": 1,
+        "language": "tr",
+        "maxReviews": 20,
+        "reviewsSort": "newest",
+    }
     if url_or_name.startswith("http"):
         actor_input["startUrls"] = [{"url": url_or_name}]
     else:
@@ -1001,11 +1001,41 @@ async def fetch_google_business_apify(url_or_name: str, api_key: str, timeout: i
     result["review_count"] = place.get("reviewsCount") or place.get("reviewCount")
     result["raw_fetch_ok"] = bool(result["name"])
 
+    raw_reviews = place.get("reviews") or place.get("userReviews") or []
+    reviews: list[dict[str, Any]] = []
+    if isinstance(raw_reviews, list):
+        for rev in raw_reviews[:20]:
+            if not isinstance(rev, dict):
+                continue
+            text = (
+                rev.get("text")
+                or rev.get("textTranslated")
+                or rev.get("comment")
+                or rev.get("reviewText")
+                or ""
+            )
+            text = str(text).strip()
+            if not text:
+                continue
+            stars_f = None
+            for key in ("stars", "rating"):
+                raw_stars = rev.get(key)
+                if raw_stars is None:
+                    continue
+                try:
+                    stars_f = float(raw_stars)
+                    break
+                except (TypeError, ValueError):
+                    continue
+            reviews.append({"text": text[:500], "stars": stars_f})
+    result["reviews"] = reviews
+
     logger.info(
         "apify_google_ok",
         name=result["name"],
         category=result["category"],
         rating=result["rating"],
+        reviews=len(reviews),
     )
     return result
 

@@ -565,6 +565,25 @@ async def propose_missions_for_workspace(
     except Exception as exc:
         logger.warning("recent_mission_context_failed", error=str(exc)[:200])
 
+    # ── Google review themes (social proof / recovery mission angles) ─────
+    try:
+        from app.services.google_review_themes import (
+            extract_google_review_themes,
+            format_review_themes_for_learning,
+        )
+        from app.services.brand_context_service import get_brand_context as _get_bc
+
+        _ctx = await _get_bc(db, workspace_id)
+        if _ctx and getattr(_ctx, "google_review_signals", None):
+            themes = extract_google_review_themes(_ctx.google_review_signals)
+            block = format_review_themes_for_learning(
+                themes, rating=getattr(_ctx, "google_rating", None),
+            )
+            if block:
+                brand.learning_context = (brand.learning_context or "") + "\n\n" + block
+    except Exception as exc:
+        logger.warning("google_review_themes_inject_failed", error=str(exc)[:200])
+
     # ── Inject deterministic context signals (season, full moon, holidays,
     #    weekly rhythm, sector triggers) from the TS Context Signal Engine ──
     if context_signals and context_signals.strip():

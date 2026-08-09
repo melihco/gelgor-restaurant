@@ -440,7 +440,12 @@ async def analyze_brand_context(
                 logger.warning("suggested_competitors_failed", workspace_id=str(workspace_id), error=str(exc))
 
     # Auto-trigger competitor analysis in background if competitors are configured
-    competitors_raw = getattr(ctx, "competitors", None) or ""
+    from app.services.competitor_resolve import resolve_competitors_raw as _resolve_competitors_raw
+
+    competitors_raw = _resolve_competitors_raw(
+        getattr(ctx, "competitors", None),
+        getattr(ctx, "suggested_competitors", None),
+    )
     if competitors_raw and settings.apify_api_key and not getattr(ctx, "competitor_brief", None):
 
         async def _run_competitor_analysis() -> None:
@@ -584,7 +589,14 @@ async def analyze_competitor_intelligence(
     if existing and not force:
         return {"competitor_brief": existing, "source": "cached"}
 
-    competitors_raw = ctx.competitors or ""
+    from app.services.competitor_resolve import (
+        extract_verified_handles_from_brief,
+        resolve_competitors_raw,
+    )
+
+    competitors_raw = resolve_competitors_raw(
+        ctx.competitors, getattr(ctx, "suggested_competitors", None),
+    )
 
     # Auto-discover competitors when none are configured
     if not competitors_raw and settings.perplexity_api_key:
@@ -641,6 +653,18 @@ async def analyze_competitor_intelligence(
                 "message": "Could not fetch competitor data — accounts may be private or unavailable"}
 
     ctx.competitor_brief = brief
+    # Persist verified @handles back so next run doesn't rely on name→handle guesses.
+    handles = extract_verified_handles_from_brief(brief)
+    if handles and not (ctx.competitors or "").strip():
+        ctx.competitors = ", ".join(f"@{h}" for h in handles)
+    elif handles:
+        # Merge newly seen handles into competitors list
+        existing = {h.strip().lstrip("@").lower() for h in (ctx.competitors or "").split(",") if h.strip()}
+        merged = [h.strip() for h in (ctx.competitors or "").split(",") if h.strip()]
+        for h in handles:
+            if h.lower() not in existing:
+                merged.append(f"@{h}")
+        ctx.competitors = ", ".join(merged[:6])
     await db.flush()
     await db.commit()
 
@@ -748,6 +772,51 @@ async def refresh_performance_feedback(
 
     logger.info("performance_feedback_saved", workspace_id=str(workspace_id), chars=len(updated))
     return {"learning_context_updated": True, "chars": len(updated), "updated": True}
+
+
+@router.post("/{workspace_id}/refresh-visual-identity", response_model=dict)
+async def refresh_visual_identity_endpoint(
+    workspace_id: uuid.UUID,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Soft-enrich thin vibe from IG voice + brand colors, then re-derive brand_theme
+    via the waterfall (skips operator-locked manual_colors unless force=true).
+    """
+    from app.services.brand_theme_freshness_service import ensure_brand_theme_waterfall
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(404, "Brand context not found")
+
+    result = await ensure_brand_theme_waterfall(db, workspace_id, force=force)
+    if not result.get("ok"):
+        raise HTTPException(400, f"Visual identity refresh failed: {result.get('reason')}")
+    return result
+
+
+@router.post("/{workspace_id}/refresh-google", response_model=dict)
+async def refresh_google_business_endpoint(
+    workspace_id: uuid.UUID,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """Refresh Google rating + review snippets for social-proof mission angles."""
+    from app.services.google_business_refresh_service import refresh_google_business_signals
+
+    settings = get_settings()
+    if not settings.apify_api_key:
+        raise HTTPException(503, "APIFY_API_KEY not configured")
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(404, "Brand context not found")
+
+    result = await refresh_google_business_signals(db, workspace_id, force=force)
+    if not result.get("ok") and not result.get("skipped"):
+        raise HTTPException(422, f"Google refresh failed: {result.get('reason')}")
+    return result
 
 
 @router.post("/{workspace_id}/refresh-instagram", response_model=dict)
