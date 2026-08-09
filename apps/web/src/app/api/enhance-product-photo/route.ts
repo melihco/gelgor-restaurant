@@ -702,6 +702,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       void recordWorkspaceUsageCost(workspaceId, 'gpt_image_enhance', enhanceCost, {
         artifactCount: imageUrls.length,
       });
+      // cost_events SSOT — budget rollup alone is not enough for mission monitoring.
+      void import('@/lib/ai-cost-telemetry').then(({ emitAiCostLine }) => {
+        emitAiCostLine({
+          callType: 'gpt_image_enhance',
+          usd: enhanceCost,
+          provider: 'openai',
+          model: serverConfig.imageGen.editModel,
+          workspaceId,
+          missionId: typeof missionId === 'string' ? missionId : null,
+          detail: `enhance×${imageUrls.length}`,
+          persist: true,
+        });
+      }).catch(() => undefined);
     }
 
     return NextResponse.json({

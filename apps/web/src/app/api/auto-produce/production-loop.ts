@@ -1730,6 +1730,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     else if (slotRoleFmt === 'reel') slotReelCount += 1;
 
     const slotKey = `${ideaIndex}:${String(assignment.slot_role)}`;
+    let slotCostArtifactId: string | null = null;
+    let slotCostIdeaUsd = 0;
+    let slotCostPipeline = '';
     try {
     beginFalRequestSlot();
     const ideaDedupeKey = buildIdeaProductionDedupeKey(
@@ -4863,6 +4866,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const ideaCostUsd = Math.round((costEstimate - ideaCostBefore) * 1000) / 1000;
 
+    // Log-only rollup — per-call fal/OpenAI events are SSOT (persist:false avoids double-count).
     if (ideaCostUsd > 0) {
       const { emitAiCostLine } = await import('@/lib/ai-cost-telemetry');
       emitAiCostLine({
@@ -4870,8 +4874,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         usd: ideaCostUsd,
         missionId: missionId ?? null,
         workspaceId,
-        slotKey: `${ideaIndex}:${assignment.slot_role}`,
+        slotKey: `${ideaIndex}::${assignment.slot_role}`,
+        slotRole: assignment.slot_role,
+        ideaIndex: resolvedIdeaIndex,
+        pipeline: String(assignment.pipeline ?? ''),
         detail: `slot-rollup:${assignment.pipeline ?? assignment.slot_role}`,
+        persist: false,
       });
     }
 
@@ -5337,20 +5345,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       existingArtifactKeys.add(ideaDedupeKey);
     }
 
+    // Residual non-fal slot cost (GPT enhance, composites, etc.) — fal requests
+    // are flushed in `finally` with request_id so they never leak off-ledger.
     if (saved.id && !saved.error && ideaCostUsd > 0) {
-      const { recordArtifactProductionCost } = await import('@/lib/cost-ledger-client');
-      await recordArtifactProductionCost({
-        workspaceId,
-        missionId: missionId ?? null,
-        artifactId: saved.id,
-        amountUsd: ideaCostUsd,
-        pipeline: falDesignEngine === 'satori_local'
-          ? 'local_typography'
-          : String(assignment.pipeline ?? ''),
-        slotRole: assignment.slot_role,
-        ideaIndex: resolvedIdeaIndex,
-        slotKey: `${ideaIndex}:${assignment.slot_role}`,
-      });
+      slotCostArtifactId = saved.id;
+      slotCostIdeaUsd = ideaCostUsd;
+      slotCostPipeline = falDesignEngine === 'satori_local'
+        ? 'local_typography'
+        : String(assignment.pipeline ?? '');
     }
 
     if (
@@ -5407,6 +5409,47 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         break;
       }
     } finally {
+      try {
+        const { flushFalRequestsToCostLedger } = await import('@/lib/fal-cost-ledger');
+        const falFlush = await flushFalRequestsToCostLedger({
+          workspaceId,
+          missionId: missionId ?? null,
+          artifactId: slotCostArtifactId,
+          ideaIndex: resolvedIdeaIndex,
+          slotRole: assignment.slot_role,
+          pipeline: slotCostPipeline || String(assignment.pipeline ?? ''),
+          orphan: !slotCostArtifactId,
+        });
+        if (falFlush.count > 0) {
+          console.log(
+            `[auto-produce] fal cost ledger: ${falFlush.count} request(s) ≈ $${falFlush.recordedUsd.toFixed(3)}`
+            + (slotCostArtifactId ? '' : ' (orphan)'),
+          );
+        }
+        // Residual = pipeline estimate minus fal catalog lines already recorded.
+        const residual = Math.max(0, slotCostIdeaUsd - falFlush.recordedUsd);
+        if (slotCostArtifactId && residual > 0.001) {
+          const { recordArtifactProductionCost } = await import('@/lib/cost-ledger-client');
+          await recordArtifactProductionCost({
+            workspaceId,
+            missionId: missionId ?? null,
+            artifactId: slotCostArtifactId,
+            amountUsd: residual,
+            pipeline: slotCostPipeline,
+            slotRole: assignment.slot_role,
+            ideaIndex: resolvedIdeaIndex,
+            slotKey: `${resolvedIdeaIndex}::${assignment.slot_role}`,
+            detail: falFlush.count
+              ? `residual_after_fal:${falFlush.count}`
+              : 'slot_non_fal',
+          });
+        }
+      } catch (costErr) {
+        console.warn(
+          `[auto-produce] cost ledger flush failed for ${slotKey}:`,
+          costErr instanceof Error ? costErr.message : costErr,
+        );
+      }
       clearFalRequestSlot();
     }
 

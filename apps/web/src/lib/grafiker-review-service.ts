@@ -75,6 +75,7 @@ function getUserPrompt(mode: GrafikerMode, label: string): string {
 export interface GrafikerTelemetryContext {
   attempt?: number;
   missionId?: string | null;
+  workspaceId?: string | null;
   slotKey?: string | null;
 }
 
@@ -136,6 +137,7 @@ export async function runGrafikerVisionReview(
         usage: reviewResp.usage,
         attempt: telemetry?.attempt,
         missionId: telemetry?.missionId,
+        workspaceId: telemetry?.workspaceId,
         slotKey: telemetry?.slotKey,
         detail: `${mode}:${label}${imageDetail === 'low' ? ':lite' : ''}`,
       });

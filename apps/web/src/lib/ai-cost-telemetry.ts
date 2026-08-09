@@ -144,21 +144,29 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
   const shouldPersist = line.persist !== false && Boolean(line.workspaceId) && (line.usd || 0) > 0;
   if (!shouldPersist) return;
 
-  const { recordCostLedgerBatch, buildProductionSlotKey } = await import('@/lib/cost-ledger-client');
+  const {
+    recordCostLedgerBatch,
+    buildProductionSlotKey,
+    inferPricingBasis,
+  } = await import('@/lib/cost-ledger-client');
   const workspaceId = line.workspaceId!;
   const category = line.callType;
   const slotKey = line.slotKey
     ?? (line.ideaIndex != null && line.slotRole
       ? buildProductionSlotKey(line.ideaIndex, line.slotRole)
       : undefined);
-  const idempotencyKey = [
-    line.artifactId ? 'artifact' : 'mission',
-    line.artifactId ?? line.missionId ?? workspaceId,
-    line.callType,
-    slotKey ?? '',
-    line.attempt ?? 0,
-    line.falRequestId ?? line.detail?.slice(0, 40) ?? '',
-  ].join(':');
+
+  // Prefer fal request id as stable idempotency — prevents double-count on retries.
+  const idempotencyKey = line.falRequestId
+    ? `fal:${line.falRequestId}`
+    : [
+      line.artifactId ? 'artifact' : (line.missionId ? 'mission' : 'ws'),
+      line.artifactId ?? line.missionId ?? workspaceId,
+      line.callType,
+      slotKey ?? '',
+      line.attempt ?? 0,
+      line.detail?.slice(0, 40) ?? '',
+    ].join(':');
 
   const metadata: Record<string, unknown> = {
     ...(line.detail ? { detail: line.detail } : {}),
@@ -167,45 +175,52 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
     ...(slotKey ? { slot_key: slotKey } : {}),
   };
 
-  if (line.artifactId) {
-    await recordCostLedgerBatch(workspaceId, {
-      artifactLines: [{
-        artifactId: line.artifactId,
-        missionId: line.missionId ?? undefined,
-        category,
-        amountUsd: line.usd,
-        callType: line.callType,
-        sourceSystem: 'next_telemetry',
-        provider: line.provider,
-        model: line.model,
-        slotRole: line.slotRole ?? undefined,
-        ideaIndex: line.ideaIndex ?? undefined,
-        pipeline: line.pipeline ?? undefined,
-        attempt: line.attempt,
-        idempotencyKey,
-        metadata,
-      }],
-    });
-    return;
-  }
+  const pricingBasis = inferPricingBasis({
+    tokensIn: line.promptTokens,
+    tokensOut: line.completionTokens,
+    // fal catalog estimate until provider settles invoice — do not mark metered.
+    externalRequestId: null,
+    explicit: (line.promptTokens || line.completionTokens)
+      ? 'measured_tokens'
+      : (line.falRequestId || line.provider === 'fal')
+        ? 'catalog_estimate'
+        : 'catalog_estimate',
+  });
 
-  if (line.missionId) {
-    await recordCostLedgerBatch(workspaceId, {
-      missionLines: [{
-        missionId: line.missionId,
-        category,
-        amountUsd: line.usd,
-        sourceSystem: 'next_telemetry',
-        provider: line.provider,
-        model: line.model,
-        tokensIn: line.promptTokens,
-        tokensOut: line.completionTokens,
-        cachedTokens: line.cachedTokens,
-        idempotencyKey,
-        metadata,
-      }],
-    });
-  }
+  const scope =
+    line.artifactId || slotKey || line.slotRole
+      ? 'feed_slot' as const
+      : line.missionId
+        ? 'mission_graph' as const
+        : 'other' as const;
+
+  // SSOT only — cost_events (+ rollups). Do NOT also write legacy mission/artifact
+  // lines here: those dual-write into cost_events and would double-count.
+  await recordCostLedgerBatch(workspaceId, {
+    costEvents: [{
+      missionId: line.missionId ?? undefined,
+      artifactId: line.artifactId ?? undefined,
+      category,
+      amountUsd: line.usd,
+      scope,
+      callType: line.callType,
+      slotKey: slotKey ?? undefined,
+      ideaIndex: line.ideaIndex ?? undefined,
+      slotRole: line.slotRole ?? undefined,
+      pipeline: line.pipeline ?? undefined,
+      attempt: line.attempt,
+      sourceSystem: 'next_telemetry',
+      provider: line.provider,
+      model: line.model,
+      pricingBasis,
+      tokensIn: line.promptTokens,
+      tokensOut: line.completionTokens,
+      cachedTokens: line.cachedTokens,
+      externalRequestId: line.falRequestId ?? undefined,
+      idempotencyKey,
+      metadata,
+    }],
+  });
 }
 
 /**

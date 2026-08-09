@@ -114,6 +114,7 @@ async def record_mission_cost_line(
             source_system=source_system,
         )
         try:
+            meta_payload = metadata or {}
             await record_cost_event(
                 db,
                 workspace_id=workspace_id,
@@ -128,6 +129,10 @@ async def record_mission_cost_line(
                 tokens_in=tokens_in,
                 tokens_out=tokens_out,
                 cached_tokens=cached_tokens,
+                external_request_id=(
+                    meta_payload.get("fal_request_id")
+                    or meta_payload.get("external_request_id")
+                ),
                 idempotency_key=(
                     f"evt:{idempotency_key}" if idempotency_key else None
                 ),

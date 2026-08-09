@@ -205,7 +205,12 @@ export function grafikerMeetsBar(review: GrafikerReviewResult): boolean {
 export async function runGrafikerReviewOnImageBuffer(
   imageBuffer: Buffer,
   label: string,
-  telemetry?: { attempt?: number; missionId?: string | null; slotKey?: string | null },
+  telemetry?: {
+    attempt?: number;
+    missionId?: string | null;
+    workspaceId?: string | null;
+    slotKey?: string | null;
+  },
   tier?: string,
 ): Promise<GrafikerReviewResult | null> {
   const { runGrafikerVisionReview } = await import('./grafiker-review-service');

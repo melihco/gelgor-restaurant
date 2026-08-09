@@ -234,10 +234,21 @@ async function reviewDesignedFrame(
   imageUrl: string,
   headline: string,
   mode: 'story' | 'poster',
+  telemetry?: {
+    attempt?: number;
+    missionId?: string | null;
+    workspaceId?: string | null;
+    slotKey?: string | null;
+  },
 ): Promise<{ score: number | null; pass: boolean }> {
   const buf = await fetchExternalImageBuffer(imageUrl, 25_000);
   if (!buf || buf.length < 100) return { score: null, pass: true };
-  const review = await runGrafikerVisionReview(buf, headline.slice(0, 60), mode);
+  const review = await runGrafikerVisionReview(
+    buf,
+    headline.slice(0, 60),
+    mode,
+    telemetry,
+  );
   if (!review) return { score: null, pass: true };
   const score = review.score ?? null;
   const pass = review.pass === true
@@ -1733,6 +1744,7 @@ export async function produceFalDesignerStill(
               groundedUrl,
               displayHeadline,
               input.aspectRatio === '9:16' ? 'story' : 'poster',
+              { workspaceId: input.workspaceId ?? null },
             );
             last = {
               imageUrl: groundedUrl,
@@ -1752,6 +1764,7 @@ export async function produceFalDesignerStill(
           groundedUrl,
           displayHeadline,
           input.aspectRatio === '9:16' ? 'story' : 'poster',
+          { workspaceId: input.workspaceId ?? null },
         );
         last = {
           imageUrl: groundedUrl,
@@ -1874,6 +1887,7 @@ export async function produceFalDesignerStill(
       typoResult.imageUrl,
       attemptHeadline,
       input.aspectRatio === '9:16' ? 'story' : 'poster',
+      { workspaceId: input.workspaceId ?? null },
     );
 
     last = {

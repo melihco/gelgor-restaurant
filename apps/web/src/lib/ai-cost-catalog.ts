@@ -31,6 +31,47 @@ export const AI_UNIT_COST_USD: Record<string, number> = {
   standalone_reel: PLAN_API_UNIT_COSTS.standaloneReel,
 };
 
+/**
+ * fal.ai catalog unit estimates (USD) — used until fal REST returns settled `cost`.
+ * Prefer model-specific overrides; fall back by request kind.
+ */
+const FAL_KIND_DEFAULT_USD: Record<'still' | 'video' | 'flux_sync', number> = {
+  still: 0.05,
+  video: 0.22,
+  flux_sync: 0.04,
+};
+
+/** Substring match on fal model id → USD (longest match wins). */
+const FAL_MODEL_COST_USD: Array<{ match: string; usd: number }> = [
+  { match: 'kling-video/v3', usd: 0.225 },
+  { match: 'kling-video/v1.6', usd: 0.25 },
+  { match: 'kling-video', usd: 0.22 },
+  { match: 'luma-dream-machine', usd: 0.10 },
+  { match: 'minimax', usd: 0.20 },
+  { match: 'ideogram/v3', usd: 0.06 },
+  { match: 'ideogram', usd: 0.05 },
+  { match: 'flux-pro', usd: 0.05 },
+  { match: 'flux/', usd: 0.04 },
+  { match: 'recraft', usd: 0.04 },
+];
+
+/** Catalog estimate for a fal queue/sync call — never invents zero for a real request. */
+export function estimateFalModelUsd(
+  model: string | null | undefined,
+  kind: 'still' | 'video' | 'flux_sync' = 'still',
+): number {
+  const id = String(model ?? '').toLowerCase();
+  let best: { len: number; usd: number } | null = null;
+  for (const row of FAL_MODEL_COST_USD) {
+    if (!id.includes(row.match)) continue;
+    if (!best || row.match.length > best.len) {
+      best = { len: row.match.length, usd: row.usd };
+    }
+  }
+  if (best) return best.usd;
+  return FAL_KIND_DEFAULT_USD[kind] ?? 0.05;
+}
+
 export const MISSION_FULL_CYCLE_ESTIMATE_USD =
   PLAN_API_UNIT_COSTS.missionPropose
   + PLAN_API_UNIT_COSTS.missionProductionCycle;
