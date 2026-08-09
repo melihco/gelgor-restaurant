@@ -286,6 +286,10 @@ async def apply_rule_to_brand_context(
 
     updated = False
 
+    # Durable strategist burns — never mutate BrandContext pillars/CTAs.
+    if rule.rule_type == "burned_theme":
+        return False
+
     if rule.rule_type in ("cta",):
         # Append to default_ctas JSON array
         ctas: list[str] = []

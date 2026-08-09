@@ -716,6 +716,22 @@ async def reject_mission(
     mission.rejected_reason = reason
     await db.commit()
     logger.info("mission_rejected", mission_id=str(mission_id), reason=reason)
+    try:
+        from app.services.mission_theme_burn_service import persist_burned_themes_for_mission
+
+        await persist_burned_themes_for_mission(
+            db,
+            workspace_id=workspace_id,
+            mission_title=mission.title or "",
+            mission_id=mission.id,
+            reason=reason,
+        )
+    except Exception as exc:
+        logger.warning(
+            "mission_theme_burn_failed",
+            mission_id=str(mission_id),
+            error=str(exc)[:240],
+        )
     return mission
 
 

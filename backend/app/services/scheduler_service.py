@@ -35,6 +35,82 @@ logger = structlog.get_logger()
 _scheduler: AsyncIOScheduler | None = None
 
 
+async def _weekly_instagram_intelligence_job() -> None:
+    """
+    Weekly Instagram caption + voice intelligence refresh for tenants with handles.
+    Keeps instagram_recent_captions / instagram_intelligence fresh for design + strategist.
+    """
+    import asyncio as _asyncio
+
+    from sqlalchemy import select
+
+    from app.database import async_session_factory
+    from app.models.brand_context import BrandContext
+    from app.services.instagram_intelligence_service import refresh_instagram_intelligence
+
+    logger.info("instagram_intelligence_job_start")
+    refreshed = 0
+    skipped = 0
+    failed = 0
+    try:
+        async with async_session_factory() as db:
+            rows = await db.execute(
+                select(BrandContext.workspace_id, BrandContext.business_name, BrandContext.instagram_handle)
+                .where(
+                    BrandContext.instagram_handle.is_not(None),
+                    BrandContext.instagram_handle != "",
+                )
+            )
+            targets = [
+                (r[0], r[1], r[2])
+                for r in rows.all()
+                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+            ]
+
+        for workspace_id, business_name, handle in targets:
+            try:
+                async with async_session_factory() as db:
+                    result = await refresh_instagram_intelligence(
+                        db, workspace_id, force=False, min_age_hours=144,
+                    )
+                if result.get("skipped"):
+                    skipped += 1
+                elif result.get("ok"):
+                    refreshed += 1
+                    logger.info(
+                        "instagram_intelligence_job_workspace_ok",
+                        workspace_id=str(workspace_id),
+                        business=business_name,
+                        handle=handle,
+                        captions=result.get("captions"),
+                    )
+                else:
+                    failed += 1
+                    logger.warning(
+                        "instagram_intelligence_job_workspace_skip",
+                        workspace_id=str(workspace_id),
+                        reason=result.get("reason"),
+                    )
+                await _asyncio.sleep(8)
+            except Exception as exc:
+                failed += 1
+                logger.error(
+                    "instagram_intelligence_job_workspace_failed",
+                    workspace_id=str(workspace_id),
+                    error=str(exc)[:240],
+                )
+    except Exception as exc:
+        logger.error("instagram_intelligence_job_failed", error=str(exc)[:300])
+        return
+
+    logger.info(
+        "instagram_intelligence_job_complete",
+        refreshed=refreshed,
+        skipped=skipped,
+        failed=failed,
+    )
+
+
 async def _weekly_brand_dna_synthesis_job() -> None:
     """
     Weekly Brand DNA synthesis — runs every Sunday night.
@@ -1398,6 +1474,17 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
         max_instances=1,
         misfire_grace_time=900,
+    )
+
+    # Every Sunday 21:00 UTC — Instagram voice intelligence (before DNA at 23:00)
+    _scheduler.add_job(
+        _weekly_instagram_intelligence_job,
+        trigger=CronTrigger(day_of_week="sun", hour=21, minute=0, timezone="UTC"),
+        id="weekly_instagram_intelligence",
+        name="Weekly Instagram Intelligence Refresh",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=7200,
     )
 
     # Every Sunday 23:00 UTC — Brand DNA synthesis (ready for Monday)

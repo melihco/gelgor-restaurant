@@ -749,6 +749,50 @@ async def refresh_performance_feedback(
     logger.info("performance_feedback_saved", workspace_id=str(workspace_id), chars=len(updated))
     return {"learning_context_updated": True, "chars": len(updated), "updated": True}
 
+
+@router.post("/{workspace_id}/refresh-instagram", response_model=dict)
+async def refresh_instagram_intelligence_endpoint(
+    workspace_id: uuid.UUID,
+    force: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Re-scrape Instagram captions and refresh voice intelligence (GPT analysis).
+
+    Writes `instagram_recent_captions` + `instagram_intelligence` used by
+    strategist, design profile, and vibe extraction. Weekly scheduler also
+    calls the same service for tenants with handles.
+    """
+    from app.services.instagram_intelligence_service import refresh_instagram_intelligence
+
+    settings = get_settings()
+    if not settings.apify_api_key:
+        raise HTTPException(503, "APIFY_API_KEY not configured")
+    if not settings.openai_api_key:
+        raise HTTPException(503, "OPENAI_API_KEY not configured")
+
+    ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if not ctx:
+        raise HTTPException(404, "Brand context not found")
+    if not (ctx.instagram_handle or "").strip():
+        raise HTTPException(400, "instagram_handle not set — add it in brand context first")
+
+    result = await refresh_instagram_intelligence(
+        db, workspace_id, force=force, min_age_hours=0 if force else 144,
+    )
+    if not result.get("ok"):
+        reason = str(result.get("reason") or "refresh_failed")
+        if reason == "no_captions":
+            raise HTTPException(
+                422,
+                "Instagram captions could not be fetched — profile may be private or Apify returned empty.",
+            )
+        if reason in {"apify_missing", "openai_missing"}:
+            raise HTTPException(503, f"Missing dependency: {reason}")
+        raise HTTPException(400, f"Instagram intelligence refresh failed: {reason}")
+
+    return result
+
 @router.get("/{workspace_id}/ics-score")
 async def get_ics_score(
     workspace_id: uuid.UUID,

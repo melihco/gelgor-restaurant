@@ -290,6 +290,31 @@ _MISSION_THEME_CLUSTERS: list[tuple[str, list[str]]] = [
         "Gün batımı",
         [r"gün\s*batım", r"sunset", r"golden\s*hour", r"altın\s*saat"],
     ),
+    (
+        "Erken hasat / zeytinyağı",
+        [
+            r"erken\s*hasat",
+            r"zeytinyağ",
+            r"olive\s*oil",
+            r"hasat\s*hikay",
+            r"hasadı",
+        ],
+    ),
+    (
+        "Bal / badem hediye",
+        [
+            r"\bbal\b",
+            r"badem",
+            r"hediyelik",
+            r"gift\s*set",
+            r"honey",
+            r"almond",
+        ],
+    ),
+    (
+        "Kahvaltı sofrası",
+        [r"kahvaltı", r"breakfast", r"sofrası", r"brunch"],
+    ),
 ]
 
 
@@ -349,28 +374,38 @@ async def _load_recent_mission_context(
         lines.append("### SON MİSYONLAR — rejected/cancelled DAHİL (BUNLARI TEKRAR ÖNERME):")
         for m in missions:
             lines.append(f"- [{m[2].upper()}] {m[0]} (tür: {m[1]}, sinyal: {m[3] or 'manuel'})")
-        # Theme-cluster burn (cilt/wellness/spa synonyms)
-        burned = _burned_mission_theme_labels([str(m[0] or "") for m in missions])
-        if burned:
-            lines.append(
-                f"### YANMIŞ TEMALAR (bu turda YASAK): {', '.join(burned)}"
+
+    # Theme-cluster burn from recent titles + durable reject labels (brand_rules)
+    burned = _burned_mission_theme_labels([str(m[0] or "") for m in missions])
+    try:
+        from app.services.mission_theme_burn_service import list_active_burned_theme_labels
+
+        for label in await list_active_burned_theme_labels(db, workspace_id):
+            if label not in burned:
+                burned.append(label)
+    except Exception as exc:
+        logger.warning("burned_theme_rules_load_failed", error=str(exc)[:160])
+    if burned:
+        lines.append(
+            f"### YANMIŞ TEMALAR (bu turda YASAK): {', '.join(burned)}"
+        )
+        btype = ""
+        try:
+            from app.models.brand_context import BrandContext
+            br = await db.execute(
+                _select(BrandContext.business_type).where(
+                    BrandContext.workspace_id == workspace_id
+                )
             )
+            btype = str(br.scalar_one_or_none() or "").lower()
+        except Exception:
             btype = ""
-            try:
-                from app.models.brand_context import BrandContext
-                br = await db.execute(
-                    _select(BrandContext.business_type).where(
-                        BrandContext.workspace_id == workspace_id
-                    )
-                )
-                btype = str(br.scalar_one_or_none() or "").lower()
-            except Exception:
-                btype = ""
-            if any(k in btype for k in ("beach", "hotel", "resort", "bar", "club")):
-                lines.append(
-                    "Hospitality kuralı: spa/cilt/wellness ANA kampanya olamaz — "
-                    "sunset, dining, music, daybed, communal gathering, reservation seç."
-                )
+        if any(k in btype for k in ("beach", "hotel", "resort", "bar", "club")):
+            lines.append(
+                "Hospitality kuralı: spa/cilt/wellness ANA kampanya olamaz — "
+                "sunset, dining, music, daybed, communal gathering, reservation seç."
+            )
+    if missions or burned:
         lines.append("")
 
     # Build an explicit "used vs available" checklist for the 9-angle taxonomy

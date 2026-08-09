@@ -1073,6 +1073,12 @@ def merge_dotnet_brand_with_python_db(
         base.website_summary = py_brand.website_summary
     if py_brand.instagram_bio:
         base.instagram_bio = py_brand.instagram_bio
+    if py_brand.instagram_recent_captions:
+        base.instagram_recent_captions = py_brand.instagram_recent_captions
+    if py_brand.instagram_intelligence:
+        base.instagram_intelligence = py_brand.instagram_intelligence
+    if getattr(py_brand, "instagram_handle", None):
+        base.instagram_handle = py_brand.instagram_handle or base.instagram_handle
     base.discovery_confidence = py_brand.discovery_confidence or base.discovery_confidence
     base.brand_constitution_confirmed = py_brand.brand_constitution_confirmed
     if py_brand.languages and py_brand.languages.strip():

@@ -18,12 +18,14 @@ Rule types
   hook_pattern      — a caption hook type that works for this brand (→ custom_rules note)
   format_preference — a suggestion_type with ≥80% approval rate (→ content_pillars note)
   format_avoidance  — a suggestion_type with ≤30% approval rate (→ risk_rules)
+  burned_theme      — mission theme rejected by operator (auto-active; strategist diversity)
 
 Source
 ──────
   learning          — auto-detected from approval history
   manual            — operator created directly
   brand_discovery   — inferred during brand analysis
+  mission_reject    — written on mission reject (burned_theme)
 """
 
 from __future__ import annotations
