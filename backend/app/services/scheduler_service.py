@@ -951,10 +951,15 @@ async def _daily_auto_content_job() -> None:
 
                 # Propose missions (calls StrategistAgent via CrewAI)
                 async with async_session_factory() as db:
-                    proposals = await propose_missions_for_workspace(db, ws_id)
+                    propose_outcome = await propose_missions_for_workspace(db, ws_id)
+                    proposals = propose_outcome.missions
 
                 if not proposals:
-                    logger.info("auto_content_no_proposals", workspace_id=str(ws_id))
+                    logger.info(
+                        "auto_content_no_proposals",
+                        workspace_id=str(ws_id),
+                        skip_reason=propose_outcome.skip_reason,
+                    )
                     continue
 
                 proposed_count += len(proposals)
@@ -1204,13 +1209,14 @@ async def _semi_auto_proposal_job() -> None:
                         ]
                         context_signals_str = build_brand_dynamics_block(brand_for_signals)
 
-                    missions = await propose_missions_for_workspace(
+                    propose_outcome = await propose_missions_for_workspace(
                         db, ws_id,
                         context_signals=context_signals_str,
                         force=False,
                     )
+                    missions = propose_outcome.missions
                     if missions:
-                        proposed_count += len(missions) if isinstance(missions, list) else 1
+                        proposed_count += len(missions)
                         logger.info(
                             "semi_auto_proposal_created",
                             workspace_id=str(ws_id),

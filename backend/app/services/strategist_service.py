@@ -23,6 +23,7 @@ correctly, persist the 2 and log the failure for the 3rd.
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 import structlog
@@ -52,6 +53,15 @@ from app.services.tenant_learning_service import (
 )
 
 logger = structlog.get_logger()
+
+
+@dataclass
+class ProposeMissionsResult:
+    """Outcome of a strategist propose run (missions + operator-facing skip info)."""
+
+    missions: list[dict[str, Any]]
+    skip_reason: str | None = None
+    message: str | None = None
 
 
 _SECTOR_ANGLE_PACKS: dict[str, dict[str, list[str]]] = {
@@ -452,11 +462,11 @@ async def propose_missions_for_workspace(
     force: bool = False,
     context_signals: str | None = None,
     production_package: str | None = None,
-) -> list[dict[str, Any]]:
+) -> ProposeMissionsResult:
     """
     Run the StrategistAgent for a workspace and persist resulting proposals.
 
-    Returns a list of created mission dicts (id + title + status + proposal metadata).
+    Returns ProposeMissionsResult with created mission dicts (and skip_reason when empty).
     Skips LLM call when active/proposed missions already exist (unless force=True).
     """
     # Blocking missions are handled in the API layer (clear message to the operator).
@@ -472,13 +482,23 @@ async def propose_missions_for_workspace(
                 reason=block.reason,
                 mission_id=block.mission_id,
             )
-            return []
+            return ProposeMissionsResult(
+                missions=[],
+                skip_reason=block.reason,
+                message=block.message,
+            )
 
     # ── Load brand intelligence ───────────────────────────────────────────
     brand: BrandInfo | None = await build_brand_info(db, workspace_id)
     if not brand:
         logger.warning("propose_missions_no_brand", workspace_id=str(workspace_id))
-        return []
+        return ProposeMissionsResult(
+            missions=[],
+            skip_reason="no_brand",
+            message=(
+                "Marka bağlamı bulunamadı. Marka Anayasası'nı tamamlayıp tekrar deneyin."
+            ),
+        )
 
     # ── Trend brief freshness (48h SLA before propose) ───────────────────
     try:
@@ -574,11 +594,42 @@ async def propose_missions_for_workspace(
 
     proposals: list[dict] = result.get("proposals") or []
     if not proposals:
-        logger.warning("propose_missions_no_proposals",
-                       workspace_id=str(workspace_id),
-                       raw_preview=result.get("raw_output", "")[:200])
+        diversity = result.get("diversity_report") or {}
+        diversity_empty = (
+            diversity.get("empty_reason") == "diversity_exhausted"
+            or (
+                bool(diversity.get("retry_attempted"))
+                and int(diversity.get("duplicates_removed") or 0) > 0
+                and int(diversity.get("retry_duplicates_removed") or 0) > 0
+            )
+        )
+        logger.warning(
+            "propose_missions_no_proposals",
+            workspace_id=str(workspace_id),
+            raw_preview=result.get("raw_output", "")[:200],
+            diversity_empty=diversity_empty,
+            diversity_reasons=(diversity.get("retry_reasons") or diversity.get("reasons") or [])[:5],
+        )
         await _record_propose_mission_cost(db, workspace_id, created_count=0)
-        return []
+        if diversity_empty:
+            return ProposeMissionsResult(
+                missions=[],
+                skip_reason="strategist_diversity",
+                message=(
+                    "Strategist yeni bir açı üretti ama son misyonlarla çok benzer olduğu "
+                    "için diversity filtresi reddetti (retry sonrası da). "
+                    "Farklı bir üretim paketi seçin veya birkaç gün sonra tekrar deneyin."
+                ),
+            )
+        return ProposeMissionsResult(
+            missions=[],
+            skip_reason="strategist_empty",
+            message=(
+                "StrategistAgent geçerli misyon üretemedi. "
+                "Marka Anayasası (açıklama, hedef kitle, konum), galeri analizi ve "
+                "sektör sinyallerini kontrol edip birkaç dakika sonra tekrar deneyin."
+            ),
+        )
 
     # Hard cap: operator requests exactly 1 mission per "Yeni Kampanya" click.
     # LLM sometimes ignores the count rule — enforce it deterministically here.
@@ -711,7 +762,7 @@ async def propose_missions_for_workspace(
         )
 
     await _record_propose_mission_cost(db, workspace_id, created_count=len(created))
-    return created
+    return ProposeMissionsResult(missions=created)
 
 
 async def _record_propose_mission_cost(

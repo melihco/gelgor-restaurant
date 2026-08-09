@@ -286,14 +286,15 @@ def run_mission_planning(
         )
     proposals = diversity_report["filtered_proposals"]
 
-    # One retry when the only proposal was a burned wellness/skin clone.
+    # One retry when the only proposal was rejected (repeat / wellness / etc.).
     if not proposals and diversity_report["duplicates_removed"] > 0:
-        retry_hint = (
-            "\n\nCRITICAL RETRY: Your previous proposal was REJECTED by the diversity gate "
-            f"({'; '.join(diversity_report.get('reasons', [])[:3]) or 'theme repeat'}). "
-            "Propose a DIFFERENT campaign. For beach_club / hospitality brands: "
-            "sunset dining, communal gathering, live music atmosphere, daybed lifestyle, "
-            "or reservation push — NEVER spa, cilt, skincare, or wellness as the main theme."
+        recent_titles = diversity_report.get("recent_titles") or _extract_recent_mission_titles(
+            brand.learning_context or "",
+        )
+        retry_hint = _build_diversity_retry_hint(
+            brand,
+            reasons=diversity_report.get("reasons") or [],
+            recent_titles=recent_titles,
         )
         retry_task = Task(
             description=task_description + retry_hint,
@@ -317,6 +318,7 @@ def run_mission_planning(
             "retry_attempted": True,
             "retry_duplicates_removed": retry_report["duplicates_removed"],
             "retry_reasons": retry_report.get("reasons", []),
+            "empty_reason": None if proposals else "diversity_exhausted",
         }
         if not proposals:
             logger.warning(
@@ -359,10 +361,115 @@ _WELLNESS_TITLE_RX = re.compile(
     re.IGNORECASE,
 )
 
+_MISSION_STATUS_PREFIX_RX = re.compile(
+    r"^\[(COMPLETED|REJECTED|CANCELLED|PROPOSED|APPROVED|IN_FLIGHT|FAILED)\]\s*",
+    re.IGNORECASE,
+)
+
 
 def _is_hospitality_brand(brand: BrandInfo) -> bool:
     btype = (brand.business_type or "").lower()
     return any(k in btype for k in ("beach", "hotel", "resort", "bar", "club", "marina"))
+
+
+def _is_local_products_brand(brand: BrandInfo) -> bool:
+    btype = (brand.business_type or "").lower()
+    return any(
+        k in btype
+        for k in (
+            "local_product",
+            "local product",
+            "gourmet",
+            "delicatessen",
+            "zeytin",
+            "olive",
+            "bakkal",
+            "specialty_food",
+            "food_shop",
+            "ürün",
+        )
+    ) or ("shop" in btype and any(k in btype for k in ("product", "food", "local", "grocery")))
+
+
+def _clean_mission_title_bullet(line: str) -> str | None:
+    cleaned = line.lstrip("-•").strip()
+    if not cleaned:
+        return None
+    cleaned = _MISSION_STATUS_PREFIX_RX.sub("", cleaned)
+    cleaned = re.sub(r"\s*\(tür:.*$", "", cleaned, flags=re.IGNORECASE)
+    cleaned = cleaned.strip().lower()
+    return cleaned or None
+
+
+def _extract_recent_mission_titles(learning_context: str) -> list[str]:
+    """
+    Prefer the anti-repeat block injected by strategist_service
+    (`### SON MİSYONLAR ...`). Fall back to status-prefixed bullets only so
+    sector-angle / learning bullets do not falsely burn unrelated themes.
+    """
+    lc = learning_context or ""
+    titles: list[str] = []
+    in_mission_block = False
+    for line in lc.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("###") and "SON MİSYON" in stripped.upper():
+            in_mission_block = True
+            continue
+        if stripped.startswith("###"):
+            in_mission_block = False
+            continue
+        if not (stripped.startswith("-") or stripped.startswith("•")):
+            continue
+        if in_mission_block or _MISSION_STATUS_PREFIX_RX.match(stripped.lstrip("-•").strip()):
+            cleaned = _clean_mission_title_bullet(stripped)
+            if cleaned and cleaned not in titles:
+                titles.append(cleaned)
+    return titles
+
+
+def _build_diversity_retry_hint(
+    brand: BrandInfo,
+    *,
+    reasons: list[str],
+    recent_titles: list[str],
+) -> str:
+    """Sector-agnostic retry brief — hospitality hint alone caused local shops to re-clone."""
+    burned = recent_titles[:8]
+    reason_line = "; ".join(reasons[:3]) or "theme / title repeat"
+    lines = [
+        "",
+        "",
+        "CRITICAL RETRY: Your previous proposal was REJECTED by the diversity gate "
+        f"({reason_line}).",
+        "Propose ONE completely DIFFERENT campaign. Do NOT reuse burned titles or near-synonyms.",
+    ]
+    if burned:
+        lines.append("BURNED / RECENT TITLES (forbidden):")
+        for t in burned:
+            lines.append(f'  - "{t}"')
+    btype = (brand.business_type or "business").strip()
+    lines.append(f"Business type: {btype}. Pivot to a fresh angle for THIS sector.")
+    if _is_hospitality_brand(brand):
+        lines.append(
+            "Hospitality OK angles: sunset dining, communal gathering, live music atmosphere, "
+            "daybed lifestyle, reservation push. NEVER spa / cilt / skincare / wellness as the main theme."
+        )
+    elif _is_local_products_brand(brand):
+        lines.append(
+            "Local products OK angles: producer story (non-harvest if harvest is burned), "
+            "gift / corporate set for a NEW product line, tasting table / visitor experience, "
+            "recipe pairing with underused SKU, summer fridge / picnic occasion, "
+            "wholesale / chef supply, limited batch that is NOT early-harvest olive oil "
+            "and NOT bal-badem gift sets if those titles appear above."
+        )
+    else:
+        lines.append(
+            "Prefer a conversion or social-proof angle that does not echo the burned titles: "
+            "new audience segment, underused product/service, seasonal occasion not already covered, "
+            "or a clear CTA campaign."
+        )
+    lines.append("Return ONLY the JSON array with one new MissionProposal object.")
+    return "\n".join(lines)
 
 
 def _check_proposal_diversity(
@@ -380,18 +487,7 @@ def _check_proposal_diversity(
 
     Returns filtered proposals list + a report dict.
     """
-    # Extract recent mission titles from learning_context
-    recent_titles: list[str] = []
-    lc = brand.learning_context or ""
-    for line in lc.split("\n"):
-        stripped = line.strip()
-        if stripped.startswith("-") or stripped.startswith("•"):
-            # Strip status prefixes like "[REJECTED] Title (tür: ...)"
-            cleaned = stripped.lstrip("-•").strip().lower()
-            cleaned = re.sub(r"^\[[^\]]+\]\s*", "", cleaned)
-            cleaned = re.sub(r"\s*\(tür:.*$", "", cleaned)
-            if cleaned:
-                recent_titles.append(cleaned)
+    recent_titles = _extract_recent_mission_titles(brand.learning_context or "")
 
     hospitality = _is_hospitality_brand(brand)
     kept: list[dict] = []
@@ -452,6 +548,7 @@ def _check_proposal_diversity(
         "filtered_proposals": kept,
         "duplicates_removed": len(proposals) - len(kept),
         "reasons": removed_reasons,
+        "recent_titles": recent_titles,
     }
 
 

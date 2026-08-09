@@ -8,6 +8,7 @@ from app.services.production_cost_categories import (
     SCOPE_MISSION_GRAPH,
 )
 from app.services.production_cost_service import (
+    _usd_or_zero,
     build_slot_key,
     infer_pricing_basis,
     infer_scope,
@@ -48,3 +49,9 @@ def test_infer_scope_gallery_from_call_type() -> None:
 
 def test_infer_scope_integration_from_call_type() -> None:
     assert infer_scope(call_type="apify_instagram_scrape") == SCOPE_INTEGRATION
+
+
+def test_usd_or_zero_handles_none_for_new_rollups() -> None:
+    assert _usd_or_zero(None) == 0.0
+    assert _usd_or_zero(1.25) == 1.25
+    assert _usd_or_zero("0.5") == 0.5

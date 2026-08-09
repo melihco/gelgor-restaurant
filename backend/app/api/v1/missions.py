@@ -375,8 +375,12 @@ async def propose_missions(
         )
 
     try:
-        created = await propose_missions_for_workspace(
-            db, workspace_id, context_signals=context_signals, force=True,
+        outcome = await propose_missions_for_workspace(
+            db,
+            workspace_id,
+            context_signals=context_signals,
+            force=True,
+            production_package=production_package,
         )
     except RuntimeError as exc:
         # Human-readable LLM/quota errors — return 402 so frontend can display them
@@ -389,6 +393,7 @@ async def propose_missions(
                      workspace_id=str(workspace_id), error=str(exc)[:400])
         raise HTTPException(500, f"Mission proposal generation failed: {exc}") from exc
 
+    created = outcome.missions
     if created:
         msg = (
             f"{len(created)} yeni misyon önerisi oluşturuldu. "
@@ -396,8 +401,8 @@ async def propose_missions(
         )
         skip_reason = None
     else:
-        skip_reason = "strategist_empty"
-        msg = (
+        skip_reason = outcome.skip_reason or "strategist_empty"
+        msg = outcome.message or (
             "StrategistAgent geçerli misyon üretemedi. "
             "Marka Anayasası (açıklama, hedef kitle, konum), galeri analizi ve "
             "sektör sinyallerini kontrol edip birkaç dakika sonra tekrar deneyin."

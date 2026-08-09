@@ -44,6 +44,13 @@ def _round_usd(value: float | Decimal) -> Decimal:
     return Decimal(str(round(float(value), 5)))
 
 
+def _usd_or_zero(value: Any) -> float:
+    """SQLAlchemy column defaults apply on INSERT; in-memory new rows can still be None."""
+    if value is None:
+        return 0.0
+    return float(value)
+
+
 def build_slot_key(idea_index: int | None, slot_role: str | None) -> str | None:
     """Canonical feed slot key — matches TS `missionGallerySlotKey`."""
     if idea_index is None or not slot_role:
@@ -257,11 +264,13 @@ async def _refresh_mission_rollups(
     setattr(
         mission_rollup,
         scope_field,
-        _round_usd(float(getattr(mission_rollup, scope_field)) + amount_usd),
+        _round_usd(_usd_or_zero(getattr(mission_rollup, scope_field, None)) + amount_usd),
     )
-    mission_rollup.total_usd = _round_usd(float(mission_rollup.total_usd) + amount_usd)
-    mission_rollup.measured_usd = _round_usd(float(mission_rollup.measured_usd) + measured_delta)
-    mission_rollup.estimated_usd = _round_usd(float(mission_rollup.estimated_usd) + estimated_delta)
+    mission_rollup.total_usd = _round_usd(_usd_or_zero(mission_rollup.total_usd) + amount_usd)
+    mission_rollup.measured_usd = _round_usd(_usd_or_zero(mission_rollup.measured_usd) + measured_delta)
+    mission_rollup.estimated_usd = _round_usd(
+        _usd_or_zero(mission_rollup.estimated_usd) + estimated_delta,
+    )
     mission_rollup.event_count += 1
     mission_rollup.last_recorded_at = recorded_at
     mission_rollup.updated_at = recorded_at
@@ -304,9 +313,11 @@ async def _refresh_mission_rollups(
             db.add(slot_rollup)
             mission_rollup.slot_count += 1
 
-        slot_rollup.total_usd = _round_usd(float(slot_rollup.total_usd) + amount_usd)
-        slot_rollup.measured_usd = _round_usd(float(slot_rollup.measured_usd) + measured_delta)
-        slot_rollup.estimated_usd = _round_usd(float(slot_rollup.estimated_usd) + estimated_delta)
+        slot_rollup.total_usd = _round_usd(_usd_or_zero(slot_rollup.total_usd) + amount_usd)
+        slot_rollup.measured_usd = _round_usd(_usd_or_zero(slot_rollup.measured_usd) + measured_delta)
+        slot_rollup.estimated_usd = _round_usd(
+            _usd_or_zero(slot_rollup.estimated_usd) + estimated_delta,
+        )
         slot_rollup.line_count += 1
         slot_rollup.by_category = _json_add_amount(slot_rollup.by_category, category, amount_usd)
         if call_type:
