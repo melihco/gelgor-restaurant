@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   summarizeCatalogTemplateHardPinCoverage,
+  summarizeDesignTemplateTypeCoverage,
   summarizeTemplateRowsHardPinHealth,
   TEMPLATE_HARD_PIN_COVERAGE_MIN_RATIO,
 } from '@/lib/catalog-template-coverage';
@@ -102,5 +103,36 @@ describe('summarizeTemplateRowsHardPinHealth', () => {
     ]);
     expect(health.activeCount).toBe(2);
     expect(health.sufficient).toBe(false);
+  });
+});
+
+describe('summarizeDesignTemplateTypeCoverage', () => {
+  it('local_products_shop: requires at least 6 distinct types', () => {
+    const cov = summarizeDesignTemplateTypeCoverage(
+      [
+        { status: 'active', template_type: 'campaign_announcement', catalog_slot_key: 'a' },
+        { status: 'active', template_type: 'seasonal_promo', catalog_slot_key: 'b' },
+      ],
+      'local_products_shop',
+    );
+    expect(cov.minDistinctTypes).toBe(6);
+    expect(cov.typeCount).toBe(2);
+    expect(cov.sufficient).toBe(false);
+  });
+
+  it('beach_club: requires event/menu/atmosphere balance', () => {
+    const cov = summarizeDesignTemplateTypeCoverage(
+      [
+        { status: 'active', template_type: 'event_special', catalog_slot_key: 'e' },
+        { status: 'active', template_type: 'menu_highlight', catalog_slot_key: 'm' },
+        { status: 'active', template_type: 'venue_showcase', catalog_slot_key: 'v' },
+        { status: 'active', template_type: 'daily_story', catalog_slot_key: 'd' },
+        { status: 'active', template_type: 'reel_cover', catalog_slot_key: 'r' },
+      ],
+      'beach_club',
+    );
+    expect(cov.minHospitalityBuckets).toBe(3);
+    expect(cov.hospitalityBuckets).toEqual(expect.arrayContaining(['event', 'menu', 'atmosphere']));
+    expect(cov.sufficient).toBe(true);
   });
 });

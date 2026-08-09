@@ -15,7 +15,10 @@ import {
   type BrandReadinessInputs,
 } from '@/lib/brand-readiness';
 import { resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
-import { summarizeTemplateRowsHardPinHealth } from '@/lib/catalog-template-coverage';
+import {
+  summarizeDesignTemplateTypeCoverage,
+  summarizeTemplateRowsHardPinHealth,
+} from '@/lib/catalog-template-coverage';
 import { brsCache } from '@/lib/server-ttl-cache';
 import { isBrandDnaProductionReady } from '@/lib/brand-gap-analysis';
 
@@ -177,9 +180,20 @@ export async function GET(
     : []
   ).filter((t) => t.status !== 'archived');
   const templateHardPinHealth = summarizeTemplateRowsHardPinHealth(activeFalTemplates);
-  // Count alone is not enough — keyed catalog slots need enough hard-pin rows.
+  const earlyBusinessType = String(
+    (ctx as { business_type?: string }).business_type
+    ?? resolveAuthoritativeIndustry(ctx as Record<string, unknown>)
+    ?? '',
+  ) || null;
+  const templateTypeCoverage = summarizeDesignTemplateTypeCoverage(
+    activeFalTemplates,
+    earlyBusinessType,
+  );
+  // Count + hard-pin + sector type floor (local_products ≥6 types, hospitality balance).
   const hasTemplateLibrary =
-    activeFalTemplates.length >= 3 && templateHardPinHealth.sufficient;
+    activeFalTemplates.length >= 3
+    && templateHardPinHealth.sufficient
+    && templateTypeCoverage.sufficient;
 
   const briefsData = briefsRes.ok && briefsRes.data
     ? briefsRes.data
@@ -244,6 +258,7 @@ export async function GET(
     ...result,
     productionProfile,
     templateHardPinHealth,
+    templateTypeCoverage,
     inputs,
     sources: {
       brandContext: ctxRes.ok || fromDatabase,

@@ -180,7 +180,11 @@ def _sector_sp_mismatch(ctx: Any) -> tuple[bool, str]:
     return True, f"{stored} vs {category}→{auth}"
 
 
-def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
+def detect_brand_gaps(
+    ctx: Any,
+    *,
+    template_stats: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Return actionable gaps for this tenant's brand_context row."""
     if ctx is None:
         return [{"id": "brand_context_missing", "label": "Marka profili yok", "severity": "block"}]
@@ -326,7 +330,59 @@ def detect_brand_gaps(ctx: Any) -> list[dict[str, Any]]:
             "fix": "gallery",
         })
 
+    # Fal design template type diversity (sector floor) — separate from theme typography kit
+    if isinstance(template_stats, dict) and template_stats.get("active_count", 0) >= 0:
+        if not template_stats.get("sufficient"):
+            type_count = int(template_stats.get("type_count") or 0)
+            min_types = int(template_stats.get("min_distinct_types") or 5)
+            buckets = template_stats.get("hospitality_buckets") or []
+            min_buckets = template_stats.get("min_hospitality_buckets")
+            detail = f"{type_count}/{min_types} tip"
+            if min_buckets is not None:
+                detail += f", hospitality bucket {len(buckets)}/{min_buckets}"
+            gaps.append({
+                "id": "template_type_coverage_low",
+                "label": f"Fal şablon tipi çeşitliliği düşük ({detail})",
+                "severity": "medium",
+                "fix": "design-templates",
+                "meta": {
+                    "type_count": type_count,
+                    "min_distinct_types": min_types,
+                    "hospitality_buckets": buckets,
+                    "keyed_count": template_stats.get("keyed_count"),
+                    "family": template_stats.get("family"),
+                },
+            })
+
     return gaps
+
+
+async def load_template_type_stats(
+    db: AsyncSession,
+    workspace_id: UUID,
+    ctx: Any,
+) -> dict[str, Any]:
+    from app.services.design_template_coverage import summarize_template_type_coverage
+    from app.services.design_template_service import list_templates
+
+    templates = await list_templates(db, workspace_id, include_archived=False)
+    sector = _resolve_sector(ctx)
+    return summarize_template_type_coverage(templates, sector)
+
+
+async def detect_brand_gaps_for_workspace(
+    db: AsyncSession,
+    workspace_id: UUID,
+    ctx: Any | None = None,
+) -> list[dict[str, Any]]:
+    from app.services import brand_context_service
+
+    if ctx is None:
+        ctx = await brand_context_service.get_brand_context(db, workspace_id)
+    if ctx is None:
+        return [{"id": "brand_context_missing", "label": "Marka profili yok", "severity": "block"}]
+    stats = await load_template_type_stats(db, workspace_id, ctx)
+    return detect_brand_gaps(ctx, template_stats=stats)
 
 
 async def complete_brand_gaps(
@@ -346,7 +402,8 @@ async def complete_brand_gaps(
     if not ctx:
         return {"ok": False, "error": "brand_context_not_found", "steps": [], "gaps": []}
 
-    gaps_before = detect_brand_gaps(ctx)
+    template_stats = await load_template_type_stats(db, workspace_id, ctx)
+    gaps_before = detect_brand_gaps(ctx, template_stats=template_stats)
     target_ids = gap_ids or {g["id"] for g in gaps_before}
     steps: list[dict[str, Any]] = []
 
@@ -559,7 +616,17 @@ async def complete_brand_gaps(
     await db.commit()
 
     ctx = await brand_context_service.get_brand_context(db, workspace_id)
-    gaps_after = detect_brand_gaps(ctx)
+    template_stats_after = await load_template_type_stats(db, workspace_id, ctx) if ctx else None
+    gaps_after = detect_brand_gaps(ctx, template_stats=template_stats_after) if ctx else []
+    if "template_type_coverage_low" in target_ids:
+        # Fal shell generation lives in Next (generate-design-templates / ensure-keyed).
+        # Surface an explicit step so Hub complete-gaps can chain the web repair.
+        still = any(g.get("id") == "template_type_coverage_low" for g in gaps_after)
+        await _step(
+            "template_type_coverage",
+            not still,
+            "needs_web_generate_design_templates" if still else "sufficient",
+        )
     await brand_context_service.invalidate_brand_info_cache(workspace_id)
 
     ok_steps = sum(1 for s in steps if s.get("ok"))

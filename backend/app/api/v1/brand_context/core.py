@@ -187,12 +187,12 @@ async def get_brand_gaps(
     db: AsyncSession = Depends(get_db),
 ):
     """List critical brand-context gaps that block agent / production quality."""
-    from app.services.brand_gap_completion_service import detect_brand_gaps
+    from app.services.brand_gap_completion_service import detect_brand_gaps_for_workspace
 
     ctx = await brand_context_service.get_brand_context(db, workspace_id)
     if not ctx:
         raise HTTPException(status_code=404, detail="brand_context_not_found")
-    gaps = detect_brand_gaps(ctx)
+    gaps = await detect_brand_gaps_for_workspace(db, workspace_id, ctx)
     return {"workspace_id": str(workspace_id), "gap_count": len(gaps), "gaps": gaps}
 
 

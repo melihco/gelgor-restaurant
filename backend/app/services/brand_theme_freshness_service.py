@@ -15,11 +15,11 @@ import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.brand_context_service import get_brand_context
+from app.services.tenant_hygiene import is_active_production_tenant, is_stub_business_name
 
 logger = structlog.get_logger(__name__)
 
 _AUTO_THEME_SOURCES = frozenset({"sector_default", "visual_dna", "vibe_profile", ""})
-_STUB_NAMES = frozenset({"brand", "test", "demo"})
 
 
 def _parse_ts(value: Any) -> datetime | None:
@@ -130,8 +130,12 @@ async def ensure_brand_theme_waterfall(
     ctx = await get_brand_context(db, workspace_id)
     if not ctx:
         return {"ok": False, "reason": "no_brand"}
-    if (ctx.business_name or "").strip().lower() in _STUB_NAMES:
-        return {"ok": False, "reason": "stub_brand"}
+    if is_stub_business_name(ctx.business_name) or not is_active_production_tenant(
+        ctx, require_constitution=False,
+    ):
+        # On-demand refresh may run pre-constitution; still block stubs.
+        if is_stub_business_name(ctx.business_name):
+            return {"ok": False, "reason": "stub_brand"}
 
     theme = ctx.brand_theme if isinstance(ctx.brand_theme, dict) else {}
     source = str(theme.get("source") or "")

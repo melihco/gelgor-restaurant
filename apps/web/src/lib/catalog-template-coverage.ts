@@ -7,6 +7,11 @@
  */
 
 import type { BrandActiveSlot, BrandActiveSlotSet } from '@/lib/brand-active-slot-resolver';
+import {
+  hospitalityBucketsPresent,
+  resolveDesignTemplateTypePolicy,
+  type DesignTemplateTypePolicy,
+} from '@/lib/design-template-type-policy';
 
 const PRODUCE_FORMATS = new Set(['post', 'story', 'reel']);
 
@@ -96,5 +101,65 @@ export function summarizeTemplateRowsHardPinHealth(
     sufficient:
       active.length >= 3
       && (keyedCount === 0 || ratio >= TEMPLATE_HARD_PIN_COVERAGE_MIN_RATIO),
+  };
+}
+
+export type DesignTemplateTypeCoverage = {
+  activeCount: number;
+  keyedCount: number;
+  distinctTypes: string[];
+  typeCount: number;
+  minDistinctTypes: number;
+  hospitalityBuckets: string[];
+  minHospitalityBuckets: number | null;
+  policy: DesignTemplateTypePolicy;
+  /** True when type floor (+ hospitality balance when applicable) is met. */
+  sufficient: boolean;
+};
+
+/**
+ * Distinct fal template_type coverage vs sector policy floor.
+ */
+export function summarizeDesignTemplateTypeCoverage(
+  templates: Array<{
+    status?: string | null;
+    template_type?: string | null;
+    catalog_slot_key?: string | null;
+    design_spec?: { catalogSlotKey?: string } | null;
+  }>,
+  sector: string | null | undefined,
+): DesignTemplateTypeCoverage {
+  const policy = resolveDesignTemplateTypePolicy(sector);
+  const active = templates.filter((t) => String(t.status ?? 'active') !== 'archived');
+  const types = new Set<string>();
+  let keyedCount = 0;
+  for (const t of active) {
+    const tt = String(t.template_type ?? '').trim().toLowerCase();
+    if (tt) types.add(tt);
+    const key = String(
+      t.catalog_slot_key
+      ?? t.design_spec?.catalogSlotKey
+      ?? '',
+    ).trim();
+    if (key) keyedCount += 1;
+  }
+  const distinctTypes = [...types].sort();
+  const typeCount = distinctTypes.length;
+  const buckets = hospitalityBucketsPresent(distinctTypes);
+  const minBuckets = policy.minHospitalityBuckets ?? null;
+  const typesOk = typeCount >= policy.minDistinctTypes;
+  const bucketsOk = minBuckets == null || buckets.length >= minBuckets;
+  // Empty library is not "sufficient" — production needs real shells.
+  const sufficient = active.length > 0 && typesOk && bucketsOk;
+  return {
+    activeCount: active.length,
+    keyedCount,
+    distinctTypes,
+    typeCount,
+    minDistinctTypes: policy.minDistinctTypes,
+    hospitalityBuckets: buckets,
+    minHospitalityBuckets: minBuckets,
+    policy,
+    sufficient,
   };
 }

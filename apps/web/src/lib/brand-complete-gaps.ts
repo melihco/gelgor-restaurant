@@ -39,9 +39,12 @@ async function postInternal(
   tenantId: string,
   headers: Record<string, string>,
   timeoutMs = 120_000,
+  body?: Record<string, unknown>,
 ): Promise<CompleteGapsStep> {
   const origin = getNextjsInternalOrigin();
   try {
+    const payload = body
+      ?? (path.includes('analyze-coverage') ? { maxImages: 24 } : undefined);
     const res = await fetch(`${origin}${path}`, {
       method: 'POST',
       headers: {
@@ -49,12 +52,12 @@ async function postInternal(
         'X-Tenant-Id': tenantId,
         ...headers,
       },
-      body: path.includes('analyze-coverage') ? JSON.stringify({ maxImages: 24 }) : undefined,
+      body: payload ? JSON.stringify(payload) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      return { id: path.split('/').pop() ?? path, ok: false, detail: body.slice(0, 200) };
+      const text = await res.text().catch(() => '');
+      return { id: path.split('/').pop() ?? path, ok: false, detail: text.slice(0, 200) };
     }
     return { id: path.split('/').pop() ?? path, ok: true };
   } catch (err) {
@@ -178,6 +181,73 @@ export async function runCompleteBrandGaps(
       forwardHeaders,
       120_000,
     ));
+  }
+
+  // Fal design template type coverage — generate additional shells (no archive)
+  if (gapIds.has('template_type_coverage_low')) {
+    try {
+      const { loadBrandActiveSlotSet } = await import('@/lib/brand-active-slot-resolver');
+      const { loadWorkspaceDesignTemplates } = await import('@/lib/brand-design-template-matcher');
+      const { ensureKeyedDesignTemplatesForEnabledSlots } = await import(
+        '@/lib/ensure-keyed-design-templates'
+      );
+      const { resolveAuthoritativeIndustry: resolveIndustry } = await import('@/lib/canonical-sector');
+      const ctxRes = await fetchCrewBackendJson<Record<string, unknown>>(
+        `/api/v1/brand-context/${tenantId}`,
+        { workspaceId: tenantId, timeoutMs: 20_000, headers: forwardHeaders },
+      );
+      const businessType = String(
+        (ctxRes.ok ? resolveIndustry(ctxRes.data ?? {}) : null)
+        ?? (ctxRes.data as { business_type?: string } | undefined)?.business_type
+        ?? 'general_business',
+      );
+      let templates = await loadWorkspaceDesignTemplates(tenantId);
+      const activeSlots = await loadBrandActiveSlotSet(
+        tenantId,
+        businessType,
+        templates,
+        null,
+      );
+      const keyed = await ensureKeyedDesignTemplatesForEnabledSlots({
+        workspaceId: tenantId,
+        enabledSlots: activeSlots.slots.filter((s) => s.enabled),
+        activeTemplates: templates,
+      });
+      steps.push({
+        id: 'ensure_keyed_templates',
+        ok: true,
+        detail: `cloned=${keyed.cloned}`,
+      });
+      if (keyed.cloned > 0) {
+        templates = await loadWorkspaceDesignTemplates(tenantId);
+      }
+      const { summarizeDesignTemplateTypeCoverage } = await import(
+        '@/lib/catalog-template-coverage'
+      );
+      let typeCov = summarizeDesignTemplateTypeCoverage(templates, businessType);
+      if (!typeCov.sufficient) {
+        const gen = await postInternal(
+          `/api/brand-context/${tenantId}/generate-design-templates`,
+          tenantId,
+          forwardHeaders,
+          240_000,
+          { archiveExisting: false },
+        );
+        steps.push({ ...gen, id: 'generate_design_templates' });
+      } else {
+        steps.push({
+          id: 'generate_design_templates',
+          ok: true,
+          detail: `types_sufficient=${typeCov.typeCount}`,
+        });
+      }
+    } catch (err) {
+      steps.push({
+        id: 'template_type_coverage',
+        ok: false,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   // Visual identity enrich when vibe missing (even if PPR already passes)

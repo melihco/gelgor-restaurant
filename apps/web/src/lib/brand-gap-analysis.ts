@@ -320,6 +320,7 @@ export const AUTO_FIXABLE_GAP_IDS = new Set([
   'default_ctas_missing',
   'brand_theme_missing',
   'template_library_incomplete',
+  'template_type_coverage_low',
   'gallery_coverage_low',
   'ppr_sector_consistency',
   'ppr_production_theme_layers',

@@ -44,16 +44,17 @@ async def _weekly_visual_identity_job() -> None:
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.brand_theme_freshness_service import ensure_brand_theme_waterfall
+    from app.services.tenant_hygiene import is_active_production_tenant
 
     logger.info("visual_identity_job_start")
     ok = skip = fail = 0
     try:
         async with async_session_factory() as db:
-            rows = await db.execute(select(BrandContext.workspace_id, BrandContext.business_name))
+            rows = await db.execute(select(BrandContext))
             targets = [
-                (r[0], r[1])
-                for r in rows.all()
-                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+                (c.workspace_id, c.business_name)
+                for c in rows.scalars().all()
+                if is_active_production_tenant(c)
             ]
         for workspace_id, business_name in targets:
             try:
@@ -95,6 +96,7 @@ async def _weekly_competitor_brief_job() -> None:
         extract_verified_handles_from_brief,
         resolve_competitors_raw,
     )
+    from app.services.tenant_hygiene import is_active_production_tenant
 
     settings = get_settings()
     if not settings.apify_api_key:
@@ -108,7 +110,7 @@ async def _weekly_competitor_brief_job() -> None:
             rows = await db.execute(select(BrandContext))
             contexts = [
                 c for c in rows.scalars().all()
-                if (c.business_name or "").strip().lower() not in {"brand", "test", "demo"}
+                if is_active_production_tenant(c)
             ]
 
         for ctx in contexts:
@@ -180,16 +182,17 @@ async def _weekly_google_signals_job() -> None:
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.google_business_refresh_service import refresh_google_business_signals
+    from app.services.tenant_hygiene import is_active_production_tenant
 
     logger.info("google_signals_job_start")
     ok = skip = fail = 0
     try:
         async with async_session_factory() as db:
-            rows = await db.execute(select(BrandContext.workspace_id, BrandContext.business_name))
+            rows = await db.execute(select(BrandContext))
             targets = [
-                (r[0], r[1])
-                for r in rows.all()
-                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+                (c.workspace_id, c.business_name)
+                for c in rows.scalars().all()
+                if is_active_production_tenant(c)
             ]
         for workspace_id, _name in targets:
             try:
@@ -227,6 +230,7 @@ async def _weekly_instagram_intelligence_job() -> None:
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.instagram_intelligence_service import refresh_instagram_intelligence
+    from app.services.tenant_hygiene import is_active_production_tenant
 
     logger.info("instagram_intelligence_job_start")
     refreshed = 0
@@ -235,16 +239,15 @@ async def _weekly_instagram_intelligence_job() -> None:
     try:
         async with async_session_factory() as db:
             rows = await db.execute(
-                select(BrandContext.workspace_id, BrandContext.business_name, BrandContext.instagram_handle)
-                .where(
+                select(BrandContext).where(
                     BrandContext.instagram_handle.is_not(None),
                     BrandContext.instagram_handle != "",
                 )
             )
             targets = [
-                (r[0], r[1], r[2])
-                for r in rows.all()
-                if (r[1] or "").strip().lower() not in {"brand", "test", "demo"}
+                (c.workspace_id, c.business_name, c.instagram_handle)
+                for c in rows.scalars().all()
+                if is_active_production_tenant(c)
             ]
 
         for workspace_id, business_name, handle in targets:
@@ -306,13 +309,15 @@ async def _weekly_brand_dna_synthesis_job() -> None:
     import asyncio as _asyncio
     import json
 
+    from app.services.tenant_hygiene import is_active_production_tenant
+
     settings = get_settings()
     logger.info("brand_dna_synthesis_start")
 
     try:
         async with async_session_factory() as db:
             rows = await db.execute(select(BrandContext))
-            contexts = rows.scalars().all()
+            contexts = [c for c in rows.scalars().all() if is_active_production_tenant(c)]
 
         for ctx in contexts:
             try:
@@ -326,9 +331,12 @@ async def _weekly_brand_dna_synthesis_job() -> None:
                         openai_api_key=settings.openai_api_key or "",
                     )
 
-                    ctx.brand_dna = json.dumps(dna, ensure_ascii=False)
-                    ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
-                    db.add(ctx)
+                    row = await db.get(BrandContext, ctx.id)
+                    if not row:
+                        continue
+                    row.brand_dna = json.dumps(dna, ensure_ascii=False)
+                    row.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
+                    db.add(row)
                     await db.commit()
 
                     logger.info(

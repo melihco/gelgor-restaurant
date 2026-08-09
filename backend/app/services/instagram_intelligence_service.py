@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.brand_context import BrandContext
 from app.services.brand_context_service import get_brand_context
+from app.services.tenant_hygiene import is_stub_business_name
 
 logger = structlog.get_logger(__name__)
 
@@ -64,7 +65,7 @@ async def refresh_instagram_intelligence(
     if not handle:
         return {"ok": False, "reason": "no_handle"}
 
-    if (ctx.business_name or "").strip().lower() in {"brand", "test", "demo"}:
+    if is_stub_business_name(ctx.business_name):
         return {"ok": False, "reason": "stub_brand"}
 
     if not force:
@@ -185,8 +186,7 @@ async def list_workspaces_needing_instagram_refresh(
     out: list[BrandContext] = []
     now = datetime.now(timezone.utc)
     for ctx in rows.scalars().all():
-        name = (ctx.business_name or "").strip().lower()
-        if name in {"brand", "test", "demo"}:
+        if is_stub_business_name(ctx.business_name):
             continue
         intel = ctx.instagram_intelligence
         if not isinstance(intel, dict) or not intel:
