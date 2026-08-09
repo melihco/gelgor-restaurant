@@ -10,6 +10,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -78,6 +79,9 @@ export async function PUT(
   );
   try {
     const data = await upstream.json() as { theme: Record<string, unknown> | null; updated_at?: string | null; ok?: boolean };
+    if (upstream.ok) {
+      brsCache.delete(workspaceId);
+    }
     const normalised = {
       ok: data.ok ?? true,
       theme: data.theme ? snakeToCamel(data.theme) : null,

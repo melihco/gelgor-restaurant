@@ -284,8 +284,17 @@ def apply_production_layers_to_theme_dict(
     existing_anti = merged.get("anti_patterns") if isinstance(merged.get("anti_patterns"), list) else []
     existing_typo = merged.get("typography_design")
     derived_typo = resolve_typography_design(sector, visual_dna, sp, accent)
-    if isinstance(existing_typo, dict) and existing_typo.get("confirmed_at"):
+    # Accept camelCase twin from Next theme BFF round-trips.
+    typo_confirmed = (
+        isinstance(existing_typo, dict)
+        and bool(existing_typo.get("confirmed_at") or existing_typo.get("confirmedAt"))
+    )
+    if typo_confirmed:
         merged_typo = {**derived_typo, **existing_typo}
+        # Normalize confirmation stamp so later saves don't regress to derived.
+        confirmed_at = existing_typo.get("confirmed_at") or existing_typo.get("confirmedAt")
+        if confirmed_at and not merged_typo.get("confirmed_at"):
+            merged_typo["confirmed_at"] = confirmed_at
         merged["typography_design"] = merged_typo
     else:
         merged["typography_design"] = {**derived_typo, "source": "derived"}

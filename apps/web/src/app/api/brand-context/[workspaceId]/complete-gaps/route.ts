@@ -10,6 +10,7 @@ import {
 } from '@/lib/tenant-production-guard';
 import { runCompleteBrandGaps } from '@/lib/brand-complete-gaps';
 import type { BrandGapItem } from '@/lib/brand-gap-analysis';
+import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
 export const maxDuration = 360;
@@ -55,6 +56,8 @@ export async function POST(
 
   const forwardHeaders = buildTenantForwardHeaders(req);
   const result = await runCompleteBrandGaps(workspaceId, forwardHeaders);
+  // PPR / BRS UI must not keep a pre-repair snapshot for up to 3 minutes.
+  brsCache.delete(workspaceId);
 
   return NextResponse.json({
     tenantId: workspaceId,

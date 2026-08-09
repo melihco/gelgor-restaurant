@@ -8,6 +8,7 @@ import { parseContentIntentSlugs } from '@/lib/content-pillars-sync';
 import { buildCompanyProfilePatchFromPython } from '@/lib/sync-company-profile-from-python';
 import { serverConfig } from '@/lib/server-config';
 import {
+  isProductionFormatVisualDna,
   PRODUCTION_PROFILE_THRESHOLD,
 } from '@/lib/brand-readiness';
 import {
@@ -18,6 +19,7 @@ import {
 } from '@/lib/typography-design-policy';
 import { buildSectorSyncPatch, resolveAuthoritativeIndustry } from '@/lib/canonical-sector';
 import type { BrandGapItem } from '@/lib/brand-gap-analysis';
+import { brsCache } from '@/lib/server-ttl-cache';
 
 export interface CompleteGapsStep {
   id: string;
@@ -516,10 +518,10 @@ export async function runCompleteBrandGaps(
           detail: analyzeRes.ok ? 'brand_analyze_ok' : (analyzeRes.error ?? 'analyze_failed'),
         });
 
-        // Analyze can re-infer local_products_shop and wipe typography confirmedAt.
-        // Re-seal sector + typography so PPR does not regress after rediscovery.
+        // Analyze can wipe production visual_dna / typography confirmedAt.
+        // Re-seal sector, PDP, and typography so PPR does not regress after rediscovery.
         if (analyzeRes.ok) {
-          const afterCtx = await fetchCrewBackendJson<Record<string, unknown>>(
+          let afterCtx = await fetchCrewBackendJson<Record<string, unknown>>(
             `/api/v1/brand-context/${tenantId}`,
             { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
           );
@@ -549,6 +551,33 @@ export async function runCompleteBrandGaps(
                 ? resealPatch.detail
                 : (resealRes.error ?? `HTTP ${resealRes.status}`),
             });
+          }
+
+          const dnaAfter = typeof afterCtx.data?.visual_dna === 'string'
+            ? String(afterCtx.data.visual_dna)
+            : '';
+          if (!isProductionFormatVisualDna(dnaAfter)) {
+            const pdpRes = await fetchCrewBackendJson<{ ok?: boolean; profile?: { source?: string } }>(
+              `/api/v1/brand-context/${tenantId}/production-design-profile/derive`,
+              {
+                method: 'POST',
+                workspaceId: tenantId,
+                timeoutMs: 180_000,
+                headers: forwardHeaders,
+                body: {},
+              },
+            );
+            steps.push({
+              id: 'production_design_profile_after_discovery',
+              ok: pdpRes.ok,
+              detail: pdpRes.ok
+                ? (pdpRes.data?.profile?.source ?? 'derived')
+                : (pdpRes.error ?? `HTTP ${pdpRes.status}`),
+            });
+            afterCtx = await fetchCrewBackendJson<Record<string, unknown>>(
+              `/api/v1/brand-context/${tenantId}`,
+              { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
+            );
           }
 
           const origin = getNextjsInternalOrigin();
@@ -623,6 +652,8 @@ export async function runCompleteBrandGaps(
     gapsBefore.length - gapsAfter.length,
   );
   const okSteps = steps.filter((s) => s.ok).length;
+
+  brsCache.delete(tenantId);
 
   return {
     ok: Boolean(pyRes.data?.ok) || okSteps > 0,

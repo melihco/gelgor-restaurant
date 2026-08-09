@@ -19,11 +19,17 @@ import {
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { resolveOnboardingDesignPresetsFromCatalog } from '@/lib/catalog-design-template-presets';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
-import { isTypographyDesignConfirmed, resolveSuggestedTypographyConfig } from '@/lib/typography-design-policy';
+import {
+  buildUserConfirmedTypographyPatch,
+  isTypographyDesignConfirmed,
+  resolvePostDesignDefaultsForTypography,
+  resolveSuggestedTypographyConfig,
+} from '@/lib/typography-design-policy';
 import {
   ensureSlotCreativeBriefsForAssignments,
   persistSlotCreativeBriefsFromTemplates,
 } from '@/lib/slot-creative-library-persist';
+import { brsCache } from '@/lib/server-ttl-cache';
 
 export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
@@ -110,11 +116,15 @@ export async function POST(
     : (typeof brandCtx.brand_theme === 'object' ? brandCtx.brand_theme as Record<string, unknown> : null);
 
   const typographyConfirmed = isTypographyDesignConfirmed(brandTheme);
+  const visualDnaForTypo = typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : null;
+  let typographyUsedForGenerate = typographyConfirmed;
   if (!typographyConfirmed) {
-    const suggested = resolveSuggestedTypographyConfig(brandTheme, sector);
+    const suggested = resolveSuggestedTypographyConfig(brandTheme, sector, visualDnaForTypo);
+    const confirmed = buildUserConfirmedTypographyPatch(suggested);
     brandTheme = {
       ...(brandTheme ?? {}),
-      typography_design: suggested,
+      typography_design: confirmed,
+      typographyDesign: confirmed,
     };
   }
   const themeAnti = Array.isArray(brandTheme?.anti_patterns)
@@ -260,6 +270,38 @@ export async function POST(
   } else {
     const { invalidateDesignTemplateCache } = await import('@/lib/brand-design-template-matcher');
     invalidateDesignTemplateCache(workspaceId);
+    // Seal the vibe used for generation so PPR doesn't stay at "Typography vibe not confirmed".
+    if (!typographyConfirmed) {
+      const typo = (brandTheme?.typography_design ?? brandTheme?.typographyDesign) as
+        | Parameters<typeof resolvePostDesignDefaultsForTypography>[0]
+        | undefined;
+      if (typo) {
+        const postDefaults = resolvePostDesignDefaultsForTypography(typo);
+        const sealRes = await fetchCrewBackendJson(
+          `/api/v1/brand-context/${workspaceId}/theme`,
+          {
+            workspaceId,
+            method: 'PUT',
+            timeoutMs: 45_000,
+            body: {
+              theme: {
+                ...(brandTheme ?? {}),
+                typography_design: typo,
+                post_design_defaults: postDefaults,
+              },
+            },
+          },
+        );
+        typographyUsedForGenerate = sealRes.ok;
+        if (!sealRes.ok) {
+          console.warn(
+            `[generate-design-templates] typography seal failed for ${workspaceId}:`,
+            sealRes.error,
+          );
+        }
+      }
+    }
+    brsCache.delete(workspaceId);
   }
 
   let creativeBriefsPersisted = 0;
@@ -279,7 +321,7 @@ export async function POST(
   return NextResponse.json({
     workspaceId,
     sector,
-    typography_design_confirmed: typographyConfirmed,
+    typography_design_confirmed: typographyConfirmed || typographyUsedForGenerate,
     generated: result.generated,
     failed: result.failed,
     persisted: persistRes.ok,
