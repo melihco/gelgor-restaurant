@@ -232,6 +232,51 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });
 
+  it('keeps calendar tagline over caption clamp / title stub (local_products + beach_club)', () => {
+    for (const [businessType, brandName, tagline, title, caption] of [
+      [
+        'local_products_shop',
+        'Karaman Datça',
+        'Her kavanozda meyvelerin gerçek tadı!',
+        'Lezzetin Sırrını Paylaşıyoruz',
+        "Datça'nın birbirinden özel reçel ve zeytinyağı ürünlerini keşfedin. Sipariş verin.",
+      ],
+      [
+        'beach_club',
+        'Scorpios Bodrum',
+        'Hadi tatlarına bak!',
+        'Serinletici Yaz Kokteylleri!',
+        'Bu yaz plajda gün batımı kokteylleri sizi bekliyor. Rezervasyon yapın.',
+      ],
+    ] as const) {
+      const result = resolveMissionFalDesignCopy({
+        idea: {
+          calendar_enriched: true,
+          concept_title: title,
+          headline: title,
+          tagline,
+          canva_field_copy: { headline: tagline, subtitle: title },
+          caption_draft: caption,
+        },
+        ideationHeadline: title,
+        caption,
+        brandName,
+        channel: 'feed_post',
+        businessType,
+        designIntensity: 'balanced',
+      });
+      expect(result.source).toBe('mission_tagline');
+      expect(result.headline.toLowerCase()).not.toBe('lezzetin');
+      expect(result.headline.toLowerCase()).not.toMatch(/birbirinden özel|sizi bekliyor/);
+      expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
+      expect(result.headline.toLowerCase()).toMatch(
+        businessType === 'local_products_shop'
+          ? /kavanoz|meyve|tad/
+          : /hadi|tat/,
+      );
+    }
+  });
+
   it('prefers canva_field_copy marketing line over series-style ideation', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {

@@ -726,6 +726,10 @@ const INCOMPLETE_EN_RELATIVE_TAIL_RX =
 const INCOMPLETE_EN_COPULA_TAIL_RX =
   /\b(are|is|was|were|be|been|being|'re|'s)\s*$/iu;
 
+/** Verb-led fragment after sliding-window fit — "are the heart" (lost subject). */
+const INCOMPLETE_EN_LEADING_AUX_RX =
+  /^(?:are|is|was|were|am|be|been|being)\s+/iu;
+
 /**
  * Transitive / open verb with no object — "Our Guests Love", "mixologists craft".
  * Present-tense only — past participles often complete passives ("moments are shared").
@@ -865,6 +869,8 @@ export function isAcceptablePunchlineStem(text: string): boolean {
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 0) return false;
   if (words.length === 1) {
+    // Never lock a lone genitive/possessive fragment as the canvas punchline.
+    if (clean.length >= 7 && INCOMPLETE_TR_BARE_GENITIVE_RX.test(words[0]!)) return false;
     return clean.length >= 8 && /[aeiouıöüAEIOUİÖÜ]/i.test(clean);
   }
   return true;
@@ -1007,6 +1013,14 @@ const INCOMPLETE_TR_ABLATIVE_TAIL_RX =
 const INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX =
   /^(?:[\p{L}']+(larımız|lerimiz|ımız|imiz|umuz|ümüz))\s*$/iu;
 
+/**
+ * Lone Turkish genitive / 2nd-person fragment after title truncation —
+ * "Lezzetin" from "Lezzetin Sırrını Paylaşıyoruz", "Datça'nın", "Meyvelerin".
+ * Short complete words ("yarın", "derin") stay under the length gate.
+ */
+const INCOMPLETE_TR_BARE_GENITIVE_RX =
+  /^(?:[\p{L}']{4,}(nın|nin|nun|nün|'nın|'nin|'nun|'nün|ın|in|un|ün))\s*$/iu;
+
 /** Headline ends mid-thought — unsuitable for publish or fal canvas. */
 export function isIncompleteOverlayPhrase(text: string): boolean {
   const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
@@ -1016,6 +1030,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_EN_DETERMINER_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_RELATIVE_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_COPULA_TAIL_RX.test(clean)) return true;
+  if (INCOMPLETE_EN_LEADING_AUX_RX.test(clean)) return true;
   if (INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_PRENOMINAL_TAIL_RX.test(clean)) return true;
   if (INCOMPLETE_EN_ADJ_OPEN_TAIL_RX.test(clean)) return true;
@@ -1038,6 +1053,9 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (isInternalStrategyBriefing(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
+  if (words.length === 1 && clean.length >= 7 && INCOMPLETE_TR_BARE_GENITIVE_RX.test(words[0]!)) {
+    return true;
+  }
   if (words.length === 2 && INCOMPLETE_EN_BARE_NP_SUBJECT_RX.test(clean)) return true;
   // Longer clauses ending mid-case (dative / soft accusative) are caption clamps.
   if (words.length >= 3 && INCOMPLETE_TR_DATIVE_TAIL_RX.test(clean)) return true;

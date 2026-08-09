@@ -416,6 +416,19 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(isIncompleteOverlayPhrase('DJ Performansı')).toBe(false);
   });
 
+  it('rejects bare Turkish genitive title stubs (Lezzetin / Datça\'nın)', () => {
+    expect(isIncompleteOverlayPhrase('Lezzetin')).toBe(true);
+    expect(isIncompleteOverlayPhrase("Datça'nın")).toBe(true);
+    expect(isIncompleteOverlayPhrase('Meyvelerin')).toBe(true);
+    expect(isAcceptablePunchlineStem('Lezzetin')).toBe(false);
+    expect(isMeaningfulFalOverlayText('Lezzetin')).toBe(false);
+    // Closed multi-word genitive NPs and full taglines still pass.
+    expect(isIncompleteOverlayPhrase('Doğanın Tazeliği')).toBe(false);
+    expect(isIncompleteOverlayPhrase('Her kavanozda meyvelerin gerçek tadı!')).toBe(false);
+    const stem = fitPunchlineUnderBudget('Lezzetin Sırrını Paylaşıyoruz', 18, 2);
+    expect(stem.toLowerCase()).not.toBe('lezzetin');
+  });
+
   it('rejects Turkish caption-prefix clamps from live Karaman/Sarnıç feeds', () => {
     // Quantifier / dative / soft-accusative cut mid-sentence (painted on canvas).
     expect(isIncompleteOverlayPhrase('Zeytinyağı, sağlığımıza birçok')).toBe(true);

@@ -1352,9 +1352,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const rawOverlayHeadline = resolveIdeationOverlayHeadline(idea as Record<string, unknown>);
     const calendarTagline = resolveIdeationTagline(idea as Record<string, unknown>);
     const isCalendarIdeaForHeadline = isCalendarProductionIdea(ideaRecord);
+    // Publishable Hub/calendar tagline is canvas SSOT even when enrichment
+    // forgot calendar_* flags (matched plan still carries root `tagline`).
     const calendarTaglinePublishable = Boolean(
-      isCalendarIdeaForHeadline
-      && calendarTagline
+      calendarTagline
       && !isMeaninglessBrandEchoHeadline(calendarTagline, resolvedBrandName)
       && !isLabelStyleHeadline(calendarTagline)
       && !isIncompleteOverlayPhrase(calendarTagline),
@@ -3312,10 +3313,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     // Overlay must not fight the Instagram caption (kitchen headline + DJ body).
+    // Calendar / canva punchline lock wins — never demote to a caption clamp.
     if (
       usesFalDesignerTrackEarly
       && caption.trim().length >= 24
       && hasCaptionHeadlineThemeConflict(caption, headline)
+      && !shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
     ) {
       const aligned = resolveFalOverlayCopy({
         headline,
@@ -3333,6 +3336,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         headline = aligned.headline;
         ideationHeadline = aligned.headline;
       }
+    } else if (
+      usesFalDesignerTrackEarly
+      && shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+      && hasCaptionHeadlineThemeConflict(caption, headline)
+    ) {
+      console.log(
+        `[auto-produce] keep locked punchline (${lockedFalPunchlineSource}) — `
+        + 'skip caption↔headline theme fix',
+      );
     }
 
     // Final chain gate: caption ↔ overlay ↔ photo must agree before paint.
@@ -3351,12 +3363,26 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         photoUrl: pickedFromBrandGallery ? resolvedReferenceUrl : null,
         galleryMeta: lockedMeta,
       });
-      if (chain.repaired && chain.overlayHeadline) {
+      if (
+        chain.repaired
+        && chain.overlayHeadline
+        && !shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+      ) {
         console.warn(
           `[auto-produce] coherence repair: "${headline.slice(0, 36)}" → "${chain.overlayHeadline.slice(0, 36)}"`,
         );
         headline = chain.overlayHeadline;
         ideationHeadline = chain.overlayHeadline;
+      } else if (
+        chain.repaired
+        && chain.overlayHeadline
+        && shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+        && chain.overlayHeadline !== headline
+      ) {
+        console.log(
+          `[auto-produce] keep locked punchline (${lockedFalPunchlineSource}) — `
+          + `skip coherence repair "${chain.overlayHeadline.slice(0, 36)}"`,
+        );
       }
       if (!chain.ok) {
         // Photo broke after overlay settle — one rematch with final overlay text.

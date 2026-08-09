@@ -488,12 +488,13 @@ export function resolveMissionFalDesignCopy(input: {
     if (!headline || !isAcceptablePunchlineStem(headline)) {
       headline = fitPunchlineUnderBudget(missionTagline, budget.maxLen, budget.maxWords);
     }
+    // Same-source stem of the tagline — do not reject for brand-name locale
+    // poison (e.g. "Sarnıç" inside an otherwise English punchline).
     if (
       headline
       && isAcceptablePunchlineStem(headline)
       && !isSoullessMenuHourHeadline(headline)
       && !isMeaninglessBrandEchoHeadline(headline, brandName)
-      && !localesClash(taglineLoc, detectOverlayLocale(headline))
     ) {
       return {
         headline,
