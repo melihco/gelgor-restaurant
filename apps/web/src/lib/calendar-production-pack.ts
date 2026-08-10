@@ -131,16 +131,18 @@ function librarySlotForAnnouncement(type: string): string | undefined {
   return map[key];
 }
 
+/**
+ * Gallery MatchIntent for calendar / mission ideas.
+ * Publish topic only — never include content_brief (scene brief is for Fal prompts).
+ * Wrong brief tokens (e.g. steak scene under cocktail tagline) must not steer ranking.
+ */
 export function calendarGalleryMatchCaption(idea: Record<string, unknown>): string {
-  // On-canvas topic first (tagline + publish caption) so cocktail quotes don't
-  // match meat plates from a mismatched content_brief.
   const tagline = String(idea.tagline ?? idea.subline ?? '').trim();
   const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
   const headline = String(idea.headline ?? idea.concept_title ?? '').trim();
   const subject = String(idea.subject_key ?? idea.subjectKey ?? '').replace(/_/g, ' ').trim();
   const mood = String(idea.photo_mood ?? idea.mood ?? idea.visual_direction ?? '').trim();
-  const brief = String(idea.content_brief ?? idea.brief ?? idea.description ?? '').trim();
-  return [tagline, caption, subject, headline, mood, brief].filter(Boolean).join(' — ');
+  return [tagline, caption, subject, headline, mood].filter(Boolean).join(' — ');
 }
 
 export { CALENDAR_GALLERY_DESIGN_INTENSITY };
@@ -261,8 +263,7 @@ export function normalizeCalendarPlanToProductionIdea(
     plan.content_brief ?? plan.description ?? plan.brief ?? '',
   ).trim();
   // Publish caption = calendar copy or tagline+headline — NEVER the visual brief.
-  // The brief is a scene description for gallery matching / fal prompts and flows
-  // through content_brief + visual_production_spec (see calendarGalleryMatchCaption).
+  // The brief is for Fal scene prompts only (buildCalendarFalSceneHint) — not MatchIntent.
   const planCaption = String(plan.caption_draft ?? plan.caption ?? '').trim();
   const caption = planCaption
     || [tagline, headline].filter(Boolean).join(' — ')

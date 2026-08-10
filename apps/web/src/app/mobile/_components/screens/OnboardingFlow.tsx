@@ -62,6 +62,7 @@ const ONBOARDING_SECTORS: { id: string; label: string }[] = [
   { id: 'hotel_resort', label: 'Otel / resort' },
   { id: 'local_products_shop', label: 'Yöresel ürün' },
   { id: 'pub', label: 'Bar / pub' },
+  { id: 'barber_salon', label: 'Berber / kuaför' },
   { id: 'beauty_wellness', label: 'Güzellik / wellness' },
   { id: 'coffee_shop', label: 'Kahve' },
   { id: 'fashion_retail', label: 'Moda / retail' },
@@ -1460,7 +1461,7 @@ function BrandConfirmStep({
         discoveryConfidence: existing?.discoveryConfidence ?? null,
       });
 
-      await fetch(`/api/brand-context-data/${tenantId}`, {
+      const sectorPatchRes = await fetch(`/api/brand-context-data/${tenantId}`, {
         method: 'PATCH',
         headers,
         body: JSON.stringify({
@@ -1477,7 +1478,10 @@ function BrandConfirmStep({
           },
         }),
         signal: AbortSignal.timeout(30_000),
-      }).catch(() => null);
+      });
+      if (!sectorPatchRes.ok) {
+        throw new Error('Sektör kaydı başarısız. Bağlantını kontrol edip tekrar dene.');
+      }
 
       const finRes = await fetch('/api/onboarding/deep-brand-setup', {
         method: 'POST',
@@ -1489,9 +1493,32 @@ function BrandConfirmStep({
         }),
         signal: AbortSignal.timeout(290_000),
       });
-      const finData = await finRes.json().catch(() => ({})) as { ok?: boolean; errors?: string[] };
-      if (!finRes.ok || finData.ok === false) {
-        console.warn('[onboarding] finalize incomplete', finData.errors);
+      const finData = await finRes.json().catch(() => ({})) as {
+        ok?: boolean;
+        criticalOk?: boolean;
+        constitutionConfirmed?: boolean;
+        serviceProfileOk?: boolean;
+        errors?: string[];
+        steps?: Array<{ id: string; ok: boolean }>;
+      };
+      const constitutionOk = finData.constitutionConfirmed === true
+        || Boolean(finData.steps?.some((s) => s.id === 'constitution' && s.ok));
+      const sectorOk = finData.serviceProfileOk === true
+        || Boolean(finData.steps?.some((s) => s.id === 'service_profile' && s.ok));
+      const criticalOk = finData.criticalOk === true
+        || (finData.ok === true && constitutionOk && sectorOk);
+
+      if (!finRes.ok || !criticalOk || !constitutionOk || !sectorOk) {
+        const detail = Array.isArray(finData.errors) && finData.errors.length > 0
+          ? finData.errors[0]
+          : !constitutionOk
+            ? 'Marka anayasası onaylanamadı.'
+            : !sectorOk
+              ? 'Sektör profili kaydedilemedi.'
+              : 'Üretim kilidi açılamadı.';
+        setError(`${detail} Tekrar dene.`);
+        setSubmitting(false);
+        return;
       }
       onDone(cleanName);
     } catch (e) {

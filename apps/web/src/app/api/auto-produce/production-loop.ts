@@ -1679,15 +1679,28 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           showSubline: falDesignLibrarySlot?.showSubline,
         });
         if (designCopy.headline) {
-          if (designCopy.headline !== headline) {
+          // Calendar / Hub quoted tagline already locked on `headline`.
+          // Never demote to caption clamps / catalog samples when fal-design-copy
+          // falls through to a non-punchline source.
+          if (
+            calendarTaglinePublishable
+            && !shouldPreserveLockedPunchlineHeadline(designCopy.source)
+          ) {
             console.log(
-              `[auto-produce] fal design copy (${designCopy.source}): `
-              + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+              `[auto-produce] keep calendar tagline — reject fal design copy `
+              + `(${designCopy.source}): "${designCopy.headline.slice(0, 36)}"`,
             );
-          }
-          headline = designCopy.headline;
-          if (shouldPreserveLockedPunchlineHeadline(designCopy.source)) {
-            lockedFalPunchlineSource = designCopy.source;
+          } else {
+            if (designCopy.headline !== headline) {
+              console.log(
+                `[auto-produce] fal design copy (${designCopy.source}): `
+                + `"${headline.slice(0, 36)}" → "${designCopy.headline.slice(0, 36)}"`,
+              );
+            }
+            headline = designCopy.headline;
+            if (shouldPreserveLockedPunchlineHeadline(designCopy.source)) {
+              lockedFalPunchlineSource = designCopy.source;
+            }
           }
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {
@@ -3145,12 +3158,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const captionServiceConflict =
       (typeof galleryMatchScore === 'number' && galleryMatchScore < 0)
       || hardThemeConflict;
-    // Fal paints typography on the gallery photo — never ship a weak caption↔photo pair.
-    // Calendar slots use brief-driven matching; allow brand-solid fallback instead of hard skip.
-    const falGroundedPipeline = usesFalDesignerTrackEarly
+    // Fal / calendar gallery ships — never ship a weak idea↔photo pair (0% mismatch).
+    // Calendar used to bypass GIS floor; that let score 28–54 wrong plates through.
+    const falGroundedPipeline = (usesFalDesignerTrackEarly || isCalendarSlot)
       && !galleryEscalatedToFalOnly
-      && !captionDrivenGenerated
-      && !isCalendarSlot;
+      && !captionDrivenGenerated;
     const galleryFloor = falGroundedPipeline
       ? FAL_GROUNDED_GALLERY_MIN_SCORE
       : MIN_ACCEPT_SCORE;

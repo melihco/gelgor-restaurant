@@ -502,6 +502,22 @@ export function resolveMissionFalDesignCopy(input: {
         source: 'mission_tagline',
       };
     }
+    // Budget/stem QA failed — still prefer the Hub quoted tagline over caption
+    // clamps. Soft-trim only; never fall through to caption punchline.
+    const kept = missionTagline.length <= Math.max(maxLen, 48)
+      ? missionTagline
+      : missionTagline.slice(0, Math.max(maxLen, 48)).trim();
+    if (
+      kept
+      && !isSoullessMenuHourHeadline(kept)
+      && !isMeaninglessBrandEchoHeadline(kept, brandName)
+    ) {
+      return {
+        headline: kept,
+        subtitle: locked.subtitle,
+        source: 'mission_tagline',
+      };
+    }
   }
 
   // 2) Purpose-built overlay from canva_field_copy / text_layers.

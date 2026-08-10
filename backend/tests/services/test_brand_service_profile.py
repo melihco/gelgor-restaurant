@@ -98,6 +98,30 @@ def test_build_prompt_block_empty_for_missing_profile():
 def test_canonical_sector_maps_beach_club_bar():
     assert canonical_sector_from_category("beach_club_bar") == "beach_club"
     assert canonical_sector_from_category("restaurant_bar") == "restaurant_cafe"
+    assert canonical_sector_from_category("barber_salon") == "barber_salon"
+
+
+def test_heuristic_classifies_mens_barber_franchise_not_beauty_spa():
+    """Multi-location erkek kuaför discovery must land on barber_salon, not beauty spa."""
+    ctx = {
+        "business_name": "Kadir Alkan",
+        "business_type": "general_business",
+        "website_url": "https://www.kadiralkan.com.tr/salonlar/",
+        "description": "Erkek kuaför salonları — saç kesim ve tıraş",
+        "website_summary": (
+            "Erkek Kuaför Salonlar - Kadir Alkan. Ankara Antalya İstanbul İzmir "
+            "erkek kuaför ve berber ağı. Saç kesim, tıraş."
+        ),
+        "instagram_bio": "erkek kuaför · saç kesim",
+        "gallery_analysis": json.dumps({
+            "u1": {"contentTags": ["hair salon", "styling station", "mirror"]},
+        }),
+    }
+    profile = heuristic_service_profile(ctx)
+    assert profile["category"] == "barber_salon"
+    assert profile["cta_style"] == "booking"
+    updates = context_updates_from_service_profile(profile, languages="tr")
+    assert updates["business_type"] == "barber_salon"
 
 
 def test_reconcile_repairs_cta_style_disagreeing_with_category():
@@ -159,6 +183,45 @@ def test_merge_preserves_guardrails_and_offerings_when_incoming_lists_empty():
     assert merged["content_guardrails"] == existing["content_guardrails"]
     assert merged["value_props"] == existing["value_props"]
     assert merged["category_confidence"] == 0.85
+
+
+def test_merge_manual_override_locks_category_but_allows_enrich():
+    """BrandConfirm sector must survive finalize/bootstrap re-derive."""
+    existing = {
+        "category": "barber_salon",
+        "category_confidence": 1.0,
+        "signature_offerings": [],
+        "cta_style": "booking",
+        "primary_ctas": ["Randevu Al"],
+        "seasonality": "year_round",
+        "value_props": [],
+        "content_guardrails": [],
+        "source": "manual_override",
+        "version": PROFILE_VERSION,
+    }
+    # Derive wrongly wants beauty_wellness (old kuaför→beauty bias).
+    incoming = _normalize_profile({
+        "category": "beauty_wellness",
+        "category_confidence": 0.9,
+        "signature_offerings": ["saç kesim", "tıraş", "sakal şekillendirme"],
+        "cta_style": "booking",
+        "primary_ctas": ["Randevu Al", "Yerini Ayır"],
+        "seasonality": "year_round",
+        "value_props": ["çok lokasyonlu erkek kuaför ağı"],
+        "content_guardrails": ["nail/spa içeriği üretme"],
+        "source": "onboarding_llm",
+    })
+
+    merged = merge_service_profile(existing, incoming)
+    assert merged["category"] == "barber_salon"
+    assert merged["source"] == "manual_override"
+    assert merged["category_confidence"] == 1.0
+    # Enrich empty lists from derive
+    assert merged["signature_offerings"] == ["saç kesim", "tıraş", "sakal şekillendirme"]
+    assert merged["content_guardrails"] == ["nail/spa içeriği üretme"]
+    assert merged["cta_style"] == "booking"
+    updates = context_updates_from_service_profile(merged, languages="tr")
+    assert updates["business_type"] == "barber_salon"
 
 
 def test_context_updates_sync_business_type_and_turkish_ctas():

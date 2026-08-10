@@ -62,7 +62,7 @@ describe('calendar-production-pack', () => {
     );
     expect(String(idea.caption_draft)).not.toContain('Introduce the');
     expect(String(idea.caption_draft)).not.toContain('showcasing');
-    // Brief stays available for gallery matching / fal prompts.
+    // Brief stays for Fal scene prompts only — not gallery MatchIntent.
     expect(idea.content_brief).toContain('showcasing local artisans');
 
     // Second sector shape: explicit calendar caption wins when provided.
@@ -127,12 +127,15 @@ describe('calendar-production-pack', () => {
     expect(assignment.pipeline).toBe('fal_story');
     expect(assignment.library_slot_key).toBe('event_story');
   });
-  it('builds gallery match caption from brief + mood + tagline', () => {
+  it('builds gallery match caption from tagline + mood — never content_brief', () => {
     const idea = normalizeCalendarPlanToProductionIdea(meetTheMakerPlan, 0);
     const matchCaption = calendarGalleryMatchCaption(idea);
     expect(matchCaption).toContain('Meet the Maker');
     expect(matchCaption).toContain('cozy artisan workshop');
     expect(matchCaption).toContain('Discover the stories');
+    // Scene brief must not pollute ranking (steers wrong plates / rooms).
+    expect(matchCaption).not.toContain('Introduce the');
+    expect(matchCaption).not.toContain('showcasing local artisans');
   });
 
   it('does not append additive calendar production ideas (schedule overlay only)', () => {

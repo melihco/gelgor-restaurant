@@ -214,14 +214,14 @@ describe('pickVenueEscalationFallbackPhoto', () => {
     })).toBe('https://cdn.example.com/gallery/b.jpg');
   });
 
-  it('falls back to the rejected photo when no alternate exists', () => {
+  it('returns null when only the rejected photo remains (never re-ship veto)', () => {
     expect(pickVenueEscalationFallbackPhoto({
       currentReferenceUrl: 'https://cdn.example.com/gallery/a.jpg',
       galleryPhotos: ['https://cdn.example.com/gallery/a.jpg'],
       sector: 'restaurant_cafe',
       hasRealBrandPhotos: true,
       excludeUrls: ['https://cdn.example.com/gallery/a.jpg'],
-    })).toBe('https://cdn.example.com/gallery/a.jpg');
+    })).toBeNull();
   });
 
   it('returns null for low-reliability / no-venue sectors', () => {

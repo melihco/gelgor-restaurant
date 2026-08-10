@@ -21,6 +21,19 @@ describe('canonical sector sync', () => {
     expect(resolveAuthoritativeIndustry(py)).toBe('beach_club');
   });
 
+  it('maps barber_salon service-profile category to barber_salon sector', () => {
+    const py = {
+      business_type: 'beauty_wellness',
+      brand_service_profile: {
+        category: 'barber_salon',
+        category_confidence: 0.92,
+        cta_style: 'booking',
+      },
+    };
+    expect(resolveAuthoritativeIndustry(py)).toBe('barber_salon');
+    expect(serviceProfileCategoryForSector('barber_salon')).toBe('barber_salon');
+  });
+
   it('buildSectorSyncPatch aligns stale business_type to SP (restaurant)', () => {
     const patch = buildSectorSyncPatch({
       business_type: 'local_products_shop',

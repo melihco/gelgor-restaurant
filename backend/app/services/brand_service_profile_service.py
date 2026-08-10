@@ -67,6 +67,17 @@ _CATEGORY_RULES: list[dict[str, Any]] = [
         "signals": ["hotel", "otel", "resort", "suite", "konaklama", "pansiyon", "villa", "boutique hotel"],
     },
     {
+        # Men's / hair-cutting brands — before beauty_wellness so "kuaför/salon"
+        # franchise pages do not collapse into generic nail/spa positioning.
+        "category": "barber_salon",
+        "cta_style": "booking",
+        "seasonality": "year_round",
+        "signals": [
+            "berber", "barber", "barbershop", "erkek kuaför", "erkek kuafor",
+            "men's hair", "mens hair", "saç kesim", "sac kesim", "tıraş", "tiras",
+        ],
+    },
+    {
         "category": "beauty_wellness",
         "cta_style": "booking",
         "seasonality": "year_round",
@@ -160,6 +171,7 @@ _CATEGORY_TO_CANONICAL_SECTOR: dict[str, str] = {
     "restaurant_bar": "restaurant_cafe",
     "cafe_bakery": "coffee_shop",
     "hotel_hospitality": "hospitality",
+    "barber_salon": "barber_salon",
     "beauty_wellness": "beauty_wellness",
     "fitness_studio": "fitness_gym",
     "clinic_healthcare": "healthcare_clinic",
@@ -239,6 +251,7 @@ def _combined_discovery_text(brand_ctx: dict[str, Any]) -> str:
     parts = [
         brand_ctx.get("business_name"),
         brand_ctx.get("business_type"),
+        brand_ctx.get("website_url"),
         brand_ctx.get("description"),
         brand_ctx.get("website_summary"),
         brand_ctx.get("instagram_bio"),
@@ -343,6 +356,13 @@ def _normalize_profile(raw: dict[str, Any]) -> dict[str, Any]:
 _MERGE_LIST_FIELDS = ("signature_offerings", "value_props", "content_guardrails", "primary_ctas")
 
 
+def is_manual_override_profile(profile: dict[str, Any] | None) -> bool:
+    """True when the operator/user confirmed category (BrandConfirm / Marka edit)."""
+    if not profile or not isinstance(profile, dict):
+        return False
+    return str(profile.get("source") or "").strip().lower() == "manual_override"
+
+
 def merge_service_profile(
     existing: dict[str, Any] | None,
     incoming: dict[str, Any],
@@ -353,6 +373,10 @@ def merge_service_profile(
     Re-derives must not wipe manually enriched offerings, value props, or
     guardrails when the LLM/heuristic returns empty lists (common after SP
     category repair or low-signal discovery).
+
+    When ``source === manual_override``, category (+ source/confidence) is locked:
+    derive may enrich empty list fields and CTA reconciliation follows the locked
+    category — it must not reclassify the brand.
     """
     if not existing or not isinstance(existing, dict):
         return reconcile_cta_with_category(_normalize_profile(incoming))
@@ -369,7 +393,22 @@ def merge_service_profile(
 
     existing_category = str(existing.get("category") or "").strip().lower()
     incoming_category = str(merged.get("category") or "").strip().lower()
-    if preserved_lists and existing_category and existing_category == incoming_category:
+
+    if is_manual_override_profile(existing) and existing_category:
+        # Lock confirmed sector; still allow enrich of empty lists from incoming.
+        merged["category"] = existing_category
+        merged["source"] = "manual_override"
+        try:
+            existing_conf = float(existing.get("category_confidence") or 0)
+        except (TypeError, ValueError):
+            existing_conf = 0.0
+        merged["category_confidence"] = existing_conf if existing_conf > 0 else 1.0
+        # Prefer existing seasonality when set — operator confirm does not always
+        # send it, but re-derive must not flip summer↔year_round on a locked brand.
+        existing_season = str(existing.get("seasonality") or "").strip().lower()
+        if existing_season in VALID_SEASONALITY:
+            merged["seasonality"] = existing_season
+    elif preserved_lists and existing_category and existing_category == incoming_category:
         try:
             existing_conf = float(existing.get("category_confidence") or 0)
             incoming_conf = float(merged.get("category_confidence") or 0)
@@ -379,6 +418,13 @@ def merge_service_profile(
             pass
 
     return reconcile_cta_with_category(_normalize_profile(merged))
+
+
+_LLM_CATEGORY_ENUM = (
+    "beach_club_bar|restaurant_bar|cafe_bakery|hotel_hospitality|barber_salon|"
+    "beauty_wellness|fitness_studio|clinic_healthcare|local_products_shop|"
+    "fashion_retail|wedding_event_service|kids_party_service|general_business"
+)
 
 
 def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
@@ -399,21 +445,32 @@ def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
 
     business_name = str(brand_ctx.get("business_name") or "").strip()
     location = str(brand_ctx.get("location") or "").strip()
+    website_url = str(brand_ctx.get("website_url") or "").strip()
 
     system = (
-        "You are a senior brand strategist. From the discovery signals, infer the "
-        "TRUE business positioning. Be decisive and accurate — do not echo a wrong "
-        "stored business_type. Respond with STRICT JSON only."
+        "You are a senior brand strategist. Classify the REAL business from discovery "
+        "signals (name, website URL/path, page copy, Instagram bio, gallery tags). "
+        "Be decisive. Do NOT echo a wrong stored business_type. "
+        "Prefer the concrete trade over vague labels like general_business. "
+        "Respond with STRICT JSON only."
     )
     user = (
         f"Business name: {business_name}\n"
         f"Location: {location}\n"
-        f"Stored business_type (may be WRONG): {brand_ctx.get('business_type')}\n"
-        f"Discovery signals (website, menu, bio, gallery tags):\n{text[:2500]}\n\n"
+        f"Website URL: {website_url or '(unknown)'}\n"
+        f"Stored business_type (may be WRONG — ignore if signals disagree): "
+        f"{brand_ctx.get('business_type')}\n"
+        f"Discovery signals (website, menu, bio, gallery tags):\n{text[:3200]}\n\n"
+        "Category rules (pick ONE):\n"
+        "- barber_salon: men's barber, erkek kuaför, hair-cut franchise, multi-location "
+        "salon network focused on haircuts/shave (even if the URL says /salonlar).\n"
+        "- beauty_wellness: nail, spa, lash, aesthetics, women's beauty — NOT men's barber.\n"
+        "- restaurant_bar / cafe_bakery: food & drink venues (pide, kebap, cafe, bakery…).\n"
+        "- beach_club_bar: beach/pool nightlife venues — not a hair brand that mentions party.\n"
+        "- local_products_shop: packaged goods / e-commerce of products.\n"
+        "- general_business: ONLY when signals are truly insufficient.\n\n"
         "Return JSON with EXACTLY these keys:\n"
-        '{"category": "snake_case category e.g. beach_club_bar|restaurant_bar|cafe_bakery|'
-        'hotel_hospitality|beauty_wellness|fitness_studio|clinic_healthcare|local_products_shop|'
-        'fashion_retail|wedding_event_service|kids_party_service|general_business",\n'
+        f'{{"category": "one of {_LLM_CATEGORY_ENUM}",\n'
         ' "category_confidence": 0.0-1.0,\n'
         ' "signature_offerings": ["3-6 concrete things this brand sells/offers, in the brand language"],\n'
         f' "cta_style": "one of {list(VALID_CTA_STYLES)}",\n'

@@ -780,6 +780,7 @@ async def persist_brand_service_profile(
     brand_ctx_dict = {
         "business_name": ctx.business_name,
         "business_type": ctx.business_type,
+        "website_url": getattr(ctx, "website_url", None),
         "description": ctx.description,
         "website_summary": ctx.website_summary,
         "instagram_bio": ctx.instagram_bio,

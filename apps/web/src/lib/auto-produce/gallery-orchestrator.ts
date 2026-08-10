@@ -35,6 +35,10 @@ import {
 } from '@/lib/gallery-usage-tracker';
 import { isStockGalleryPhotoUrl, isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { getSectorProfile } from '@/lib/sector-production-profile';
+import {
+  calendarGalleryMatchCaption,
+  isCalendarProductionIdea,
+} from '@/lib/calendar-production-pack';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -132,26 +136,19 @@ export function pickVenueEscalationFallbackPhoto(input: {
       .filter(Boolean),
   );
 
-  // Prefer alternate gallery photos over the rejected pick; keep current as last resort.
+  // Prefer alternate gallery photos over the rejected pick.
+  // Never reattach a hard-veto / judge-rejected URL — wrong photo ships are worse
+  // than fal_only without a venue still (0% mismatch ship target).
   const candidates = [
     ...(input.galleryPhotos ?? []),
     ...(input.brandReferenceImageUrls ?? []),
-    input.currentReferenceUrl,
   ];
   for (const raw of candidates) {
     const url = String(raw ?? '').trim();
     if (!url || !isUsableGalleryPhotoUrl(url) || isStockGalleryPhotoUrl(url)) continue;
     if (excluded.has(normalizeGalleryUrl(url))) continue;
+    // Also skip currentReferenceUrl when it was the rejected pick (in excludeUrls).
     return url;
-  }
-  // Last resort: rejected URL still beats Ideogram invent for venue brands.
-  const rejectedKeep = String(input.currentReferenceUrl ?? '').trim();
-  if (
-    rejectedKeep
-    && isUsableGalleryPhotoUrl(rejectedKeep)
-    && !isStockGalleryPhotoUrl(rejectedKeep)
-  ) {
-    return rejectedKeep;
   }
   return null;
 }
@@ -316,7 +313,11 @@ export async function buildMissionGalleryAssignments(
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
 
     const idea = queueItem.idea as Record<string, unknown>;
-    const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+    // Same MatchIntent as production-loop — calendar uses tagline/mood SSOT,
+    // never thin caption_draft alone (batch≠loop drift caused wrong ships).
+    const caption = isCalendarProductionIdea(idea)
+      ? calendarGalleryMatchCaption(idea)
+      : String(idea.caption_draft ?? idea.caption ?? '').trim();
     const rawHeadline = resolveIdeationHeadline(idea);
     let headline = rawHeadline;
 
@@ -356,7 +357,8 @@ export async function buildMissionGalleryAssignments(
         sectorId: input.brandBusinessType,
         catalogSlotKey: catalogSlotKey || undefined,
         visualSubjectHint: String(queueItem.assignment.visual_subject_hint ?? ''),
-        creativeBrief: input.creativeBrief,
+        // Do not inject mission creativeBrief into MatchIntent — pollutes ranking.
+        creativeBrief: undefined,
         ideationCaption: caption,
         ideationHeadline: headline,
         subjectKey,

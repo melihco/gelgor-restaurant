@@ -60,6 +60,9 @@ export interface DeepBrandSetupResult {
   errors: string[];
   /** Canonical sector after service-profile derive (for Nexus + template kit). */
   authoritativeSector?: string;
+  /** Finalize gate: constitution + service_profile both ok. */
+  criticalOk?: boolean;
+  serviceProfileOk?: boolean;
 }
 
 function resolveSectorFromAnalysis(brand: PythonBrandAnalyzeResponse | null): string {
@@ -511,9 +514,29 @@ export async function runDeepBrandSetup(input: DeepBrandSetupInput): Promise<Dee
     detail: visualsRes?.ok ? 'ok' : 'skipped',
   });
 
-  // discovery phase stops here — user confirms brand before constitution locks production
+  // discovery phase: AI service-profile derive sets authoritative sector before BrandConfirm
   if (phase === 'discovery') {
     authoritativeSector = resolveSectorFromAnalysis(brandAnalysis);
+    const spRes = await fetchCrewBackendJson<Record<string, unknown>>(
+      `/api/v1/brand-context/${tenantId}/service-profile/derive`,
+      { method: 'POST', workspaceId: tenantId, timeoutMs: 90_000 },
+    );
+    steps.push({
+      id: 'service_profile',
+      ok: spRes.ok,
+      detail: spRes.ok
+        ? String((spRes.data?.brand_service_profile as Record<string, unknown> | undefined)?.category ?? 'derived')
+        : spRes.error ?? `HTTP ${spRes.status}`,
+    });
+    if (spRes.ok && spRes.data) {
+      const resolved = resolveAuthoritativeIndustry(spRes.data);
+      if (resolved) {
+        authoritativeSector = resolved;
+        if (brandAnalysis) {
+          brandAnalysis.inferred_industry = resolved;
+        }
+      }
+    }
     return {
       ok: errors.length === 0 && Boolean(brandAnalysis?.success),
       steps,
@@ -749,6 +772,9 @@ async function runDeepBrandFinalize(input: {
         ? String((spRes.data?.brand_service_profile as Record<string, unknown> | undefined)?.category ?? 'derived')
         : spRes.error ?? `HTTP ${spRes.status}`,
     });
+    if (!spRes.ok) {
+      errors.push(`Sektör profili kaydedilemedi: ${spRes.error ?? spRes.status}`);
+    }
     if (spRes.ok && spRes.data) {
       const resolved = resolveAuthoritativeIndustry(spRes.data);
       if (resolved) authoritativeSector = resolved;
@@ -844,9 +870,14 @@ async function runDeepBrandFinalize(input: {
     detail: productionReady ? 'deferred_until_typography_confirm' : 'production_not_ready',
   });
 
+  const serviceProfileOk = steps.some((s) => s.id === 'service_profile' && s.ok);
+  // Critical gate for BrandConfirm advance: constitution + sector persist.
+  // Soft steps (vibe, calendar, DNA, PDP) may fail without blocking onboarding.
+  const criticalOk = constitutionConfirmed && serviceProfileOk;
+
   void companyName;
   return {
-    ok: errors.length === 0 && constitutionConfirmed,
+    ok: criticalOk,
     steps,
     brandAnalysis,
     gallery: { usable: 0, analyzed: 0, complete: false },
@@ -855,5 +886,7 @@ async function runDeepBrandFinalize(input: {
     productionReady,
     errors,
     authoritativeSector,
+    criticalOk,
+    serviceProfileOk,
   };
 }
