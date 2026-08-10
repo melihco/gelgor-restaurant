@@ -110,7 +110,7 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.headline.toLowerCase()).not.toMatch(/sizi bekliyoruz|özlemle|serinletici yaz/);
   });
 
-  it('tightens long mission taglines to the word budget on story', () => {
+  it('keeps Hub mission tagline phrase on story (no 2–3 word stem)', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {
         concept_title: 'Crafting Citrus Cocktails',
@@ -128,11 +128,11 @@ describe('resolveMissionFalDesignCopy', () => {
       designIntensity: 'balanced',
     });
     expect(result.source).toBe('mission_tagline');
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(result.headline.toLowerCase()).toMatch(/discover|cocktail|art/);
+    expect(result.headline.toLowerCase()).toContain('cocktail making');
+    expect(result.headline.split(/\s+/).length).toBeGreaterThanOrEqual(5);
   });
 
-  it('locks punchline as headline under operator type_budget (beach_club + local_products)', () => {
+  it('preserves Hub quote under operator type_budget (beach_club + local_products)', () => {
     const typeBudget = {
       headline: { maxChars: 18, maxWords: 2, maxLines: 1 },
       subtitle: null,
@@ -168,13 +168,41 @@ describe('resolveMissionFalDesignCopy', () => {
         typeBudget,
       });
       expect(result.source).toBe('mission_tagline');
-      expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(2);
-      expect(result.headline.length).toBeLessThanOrEqual(18);
+      // Soft-clamp ≤48 only — never crush to operator 2-word stems.
+      expect(result.headline.length).toBeLessThanOrEqual(48);
+      expect(result.headline.split(/\s+/).length).toBeGreaterThan(2);
       expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
-      // Must stay punchline stem — never demote to mission title.
       expect(result.headline.toLowerCase()).not.toMatch(/summer sunset|haftalık|vitrin|gathering/);
-      expect(result.headline.toLowerCase()).toMatch(/join|evening|friends|gather|moments|shared/);
+      expect(result.headline.toLowerCase()).toMatch(/join us|friends gather|moments are shared/);
     }
+  });
+
+  it('paints Turkish calendar quote verbatim for local_products (Karaman-style)', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        calendar_enriched: true,
+        source_node: 'content_calendar',
+        concept_title: 'Erken Hasat Vitrini',
+        headline: 'Erken Hasat Vitrini',
+        tagline: '"Balınızı doğru saklayın, doğallığı koruyun."',
+        caption_draft: 'Datça balı ile sofranıza doğallık katın. #Bal',
+      },
+      ideationHeadline: 'Erken Hasat Vitrini',
+      caption: 'Datça balı ile sofranıza doğallık katın. Erken hasat zeytinyağı tadım.',
+      brandName: 'Karaman Datça',
+      channel: 'feed_post',
+      businessType: 'local_products_shop',
+      designIntensity: 'balanced',
+      typeBudget: {
+        headline: { maxChars: 18, maxWords: 2, maxLines: 1 },
+        subtitle: null,
+        source: 'operator',
+      },
+    });
+    expect(result.source).toBe('mission_tagline');
+    expect(result.headline.toLowerCase()).toContain('balınızı doğru');
+    expect(result.headline.toLowerCase()).not.toBe('balınızı doğru');
+    expect(result.headline.toLowerCase()).not.toMatch(/^erken hasat$/);
   });
 
   it('rescues live EN caption-prefix stubs into complete theme punchlines', () => {

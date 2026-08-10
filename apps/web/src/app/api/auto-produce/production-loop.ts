@@ -222,6 +222,7 @@ import {
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
 import {
+  clampMissionTaglineForCanvas,
   isIncompleteOverlayPhrase,
   isInternalStrategyBriefing,
   resolveFalOverlayCopy,
@@ -1701,6 +1702,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             if (shouldPreserveLockedPunchlineHeadline(designCopy.source)) {
               lockedFalPunchlineSource = designCopy.source;
             }
+          }
+        }
+        // Belt: even when source=mission_tagline, never keep a type-budget stem —
+        // paint the Hub quote (soft-clamped ≤48) so designs match the plan card.
+        if (calendarTaglinePublishable && calendarTagline) {
+          const hubLine =
+            clampMissionTaglineForCanvas(calendarTagline, falChannel)
+            || calendarTagline;
+          if (hubLine && hubLine !== headline) {
+            console.log(
+              `[auto-produce] restore Hub calendar tagline: `
+              + `"${headline.slice(0, 36)}" → "${hubLine.slice(0, 36)}"`,
+            );
+          }
+          if (hubLine) {
+            headline = hubLine;
+            lockedFalPunchlineSource = 'mission_tagline';
           }
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {

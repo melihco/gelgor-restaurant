@@ -92,7 +92,7 @@ describe('applyCalendarProductionEnrichment', () => {
     expect(ideas[0]?.calendar_enriched).toBe(true);
   });
 
-  it('returns orphan calendar rows when no ideation headline match', () => {
+  it('returns orphan calendar rows when no unused ideation slot remains', () => {
     const orphanCalendar = [
       ...calendarPlans,
       {
@@ -116,6 +116,32 @@ describe('applyCalendarProductionEnrichment', () => {
     expect(orphanCalendarIdeas[0]?.headline).toBe('Weekend DJ Nights');
     expect(orphanCalendarIdeas[0]?.source_track).toBe('calendar');
     expect(orphanCalendarIdeas[0]?.idea_index).toBe(CALENDAR_PRODUCTION_IDEA_INDEX_BASE + 2);
+  });
+
+  it('stamps Hub quoted tagline onto positionally matched ideation', () => {
+    const ideationOnly = [
+      {
+        concept_title: 'Vitrin hikayesi',
+        caption_draft: 'Doğal ürünler rafta.',
+        content_type: 'instagram_post',
+      },
+    ];
+    const plans = [
+      {
+        event_name: 'Farklı başlık',
+        tagline: '"Datça\'nın özgün tatları burada."',
+        format: 'post',
+        day: 'Mon',
+        content_brief: 'Product shelf mood.',
+      },
+    ];
+    const { ideas, orphanCalendarIdeas } = applyCalendarProductionEnrichment(ideationOnly, plans);
+    expect(orphanCalendarIdeas).toHaveLength(0);
+    expect(ideas[0]?.calendar_enriched).toBe(true);
+    expect(ideas[0]?.tagline).toBe("Datça'nın özgün tatları burada.");
+    expect(ideas[0]?.canva_field_copy).toMatchObject({
+      headline: "Datça'nın özgün tatları burada.",
+    });
   });
 });
 

@@ -1,19 +1,19 @@
 /**
  * Mission Fal design copy — on-canvas headline/subtitle for designed posts.
  *
- * Priority: mission tagline (quoted calendar line) → canva_field_copy →
- * caption-aligned short punchline → ideation title (last resort).
- * Overlays stay ≤3–4 words from channel + design intensity paint density.
+ * Priority: mission tagline (quoted calendar/Hub line, soft-clamped ≤48) →
+ * canva_field_copy → caption-aligned short punchline → ideation title (last resort).
+ * Non-tagline overlays may still use channel/type_budget word density.
  */
 
 import {
+  clampMissionTaglineForCanvas,
   detectOverlayLocale,
   extractCaptionThemePunchline,
   FAL_FEED_OVERLAY_MAX_CHARS,
   areFalOverlayTextsRedundant,
   fitMissionOverlayToTemplateBudget,
   fitPunchlineUnderBudget,
-  isAcceptablePunchlineStem,
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
   resolveFalDisplayHeadline,
@@ -439,8 +439,9 @@ export function resolveMissionFalDesignCopy(input: {
     typeBudget: input.typeBudget,
   };
 
-  // 1) Mission tagline / punchline — lock as canvas headline under type_budget.
-  // Never fall through to mission title when a publishable tagline exists.
+  // 1) Mission / Hub quoted tagline — canvas SSOT.
+  // Soft-clamp ≤48 chars only. Never stem with type_budget / fitPunchlineUnderBudget
+  // ("Balınızı doğru saklayın" must not become "Balınızı Doğru").
   // Locale: tagline language wins (caption may flip to TR from brand names like Datça).
   const missionTagline = unwrapQuotedOverlayLine(extractMissionTagline(input.idea));
   const taglineLoc = missionTagline ? detectOverlayLocale(missionTagline) : 'unknown';
@@ -456,14 +457,9 @@ export function resolveMissionFalDesignCopy(input: {
       input.ideationHeadline.trim()
         || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim(),
     );
-    const plannedHeadline = resolvePlannedOverlayLine(
-      missionTagline,
-      [],
-      channel,
-      input.designIntensity,
-      input.sampleHeadline,
-      input.typeBudget,
-    ) || fitPunchlineUnderBudget(missionTagline, budget.maxLen, budget.maxWords)
+    const plannedHeadline =
+      resolveMissionPlannedOverlayLine(missionTagline, [], channel)
+      || clampMissionTaglineForCanvas(missionTagline, channel)
       || missionTagline;
     const subtitleSeed = ideationTitle
       && ideationTitle.length <= 36
@@ -479,42 +475,29 @@ export function resolveMissionFalDesignCopy(input: {
         input.typeBudget,
       ) || undefined
       : undefined;
-    const locked = lockToTemplate({
-      headline: plannedHeadline || missionTagline,
-      subtitle: subtitleSeed,
-      source: 'mission_tagline',
-    });
-    let headline = locked.headline;
-    if (!headline || !isAcceptablePunchlineStem(headline)) {
-      headline = fitPunchlineUnderBudget(missionTagline, budget.maxLen, budget.maxWords);
+    // Fit subtitle to template budget if present — headline stays the Hub phrase.
+    let subtitle = subtitleSeed;
+    if (subtitle) {
+      const fittedSub = fitMissionOverlayToTemplateBudget({
+        headline: plannedHeadline,
+        subtitle,
+        channel,
+        designIntensity: input.designIntensity,
+        sampleHeadline: input.sampleHeadline,
+        sampleSubtitle: input.sampleSubtitle,
+        showSubline: input.showSubline,
+        typeBudget: input.typeBudget,
+      });
+      subtitle = fittedSub.subtitle;
     }
-    // Same-source stem of the tagline — do not reject for brand-name locale
-    // poison (e.g. "Sarnıç" inside an otherwise English punchline).
     if (
-      headline
-      && isAcceptablePunchlineStem(headline)
-      && !isSoullessMenuHourHeadline(headline)
-      && !isMeaninglessBrandEchoHeadline(headline, brandName)
+      plannedHeadline
+      && !isSoullessMenuHourHeadline(plannedHeadline)
+      && !isMeaninglessBrandEchoHeadline(plannedHeadline, brandName)
     ) {
       return {
-        headline,
-        subtitle: locked.subtitle,
-        source: 'mission_tagline',
-      };
-    }
-    // Budget/stem QA failed — still prefer the Hub quoted tagline over caption
-    // clamps. Soft-trim only; never fall through to caption punchline.
-    const kept = missionTagline.length <= Math.max(maxLen, 48)
-      ? missionTagline
-      : missionTagline.slice(0, Math.max(maxLen, 48)).trim();
-    if (
-      kept
-      && !isSoullessMenuHourHeadline(kept)
-      && !isMeaninglessBrandEchoHeadline(kept, brandName)
-    ) {
-      return {
-        headline: kept,
-        subtitle: locked.subtitle,
+        headline: plannedHeadline,
+        subtitle,
         source: 'mission_tagline',
       };
     }

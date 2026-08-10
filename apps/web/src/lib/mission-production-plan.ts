@@ -110,33 +110,6 @@ function parseCalendarPlanRecordsFromNode(node: MissionNode): Record<string, unk
   ).slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
 }
 
-function pickIdeationForCalendarStrict(
-  plan: Record<string, unknown>,
-  ideas: Record<string, unknown>[],
-  used: Set<number>,
-): { idea: Record<string, unknown> | null; index: number | null } {
-  const ideaIdx = typeof plan.idea_index === 'number'
-    ? plan.idea_index
-    : typeof plan.source_idea_index === 'number'
-      ? plan.source_idea_index
-      : null;
-  if (ideaIdx != null && ideaIdx >= 0 && ideaIdx < ideas.length && !used.has(ideaIdx)) {
-    return { idea: ideas[ideaIdx]!, index: ideaIdx };
-  }
-
-  const calTitle = calendarItemHeadline(plan);
-  if (calTitle) {
-    for (let i = 0; i < ideas.length; i += 1) {
-      if (used.has(i)) continue;
-      if (headlinesMatch(calTitle, ideationHeadline(ideas[i]!))) {
-        return { idea: ideas[i]!, index: i };
-      }
-    }
-  }
-
-  return { idea: null, index: null };
-}
-
 function pickIdeationForCalendar(
   plan: Record<string, unknown>,
   planIndex: number,
@@ -372,7 +345,9 @@ export function applyCalendarProductionEnrichment(
     const calendarIdea = normalizeCalendarPlanToProductionIdea(plan, planIndex);
     if (!String(calendarIdea.headline ?? '').trim()) continue;
 
-    const { index } = pickIdeationForCalendarStrict(plan, ideas, usedIdeation);
+    // Soft match (index / title / positional) so Hub quoted taglines still stamp
+    // onto ideation when idea_index is missing — strict orphans dropped the quote.
+    const { index } = pickIdeationForCalendar(plan, planIndex, ideas, usedIdeation);
     if (index == null || index < 0 || index >= ideas.length) {
       orphanCalendarIdeas.push(calendarIdea);
       continue;
