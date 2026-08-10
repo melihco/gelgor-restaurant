@@ -118,6 +118,8 @@ export interface FalDesignedPostInput {
   brandTheme?: Record<string, unknown> | null;
   /** Locked gallery photo meta — caption↔photo coherence before paint. */
   galleryPhotoMeta?: GalleryPhotoMeta | null;
+  /** economy/agency/premium — cost guards for GPT retry / Ideogram fallthrough. */
+  productionTier?: string | null;
 }
 
 export interface FalDesignedPostResult {
@@ -339,7 +341,19 @@ export async function produceFalDesignedPost(
       // Template replica: the approved library preview is the layout law for
       // hard/soft matched slots — GPT copies its geometry, swaps photo + text.
       const templateLayoutImageUrl = templateLayoutReferenceUrl(binding);
-      const maxGptAttempts = binding?.matched ? 1 + lockOpts.grafikerMaxRetries : 1;
+      const { resolveGroundedDesignMaxAttempts, shouldKeepGroundedInsteadOfIdeogram } = await import(
+        '@/lib/mission-production-cost-guards'
+      );
+      const profileMax = binding?.matched ? 1 + lockOpts.grafikerMaxRetries : 1;
+      const maxGptAttempts = Math.min(
+        profileMax,
+        resolveGroundedDesignMaxAttempts({
+          productionTier: input.productionTier,
+          groundedOnly: Boolean(input.requireGroundedGallery || groundedGalleryRef),
+        }),
+      );
+      let lastTextValidUrl: string | null = null;
+      let lastTextValidScore: number | null = null;
       for (let attempt = 0; attempt < maxGptAttempts; attempt += 1) {
         const designedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
@@ -386,6 +400,8 @@ export async function produceFalDesignedPost(
           const grafiker = await reviewDesignedPostOutput(designedUrl, input.headline);
           falGrafikerScore = grafiker.score;
           falGrafikerPass = grafiker.pass;
+          lastTextValidUrl = designedUrl;
+          lastTextValidScore = grafiker.score;
           if (grafiker.pass) {
             imageUrl = designedUrl;
             falDesignEngine = 'gpt_image_designed';
@@ -401,6 +417,24 @@ export async function produceFalDesignedPost(
         falDesignEngine = 'gpt_image_designed';
         costDelta += 0.04;
         break;
+      }
+      if (
+        !imageUrl
+        && lastTextValidUrl
+        && shouldKeepGroundedInsteadOfIdeogram({
+          productionTier: input.productionTier,
+          textValidated: true,
+          grafikerScore: lastTextValidScore,
+          templateReplica: Boolean(binding?.matched),
+        })
+      ) {
+        console.warn(
+          '[auto-produce] [fal-design] keeping text-validated GPT compose — Ideogram fallthrough skipped (cost guard)',
+        );
+        imageUrl = lastTextValidUrl;
+        falDesignEngine = 'gpt_image_designed';
+        falGrafikerPass = false;
+        costDelta += 0.04;
       }
       }
       // Purpose-pinned shells (hard/soft): prefer gpt-image replica. If GPT is exhausted,
@@ -757,6 +791,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       headingFont: inputs.falHeadingFont,
       bodyFont: inputs.falBodyFont,
       logoPlacement: templateBinding.logoPlacement ?? inputs.falLogoPlacement,
+      productionTier: inputs.productionTier,
       galleryPhotoMeta,
     });
     if (designed) {

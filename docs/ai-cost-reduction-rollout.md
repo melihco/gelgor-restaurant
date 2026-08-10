@@ -53,3 +53,7 @@ VIDEO_TIER_SCOPE=false
 - Python: `backend/app/config.py` (`crewai_content_iterations`, `dedup_gallery_backstory`, `lite_structural_tasks_enabled`, `llm_max_tokens_cap`)
 - Web: `apps/web/src/lib/server-config.ts` (`autoProduce` / `productionFlags`)
 - Tier modeller: `apps/web/src/lib/ai-model-tier.ts`
+- Mission cost guards: `apps/web/src/lib/mission-production-cost-guards.ts`
+  - Grounded GPT max attempts: cost-scoped ≤2; soft-accept score ≥6; keep readable grounded over Ideogram
+  - Content-scoped idea production hard cap: **12**
+  - Beat montage photo cap: **2** (was 3)

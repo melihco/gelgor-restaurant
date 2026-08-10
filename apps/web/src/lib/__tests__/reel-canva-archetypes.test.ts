@@ -71,7 +71,7 @@ describe('reel canva archetype → recipe', () => {
 });
 
 describe('reel beat montage helpers', () => {
-  it('picks distinct beat photos up to beatCount', () => {
+  it('picks distinct beat photos up to cost-cap (2)', () => {
     const urls = pickReelBeatPhotoUrls({
       primaryUrl: 'https://cdn.example.com/a.jpg',
       candidates: [
@@ -84,7 +84,6 @@ describe('reel beat montage helpers', () => {
     expect(urls).toEqual([
       'https://cdn.example.com/a.jpg',
       'https://cdn.example.com/b.jpg',
-      'https://cdn.example.com/c.jpg',
     ]);
   });
 

@@ -14,6 +14,7 @@ import { isUsableReelPhotoUrl } from '@/lib/reel-multi-production';
 import { isR2Configured, generateStorageKey, uploadToR2 } from '@/lib/r2-storage';
 import type { ReelRecipe } from '@/lib/reel-production-recipe';
 import { applyVideoTierScopeToMontageStrategy } from '@/lib/video-tier-scope';
+import { REEL_BEAT_MONTAGE_PHOTO_CAP } from '@/lib/mission-production-cost-guards';
 
 function resolveFfmpegBin(): string {
   return '/opt/homebrew/bin/ffmpeg';
@@ -84,7 +85,7 @@ export function pickReelBeatPhotoUrls(input: {
     if (out.length >= input.beatCount) break;
     push(c);
   }
-  return out.slice(0, Math.max(1, Math.min(3, input.beatCount)));
+  return out.slice(0, Math.max(1, Math.min(REEL_BEAT_MONTAGE_PHOTO_CAP, input.beatCount)));
 }
 
 /**

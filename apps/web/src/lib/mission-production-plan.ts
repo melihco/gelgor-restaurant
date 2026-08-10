@@ -29,6 +29,7 @@ import {
 } from '@/lib/content-calendar-artifact-link';
 import { parseArtifactMissionId } from '@/lib/production-bundle';
 import { filterFeedPublishableArtifacts } from '@/lib/weekly-publish-package';
+import { clampMissionProductionIdeaCount } from '@/lib/mission-production-cost-guards';
 import type { OutputArtifact } from '@/types';
 
 type MissionNode = {
@@ -460,7 +461,7 @@ export function resolveMissionProductionTargetCount(input: {
   packageSlug?: string | null;
 }): number {
   if (input.mergedItemCount > 0) {
-    return input.mergedItemCount;
+    return clampMissionProductionIdeaCount(input.mergedItemCount);
   }
   return resolveWeeklyPackageGeometry(input.packageSlug ?? undefined).total;
 }
@@ -478,7 +479,8 @@ export function resolveMissionContentProductionScope(params: {
   const uniqueIdeation = collectUniqueMissionIdeationIdeas(ideationNodes, params.missionId);
 
   if (!hasCalendar) {
-    const items = uniqueIdeation.map((idea, index) => ({
+    const capped = uniqueIdeation.slice(0, clampMissionProductionIdeaCount(uniqueIdeation.length));
+    const items = capped.map((idea, index) => ({
       ...idea,
       idea_index: index,
       planning_idea_index: index,
@@ -501,7 +503,8 @@ export function resolveMissionContentProductionScope(params: {
     uniqueIdeation,
     calendarPlans,
   );
-  const items = ideas.map((idea, index) => ({
+  const cappedIdeas = ideas.slice(0, clampMissionProductionIdeaCount(ideas.length));
+  const items = cappedIdeas.map((idea, index) => ({
     ...idea,
     idea_index: index,
     planning_idea_index: resolvePlanningIdeaIndex(idea) ?? index,

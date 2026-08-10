@@ -1620,12 +1620,20 @@ export async function produceFalDesignerStill(
   if (input.workspaceId && groundedRefUrls.length > 0) {
     // Prefer the photo-grounded result: it composes the design ON the real
     // gallery photo (the brand's venue/product), which is far more brand-faithful
-    // than a synthetic Ideogram background. Retry once before falling back so a
-    // single weak Grafiker score doesn't drop us to a photo-less design.
+    // than a synthetic Ideogram background. Cost-scoped tiers soft-cap retries
+    // and keep a readable grounded frame instead of paying Ideogram again.
     // Library fal fallback: one grounded attempt — multi-retry × 2min made UI look stuck.
-    const groundedMaxAttempts = input.libraryQualityFalFallback
-      ? 1
-      : (groundedOnly ? 3 : 2);
+    const {
+      resolveGroundedDesignMaxAttempts,
+      resolveGroundedSoftAcceptScore,
+      shouldKeepGroundedInsteadOfIdeogram,
+    } = await import('@/lib/mission-production-cost-guards');
+    const groundedMaxAttempts = resolveGroundedDesignMaxAttempts({
+      productionTier: input.productionTier,
+      groundedOnly,
+      libraryQualityFalFallback: input.libraryQualityFalFallback,
+    });
+    const softAcceptScore = resolveGroundedSoftAcceptScore(input.productionTier);
     try {
       const { generateDesignedPostImage } = await import('@/app/api/auto-produce/handlers/image-generators');
       const buildPrompt = input.pipeline === 'fal_story'
@@ -1788,6 +1796,17 @@ export async function produceFalDesignerStill(
           );
           return finalizeFalStillWithOfficialLogo(last, input);
         }
+        if (
+          softAcceptScore != null
+          && typeof grafiker.score === 'number'
+          && grafiker.score >= softAcceptScore
+        ) {
+          console.warn(
+            `[fal-designer] grounded photo edit soft-accept score=${grafiker.score}/10 `
+            + `(tier cost guard ≥${softAcceptScore}) — skipping further GPT retries`,
+          );
+          return finalizeFalStillWithOfficialLogo(last, input);
+        }
         console.warn(
           `[fal-designer] grounded photo edit grafiker ${grafiker.score ?? '—'}/10 — attempt ${groundedAttempt + 1}/${groundedMaxAttempts}`,
         );
@@ -1795,9 +1814,17 @@ export async function produceFalDesignerStill(
       if (last) {
         // Library template replica: accept best grounded compose — Ideogram would
         // invent a new layout and abandon the approved library shell.
-        if (input.templateReplica) {
+        if (
+          shouldKeepGroundedInsteadOfIdeogram({
+            productionTier: input.productionTier,
+            textValidated: last.textValidated,
+            grafikerScore: last.grafikerScore,
+            templateReplica: Boolean(input.templateReplica),
+            libraryQualityFalFallback: input.libraryQualityFalFallback,
+          })
+        ) {
           console.warn(
-            '[fal-designer] template replica grounded compose below Grafiker threshold — keeping grounded result (Ideogram disabled)',
+            '[fal-designer] keeping text-validated grounded compose — Ideogram fallthrough skipped (cost guard)',
           );
           return finalizeFalStillWithOfficialLogo(last, input);
         }

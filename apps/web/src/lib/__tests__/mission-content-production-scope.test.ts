@@ -110,6 +110,32 @@ describe('resolveMissionContentProductionScope', () => {
       }),
     ).toBe(15);
   });
+
+  it('hard-caps content-scoped production at 12 ideas', () => {
+    expect(
+      resolveMissionProductionTargetCount({
+        hasCalendar: false,
+        mergedItemCount: 20,
+        missionType: 'weekly_content',
+      }),
+    ).toBe(12);
+    const ideas = Array.from({ length: 16 }, (_, i) => ({
+      concept_title: `Idea ${i + 1}`,
+      caption_draft: `caption ${i + 1}`,
+      content_type: 'instagram_post',
+    }));
+    const scope = resolveMissionContentProductionScope({
+      nodes: [
+        {
+          task_type: 'content_ideation',
+          status: 'completed',
+          output_summary: JSON.stringify(ideas),
+        },
+      ],
+    });
+    expect(scope.requiredProductionCount).toBe(12);
+    expect(scope.items).toHaveLength(12);
+  });
 });
 
 describe('summarizeMissionContentProductionStatus', () => {
