@@ -45,3 +45,30 @@ export interface PlatformAdminOverview {
   usage: PlatformUsageSummary;
   tenants: PlatformTenantSummary[];
 }
+
+/** Nexus Super Admin registry row (`GET /api/platform/tenants`). */
+export interface PlatformTenantRegistryItem {
+  id: UUID;
+  name: string;
+  slug: string;
+  plan?: string | null;
+  is_active: boolean;
+  logo_url?: string | null;
+  industry?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface PlatformTenantRegistryPage {
+  items: PlatformTenantRegistryItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface PlatformTenantPatch {
+  name?: string;
+  plan?: string;
+  isActive?: boolean;
+  logoUrl?: string | null;
+}

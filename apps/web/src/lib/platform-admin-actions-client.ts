@@ -163,13 +163,22 @@ export async function triggerBrandRulesScan(workspaceId: string): Promise<AdminA
 }
 
 export async function fetchAdminIntegrations(workspaceId: string): Promise<IntegrationConnection[]> {
+  const ws = workspaceId.trim();
+  if (!ws) return [];
   try {
-    const res = await fetch('/api/integrations', {
-      headers: adminHeaders(workspaceId),
+    // Cross-tenant: INTERNAL_API_KEY + X-Platform-Admin via workspace nexus proxy.
+    const res = await fetch(`/api/admin/workspace/${ws}/nexus/integrations`, {
+      headers: getRequestContextHeaders(),
       signal: AbortSignal.timeout(12_000),
+      cache: 'no-store',
     });
     if (!res.ok) return [];
-    return res.json() as Promise<IntegrationConnection[]>;
+    const data = await res.json().catch(() => null);
+    if (Array.isArray(data)) return data as IntegrationConnection[];
+    if (data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)) {
+      return (data as { items: IntegrationConnection[] }).items;
+    }
+    return [];
   } catch {
     return [];
   }

@@ -19,7 +19,7 @@ export function IntegrationsTab({ workspaceId }: { workspaceId: string }) {
       <AdminSurface>
         <AdminSectionTitle
           title="Entegrasyonlar"
-          subtitle="Nexus bağlantıları — oturum tenant'ı ile sınırlı; farklı workspace için header override gerekebilir"
+          subtitle="Seçili workspace için Nexus bağlantıları (platform workspace proxy)"
           count={items.length}
         />
         {query.isLoading && <p className="text-sm text-gray-500 dark:text-gray-400">Yükleniyor…</p>}
@@ -56,7 +56,7 @@ export function IntegrationsTab({ workspaceId }: { workspaceId: string }) {
               {!query.isLoading && items.length === 0 && (
                 <tr>
                   <td colSpan={4} className="px-4 py-8 text-center text-gray-500 dark:text-gray-400">
-                    Bağlı entegrasyon yok veya oturum tenant'ı eşleşmiyor.
+                    Bu workspace için bağlı entegrasyon yok.
                   </td>
                 </tr>
               )}

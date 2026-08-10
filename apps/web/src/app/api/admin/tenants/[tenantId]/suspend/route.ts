@@ -3,24 +3,22 @@ import { assertPlatformAdminAccess } from '@/lib/platform-admin-auth';
 import { forwardOperatorHeaders, proxyNexusJson } from '@/lib/platform-nexus-proxy';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
 
 type Ctx = { params: Promise<{ tenantId: string }> };
 
-/** Re-sync Python mirror (brand stub + slots) for an existing Nexus tenant. */
+/** POST → Nexus POST /api/platform/tenants/{id}/suspend */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const auth = await assertPlatformAdminAccess(req);
   if (auth instanceof Response) return auth;
 
   const { tenantId } = await ctx.params;
-  const body = await req.text();
-  return proxyNexusJson(req, `/api/platform/tenants/${tenantId}/bootstrap-python`, {
+  return proxyNexusJson(req, `/api/platform/tenants/${tenantId}/suspend`, {
     method: 'POST',
     headers: {
       ...forwardOperatorHeaders(req),
       'Content-Type': 'application/json',
     },
-    body: body || '{}',
+    body: '{}',
     search: '',
   });
 }
