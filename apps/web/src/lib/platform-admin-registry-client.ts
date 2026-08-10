@@ -194,6 +194,43 @@ export async function listAdminBrands(opts?: {
   return adminGet(`/api/admin/brands${qs ? `?${qs}` : ''}`);
 }
 
+export async function getAdminBrand(
+  workspaceId: string,
+  opts?: { source?: 'brands' | 'nexus' },
+): Promise<AdminRegistryResult<unknown>> {
+  const qs = opts?.source ? `?source=${opts.source}` : '';
+  return adminGet(`/api/admin/brands/${workspaceId}${qs}`);
+}
+
+export async function listAdminPackages(): Promise<AdminRegistryResult<unknown>> {
+  return adminGet('/api/admin/packages');
+}
+
+export async function getAdminTenantSubscription(
+  tenantId: string,
+): Promise<AdminRegistryResult<unknown>> {
+  return adminGet(`/api/admin/tenants/${tenantId}/subscription`);
+}
+
+/** Platform brand-context (Nexus `/api/platform/brand-context/...`). */
+export async function adminBrandContext<T = unknown>(
+  workspaceId: string,
+  path: string = '',
+  init?: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH'; body?: unknown; timeoutMs?: number },
+): Promise<AdminRegistryResult<T>> {
+  const clean = path.replace(/^\/+/, '');
+  const url = clean
+    ? `/api/admin/brand-context/${workspaceId}/${clean}`
+    : `/api/admin/brand-context/${workspaceId}`;
+  const method = init?.method ?? 'GET';
+  const timeoutMs = init?.timeoutMs
+    ?? (method === 'POST' || method === 'PUT' || method === 'PATCH' ? 180_000 : 20_000);
+  if (method === 'GET') {
+    return adminGet<T>(url, timeoutMs);
+  }
+  return adminSend<T>(url, method, init?.body, timeoutMs);
+}
+
 export async function impersonateAdminTenant(body: {
   tenantId: string;
   reason?: string;
