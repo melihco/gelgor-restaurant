@@ -5,8 +5,11 @@
  * brand's real gallery photos, corporate colors, logo and vibe (Fal.ai grounded
  * design), then persist it to the Python design-templates store so production
  * can re-use the recipes. Returns the generated set for the showcase UI.
+ *
+ * With `background: true`, validates quickly and returns 202; slot bootstrap +
+ * template generation run after the response via Next.js `after()`.
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { fetchGalleryContext } from '@/app/api/auto-produce/gallery-context';
 import { fetchBrandProductionTokensForWorkspace } from '@/lib/brand-production-tokens';
@@ -30,10 +33,51 @@ import {
   persistSlotCreativeBriefsFromTemplates,
 } from '@/lib/slot-creative-library-persist';
 import { brsCache } from '@/lib/server-ttl-cache';
+import {
+  getDesignTemplateJobStatusByWorkspace,
+  isDesignTemplateJobInFlight,
+  setDesignTemplateJobStatus,
+} from '@/lib/design-template-job-status';
 
 export const runtime = 'nodejs';
 // Generation runs up to ~10 GPT-image edits — allow a long window.
 export const maxDuration = 600;
+
+type GenerateBody = {
+  limit?: number;
+  concurrency?: number;
+  locale?: string;
+  /** false for partial/smoke runs so existing templates stay active */
+  archiveExisting?: boolean;
+  /** When true, return 202 and run generation via after() */
+  background?: boolean;
+};
+
+type GenerateSuccess = {
+  workspaceId: string;
+  sector: string;
+  typography_design_confirmed: boolean;
+  generated: number;
+  failed: number;
+  persisted: boolean;
+  persisted_count: number;
+  persist_status: number;
+  persist_error: { error: string; detail: unknown } | null;
+  creative_briefs_seeded: number;
+  creative_briefs_persisted: number;
+  catalog: {
+    source: string;
+    enabled_slot_count: number;
+    selected_slot_count: number;
+    bootstrapped: boolean;
+    production_settings: {
+      preview_cap: number;
+      concurrency: number;
+      intensity: unknown;
+    };
+  };
+  templates: GeneratedDesignTemplate[];
+};
 
 function parseMaybeJsonRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -64,19 +108,58 @@ function parseMaybeStringArray(value: unknown): string[] {
   return value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ workspaceId: string }> },
-) {
-  const { workspaceId } = await params;
-  const body = await req.json().catch(() => ({})) as {
-    limit?: number;
-    concurrency?: number;
-    locale?: string;
-    /** false for partial/smoke runs so existing templates stay active */
-    archiveExisting?: boolean;
-  };
+async function validateGenerationPrereqs(workspaceId: string): Promise<
+  | { ok: true }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const [ctxRes, analysisRes] = await Promise.all([
+    fetchCrewBackendJson<Record<string, unknown>>(
+      `/api/v1/brand-context/${workspaceId}`,
+      { workspaceId, timeoutMs: 15_000 },
+    ),
+    fetchCrewBackendJson<Record<string, unknown>>(
+      `/api/v1/brand-context/${workspaceId}/gallery-analysis`,
+      { workspaceId, timeoutMs: 20_000 },
+    ),
+  ]);
 
+  if (!ctxRes.ok || !ctxRes.data) {
+    return {
+      ok: false,
+      status: 502,
+      body: { error: 'brand_context_unavailable', detail: ctxRes.error ?? null },
+    };
+  }
+
+  const brandCtx = ctxRes.data;
+  const galleryAnalysis = (analysisRes.ok ? analysisRes.data : null) ?? null;
+  const sector = resolveAuthoritativeIndustry(brandCtx)
+    || String(brandCtx.business_type ?? brandCtx.industry ?? '');
+  const gctx = await fetchGalleryContext(
+    workspaceId,
+    brandCtx,
+    galleryAnalysis as Record<string, unknown> | null,
+    sector,
+  );
+
+  if (!gctx.hasPhotos) {
+    return {
+      ok: false,
+      status: 422,
+      body: {
+        error: 'no_gallery_photos',
+        message: 'Marka galerisinde kullanılabilir görsel yok.',
+      },
+    };
+  }
+
+  return { ok: true };
+}
+
+async function runGenerateDesignTemplates(
+  workspaceId: string,
+  body: GenerateBody,
+): Promise<GenerateSuccess> {
   // ── Load brand context + gallery analysis + special days from Python ───────
   const [ctxRes, analysisRes, specialDaysRes, themeRes] = await Promise.all([
     fetchCrewBackendJson<Record<string, unknown>>(
@@ -101,10 +184,7 @@ export async function POST(
   ]);
 
   if (!ctxRes.ok || !ctxRes.data) {
-    return NextResponse.json(
-      { error: 'brand_context_unavailable', detail: ctxRes.error ?? null },
-      { status: 502 },
-    );
+    throw new Error(`brand_context_unavailable:${ctxRes.error ?? 'unknown'}`);
   }
 
   const brandCtx = ctxRes.data;
@@ -160,10 +240,7 @@ export async function POST(
   ]);
 
   if (!gctx.hasPhotos) {
-    return NextResponse.json(
-      { error: 'no_gallery_photos', message: 'Marka galerisinde kullanılabilir görsel yok.' },
-      { status: 422 },
-    );
+    throw new Error('no_gallery_photos');
   }
 
   // ── Slot catalog bootstrap + catalog-driven presets (Faz 3) ─────────────────
@@ -318,7 +395,7 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({
+  return {
     workspaceId,
     sector,
     typography_design_confirmed: typographyConfirmed || typographyUsedForGenerate,
@@ -345,5 +422,128 @@ export async function POST(
       },
     },
     templates: persistRes.ok && persistRes.data ? persistRes.data : result.templates,
-  });
+  };
+}
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ workspaceId: string }> },
+) {
+  const { workspaceId } = await params;
+  const body = await req.json().catch(() => ({})) as GenerateBody;
+  const background = body.background === true;
+
+  if (background) {
+    const existing = await getDesignTemplateJobStatusByWorkspace(workspaceId);
+    if (isDesignTemplateJobInFlight(existing) && existing) {
+      return NextResponse.json(
+        {
+          ok: true,
+          queued: true,
+          background: true,
+          jobId: existing.jobId,
+          workspaceId,
+          reused: true,
+        },
+        { status: 202 },
+      );
+    }
+
+    const prereq = await validateGenerationPrereqs(workspaceId);
+    if (!prereq.ok) {
+      return NextResponse.json(prereq.body, { status: prereq.status });
+    }
+
+    const jobId = crypto.randomUUID();
+    await setDesignTemplateJobStatus({
+      jobId,
+      workspaceId,
+      status: 'queued',
+      generated: 0,
+    });
+
+    after(async () => {
+      try {
+        await setDesignTemplateJobStatus({
+          jobId,
+          workspaceId,
+          status: 'running',
+          generated: 0,
+        });
+        const result = await runGenerateDesignTemplates(workspaceId, body);
+        if (result.generated === 0) {
+          console.error(
+            '[generate-design-templates] background job generated 0:',
+            jobId,
+            workspaceId,
+          );
+          await setDesignTemplateJobStatus({
+            jobId,
+            workspaceId,
+            status: 'failed',
+            generated: 0,
+            error: 'Şablon üretilemedi',
+          });
+          return;
+        }
+        console.info(
+          '[generate-design-templates] background job complete:',
+          jobId,
+          `generated=${result.generated}`,
+        );
+        await setDesignTemplateJobStatus({
+          jobId,
+          workspaceId,
+          status: 'complete',
+          generated: result.generated,
+        });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'background generation failed';
+        console.error('[generate-design-templates] background job failed:', jobId, message);
+        await setDesignTemplateJobStatus({
+          jobId,
+          workspaceId,
+          status: 'failed',
+          generated: 0,
+          error: message,
+        });
+      }
+    });
+
+    return NextResponse.json(
+      {
+        ok: true,
+        queued: true,
+        background: true,
+        jobId,
+        workspaceId,
+        reused: false,
+      },
+      { status: 202 },
+    );
+  }
+
+  try {
+    const result = await runGenerateDesignTemplates(workspaceId, body);
+    return NextResponse.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'generation_failed';
+    if (message.startsWith('brand_context_unavailable')) {
+      return NextResponse.json(
+        { error: 'brand_context_unavailable', detail: message.split(':')[1] ?? null },
+        { status: 502 },
+      );
+    }
+    if (message === 'no_gallery_photos') {
+      return NextResponse.json(
+        {
+          error: 'no_gallery_photos',
+          message: 'Marka galerisinde kullanılabilir görsel yok.',
+        },
+        { status: 422 },
+      );
+    }
+    console.error('[generate-design-templates] sync failed:', workspaceId, message);
+    return NextResponse.json({ error: 'generation_failed', message }, { status: 500 });
+  }
 }

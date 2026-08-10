@@ -1,6 +1,7 @@
 'use client';
 /**
- * ONBOARDING FLOW — Discover → Sign up → Confirm brand → Typography → Gallery → Templates → Welcome
+ * ONBOARDING FLOW — Discover → Sign up → Confirm brand → Typography → Gallery → Welcome
+ * (Design templates + slot bootstrap kick off in background from gallery; never block.)
  */
 import { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../auth-store';
@@ -1552,25 +1553,25 @@ function BrandConfirmStep({
           </div>
         </div>
 
-        <div className="confirm-panel">
-          <label className="confirm-hline">
-            <span className="confirm-hline-label">Marka adı</span>
+        <div className="confirm-fields">
+          <label className="confirm-field">
+            <span className="confirm-field__label">Marka adı</span>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setError(null); }}
-              className={`confirm-hline-input${name.trim() ? ' is-filled' : ''}`}
+              className={`confirm-field__input${name.trim() ? ' is-filled' : ''}`}
               autoComplete="organization"
               enterKeyHint="next"
               inputMode="text"
             />
           </label>
 
-          <label className="confirm-hline">
-            <span className="confirm-hline-label">Sektör</span>
+          <label className="confirm-field">
+            <span className="confirm-field__label">Sektör</span>
             <select
               value={sector}
               onChange={(e) => setSector(e.target.value)}
-              className="confirm-hline-input is-filled confirm-hline-select"
+              className="confirm-field__input is-filled confirm-field__select"
             >
               {ONBOARDING_SECTORS.map((s) => (
                 <option key={s.id} value={s.id}>{s.label}</option>
@@ -1584,7 +1585,7 @@ function BrandConfirmStep({
 
         <div className="confirm-section">
           <span className="confirm-section-label">Marka tonu</span>
-          <div className="confirm-tone-grid" role="group" aria-label="Marka tonu">
+          <div className="confirm-tone-row" role="group" aria-label="Marka tonu">
             {BRAND_TONE_PRESETS.map((t) => (
               <button
                 key={t}
@@ -1601,10 +1602,9 @@ function BrandConfirmStep({
 
         <div className="confirm-section">
           <span className="confirm-section-label">Renkler</span>
-          <div className="confirm-color-grid">
-            <label className="confirm-color-card">
-              <span className="confirm-color-card__label">Ana renk</span>
-              <span className="confirm-color-card__swatch" style={{ background: primary }}>
+          <div className="confirm-dual-swatch" role="group" aria-label="Marka renkleri">
+            <label className="confirm-dual-swatch__item">
+              <span className="confirm-dual-swatch__chip" style={{ background: primary }}>
                 <input
                   type="color"
                   value={primary}
@@ -1612,11 +1612,13 @@ function BrandConfirmStep({
                   aria-label="Ana renk"
                 />
               </span>
-              <span className="confirm-color-card__hex">{primary.toUpperCase()}</span>
+              <span className="confirm-dual-swatch__meta">
+                <span className="confirm-dual-swatch__name">Ana</span>
+                <span className="confirm-dual-swatch__hex">{primary.toUpperCase()}</span>
+              </span>
             </label>
-            <label className="confirm-color-card">
-              <span className="confirm-color-card__label">Vurgu</span>
-              <span className="confirm-color-card__swatch" style={{ background: accent }}>
+            <label className="confirm-dual-swatch__item">
+              <span className="confirm-dual-swatch__chip" style={{ background: accent }}>
                 <input
                   type="color"
                   value={accent}
@@ -1624,7 +1626,10 @@ function BrandConfirmStep({
                   aria-label="Vurgu rengi"
                 />
               </span>
-              <span className="confirm-color-card__hex">{accent.toUpperCase()}</span>
+              <span className="confirm-dual-swatch__meta">
+                <span className="confirm-dual-swatch__name">Vurgu</span>
+                <span className="confirm-dual-swatch__hex">{accent.toUpperCase()}</span>
+              </span>
             </label>
           </div>
         </div>
@@ -1648,7 +1653,7 @@ function BrandConfirmStep({
 
 const MIN_GALLERY_PHOTOS = 3;
 
-// ─── Gallery gate before template showcase ─────────────────────────────
+// ─── Gallery gate — kick template gen in background, never block ────────
 function GalleryReadyStep({
   brandName,
   tenantId,
@@ -1661,10 +1666,11 @@ function GalleryReadyStep({
   const [loading, setLoading] = useState(true);
   const [photoCount, setPhotoCount] = useState(0);
   const [uploading, setUploading] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const kickStartedRef = useRef(false);
 
   async function refreshCount() {
     const headers = getRequestContextHeaders();
@@ -1690,6 +1696,41 @@ function GalleryReadyStep({
     return count;
   }
 
+  /** Fire-and-forget: queue design templates + slot bootstrap, then advance. */
+  async function kickTemplatesAndContinue() {
+    if (continuing || kickStartedRef.current) return;
+    kickStartedRef.current = true;
+    setContinuing(true);
+    setError(null);
+    const headers = {
+      ...getRequestContextHeaders(),
+      'Content-Type': 'application/json',
+    };
+    try {
+      // Best-effort re-provision; do not block onboarding on this call.
+      await fetch(`/api/brand-context/${tenantId}/provision-gallery`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ analyze: true, allowSynthetic: false }),
+        signal: AbortSignal.timeout(15_000),
+      }).catch(() => null);
+
+      const genRes = await fetch(`/api/brand-context/${tenantId}/generate-design-templates`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ locale: 'tr', background: true }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      // 202 = queued; other statuses still advance so the customer is never stuck.
+      if (!genRes.ok && genRes.status !== 202) {
+        console.warn('[onboarding] background template kick failed', genRes.status);
+      }
+    } catch (e) {
+      console.warn('[onboarding] background template kick error', e);
+    }
+    onDone();
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function boot() {
@@ -1708,7 +1749,7 @@ function GalleryReadyStep({
         if (cancelled) return;
         setLoading(false);
         if (count >= MIN_GALLERY_PHOTOS) {
-          void generateTemplates();
+          void kickTemplatesAndContinue();
         }
       } catch {
         if (!cancelled) setLoading(false);
@@ -1718,42 +1759,6 @@ function GalleryReadyStep({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only gate
   }, [tenantId]);
-
-  async function generateTemplates() {
-    if (generating) return;
-    setGenerating(true);
-    setError(null);
-    setStatus('Marka şablonları üretiliyor…');
-    try {
-      const headers = {
-        ...getRequestContextHeaders(),
-        'Content-Type': 'application/json',
-      };
-      // Re-provision in case website-only refs arrived late
-      await fetch(`/api/brand-context/${tenantId}/provision-gallery`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ analyze: true, allowSynthetic: false }),
-        signal: AbortSignal.timeout(120_000),
-      }).catch(() => null);
-
-      const genRes = await fetch(`/api/brand-context/${tenantId}/generate-design-templates`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ locale: 'tr' }),
-        signal: AbortSignal.timeout(290_000),
-      });
-      if (!genRes.ok) {
-        const err = (await genRes.json().catch(() => ({}))) as { message?: string };
-        throw new Error(err.message || 'Marka şablonları üretilemedi.');
-      }
-      onDone();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Şablon üretimi başarısız.');
-      setGenerating(false);
-      setStatus('');
-    }
-  }
 
   async function handleUpload(files: FileList | null) {
     if (!files?.length || uploading) return;
@@ -1804,7 +1809,7 @@ function GalleryReadyStep({
       const count = await refreshCount();
       setStatus(`✓ ${data.uploaded ?? fileList.length} fotoğraf yüklendi (${count} toplam)`);
       if (count >= MIN_GALLERY_PHOTOS) {
-        await generateTemplates();
+        await kickTemplatesAndContinue();
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Yükleme hatası');
@@ -1814,17 +1819,19 @@ function GalleryReadyStep({
     }
   }
 
-  if (loading || (generating && photoCount >= MIN_GALLERY_PHOTOS && !error)) {
+  if (loading || continuing) {
     return (
       <div className="onboarding-shell">
         <OnboardingChromeBackdrop />
         <main className="onboarding-welcome-body">
           <div className="onboarding-setup-shimmer" aria-hidden />
           <h1 className="onboarding-title" style={{ marginBottom: 10 }}>
-            {generating ? 'Şablonlar hazırlanıyor' : 'Galeri kontrol ediliyor'}
+            {continuing ? 'Devam ediliyor' : 'Galeri kontrol ediliyor'}
           </h1>
           <p className="onboarding-lead" style={{ maxWidth: 300 }}>
-            {status || `${brandName} için görseller toplanıyor…`}
+            {status || (continuing
+              ? 'Şablonlar arka planda hazırlanacak — seni içeri alıyoruz…'
+              : `${brandName} için görseller toplanıyor…`)}
           </p>
         </main>
       </div>
@@ -1855,7 +1862,7 @@ function GalleryReadyStep({
         <button
           type="button"
           className="onboarding-primary-btn"
-          disabled={uploading || generating}
+          disabled={uploading || continuing}
           onClick={() => fileRef.current?.click()}
           style={{ marginBottom: 12, minHeight: 44 }}
         >
@@ -1866,10 +1873,10 @@ function GalleryReadyStep({
           <button
             type="button"
             className="onboarding-cta"
-            disabled={generating}
-            onClick={() => void generateTemplates()}
+            disabled={continuing}
+            onClick={() => void kickTemplatesAndContinue()}
           >
-            {generating ? 'Şablonlar üretiliyor…' : 'Şablonları oluştur'}
+            Devam et
           </button>
         )}
 
@@ -2146,8 +2153,8 @@ function TypographyConfirmStep({
 
         <div className="confirm-section">
           <span className="confirm-section-label">Logo</span>
-          <div className="visual-logo-panel">
-            <div className="visual-logo-panel__mark" style={{ background: neutral }}>
+          <div className="visual-logo-row">
+            <div className="visual-logo-row__mark" style={{ background: neutral }}>
               {logoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={logoUrl} alt="Logo" />
@@ -2155,7 +2162,7 @@ function TypographyConfirmStep({
                 <span>Logo yok</span>
               )}
             </div>
-            <div className="visual-logo-panel__actions">
+            <div className="visual-logo-row__actions">
               <input
                 ref={logoInputRef}
                 type="file"
@@ -2165,51 +2172,59 @@ function TypographyConfirmStep({
               />
               <button
                 type="button"
-                className="visual-logo-panel__btn"
+                className="visual-logo-row__btn"
                 onClick={() => logoInputRef.current?.click()}
                 disabled={uploadingLogo}
               >
                 {uploadingLogo ? 'Yükleniyor…' : logoUrl ? 'Logoyu değiştir' : 'Logo yükle'}
               </button>
-              <p className="visual-logo-panel__hint">PNG / SVG · şeffaf arka plan tercih</p>
+              <p className="visual-logo-row__hint">PNG / SVG · şeffaf arka plan tercih</p>
             </div>
           </div>
         </div>
 
         <div className="confirm-section">
           <span className="confirm-section-label">Renk paleti</span>
-          <div className="visual-palette-grid">
+          <div className="visual-palette-strip" role="group" aria-label="Renk paleti">
             {([
-              { label: 'Ana', value: primary, set: setPrimary },
-              { label: 'Vurgu', value: accent, set: setAccent },
-              { label: 'Nötr', value: neutral, set: setNeutral },
-              { label: 'Gölge', value: shadow, set: setShadow },
+              { label: 'Ana', value: primary, set: setPrimary, flex: 2.2 },
+              { label: 'Vurgu', value: accent, set: setAccent, flex: 1.5 },
+              { label: 'Nötr', value: neutral, set: setNeutral, flex: 1.1 },
+              { label: 'Gölge', value: shadow, set: setShadow, flex: 0.9 },
             ] as const).map((c) => (
-              <label key={c.label} className="confirm-color-card">
-                <span className="confirm-color-card__label">{c.label}</span>
-                <span className="confirm-color-card__swatch" style={{ background: c.value }}>
-                  <input
-                    type="color"
-                    value={c.value}
-                    onChange={(e) => c.set(e.target.value)}
-                    aria-label={c.label}
-                  />
-                </span>
-                <span className="confirm-color-card__hex">{c.value.toUpperCase()}</span>
+              <label
+                key={c.label}
+                className="visual-palette-strip__seg"
+                style={{ flex: c.flex, background: c.value }}
+              >
+                <input
+                  type="color"
+                  value={c.value}
+                  onChange={(e) => c.set(e.target.value)}
+                  aria-label={c.label}
+                />
               </label>
             ))}
           </div>
-          <div className="visual-palette-bar" aria-hidden>
-            <span style={{ flex: 2.2, background: primary }} />
-            <span style={{ flex: 1.5, background: accent }} />
-            <span style={{ flex: 1.1, background: neutral }} />
-            <span style={{ flex: 0.9, background: shadow }} />
+          <div className="visual-palette-legend">
+            {([
+              { label: 'Ana', value: primary },
+              { label: 'Vurgu', value: accent },
+              { label: 'Nötr', value: neutral },
+              { label: 'Gölge', value: shadow },
+            ] as const).map((c) => (
+              <span key={c.label} className="visual-palette-legend__item">
+                <span className="visual-palette-legend__dot" style={{ background: c.value }} />
+                <span className="visual-palette-legend__label">{c.label}</span>
+                <span className="visual-palette-legend__hex">{c.value.toUpperCase()}</span>
+              </span>
+            ))}
           </div>
         </div>
 
         <div className="confirm-section">
           <span className="confirm-section-label">Tipografi vibe</span>
-          <div className="visual-vibe-grid" role="listbox" aria-label="Tipografi vibe">
+          <div className="visual-vibe-list" role="listbox" aria-label="Tipografi vibe">
             {TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS.map((opt) => {
               const active = config.vibe === opt.id;
               return (
@@ -2218,15 +2233,15 @@ function TypographyConfirmStep({
                   type="button"
                   role="option"
                   aria-selected={active}
-                  className={`visual-vibe-card${active ? ' is-on' : ''}`}
+                  className={`visual-vibe-item${active ? ' is-on' : ''}`}
                   onClick={() => setConfig({ ...config, vibe: opt.id as TypographyVibe })}
                 >
-                  <span className={`visual-vibe-card__glyph vibe-sample--${opt.id}`} aria-hidden>
+                  <span className={`visual-vibe-item__glyph vibe-sample--${opt.id}`} aria-hidden>
                     Aa
                   </span>
-                  <span className="visual-vibe-card__text">
-                    <span className="visual-vibe-card__title">{opt.label}</span>
-                    <span className="visual-vibe-card__desc">{opt.desc}</span>
+                  <span className="visual-vibe-item__text">
+                    <span className="visual-vibe-item__title">{opt.label}</span>
+                    <span className="visual-vibe-item__desc">{opt.desc}</span>
                   </span>
                 </button>
               );
@@ -2562,9 +2577,10 @@ export function OnboardingFlow({ onComplete, onLogin }: Props) {
           <GalleryReadyStep
             brandName={signupBrandName || brandName}
             tenantId={tenantId}
-            onDone={() => setStep('templates_showcase')}
+            onDone={() => setStep('welcome')}
           />
         )}
+        {/* templates_showcase kept for deep-links / future; default path skips to welcome */}
         {step === 'templates_showcase' && (
           <TemplatesShowcaseStep
             brandName={brandName}
