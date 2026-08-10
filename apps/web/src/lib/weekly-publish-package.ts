@@ -298,8 +298,6 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
     return false;
   }
 
-  if (meta.publish_blocked === true) return false;
-
   const contentUrl = String(artifact.contentUrl ?? '').trim();
   const videoUrl = resolveStoryVideoUrl(artifact);
   const posterUrl = resolvePosterUrl(artifact);
@@ -310,7 +308,8 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   const isVideoUrl = /\.(mp4|mov|webm)(\?|$)/i.test(contentUrl);
   const premiumPipeline = isPremiumMotionOrDesignedPipeline(pipeline, role);
 
-  // SSOT quality / designed-visual / reel gates — never bypass with auto_produced stills.
+  // SSOT quality / designed-visual / reel gates — recompute stale publish_blocked
+  // (e.g. premium_editorial not_ready after a designed still already exists).
   const publishDecision = resolveArtifactPublishReady({
     artifact,
     meta,

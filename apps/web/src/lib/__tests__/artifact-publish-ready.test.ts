@@ -4,12 +4,22 @@ import {
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
+import {
+  filterFeedPublishableArtifacts,
+  isArtifactFeedReady,
+} from '@/lib/weekly-publish-package';
+import type { OutputArtifact } from '@/types';
 
 describe('isDesignedVisualPipeline', () => {
   it('flags fal_design / designed roles for beach_club and shop slots', () => {
     expect(isDesignedVisualPipeline('fal_design', 'fal_designed_post')).toBe(true);
     expect(isDesignedVisualPipeline('fal_only', 'fal_only_post')).toBe(true);
     expect(isDesignedVisualPipeline('gallery_photo', 'organic_post')).toBe(false);
+  });
+
+  it('flags premium_editorial campaign slots as designed', () => {
+    expect(isDesignedVisualPipeline('premium_editorial', 'premium_editorial_campaign_post')).toBe(true);
+    expect(isDesignedVisualPipeline('premium_editorial', 'premium_editorial_campaign_story')).toBe(true);
   });
 });
 
@@ -96,6 +106,54 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.ready).toBe(true);
     expect(d.blockFeed).toBe(false);
     expect(d.code).toBe('ready');
+  });
+
+  it('unblocks premium_editorial not_ready when premium_composition was stamped', () => {
+    const meta = {
+      pipeline: 'premium_editorial',
+      production_role: 'premium_editorial_campaign_post',
+      fal_designer_produced: false,
+      premium_composition: true,
+      premium_composition_type: 'poster_design',
+      premium_score: 85,
+      agency_produced: true,
+      auto_produced: true,
+      source: 'auto-produce',
+      mission_id: 'mission-1',
+      publish_blocked: true,
+      publish_ready: false,
+      publish_block_code: 'not_ready',
+      publish_block_reason: 'Tasarım henüz hazır değil',
+      gallery_match_score: 71,
+    };
+    const d = resolveArtifactPublishReady({
+      meta,
+      content: {
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/x.jpg',
+        mission_id: 'mission-1',
+      },
+      format: 'post',
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+    expect(d.code).toBe('ready');
+
+    const artifact = {
+      id: 'art-pe-1',
+      title: 'Premium editorial',
+      status: 'pending_review',
+      contentUrl: '/api/media?key=tenant/image/x.jpg',
+      content: JSON.stringify({
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/x.jpg',
+        mission_id: 'mission-1',
+        source: 'auto-produce',
+      }),
+      metadata: JSON.stringify(meta),
+    } as OutputArtifact;
+    expect(isArtifactFeedReady(artifact)).toBe(true);
+    expect(filterFeedPublishableArtifacts([artifact])).toHaveLength(1);
   });
 
   it('hard-blocks grafiker fail even when a still exists', () => {

@@ -42,6 +42,8 @@ export interface SlotProductionState {
   costDelta: number;
   /** Specific Fal/pipeline failure — surfaced on production_jobs.last_error (not generic no_artifact). */
   pipelineFailureReason?: string | null;
+  /** Optional metadata patch merged into the artifact before publishReady stamp. */
+  artifactMetaPatch?: Record<string, unknown> | null;
 }
 
 /**

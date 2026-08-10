@@ -92,6 +92,15 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       ? Math.round((result.qualityAssessment.overallScore / 100) * 10)
       : null;
     state.costDelta += result.costEstimateUsd ?? 0.08;
+    state.artifactMetaPatch = {
+      ...premiumEditorialArtifactMetadata(result),
+      fal_designer_produced: true,
+      production_route: 'premium_editorial',
+      production_track: 'premium_editorial',
+      marky_disabled: true,
+      premium_composition: true,
+      typography_text_valid: result.qualityAssessment?.isApproved !== false,
+    };
 
     if (result.matchedGalleryUrl) {
       console.info(
@@ -104,8 +113,5 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
         `[premium_editorial] no matched gallery for "${inputs.headline.slice(0, 48)}"`,
       );
     }
-
-    // Metadata merge is applied by callers via premiumEditorialArtifactMetadata.
-    void premiumEditorialArtifactMetadata(result);
   },
 };

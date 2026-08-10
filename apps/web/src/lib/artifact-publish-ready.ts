@@ -51,6 +51,7 @@ export function isDesignedVisualPipeline(pipeline: string, role: string): boolea
     || p === 'fal_only_story'
     || p === 'fal_only_reel'
     || p === 'designed_grafiker'
+    || p === 'premium_editorial'
   ) {
     return true;
   }
@@ -60,7 +61,10 @@ export function isDesignedVisualPipeline(pipeline: string, role: string): boolea
     || r === 'designed_typography'
     || r === 'fal_only_post'
     || r === 'fal_only_story'
+    || r === 'premium_editorial_campaign_post'
+    || r === 'premium_editorial_campaign_story'
     || r.includes('designed')
+    || r.includes('premium_editorial')
   ) {
     return true;
   }
@@ -74,12 +78,26 @@ function hasDesignedOrAgencyVisual(meta: Record<string, unknown>): boolean {
   if (meta.designed_poster_sync === true) return true;
   // Legacy designed posts often stamp grafiker_pass without fal_designer_produced.
   if (meta.grafiker_pass === true) return true;
+  // Premium Editorial Campaign — layered compose (may omit fal_designer_produced).
+  if (meta.premium_composition === true) return true;
+  const pipeline = String(meta.pipeline ?? '').toLowerCase();
+  if (
+    pipeline === 'premium_editorial'
+    && (
+      Boolean(meta.fal_design_engine)
+      || Boolean(meta.final_composed_image_url)
+      || meta.agency_produced === true
+    )
+  ) {
+    return true;
+  }
   if (meta.agency_produced === true && meta.renderer_executed !== 'gallery_raw') return true;
   const route = String(meta.production_route ?? '').toLowerCase();
-  if (route === 'fal_ai' || route === 'fal_only' || route === 'designed_grafiker') {
+  if (route === 'fal_ai' || route === 'fal_only' || route === 'designed_grafiker' || route === 'premium_editorial') {
     return meta.fal_designer_produced === true
       || meta.fal_only === true
       || meta.designed_poster_sync === true
+      || meta.premium_composition === true
       || Boolean(meta.fal_design_engine);
   }
   return false;
@@ -224,9 +242,15 @@ export function resolveArtifactPublishReadyFromArtifact(
   } catch {
     content = {};
   }
-  meta = (artifact.metadata && typeof artifact.metadata === 'object')
-    ? (artifact.metadata as Record<string, unknown>)
-    : {};
+  try {
+    if (typeof artifact.metadata === 'string') {
+      meta = JSON.parse(artifact.metadata || '{}') as Record<string, unknown>;
+    } else if (artifact.metadata && typeof artifact.metadata === 'object') {
+      meta = artifact.metadata as Record<string, unknown>;
+    }
+  } catch {
+    meta = {};
+  }
   return resolveArtifactPublishReady({ artifact, meta, content });
 }
 

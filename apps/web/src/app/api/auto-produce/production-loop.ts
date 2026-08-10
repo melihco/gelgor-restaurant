@@ -391,7 +391,7 @@ import {
   type ScratchVisualBrief,
 } from '@/lib/scratch-visual-brief';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
-import { isFalOnlyPipeline } from '@/lib/pipeline-registry';
+import { isFalOnlyPipeline, isPremiumEditorialPipeline } from '@/lib/pipeline-registry';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
 import { productShowcaseHandler } from './pipelines/product-showcase-pipeline';
@@ -3774,7 +3774,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isFalDesignPost = isFalDesignPipeline(assignment.pipeline) || isPaidAdSlot;
     const isFalOnlyPost = isFalOnlyPostPipeline(assignment.pipeline);
     const isFalOnlyVideo = isFalOnlyVideoPipeline(assignment.pipeline);
-    const usesFalDesignerTrack = isFalMissionVideo || isFalDesignPost || isFalOnlyPost || isFalOnlyVideo;
+    const isPremiumEditorial = isPremiumEditorialPipeline(assignment.pipeline)
+      || assignment.slot_role === 'premium_editorial_campaign_post'
+      || assignment.slot_role === 'premium_editorial_campaign_story';
+    const usesFalDesignerTrack = isFalMissionVideo || isFalDesignPost || isFalOnlyPost || isFalOnlyVideo
+      || isPremiumEditorial;
     const falBriefFormat: 'post' | 'reel' | 'story' = isCalendarSlot
       ? (pkgFmt === 'story' ? 'story' : 'post')
       : isPaidAdSlot || isFalDesignPost || isFalOnlyPost
@@ -3844,6 +3848,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let brandDesignTemplateType: string | null = null;
     let brandDesignTemplateName: string | null = null;
     let brandDesignTemplateMatchQuality: string | null = null;
+    let pipelineArtifactMetaPatch: Record<string, unknown> | null = null;
 
     const calendarAnnouncementType = String(
       ideaRecord.calendar_announcement_type
@@ -4160,6 +4165,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           videoProduceMeta,
           costDelta: 0,
           pipelineFailureReason: null,
+          artifactMetaPatch: null,
         },
       };
       await runPipelineStages(slotCtx, [
@@ -4186,6 +4192,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       brandDesignTemplateMatchQuality = slotCtx.state.brandDesignTemplateMatchQuality ?? null;
       videoProduceMeta = slotCtx.state.videoProduceMeta;
       costEstimate += slotCtx.state.costDelta;
+      pipelineArtifactMetaPatch = slotCtx.state.artifactMetaPatch ?? null;
       if (slotCtx.state.pipelineFailureReason && !reelFailureReason) {
         reelFailureReason = slotCtx.state.pipelineFailureReason;
       }
@@ -5058,19 +5065,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
             typography_text_valid: true,
           }
+        : isPremiumEditorial && imageUrl && falDesignEngine
+          ? {
+            production_route: 'premium_editorial',
+            production_track: 'premium_editorial',
+            marky_disabled: true,
+            fal_designer_produced: true,
+            fal_design_engine: falDesignEngine,
+            premium_composition: true,
+            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            typography_text_valid: falGrafikerPass !== false,
+          }
         : productionProfile.requireDesignedVisuals
           ? { production_route: 'designed_grafiker', marky_disabled: true }
           : {}),
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,
-      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)) || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+      agency_produced: markyBranded || Boolean(designedPosterSyncUrl) || Boolean(videoUrl) || isCanvas || (isCarousel && carouselUrls.length > 0) || (isFalDesignPost && Boolean(imageUrl) && Boolean(falDesignEngine)) || ((isFalOnlyPost || isFalOnlyVideo) && Boolean(imageUrl || videoUrl)) || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)) || (isPremiumEditorial && Boolean(imageUrl) && Boolean(falDesignEngine)),
       hero_reel_produced: Boolean(videoUrl) && !isFalMissionVideo && !isFalOnlyVideo,
       fal_video_produced: isPlayableVideoUrl(videoUrl) && (isFalMissionVideo || isFalOnlyVideo),
       fal_reel_still_fallback: falReelStillFallback,
       // Story/reel fal stills set falDesignEngine (poster path); posts already did.
       fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo))
         || falReelStillFallback
-        || ((isFalDesignPost || isFalOnlyPost) && Boolean(imageUrl) && Boolean(falDesignEngine))
+        || ((isFalDesignPost || isFalOnlyPost || isPremiumEditorial) && Boolean(imageUrl) && Boolean(falDesignEngine))
         || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)),
       ...(falDesignEngine === 'satori_local' ? { typography_model: 'satori_local' } : {}),
       ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
@@ -5256,6 +5274,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         posterUrl: galleryPreviewUrl,
       } : {}),
       ...storySlotMeta,
+      ...(pipelineArtifactMetaPatch ?? {}),
     };
 
     const title = buildArtifactListTitle({
@@ -5269,6 +5288,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const designedStillIntent = Boolean(
       isFalDesignPost
       || isFalOnlyPost
+      || isPremiumEditorial
       || designedStoryRequired
       || designedPosterReady
       || markyBranded
@@ -5309,7 +5329,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || metadata.fal_video_produced === true
       || metadata.designed_poster_sync === true
       || metadata.grafiker_pass === true
-      || Boolean(metadata.fal_design_engine),
+      || metadata.premium_composition === true
+      || Boolean(metadata.fal_design_engine)
+      || isPremiumEditorial,
     );
     const publishDecision = resolveArtifactPublishReady({
       meta: metadata,
