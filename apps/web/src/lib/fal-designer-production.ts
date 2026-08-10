@@ -332,6 +332,9 @@ export function resolveIdeogramBackgroundStyle(
 /** Keyword → vibe heuristics, ordered by specificity. */
 const VIBE_KEYWORD_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
   { vibe: 'warm_coastal', rx: /\b(deniz|sea|plaj|beach|sahil|coast|yüzme|swim|kumsal|dalga|wave|güneş|sun|marina|tekne|boat)\b/i },
+  { vibe: 'anatolian_warm', rx: /\b(anadolu|anatolian|ocakba[sş][ıi]|meyhane|mezze|mangal|kebap|baklava|etnik|terracotta|toprak)\b/i },
+  { vibe: 'quiet_luxury', rx: /\b(sessiz lüks|quiet luxury|understated luxury|sofistike|steakhouse|omakase|fine dining)\b/i },
+  { vibe: 'clinical_clean', rx: /\b(diş|dental|klinik|clinic|steril|hijyen|kuaför|berber|barber|grooming)\b/i },
   { vibe: 'neon_glow', rx: /\b(gece|night|parti|party|dj|club|kulüp|bar|lounge|after|set|live|canlı)\b/i },
   { vibe: 'handwritten', rx: /\b(doğal|natural|organik|organic|el yapımı|handmade|spa|wellness|huzur|sakin|cilt|skin|bakım)\b/i },
   { vibe: 'editorial_serif', rx: /\b(lüks|luxury|premium|şık|elegant|özel|exclusive|fine|gurme|gourmet|signature|imza)\b/i },
@@ -345,6 +348,9 @@ const VIBE_KEYWORD_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
 /** Map distilled brand soul phrases → typography vibe (general brand DNA layer). */
 const SOUL_VIBE_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
   { vibe: 'warm_coastal', rx: /\b(aegean|mediterranean|bodrum|coastal|beach|marina|sun.?bleach|turquoise|bohemian)\b/i },
+  { vibe: 'anatolian_warm', rx: /\b(anatolian|anadolu|ocakba[sş][ıi]|meyhane|mezze|terracotta|heritage.?warm|etnik)\b/i },
+  { vibe: 'quiet_luxury', rx: /\b(quiet.?luxury|understated.?luxury|muted.?luxury|whispered.?luxury|restrained.?luxury)\b/i },
+  { vibe: 'clinical_clean', rx: /\b(clinical|sterile|dental|diş|klinik|hygienic|medical.?clean|barber.?premium)\b/i },
   { vibe: 'editorial_serif', rx: /\b(luxury|lüks|premium|elegant|refined|michelin|fine dining|sophisticated)\b/i },
   { vibe: 'handwritten', rx: /\b(artisan|organic|natural|hand.?craft|wellness|spa|warm|samimi)\b/i },
   { vibe: 'retro_poster', rx: /\b(craft|artisan|coffee|roast|vintage|nostalg|warm|rustic)\b/i },

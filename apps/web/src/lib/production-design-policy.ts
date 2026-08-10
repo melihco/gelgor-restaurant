@@ -74,7 +74,10 @@ function inferVibeFromVisualDna(visualDna: string): TypographyVibe | null {
   const text = visualDna.toLowerCase();
   const rules: Array<[RegExp, TypographyVibe]> = [
     [/\b(bohemian|cycladic|aegean|coastal|beach|marina|sun.?bleach|turquoise)\b/i, 'warm_coastal'],
-    [/\b(luxury|lüks|premium|elegant|refined|sophisticated|quiet)\b/i, 'editorial_serif'],
+    [/\b(anatolian|anadolu|ocakba[sş][ıi]|meyhane|mezze|terracotta|toprak|etnik|heritage.?warm|baklava|mangal)\b/i, 'anatolian_warm'],
+    [/\b(quiet.?luxury|understated.?luxury|muted.?luxury|whispered.?luxury|restrained.?luxury)\b/i, 'quiet_luxury'],
+    [/\b(clinical|sterile|dental|diş|klinik|hygienic|medical.?clean|barber.?premium)\b/i, 'clinical_clean'],
+    [/\b(luxury|lüks|premium|elegant|refined|sophisticated)\b/i, 'editorial_serif'],
     [/\b(artisan|organic|natural|hand.?craft|wellness|spa|warm|samimi)\b/i, 'handwritten'],
     [/\b(craft|coffee|roast|vintage|nostalg|rustic|bakery)\b/i, 'retro_poster'],
     [/\b(minimal|clean|modern|contemporary|sleek|understated)\b/i, 'minimal_modern'],
@@ -143,7 +146,7 @@ export function resolveTypographyDesign(input: ProductionDesignPolicyInput): Pro
   let text_effect: ProductionTextEffect = 'soft_shadow';
   if (vibe === 'neon_glow') text_effect = 'neon_3d';
   else if (vibe === 'street_bold' || vibe === 'bubble_3d') text_effect = 'extrude_3d';
-  else if (vibe === 'editorial_serif') text_effect = 'editorial_outline';
+  else if (vibe === 'editorial_serif' || vibe === 'quiet_luxury') text_effect = 'editorial_outline';
   else if (vibe === 'minimal_modern') text_effect = 'gradient_stack';
   return {
     vibe,

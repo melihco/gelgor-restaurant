@@ -15,6 +15,7 @@ from app.crew.industry_playbooks import get_industry_playbook, merge_playbook_co
 TYPOGRAPHY_VIBES = frozenset({
     "bubble_3d", "chrome_gradient", "neon_glow", "editorial_serif", "street_bold",
     "handwritten", "retro_poster", "minimal_modern", "warm_coastal",
+    "quiet_luxury", "clinical_clean", "anatolian_warm",
 })
 
 TEXT_EFFECTS = frozenset({
@@ -65,7 +66,10 @@ def _infer_vibe_from_visual_dna(visual_dna: str) -> str | None:
     text = (visual_dna or "").lower()
     rules: list[tuple[str, str]] = [
         (r"\b(bohemian|cycladic|aegean|coastal|beach|marina|sun.?bleach|turquoise)\b", "warm_coastal"),
-        (r"\b(luxury|lüks|premium|elegant|refined|sophisticated|quiet)\b", "editorial_serif"),
+        (r"\b(anatolian|anadolu|ocakba[sş][ıi]|meyhane|mezze|terracotta|toprak|etnik|heritage.?warm|baklava|mangal)\b", "anatolian_warm"),
+        (r"\b(quiet.?luxury|understated.?luxury|muted.?luxury|whispered.?luxury|restrained.?luxury)\b", "quiet_luxury"),
+        (r"\b(clinical|sterile|dental|diş|klinik|hygienic|medical.?clean|barber.?premium)\b", "clinical_clean"),
+        (r"\b(luxury|lüks|premium|elegant|refined|sophisticated)\b", "editorial_serif"),
         (r"\b(artisan|organic|natural|hand.?craft|wellness|spa|warm|samimi)\b", "handwritten"),
         (r"\b(craft|coffee|roast|vintage|nostalg|rustic|bakery)\b", "retro_poster"),
         (r"\b(minimal|clean|modern|contemporary|sleek|understated)\b", "minimal_modern"),
@@ -82,7 +86,10 @@ def default_typography_vibe_for_sector(sector: str) -> str:
     key = normalize_industry_id(sector or "")
     if any(k in key for k in ("beach", "marina", "yacht", "coastal")):
         return "warm_coastal"
-    if any(k in key for k in ("night", "club", "bar", "lounge")):
+    # Barber/dental before nightlife — "barber" contains "bar".
+    if any(k in key for k in ("dental", "clinic", "medical", "barber")):
+        return "clinical_clean"
+    if any(k in key for k in ("night", "club", "lounge")) or key == "bar" or re.search(r"(^|_)bar(_|$)", key):
         return "neon_glow"
     if any(k in key for k in ("cafe", "bakery", "restaurant", "food")):
         return "retro_poster"
@@ -91,7 +98,7 @@ def default_typography_vibe_for_sector(sector: str) -> str:
     if any(k in key for k in ("fashion", "retail", "boutique")):
         return "street_bold"
     if any(k in key for k in ("hotel", "resort", "fine_dining", "luxury")):
-        return "editorial_serif"
+        return "quiet_luxury"
     if any(k in key for k in ("tech", "saas", "agency")):
         return "minimal_modern"
     if "local_products" in key:
@@ -167,7 +174,7 @@ def resolve_typography_design(
     text_effect = "soft_shadow"
     if vibe in ("neon_glow", "street_bold", "bubble_3d"):
         text_effect = "neon_3d" if vibe == "neon_glow" else "extrude_3d"
-    elif vibe == "editorial_serif":
+    elif vibe in ("editorial_serif", "quiet_luxury"):
         text_effect = "editorial_outline"
     elif vibe == "minimal_modern":
         text_effect = "gradient_stack"
@@ -197,11 +204,11 @@ def resolve_post_design_defaults_from_vibe(
         font_preset, effect, logo_position = "condensed_impact", "neon_3d", "top_center"
     elif v in ("bubble_3d", "street_bold"):
         font_preset, effect, logo_position = "poster_3d", "extrude_3d", "top_left"
-    elif v == "minimal_modern":
+    elif v in ("minimal_modern", "clinical_clean"):
         font_preset, effect, logo_position = "clean_sans", "soft_shadow", "top_left"
-    elif v == "editorial_serif":
+    elif v in ("editorial_serif", "quiet_luxury"):
         font_preset, effect, logo_position = "elegant_serif", "editorial_outline", "bottom_right"
-    elif v == "warm_coastal":
+    elif v in ("warm_coastal", "anatolian_warm"):
         font_preset, effect, logo_position = "elegant_serif", "soft_shadow", "bottom_right"
     elif v == "chrome_gradient":
         font_preset, effect, logo_position = "condensed_impact", "gradient_stack", "top_left"

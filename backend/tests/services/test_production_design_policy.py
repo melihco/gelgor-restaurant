@@ -22,7 +22,7 @@ def test_beach_club_gets_premium_fal_intensity_and_editorial_vibe():
     assert intensity["reel"] == "elegant_light"
     assert intensity["post"] == "elegant_light"
     vibe = resolve_typography_vibe(sector, dna)
-    assert vibe in ("warm_coastal", "editorial_serif")
+    assert vibe in ("warm_coastal", "editorial_serif", "quiet_luxury")
     typo = resolve_typography_design(sector, dna)
     assert typo["background_style"] == "photo_overlay"
     assert typo["logo_treatment"] == "watermark"

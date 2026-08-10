@@ -53,10 +53,11 @@ describe('onboarding typography → post_design chain', () => {
     expect(post.text_effect).toBe('soft_shadow');
   });
 
-  it('aligns hotel sector default with editorial_serif (not chrome_gradient)', () => {
-    expect(defaultTypographyVibeForSector('hotel_resort')).toBe('editorial_serif');
+  it('aligns hotel sector default with quiet_luxury (not chrome_gradient)', () => {
+    expect(defaultTypographyVibeForSector('hotel_resort')).toBe('quiet_luxury');
     const suggested = resolveSuggestedTypographyConfig({}, 'hotel');
-    expect(suggested.vibe).toBe('editorial_serif');
+    expect(suggested.vibe).toBe('quiet_luxury');
+    expect(suggested.text_effect).toBe('editorial_outline');
   });
 
   it('beach_club stays warm_coastal without neon DNA override', () => {
@@ -64,5 +65,24 @@ describe('onboarding typography → post_design chain', () => {
     expect(suggested.vibe).toBe('warm_coastal');
     const post = resolvePostDesignDefaultsForTypography(suggested);
     expect(post.font_preset).toBe('elegant_serif');
+  });
+
+  it('maps new catalog vibes (quiet / clinical / anatolian)', () => {
+    expect(resolvePostDesignDefaultsFromVibe('quiet_luxury')).toMatchObject({
+      font_preset: 'elegant_serif',
+      text_effect: 'editorial_outline',
+    });
+    expect(resolvePostDesignDefaultsFromVibe('clinical_clean')).toMatchObject({
+      font_preset: 'clean_sans',
+      text_effect: 'soft_shadow',
+    });
+    expect(resolvePostDesignDefaultsFromVibe('anatolian_warm')).toMatchObject({
+      font_preset: 'elegant_serif',
+      text_effect: 'soft_shadow',
+    });
+    expect(defaultTypographyVibeForSector('barber_salon')).toBe('clinical_clean');
+    expect(
+      resolveSuggestedTypographyConfig({}, 'restaurant_cafe', 'Anatolian ocakbaşı mezze terracotta heritage warm').vibe,
+    ).toBe('anatolian_warm');
   });
 });

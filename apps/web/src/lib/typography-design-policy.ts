@@ -25,7 +25,7 @@ export const TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS: Array<{
 }> = (Object.keys(TYPOGRAPHY_VIBE_LABELS) as TypographyVibe[]).map((id) => ({
   id,
   label: TYPOGRAPHY_VIBE_LABELS[id].tr,
-  desc: TYPOGRAPHY_VIBE_LABELS[id].en,
+  desc: TYPOGRAPHY_VIBE_LABELS[id].desc,
   emoji: TYPOGRAPHY_VIBE_LABELS[id].emoji,
 }));
 

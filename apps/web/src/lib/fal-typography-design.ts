@@ -100,6 +100,24 @@ const VIBE_PROMPTS: Record<TypographyVibe, VibePromptSpec> = {
     backgroundHint: 'warm sunset gradient, ocean horizon, sandy beach tones, or turquoise water texture',
     colorUsage: (primary, accent) => `Warm ${accent} text on soft ocean-blue to sunset gradient. Sandy cream highlights. Mediterranean warmth — no metallic or chrome.`,
   },
+  quiet_luxury: {
+    styleDirective: 'Quiet luxury typography. Restrained, understated elegance — few words, perfect spacing, no shouty promo energy.',
+    fontDescription: 'refined high-contrast serif or ultra-thin elegant sans with generous tracking and calm hierarchy',
+    backgroundHint: 'muted stone, soft champagne, deep charcoal, or quiet architectural interiors',
+    colorUsage: (primary, accent) => `Muted ${primary} and soft ${accent} only — never neon, chrome shout, or dense sticker grids. Whispered luxury.`,
+  },
+  clinical_clean: {
+    styleDirective: 'Clinical clean typography. Sterile precision for clinics, dental, and premium grooming — crisp, trustworthy, airy.',
+    fontDescription: 'geometric sans-serif with even weight, excellent legibility, and generous margins',
+    backgroundHint: 'soft white, cool gray, gentle mint, or clean studio light — no nightlife textures',
+    colorUsage: (primary, accent) => `Clean ${primary} on white/soft gray with one restrained ${accent} accent. Hygienic clarity — no distressed type.`,
+  },
+  anatolian_warm: {
+    styleDirective: 'Anatolian warm heritage typography. Contemporary ethnic venue energy — terracotta warmth, craft hospitality, not folk-cliché costume.',
+    fontDescription: 'warm display serif or soft condensed sans with earthy presence and inviting hierarchy',
+    backgroundHint: 'terracotta, olive, saffron cream, stone courtyard, or candlelit mezze atmosphere',
+    colorUsage: (primary, accent) => `Earthy ${primary} with warm ${accent} — clay, olive, copper. Heritage warmth without cartoon ornament overload.`,
+  },
 };
 
 /** Public accessor so other design pipelines (GPT-image cards) can reuse vibe styling. */

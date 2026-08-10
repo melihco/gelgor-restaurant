@@ -43,10 +43,19 @@ export function resolvePostDesignDefaultsFromVibe(
       logo_position = 'top_left';
       break;
     case 'editorial_serif':
+    case 'quiet_luxury':
     case 'warm_coastal':
+    case 'anatolian_warm':
       font_preset = 'elegant_serif';
-      text_effect = v === 'editorial_serif' ? 'editorial_outline' : 'soft_shadow';
+      text_effect = (v === 'editorial_serif' || v === 'quiet_luxury')
+        ? 'editorial_outline'
+        : 'soft_shadow';
       logo_position = 'bottom_right';
+      break;
+    case 'clinical_clean':
+      font_preset = 'clean_sans';
+      text_effect = 'soft_shadow';
+      logo_position = 'top_left';
       break;
     case 'chrome_gradient':
       font_preset = 'condensed_impact';

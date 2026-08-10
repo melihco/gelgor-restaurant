@@ -37,7 +37,7 @@ describe('production-design-policy', () => {
       visualDna: 'bohemian-luxe Cycladic quiet luxury',
       accentColor: '#C4A484',
     });
-    expect(['warm_coastal', 'editorial_serif']).toContain(design.vibe);
+    expect(['warm_coastal', 'editorial_serif', 'quiet_luxury']).toContain(design.vibe);
     expect(design.logo_treatment).toBe('watermark');
     expect(design.accent_color).toBe('#C4A484');
     expect(sectorAntiPatterns('beach_club').length).toBeGreaterThan(3);

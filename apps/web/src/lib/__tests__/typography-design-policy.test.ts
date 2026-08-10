@@ -20,6 +20,9 @@ describe('typography-design-policy', () => {
     };
     expect(isTypographyDesignConfirmed(theme)).toBe(true);
     expect(isKnownTypographyVibe('warm_coastal')).toBe(true);
+    expect(isKnownTypographyVibe('quiet_luxury')).toBe(true);
+    expect(isKnownTypographyVibe('clinical_clean')).toBe(true);
+    expect(isKnownTypographyVibe('anatolian_warm')).toBe(true);
     expect(isKnownTypographyVibe('unknown_vibe')).toBe(false);
   });
 

@@ -205,6 +205,9 @@ const VIBE_FONTS: Record<TypographyVibe, VibeFontPair> = {
   neon_glow: { heading: 'Space Grotesk', body: 'Inter' },
   bubble_3d: { heading: 'Poppins', body: 'Poppins' },
   chrome_gradient: { heading: 'Montserrat', body: 'Montserrat' },
+  quiet_luxury: { heading: 'Libre Baskerville', body: 'Raleway' },
+  clinical_clean: { heading: 'Space Grotesk', body: 'Inter' },
+  anatolian_warm: { heading: 'Fraunces', body: 'DM Sans' },
 };
 
 /** Resolve the heading/body font pair for a typography vibe. */

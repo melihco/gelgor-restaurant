@@ -2152,6 +2152,21 @@ const CSS = `
     font-family: "Iowan Old Style", Georgia, serif;
     font-weight: 600;
   }
+  .sa-mobile .vibe-sample--quiet_luxury {
+    font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+  }
+  .sa-mobile .vibe-sample--clinical_clean {
+    font-family: "SF Pro Display", Inter, system-ui, sans-serif;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .sa-mobile .vibe-sample--anatolian_warm {
+    font-family: "Iowan Old Style", Georgia, serif;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
   @media (max-height: 700px) {
     .sa-mobile .visual-preview-card,
     .sa-mobile .visual-preview-card__row { min-height: 100px; }

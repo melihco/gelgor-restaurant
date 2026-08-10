@@ -112,7 +112,10 @@ export type TypographyVibe =
   | 'handwritten'
   | 'retro_poster'
   | 'minimal_modern'
-  | 'warm_coastal';
+  | 'warm_coastal'
+  | 'quiet_luxury'
+  | 'clinical_clean'
+  | 'anatolian_warm';
 
 export type TypographyBackgroundStyle = 'photo_overlay' | 'solid_brand' | 'gradient_mesh' | 'transparent';
 export type LogoTreatment = 'watermark' | 'badge' | 'inline' | 'none';
@@ -149,28 +152,54 @@ export interface BrandProductShowcaseConfig {
   product_photo_urls?: string[];
 }
 
-export const TYPOGRAPHY_VIBE_LABELS: Record<TypographyVibe, { tr: string; en: string; emoji: string }> = {
-  bubble_3d: { tr: 'Balon 3D', en: 'Bubble 3D', emoji: '🫧' },
-  chrome_gradient: { tr: 'Krom Gradient', en: 'Chrome Gradient', emoji: '✨' },
-  neon_glow: { tr: 'Neon Glow', en: 'Neon Glow', emoji: '💡' },
-  editorial_serif: { tr: 'Editöryal Serif', en: 'Editorial Serif', emoji: '📰' },
-  street_bold: { tr: 'Sokak Kalın', en: 'Street Bold', emoji: '🏋️' },
-  handwritten: { tr: 'El Yazısı', en: 'Handwritten', emoji: '✍️' },
-  retro_poster: { tr: 'Retro Poster', en: 'Retro Poster', emoji: '🎨' },
-  minimal_modern: { tr: 'Minimal Modern', en: 'Minimal Modern', emoji: '◻️' },
-  warm_coastal: { tr: 'Sahil & Deniz', en: 'Warm Coastal', emoji: '🌊' },
+export const TYPOGRAPHY_VIBE_LABELS: Record<TypographyVibe, {
+  tr: string;
+  en: string;
+  emoji: string;
+  /** Short TR blurb for onboarding / Marka chips. */
+  desc: string;
+}> = {
+  bubble_3d: { tr: 'Balon 3D', en: 'Bubble 3D', emoji: '🫧', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli' },
+  chrome_gradient: { tr: 'Krom Gradient', en: 'Chrome Gradient', emoji: '✨', desc: 'Metalik yansıma, premium lüks' },
+  neon_glow: { tr: 'Neon Glow', en: 'Neon Glow', emoji: '💡', desc: 'Neon tüp aydınlatma, gece hayatı' },
+  editorial_serif: { tr: 'Editöryal Serif', en: 'Editorial Serif', emoji: '📰', desc: 'Dergi stili, dramatik boyut' },
+  street_bold: { tr: 'Sokak Kalın', en: 'Street Bold', emoji: '🏋️', desc: 'Kentsel, sıkıştırılmış, güçlü' },
+  handwritten: { tr: 'El Yazısı', en: 'Handwritten', emoji: '✍️', desc: 'Fırça kaligrafi, doğal sıcaklık' },
+  retro_poster: { tr: 'Retro Poster', en: 'Retro Poster', emoji: '🎨', desc: 'Vintage poster yazısı, nostalji' },
+  minimal_modern: { tr: 'Minimal Modern', en: 'Minimal Modern', emoji: '◻️', desc: 'Ultra-temiz sans, İsviçre tasarım' },
+  warm_coastal: { tr: 'Sahil & Deniz', en: 'Warm Coastal', emoji: '🌊', desc: 'Güneşli, rahat, Akdeniz yazı dili' },
+  quiet_luxury: { tr: 'Sessiz Lüks', en: 'Quiet Luxury', emoji: '🥂', desc: 'Sakin premium, az yazı, sofistike' },
+  clinical_clean: { tr: 'Klinik Temiz', en: 'Clinical Clean', emoji: '🤍', desc: 'Steril, net, klinik / kuaför premium' },
+  anatolian_warm: { tr: 'Anadolu Sıcak', en: 'Anatolian Warm', emoji: '🌿', desc: 'Etnik sıcak, toprak ton, concept mekân' },
 };
 
 export function defaultTypographyVibeForSector(sector: string): TypographyVibe {
   const s = sector.toLowerCase();
   if (s.includes('beach') || s.includes('marina') || s.includes('yacht') || s.includes('coastal')) return 'warm_coastal';
-  if (s.includes('night') || s.includes('club') || s.includes('bar') || s.includes('lounge')) return 'neon_glow';
+  // Barber/dental before nightlife — "barber" contains "bar".
+  if (
+    s.includes('dental')
+    || s.includes('clinic')
+    || s.includes('medical')
+    || s.includes('barber')
+  ) {
+    return 'clinical_clean';
+  }
+  if (
+    s.includes('night')
+    || s.includes('club')
+    || s.includes('lounge')
+    || /(^|_)bar(_|$)/.test(s)
+    || s === 'bar'
+  ) {
+    return 'neon_glow';
+  }
   if (s.includes('cafe') || s.includes('bakery') || s.includes('restaurant') || s.includes('food')) return 'retro_poster';
   if (s.includes('beauty') || s.includes('spa') || s.includes('wellness')) return 'handwritten';
   if (s.includes('fashion') || s.includes('retail') || s.includes('boutique')) return 'street_bold';
-  // Align with Python production_design_policy — chrome_gradient is not a hotel default.
+  // Quiet luxury for hospitality premium — chrome_gradient is not a hotel default.
   if (s.includes('hotel') || s.includes('resort') || s.includes('fine_dining') || s.includes('luxury')) {
-    return 'editorial_serif';
+    return 'quiet_luxury';
   }
   if (s.includes('tech') || s.includes('saas') || s.includes('agency')) return 'minimal_modern';
   return 'retro_poster';

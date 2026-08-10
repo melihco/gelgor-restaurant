@@ -182,10 +182,13 @@ export function layoutFamilyForVibe(
         return 'split_panel';
       case 'retro_poster':
       case 'handwritten':
+      case 'anatolian_warm':
         return 'photo_top';
       case 'editorial_serif':
+      case 'quiet_luxury':
       case 'chrome_gradient':
       case 'minimal_modern':
+      case 'clinical_clean':
         return 'cinematic';
       case 'warm_coastal':
       case 'bubble_3d':
@@ -200,10 +203,13 @@ export function layoutFamilyForVibe(
     case 'bubble_3d':
       return 'neon_night';
     case 'retro_poster':
+    case 'anatolian_warm':
       return 'bottom_panel';
     case 'editorial_serif':
+    case 'quiet_luxury':
     case 'chrome_gradient':
     case 'minimal_modern':
+    case 'clinical_clean':
       return 'cinematic';
     case 'handwritten':
     case 'warm_coastal':

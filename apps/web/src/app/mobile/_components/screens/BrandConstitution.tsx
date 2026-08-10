@@ -113,11 +113,12 @@ import {
   ContentStudioEntityBoard,
 } from '../BrandContentStudio';
 import { BrandProductionRepairCard } from '../BrandProductionRepairCard';
-import type { BrandPostDesignDefaults, TypographyVibe, BrandDesignTypographyConfig } from '@/types/brand-theme';
+import type { BrandPostDesignDefaults, BrandDesignTypographyConfig } from '@/types/brand-theme';
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import {
   buildUserConfirmedTypographyPatch,
   readTypographyDesignConfig,
+  TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
 } from '@/lib/typography-design-policy';
 import {
   hasSavedPostDesignDefaults,
@@ -910,16 +911,7 @@ function CollapsibleGroup({
   );
 }
 
-const TYPOGRAPHY_VIBE_OPTIONS: Array<{ id: TypographyVibe; label: string; desc: string; emoji: string }> = [
-  { id: 'bubble_3d', label: 'Balon 3D', desc: 'Şişirilmiş 3D harfler, Gen Z, eğlenceli', emoji: '🫧' },
-  { id: 'chrome_gradient', label: 'Krom Gradient', desc: 'Metalik yansıma, premium lüks', emoji: '✨' },
-  { id: 'neon_glow', label: 'Neon Parlama', desc: 'Neon tüp aydınlatma, gece hayatı', emoji: '💡' },
-  { id: 'editorial_serif', label: 'Editöryal Serif', desc: 'Dergi stili, dramatik boyut', emoji: '📰' },
-  { id: 'street_bold', label: 'Sokak Kalın', desc: 'Kentsel, sıkıştırılmış, güçlü', emoji: '🏋️' },
-  { id: 'handwritten', label: 'El Yazısı', desc: 'Fırça kaligrafi, doğal sıcaklık', emoji: '✍️' },
-  { id: 'retro_poster', label: 'Retro Poster', desc: 'Vintage poster yazısı, nostalji', emoji: '🎨' },
-  { id: 'minimal_modern', label: 'Minimal Modern', desc: 'Ultra-temiz sans, İsviçre tasarım', emoji: '◻️' },
-];
+const TYPOGRAPHY_VIBE_OPTIONS = TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS;
 
 const BACKGROUND_STYLE_OPTIONS: Array<{ id: BrandDesignTypographyConfig['background_style']; label: string }> = [
   { id: 'gradient_mesh', label: 'Gradient Mesh' },
