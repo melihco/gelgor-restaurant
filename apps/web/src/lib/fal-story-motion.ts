@@ -133,7 +133,7 @@ export function buildStoryMotionPrompt(input: {
   const context = [
     input.sector ? `Industry: ${input.sector}.` : '',
     input.headline ? `Scene context: ${input.headline.slice(0, 60)}.` : '',
-    'Duration: 5 seconds. Aspect ratio: 9:16 vertical. No text overlays. Cinematic motion freedom.',
+    'Duration: 8 seconds. Aspect ratio: 9:16 vertical. No text overlays. Cinematic motion freedom.',
     'Quality: cinematic, shallow depth of field, premium brand content.',
   ].filter(Boolean).join(' ');
   return finalizeFalPrompt(`${base} ${context}`, { kind: 'video', label: 'story-motion-plate' });
