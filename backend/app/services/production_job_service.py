@@ -840,13 +840,7 @@ async def _escalate_gallery_failed_jobs_to_fal_only(
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND id = ANY(CAST(:ids AS UUID[]))
-                  AND (
-                    COALESCE(last_error, '') ILIKE '%tema çatışması%'
-                    OR COALESCE(last_error, '') ILIKE '%gallery_theme_mismatch%'
-                    OR COALESCE(last_error, '') ILIKE '%Galeri eşleşmesi yok%'
-                    OR COALESCE(last_error, '') ILIKE '%Galeri–caption eşleşmesi%'
-                    OR COALESCE(last_error, '') ILIKE '%Galeri-caption eşleşmesi%'
-                  )
+                  AND COALESCE(last_error, '') ILIKE '%tema çatışması%'
                 """
             ),
             {"mission_id": str(mission_id), "ids": job_ids},

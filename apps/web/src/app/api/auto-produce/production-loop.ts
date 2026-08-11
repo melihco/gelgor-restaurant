@@ -2576,39 +2576,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    /** Rematch / empty-URL gallery miss → fal_only (missions) instead of hard-fail. */
-    const escalateRematchFailureToFalOnly = (stage: string): boolean => {
-      if (galleryEscalatedToFalOnly || !missionId) return false;
-      const venueFallback = pickVenueEscalationFallbackPhoto({
-        currentReferenceUrl: referenceUrl,
-        galleryPhotos,
-        brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
-        sector: brandBusinessType,
-        hasRealBrandPhotos,
-        excludeUrls: referenceUrl ? [referenceUrl] : undefined,
-      });
-      const escalated = tryGalleryFailureEscalation({
-        assignment,
-        postType,
-        missionId,
-        stage,
-        fallbackReferenceUrl: venueFallback,
-      });
-      if (!escalated) return false;
-      console.warn(
-        `[auto-produce] gallery ${stage} → ${String(escalated.assignment.pipeline)} `
-        + `(fal_only escalation${escalated.referenceUrl ? ', venue photo kept' : ', no venue photo'}) `
-        + `"${headline.slice(0, 40)}"`,
-      );
-      assignment = escalated.assignment;
-      referenceUrl = escalated.referenceUrl;
-      galleryMatchScore = escalated.galleryMatchScore;
-      captionDrivenGenerated = escalated.captionDrivenGenerated;
-      agentIdeationGalleryLock = escalated.agentIdeationGalleryLock;
-      galleryEscalatedToFalOnly = true;
-      return true;
-    };
-
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await isProductionGalleryUrlReachable(referenceUrl))) {
       // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
       console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
@@ -2661,22 +2628,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceImageUrls: undefined,
         });
         if (!recovered) {
-          if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
-            results.push({
-              title: headline,
-              imageUrl: '',
-              error: galleryRematchErrorMessage(rematch.reason),
-              slotKey,
-            });
-            continue;
-          }
-        } else {
-          referenceUrl = recovered;
-          referenceIsStock = false;
-          galleryMatchScore = null;
-          captionDrivenGenerated = true;
+          // Genuine miss — withhold rather than invent fal_only visuals.
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: galleryRematchErrorMessage(rematch.reason),
+            slotKey,
+          });
+          continue;
         }
-      } else if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
+        referenceUrl = recovered;
+        referenceIsStock = false;
+        galleryMatchScore = null;
+        captionDrivenGenerated = true;
+      } else {
+        // Photo brand + no aligned gallery — withhold (do not force fal_only).
         console.warn(`[auto-produce] brand gallery rematch failed (${rematch.reason}) — refusing caption scratch for photo brand`);
         results.push({
           title: headline,
@@ -2688,7 +2654,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!forceAttachedPhotos && !referenceUrl?.trim() && !galleryEscalatedToFalOnly) {
+    if (!forceAttachedPhotos && !referenceUrl?.trim()) {
       // FD or batch assign may leave an empty URL — try a fresh gallery pick before skipping.
       const emptyFallback = galleryPhotos.length
         ? pickMissionGallery(
@@ -2729,8 +2695,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (
-      !galleryEscalatedToFalOnly
-      && !forceAttachedPhotos
+      !forceAttachedPhotos
       && (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))))
     ) {
       const brokenInternal = referenceUrl?.startsWith('/api/');
@@ -2787,24 +2752,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceImageUrls: undefined,
         });
           if (!recovered) {
-            if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
-              results.push({
-                title: headline,
-                imageUrl: '',
-                error: brokenInternal
-                  ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-                  : galleryRematchErrorMessage(rematch.reason),
-                slotKey,
-              });
-              continue;
-            }
-          } else {
-            referenceUrl = recovered;
-            referenceIsStock = false;
-            galleryMatchScore = null;
-            captionDrivenGenerated = true;
+            results.push({
+              title: headline,
+              imageUrl: '',
+              error: brokenInternal
+                ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
+                : galleryRematchErrorMessage(rematch.reason),
+              slotKey,
+            });
+            continue;
           }
-        } else if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
+          referenceUrl = recovered;
+          referenceIsStock = false;
+          galleryMatchScore = null;
+          captionDrivenGenerated = true;
+        } else {
+          // Genuine gallery miss — withhold slot rather than invent fal_only.
           console.warn(`[auto-produce] broken internal gallery URL skipped (${rematch.reason}): ${(referenceUrl ?? '').slice(0, 100)}`);
           results.push({
             title: headline,
