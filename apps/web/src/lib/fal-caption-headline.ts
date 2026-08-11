@@ -1331,10 +1331,50 @@ export function fitMissionOverlayToTemplateBudget(input: {
   sampleSubtitle?: string | null;
   showSubline?: boolean | null;
   typeBudget?: TemplateTypeBudget | null;
+  /**
+   * Locked Hub/canva punchline — soft-clamp only; never stem with type_budget
+   * or replace with sample/caption punches.
+   */
+  preserveHeadline?: boolean;
 }): { headline: string; subtitle?: string; budget: TemplateOverlayCopyBudget } {
   const budget = resolveTemplateOverlayCopyBudget(input);
   const allowSoftFloor = budget.source !== 'operator_type_budget';
   const rawH = correctTurkishSpelling(sanitizeFalOverlayText(input.headline));
+
+  // Locked mission tagline / canva punchline: keep phrase, fit subtitle only.
+  if (input.preserveHeadline) {
+    const headline = clampMissionTaglineForCanvas(rawH, input.channel) || rawH;
+    if (!budget.subtitle || !budget.showSubline) {
+      return { headline, budget };
+    }
+    const rawS = correctTurkishSpelling(sanitizeFalOverlayText(String(input.subtitle ?? '')));
+    if (
+      !rawS
+      || areFalOverlayTextsRedundant(headline, rawS)
+      || isGenericRetailOverlayCta(rawS, rawH)
+      || isBareGenericOverlayCta(rawS)
+    ) {
+      return { headline, budget };
+    }
+    let subtitle = tightenOverlayHeadline(
+      rawS,
+      budget.subtitle.maxLen,
+      budget.subtitle.maxWords,
+    );
+    if (!subtitle) {
+      subtitle = truncateAtWordBoundary(rawS, budget.subtitle.maxLen);
+    }
+    if (
+      !subtitle
+      || isIncompleteOverlayPhrase(subtitle)
+      || isBareGenericOverlayCta(subtitle)
+      || isGenericRetailOverlayCta(subtitle, rawH)
+    ) {
+      return { headline, budget };
+    }
+    return { headline, subtitle, budget };
+  }
+
   let headline = tightenOverlayHeadline(
     rawH,
     budget.headline.maxLen,
@@ -1583,9 +1623,14 @@ export function shortenFalOverlayForImageRetry(
   headline: string,
   attempt: number,
   channel: 'reel' | 'feed_post' | 'story',
+  opts?: { preserveLockedPunchline?: boolean },
 ): string {
   const clean = sanitizeFalOverlayText(headline);
   if (!clean) return '';
+  // Locked Hub/canva punchline — never invent a shorter stem on OCR retry.
+  if (opts?.preserveLockedPunchline) {
+    return clampMissionTaglineForCanvas(clean, channel) || clean;
+  }
   if (attempt <= 0) return clampFalOverlayHeadlineForCanvas(clean, channel) || clean;
 
   const baseMax = channel === 'reel' ? 22 : channel === 'story' ? 28 : FAL_FEED_OVERLAY_MAX_CHARS;

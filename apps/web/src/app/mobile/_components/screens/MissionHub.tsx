@@ -129,7 +129,7 @@ import { resolveClientMediaUrl } from '@/lib/media-url';
 import { resolveStoryVideoUrl } from '@/lib/production-bundle';
 import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
 import { SafeCoverImage } from '../SafeCoverImage';
-import { formatUsd } from '@/lib/ai-cost-catalog';
+import { formatUsd, formatUsdCompact } from '@/lib/ai-cost-catalog';
 import { missionFeedStatusLabel, formatMobileContentTypeLabel } from '@/lib/mobile-customer-copy';
 import { missionProductionStatusCopy } from '@/lib/mission-production-status';
 import { useMissionFactoryJobs } from '../../_lib/use-mission-factory-jobs';
@@ -138,6 +138,11 @@ import {
   formatMissionAiCostRange,
   type MissionAiCostSummary,
 } from '@/lib/mission-ai-cost';
+import {
+  getMissionProductionCost,
+  getWorkspaceMissionCostSummary,
+  missionCostTotalsMap,
+} from '@/lib/mission-cost-client';
 import { MissionSlotShowcase, MissionCompletedCard, type SlotShowcaseTemplate } from '../MissionSlotShowcase';
 import { resolveSlotShowcaseConfig } from '@/lib/brand-production-engines';
 
@@ -446,7 +451,7 @@ function NodeRows({ nodes }: { nodes: MissionProgress['nodes'] }) {
 
 // ── InFlightCard — progress via shared useMissionProgress (single poll owner) ──
 
-function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedProduction, onTapCompleted, isRestarting, isKickingFeed, detailOpen }: {
+function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedProduction, onTapCompleted, isRestarting, isKickingFeed, detailOpen, costUsd }: {
   mission: MissionSummary;
   workspaceId: string;
   onCancel: (id: string) => void;
@@ -457,6 +462,8 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
   isKickingFeed?: boolean;
   /** Detail sheet open for this mission — card subscribes only, no duplicate /progress polls. */
   detailOpen?: boolean;
+  /** cost_events lifetime total for this mission (USD). */
+  costUsd?: number | null;
 }) {
   const { t } = useTheme();
   const debugMode = isDebugUiMode();
@@ -647,6 +654,9 @@ function InFlightCard({ mission, workspaceId, onCancel, onRestart, onKickFeedPro
                       ? `${runningStepLabel} hazırlanıyor…`
                       : 'İçerik planı hazırlanıyor'}
               {!isFailedCompleted && mission.timeline_days ? ` · ${mission.timeline_days} gün` : ''}
+              {!isFailedCompleted && costUsd != null && costUsd > 0
+                ? ` · ${formatUsdCompact(costUsd)}`
+                : ''}
             </div>
           </div>
 
@@ -2509,6 +2519,7 @@ function MissionAiCostPanel({
   if (!summary) return null;
 
   const totalLabel = formatMissionAiCostRange(summary);
+  const fromLedger = Boolean(summary.ledger && summary.ledger.total_usd > 0);
 
   return (
     <div style={{
@@ -2525,7 +2536,12 @@ function MissionAiCostPanel({
       <div style={{ fontSize: 18, fontWeight: 800, color: t.textPrimary, marginBottom: 4 }}>
         {totalLabel}
         <span style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>
-          API · {summary.artifactCount > 0 ? `${summary.artifactCount} Feed çıktısı` : 'tahmini'}
+          {fromLedger
+            ? `ledger · ${summary.ledger?.event_count ?? 0} olay`
+            : summary.isEstimate
+              ? 'tahmini'
+              : 'API'}
+          {summary.artifactCount > 0 ? ` · ${summary.artifactCount} Feed` : ''}
         </span>
       </div>
       {summary.isEstimate && summary.lines.length === 0 && (
@@ -2533,8 +2549,50 @@ function MissionAiCostPanel({
           Aralık: {formatUsd(summary.minUsd)} – {formatUsd(summary.maxUsd)} (10 üretimlik paket)
         </div>
       )}
-      {summary.lines.length > 0 && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+
+      {summary.providerLines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted }}>
+            Sağlayıcı (fal / GPT / …)
+          </div>
+          {summary.providerLines.map((line) => (
+            <div
+              key={line.key}
+              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}
+            >
+              <span style={{ color: t.textSecondary }}>{line.label}</span>
+              <span style={{ fontWeight: 700, color: t.textPrimary, whiteSpace: 'nowrap' }}>
+                {formatUsd(line.usd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {summary.scopeLines.length > 0 && (
+        <div style={{
+          display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10, paddingTop: 8,
+          borderTop: `0.5px solid ${t.isDark ? 'rgba(245,158,11,0.18)' : 'rgba(245,158,11,0.15)'}`,
+        }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted }}>
+            Mission graph vs Feed
+          </div>
+          {summary.scopeLines.map((line) => (
+            <div
+              key={line.key}
+              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}
+            >
+              <span style={{ color: t.textSecondary }}>{line.label}</span>
+              <span style={{ fontWeight: 700, color: t.textPrimary, whiteSpace: 'nowrap' }}>
+                {formatUsd(line.usd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!fromLedger && summary.lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
           {summary.lines.map((line) => (
             <div
               key={line.key}
@@ -2551,7 +2609,24 @@ function MissionAiCostPanel({
           ))}
         </div>
       )}
-      {summary.feedBreakdown && summary.feedBreakdown.totalUsd > 0 && (
+
+      {fromLedger && summary.lines.length > 0 && summary.providerLines.length === 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+          {summary.lines.map((line) => (
+            <div
+              key={line.key}
+              style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11 }}
+            >
+              <span style={{ color: t.textSecondary }}>{line.label}</span>
+              <span style={{ fontWeight: 700, color: t.textPrimary, whiteSpace: 'nowrap' }}>
+                {formatUsd(line.usd)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!fromLedger && summary.feedBreakdown && summary.feedBreakdown.totalUsd > 0 && (
         (() => {
           const fb = summary.feedBreakdown!;
           const buckets: Array<{ label: string; usd: number }> = [
@@ -2587,7 +2662,9 @@ function MissionAiCostPanel({
         </div>
       )}
       <div style={{ fontSize: 10, color: t.textTertiary, marginTop: 8, lineHeight: 1.4 }}>
-        Strategist, strateji, fikirler, Feed Director, scene brief ve görsel/video üretimi dahil.
+        {fromLedger
+          ? 'cost_events kaydı — fal, GPT-image, Ideogram ve mission graph LLM dahil.'
+          : 'Strategist, strateji, fikirler, Feed Director, scene brief ve görsel/video üretimi dahil.'}
       </div>
     </div>
   );
@@ -3624,12 +3701,22 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
       ?.last_feed_produce?.produced ?? 0,
   );
 
+  const { data: missionLedger = null } = useQuery({
+    queryKey: ['mission-production-cost', workspaceId, mission.id],
+    queryFn: () => getMissionProductionCost(workspaceId, mission.id),
+    enabled: Boolean(workspaceId && mission.id),
+    staleTime: 30_000,
+    refetchInterval: missionInFlight ? 45_000 : false,
+    ...mobileQueryDefaults,
+  });
+
   const missionAiCost = useMemo(() => buildMissionAiCostSummary({
     missionId: mission.id,
     artifacts: feedArtifacts ?? [],
     performanceSummary: (prog?.performance_summary ?? null) as Record<string, unknown> | null,
     nodes: prog?.nodes ?? null,
-  }), [feedArtifacts, mission.id, prog?.performance_summary, prog?.nodes]);
+    ledger: missionLedger,
+  }), [feedArtifacts, mission.id, prog?.performance_summary, prog?.nodes, missionLedger]);
 
   const slotChecklist = useMemo(() => {
     return buildMissionSlotChecklist({
@@ -4823,6 +4910,19 @@ export function MissionHub() {
   });
   const missionsLoading = missionsInitialLoading && missions.length === 0;
 
+  const { data: workspaceCostSummary } = useQuery({
+    queryKey: ['workspace-mission-costs', wsId],
+    queryFn: () => getWorkspaceMissionCostSummary(wsId!, 90),
+    enabled: Boolean(wsId),
+    staleTime: 45_000,
+    refetchInterval: 60_000,
+    ...mobileQueryDefaults,
+  });
+  const missionCostById = useMemo(
+    () => missionCostTotalsMap(workspaceCostSummary),
+    [workspaceCostSummary],
+  );
+
   const {
     data: productionSnapshot,
     isFetching: productionSnapshotFetching,
@@ -5696,6 +5796,7 @@ export function MissionHub() {
               {failedCompleted.map(m => (
                 <InFlightCard key={m.id} mission={m} workspaceId={wsId}
                   detailOpen={detailMission?.id === m.id}
+                  costUsd={missionCostById.get(m.id) ?? null}
                   onCancel={() => {}}
                   onRestart={(id) => restartMutation.mutate(id)}
                   onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}
@@ -5727,6 +5828,7 @@ export function MissionHub() {
                   mission={m}
                   workspaceId={wsId}
                   detailOpen={detailMission?.id === m.id}
+                  costUsd={missionCostById.get(m.id) ?? null}
                   onCancel={(id) => cancelMutation.mutate(id)}
                   onRestart={(id) => restartMutation.mutate(id)}
                   onKickFeedProduction={(id) => kickFeedMutation.mutate(id)}
@@ -5756,6 +5858,7 @@ export function MissionHub() {
                   typeLabel={TYPE_LABEL[m.type] ?? m.type}
                   timeLabel={timeAgo(m.completed_at)}
                   summaryFallback={missionOutputBadges(m)}
+                  costUsd={missionCostById.get(m.id) ?? null}
                 />
               ))}
             </div>

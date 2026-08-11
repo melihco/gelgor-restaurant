@@ -338,6 +338,33 @@ describe('premium-editorial gallery match (idea → photo)', () => {
     });
     expect(result.primaryUrl).toBe(PIN);
   });
+
+  it('keeps production-loop pin even when semantic rematch scores higher', async () => {
+    const { resolvePremiumEditorialGalleryMatch } = await import(
+      '@/lib/premium-editorial/gallery-match'
+    );
+    const PIN = 'https://cdn.example.com/gallery/venue-sunset-pin.jpg';
+    const FOOD = 'https://cdn.example.com/gallery/food-plate-strong.jpg';
+    const result = resolvePremiumEditorialGalleryMatch({
+      headline: 'Gourmet pasta',
+      caption: 'Şefin imza makarnası — taze pasta dish.',
+      preferredUrl: PIN,
+      candidateUrls: [PIN, FOOD],
+      galleryAnalysis: {
+        [PIN]: {
+          contentTags: ['venue', 'sunset', 'deck'],
+          description: 'Sunset deck view over the sea.',
+        },
+        [FOOD]: {
+          contentTags: ['food', 'dish', 'plate', 'pasta', 'gourmet'],
+          description: 'A beautifully plated gourmet pasta dish on a white plate.',
+          mood: 'warm',
+          bestFor: ['food_showcase', 'feed_post'],
+        },
+      },
+    });
+    expect(result.primaryUrl).toBe(PIN);
+  });
 });
 
 describe('premium-editorial slot wiring', () => {

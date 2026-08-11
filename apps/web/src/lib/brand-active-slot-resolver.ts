@@ -42,9 +42,11 @@ import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization'
 const CATALOG_SLOT_REUSE_PENALTY = 22;
 const CATALOG_SLOT_REUSE_PENALTY_CAP = 66;
 
-/** Soft penalty when this catalog key appeared in recent produced artifacts. */
-const CATALOG_SLOT_RECENT_PENALTY = 18;
-const CATALOG_SLOT_RECENT_PENALTY_CAP = 54;
+/**
+ * Soft preferred (FD/stamp) tip — not a hard pin.
+ * Kept small so a same-format peer with equal/better semantic fit can win.
+ */
+const SOFT_PREFERRED_HINT = 12;
 
 /**
  * Infer package format from catalog slot key suffix.
@@ -130,25 +132,55 @@ export function alignAssignmentToCatalogSlotKey(
 }
 
 export interface CatalogSlotMatchOptions {
-  /** Catalog keys used in recent artifacts (most recent first) — soft variety. */
+  /** Full catalog keys from recent artifacts (most recent first) — hard-exclude first. */
   recentCatalogSlotKeys?: string[];
   /**
    * Plan/factory durable pins (`${ideaIndex}:${slot_role}`) — never rematch these
    * even when the catalog key is in recent history.
    */
   durablePreferredKeys?: Set<string>;
+  /**
+   * When true, an idea that already has `catalog_slot_key` is treated as a plan pin
+   * (no recent rematch / soft preferred demotion).
+   */
+  lockExistingCatalogPins?: boolean;
 }
 
-function recentCatalogSlotPenalty(
-  slotKey: string,
-  recentKeys: string[] | undefined,
-): number {
-  if (!recentKeys?.length) return 0;
-  const idx = recentKeys.indexOf(slotKey);
-  if (idx < 0) return 0;
-  // Newer = stronger penalty (idx 0 most recent).
-  const band = Math.max(1, 3 - Math.floor(idx / 4));
-  return Math.min(CATALOG_SLOT_RECENT_PENALTY_CAP, band * CATALOG_SLOT_RECENT_PENALTY);
+/**
+ * Build durable preferred keys for produce drain.
+ * Includes factory bindings and every queue row that already has a catalog stamp
+ * so role-drift or missing binding keys cannot soft-rematch the plan shell.
+ */
+export function collectDurableCatalogPreferredKeys(
+  queue: ManifestProductionQueueItem[],
+  bindings?: Record<string, string> | null,
+): Set<string> {
+  const out = new Set<string>(Object.keys(bindings ?? {}));
+  for (const item of queue) {
+    const pinned = String(
+      item.assignment.catalog_slot_key
+      ?? (item.idea as Record<string, unknown>).catalog_slot_key
+      ?? '',
+    ).trim();
+    if (!pinned) continue;
+    out.add(`${item.ideaIndex}:${item.assignment.slot_role}`);
+  }
+  return out;
+}
+
+/** True when this queue row's idea/role is covered by a durable pin set. */
+export function isDurableCatalogQueuePin(
+  item: Pick<ManifestProductionQueueItem, 'ideaIndex' | 'assignment'>,
+  durablePreferredKeys?: Set<string> | null,
+): boolean {
+  if (!durablePreferredKeys?.size) return false;
+  const exact = `${item.ideaIndex}:${item.assignment.slot_role}`;
+  if (durablePreferredKeys.has(exact)) return true;
+  const prefix = `${item.ideaIndex}:`;
+  for (const key of durablePreferredKeys) {
+    if (key.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 /** Stable idea-salted tie-break — avoids always picking the alphabetically first key. */
@@ -448,9 +480,6 @@ const STRONG_INTENT_FAMILIES = new Set([
   'brand_bts',
 ]);
 
-/** Score gap that lets a better peer beat a soft preferred pin. */
-const PREFERRED_SOFT_SCORE_MARGIN = 18;
-
 export function resolveIdeaIntentFamily(idea: Record<string, unknown>): string {
   const announcement = normalizeToken(
     String(idea.calendar_announcement_type ?? idea.announcement_type ?? idea.template_use_case ?? ''),
@@ -549,7 +578,6 @@ function scoreSlotForIdea(
   idea: Record<string, unknown>,
   assignment?: ProductionAssignment,
   usageCount = 0,
-  recentCatalogSlotKeys?: string[],
 ): number {
   let score = slot.priority;
 
@@ -662,9 +690,29 @@ function scoreSlotForIdea(
   if (usageCount > 0) {
     score -= Math.min(CATALOG_SLOT_REUSE_PENALTY_CAP, usageCount * CATALOG_SLOT_REUSE_PENALTY);
   }
-  score -= recentCatalogSlotPenalty(key, recentCatalogSlotKeys);
 
   return score;
+}
+
+type ScoredCatalogSlot = {
+  slot: BrandActiveSlot;
+  score: number;
+  usage: number;
+  recentIdx: number;
+  tie: number;
+};
+
+function isBetterScoredCatalogSlot(candidate: ScoredCatalogSlot, best: ScoredCatalogSlot): boolean {
+  if (candidate.score > best.score) return true;
+  if (candidate.score < best.score) return false;
+  if (candidate.usage < best.usage) return true;
+  if (candidate.usage > best.usage) return false;
+  if (candidate.recentIdx < 0 && best.recentIdx >= 0) return true;
+  if (candidate.recentIdx >= 0 && best.recentIdx >= 0 && candidate.recentIdx > best.recentIdx) {
+    return true;
+  }
+  if (candidate.recentIdx === best.recentIdx && candidate.tie < best.tie) return true;
+  return false;
 }
 
 export interface CatalogSlotMatchInput {
@@ -677,11 +725,11 @@ export interface CatalogSlotMatchInput {
   slotUsageCounts?: Map<string, number>;
   /** Explicit catalog key from ideation/calendar — honored when enabled. */
   preferredCatalogSlotKey?: string | null;
-  /** Soft variety — keys hard-pinned in recent artifacts (most recent first). */
+  /** Variety — full catalog keys from recent artifacts; hard-excluded before reuse. */
   recentCatalogSlotKeys?: string[];
   /**
-   * Factory/plan durable pin — never intent-veto or score-demote.
-   * Soft FD/stamp preferred keys remain vetoable for idea-fit.
+   * Factory/plan durable pin — never intent-veto or rematch.
+   * Soft FD/stamp preferred keys compete with a small hint only.
    */
   preferredIsDurable?: boolean;
 }
@@ -691,6 +739,11 @@ export interface CatalogSlotMatchInput {
  * Falls back within the same format when the preferred/disabled slot is unavailable.
  * Never cross-format (reel key must not stamp a carousel idea unless preferred
  * catalog key explicitly wins — then role/pipeline are realigned on apply).
+ *
+ * Variety:
+ * - Mission-local used keys hard-skipped first
+ * - Recent artifact keys hard-skipped first (full catalog key), then allowed if pool empty
+ * - Soft preferred is a small hint, not a +60 sticky pin
  */
 export function matchIdeaToBrandCatalogSlot(
   input: CatalogSlotMatchInput,
@@ -701,42 +754,54 @@ export function matchIdeaToBrandCatalogSlot(
   const preferred = input.preferredCatalogSlotKey
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
+  const recentSet = recentCatalogSlotKeys?.length
+    ? new Set(recentCatalogSlotKeys)
+    : null;
 
-  const pickBestScored = (): {
-    slot: BrandActiveSlot;
-    score: number;
-    usage: number;
-    recentIdx: number;
-    tie: number;
-  } | null => {
-    let best: {
-      slot: BrandActiveSlot;
-      score: number;
-      usage: number;
-      recentIdx: number;
-      tie: number;
-    } | null = null;
+  const pickBestScored = (opts?: {
+    format?: BrandActiveSlot['format'];
+    /** Score without assignment.catalog_slot_key self-bonus (fair soft-pin compare). */
+    neutralAssignment?: ProductionAssignment;
+    excludeRecent?: boolean;
+    /** Extra tip applied only to this catalog key (soft preferred). */
+    preferredHintKey?: string | null;
+  }): ScoredCatalogSlot | null => {
+    let best: ScoredCatalogSlot | null = null;
     for (const slot of activeSlots.slots) {
+      if (opts?.format && slot.format !== opts.format) continue;
       if (usedSlotKeys?.has(slot.slotKey)) continue;
+      if (opts?.excludeRecent && recentSet?.has(slot.slotKey)) continue;
       const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
-      const score = scoreSlotForIdea(slot, idea, assignment, usage, recentCatalogSlotKeys);
+      const scoredAssignment = opts?.neutralAssignment ?? assignment;
+      let score = scoreSlotForIdea(slot, idea, scoredAssignment, usage);
+      if (
+        opts?.preferredHintKey
+        && slot.slotKey === opts.preferredHintKey
+        && score > 0
+      ) {
+        score += SOFT_PREFERRED_HINT;
+      }
       if (score <= 0) continue;
       const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
       const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
-      if (
-        !best
-        || score > best.score
-        || (score === best.score && usage < best.usage)
-        || (score === best.score && usage === best.usage && (
-          (recentIdx < 0 && best.recentIdx >= 0)
-          || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
-          || (recentIdx === best.recentIdx && tie < best.tie)
-        ))
-      ) {
-        best = { slot, score, usage, recentIdx, tie };
+      const candidate: ScoredCatalogSlot = { slot, score, usage, recentIdx, tie };
+      if (!best || isBetterScoredCatalogSlot(candidate, best)) {
+        best = candidate;
       }
     }
     return best;
+  };
+
+  const pickBestWithRecentVariety = (opts?: {
+    format?: BrandActiveSlot['format'];
+    neutralAssignment?: ProductionAssignment;
+    preferredHintKey?: string | null;
+  }): ScoredCatalogSlot | null => {
+    if (recentSet?.size) {
+      const fresh = pickBestScored({ ...opts, excludeRecent: true });
+      if (fresh) return fresh;
+    }
+    return pickBestScored({ ...opts, excludeRecent: false });
   };
 
   if (preferred && activeSlots.enabledSlotKeys.has(preferred)) {
@@ -746,77 +811,36 @@ export function matchIdeaToBrandCatalogSlot(
       if (input.preferredIsDurable) {
         return exact;
       }
-      // Soft preferred (FD/stamp): veto when idea intent conflicts, or a
-      // same-format peer clearly fits better — so DJ ideas don't keep a
-      // social_proof shell. Score against the preferred slot's own role/format
-      // (catalog key is SSOT; assignment role may still be drifted carousel↔reel).
+      // Soft preferred (FD/stamp): compete fairly without +60 self-key bonus.
+      // Intent conflict → any-format rematch; otherwise same-format best wins.
       const ideaFamily = resolveIdeaIntentFamily(idea);
       const slotFamily = resolveSlotIntentFamily(exact);
-      const alignedAssignment = assignment
+      const intentConflict = catalogIntentFamiliesConflict(ideaFamily, slotFamily);
+      const neutralAssignment = assignment
         ? {
             ...assignment,
-            catalog_slot_key: exact.slotKey,
+            // Drop sticky self-key bonus; keep role for format/role scoring.
+            catalog_slot_key: undefined,
+            library_slot_key: undefined,
             slot_role: (exact.slotRole || assignment.slot_role) as typeof assignment.slot_role,
           }
         : undefined;
-      const preferredScore = scoreSlotForIdea(
-        exact,
-        idea,
-        alignedAssignment,
-        slotUsageCounts?.get(exact.slotKey) ?? 0,
-        recentCatalogSlotKeys,
-      );
-      const intentConflict = catalogIntentFamiliesConflict(ideaFamily, slotFamily);
-      // Rematch peers in the preferred slot's format only — cross-format
-      // rematch is applyCatalogSlotToAssignment's job when we keep the pin.
-      const bestSameFormat = (() => {
-        let best: ReturnType<typeof pickBestScored> = null;
-        for (const slot of activeSlots.slots) {
-          if (slot.format !== exact.format) continue;
-          if (usedSlotKeys?.has(slot.slotKey)) continue;
-          const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
-          const score = scoreSlotForIdea(
-            slot,
-            idea,
-            alignedAssignment,
-            usage,
-            recentCatalogSlotKeys,
-          );
-          if (score <= 0) continue;
-          const recentIdx = recentCatalogSlotKeys?.indexOf(slot.slotKey) ?? -1;
-          const tie = catalogSlotTieBreakRank(slot.slotKey, idea);
-          if (
-            !best
-            || score > best.score
-            || (score === best.score && usage < best.usage)
-            || (score === best.score && usage === best.usage && (
-              (recentIdx < 0 && best.recentIdx >= 0)
-              || (recentIdx >= 0 && best.recentIdx >= 0 && recentIdx > best.recentIdx)
-              || (recentIdx === best.recentIdx && tie < best.tie)
-            ))
-          ) {
-            best = { slot, score, usage, recentIdx, tie };
-          }
-        }
-        return best;
-      })();
-      const peerWins = Boolean(
-        bestSameFormat
-        && bestSameFormat.slot.slotKey !== exact.slotKey
-        && bestSameFormat.score >= preferredScore + PREFERRED_SOFT_SCORE_MARGIN,
-      );
-      if (!intentConflict && !peerWins) {
-        return exact;
-      }
-      if (intentConflict || peerWins) {
-        // Intent conflict: allow any-format best so DJ≠social can rematch.
-        const best = intentConflict ? pickBestScored() : bestSameFormat;
-        if (best) return best.slot;
+
+      if (intentConflict) {
+        const rematch = pickBestWithRecentVariety({ neutralAssignment });
+        if (rematch) return rematch.slot;
+      } else {
+        const bestSameFormat = pickBestWithRecentVariety({
+          format: exact.format,
+          neutralAssignment,
+          preferredHintKey: exact.slotKey,
+        });
+        if (bestSameFormat) return bestSameFormat.slot;
       }
     }
   }
 
-  const best = pickBestScored();
+  const best = pickBestWithRecentVariety();
   if (best) return best.slot;
 
   // Format-only fallback — same format only (never stamp a reel key onto a story).
@@ -832,6 +856,16 @@ export function matchIdeaToBrandCatalogSlot(
   if (!targetFormat) return null;
 
   let fallback: { slot: BrandActiveSlot; usage: number } | null = null;
+  for (const slot of activeSlots.slots) {
+    if (slot.format !== targetFormat) continue;
+    if (usedSlotKeys?.has(slot.slotKey)) continue;
+    if (recentSet?.has(slot.slotKey)) continue;
+    const usage = slotUsageCounts?.get(slot.slotKey) ?? 0;
+    if (!fallback || usage < fallback.usage) fallback = { slot, usage };
+  }
+  if (fallback) return fallback.slot;
+
+  // Pool exhausted including recent — allow recent keys as last resort.
   for (const slot of activeSlots.slots) {
     if (slot.format !== targetFormat) continue;
     if (usedSlotKeys?.has(slot.slotKey)) continue;
@@ -859,13 +893,18 @@ export function stampIdeasWithBrandCatalogSlots(
 ): Record<string, unknown>[] {
   const usage = new Map<string, number>();
   const recentCatalogSlotKeys = opts?.recentCatalogSlotKeys;
+  const lockExisting = opts?.lockExistingCatalogPins === true;
   return ideas.map((idea) => {
     const usedKeys = new Set(usage.keys());
+    const existingKey = String(idea.catalog_slot_key ?? '').trim() || null;
+    const pinExisting = Boolean(lockExisting && existingKey);
     let matched = matchIdeaToBrandCatalogSlot({
       idea,
       activeSlots,
-      usedSlotKeys: usedKeys,
-      recentCatalogSlotKeys,
+      usedSlotKeys: pinExisting ? undefined : usedKeys,
+      recentCatalogSlotKeys: pinExisting ? undefined : recentCatalogSlotKeys,
+      preferredCatalogSlotKey: existingKey,
+      preferredIsDurable: pinExisting,
     });
     // Prefer unused first; if catalog is smaller than idea count, reuse with soft penalty.
     if (!matched && activeSlots.slots.length > 0) {
@@ -873,7 +912,9 @@ export function stampIdeasWithBrandCatalogSlots(
         idea,
         activeSlots,
         slotUsageCounts: usage,
-        recentCatalogSlotKeys,
+        recentCatalogSlotKeys: pinExisting ? undefined : recentCatalogSlotKeys,
+        preferredCatalogSlotKey: existingKey,
+        preferredIsDurable: pinExisting,
       });
     }
     if (!matched) return idea;
@@ -1067,13 +1108,13 @@ export function enrichProductionQueueWithBrandSlots(
 
   for (const item of queue) {
     const usedKeys = new Set(usage.keys());
-    const durableKey = `${item.ideaIndex}:${item.assignment.slot_role}`;
-    const isDurablePin = Boolean(durablePreferredKeys?.has(durableKey));
     const preferredKey = String(
       item.assignment.catalog_slot_key
       ?? (item.idea as Record<string, unknown>).catalog_slot_key
       ?? '',
     ).trim() || null;
+    const isDurablePin = isDurableCatalogQueuePin(item, durablePreferredKeys)
+      || Boolean(opts?.lockExistingCatalogPins && preferredKey);
     // Soft stamp / FD pick that already ran recently → clear preferred for variety.
     // Intent veto inside matchIdeaToBrandCatalogSlot also rematches soft misfits.
     // Plan/factory durable bindings keep their exact shell (preferredIsDurable).

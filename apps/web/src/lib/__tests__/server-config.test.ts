@@ -223,6 +223,12 @@ describe('serverConfig', () => {
       expect(serverConfig.imageGen.expandModel).toBe('gpt-4o-mini');
     });
 
+    it('agency tier uses medium gpt-image quality', () => {
+      process.env.AI_MODEL_TIER = 'agency';
+      expect(serverConfig.ai.tier).toBe('agency');
+      expect(serverConfig.imageGen.quality).toBe('medium');
+    });
+
     it('premium tier via AI_MODEL_TIER env', () => {
       process.env.AI_MODEL_TIER = 'premium';
       expect(serverConfig.ai.tier).toBe('premium');

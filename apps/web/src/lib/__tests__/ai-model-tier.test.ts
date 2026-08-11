@@ -57,4 +57,10 @@ describe('ai-model-tier', () => {
     expect(p.imageOpenAiQuality).toBe('medium');
     expect(p.falIdeogramModel).toBe('ideogram/v4');
   });
+
+  it('agency uses medium gpt-image quality; premium stays high', () => {
+    expect(AI_MODEL_PROFILES.agency.imageOpenAiQuality).toBe('medium');
+    expect(AI_MODEL_PROFILES.agency.imageOpenAiModel).toBe('gpt-image-2');
+    expect(AI_MODEL_PROFILES.premium.imageOpenAiQuality).toBe('high');
+  });
 });

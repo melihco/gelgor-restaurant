@@ -59,7 +59,8 @@ export const AI_MODEL_PROFILES: Record<AiModelTier, AiModelProfile> = {
     visionGrafiker: 'gpt-4o-mini',
     visionDetail: 'low',
     imageOpenAiModel: 'gpt-image-2',
-    imageOpenAiQuality: 'high',
+    /** Cost: medium per-edit; path/retries unchanged. Override: SMART_AGENCY_IMAGE_QUALITY. */
+    imageOpenAiQuality: 'medium',
     imageProvider: 'flux',
     falImageModel: 'fal-ai/flux/dev',
     falTypographyFallback: 'fal-ai/flux/dev',

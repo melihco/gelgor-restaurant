@@ -606,6 +606,7 @@ export function MissionCompletedCard({
   typeLabel,
   timeLabel,
   summaryFallback,
+  costUsd,
 }: {
   mission: MissionSummary;
   artifacts: OutputArtifact[];
@@ -614,6 +615,8 @@ export function MissionCompletedCard({
   typeLabel: string;
   timeLabel: string;
   summaryFallback?: string;
+  /** cost_events lifetime total (USD). */
+  costUsd?: number | null;
 }) {
   const thumbs = useMemo(() => {
     const out: Array<{ id: string; url: string }> = [];
@@ -696,6 +699,9 @@ export function MissionCompletedCard({
           )}
           <div style={{ fontSize: 10, color: t.textMuted }}>
             {typeLabel} · {timeLabel}
+            {costUsd != null && costUsd > 0
+              ? ` · $${costUsd < 1 ? costUsd.toFixed(2) : costUsd.toFixed(1)}`
+              : ''}
           </div>
         </div>
 

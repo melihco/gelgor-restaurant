@@ -546,15 +546,13 @@ async def summarize_workspace_production_cost(
     ).all()
     by_scope = {r.scope: round(float(r.total), 5) for r in scope_rows}
 
+    # Lifetime mission totals for hub cards (not clipped to the period window).
     top_missions = (
         await db.execute(
             select(MissionCostRollup)
-            .where(
-                MissionCostRollup.workspace_id == workspace_id,
-                MissionCostRollup.updated_at >= datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-            )
+            .where(MissionCostRollup.workspace_id == workspace_id)
             .order_by(MissionCostRollup.total_usd.desc())
-            .limit(20),
+            .limit(100),
         )
     ).scalars().all()
 
@@ -574,6 +572,9 @@ async def summarize_workspace_production_cost(
                 "estimated_usd": float(m.estimated_usd),
                 "slot_count": m.slot_count,
                 "event_count": m.event_count,
+                "mission_graph_usd": float(m.mission_graph_usd),
+                "feed_slot_usd": float(m.feed_slot_usd),
+                "by_provider": m.by_provider or {},
                 "last_recorded_at": m.last_recorded_at.isoformat() if m.last_recorded_at else None,
             }
             for m in top_missions

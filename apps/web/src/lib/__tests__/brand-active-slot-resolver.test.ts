@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   alignAssignmentToCatalogSlotKey,
   applyCatalogSlotBindingsToQueue,
+  collectDurableCatalogPreferredKeys,
+  isDurableCatalogQueuePin,
   applyCatalogSlotToAssignment,
   filterDesignTemplatesToActiveSlots,
   formatFromSlotRole,
@@ -11,6 +13,7 @@ import {
   resolveBrandActiveSlotKeys,
   resolveBrandProductionFormatTargets,
   resolveSlotBackfillProductionLoop,
+  stampIdeasWithBrandCatalogSlots,
   summarizeCatalogSlotStampCoverage,
 } from '@/lib/brand-active-slot-resolver';
 import type { BrandDesignTemplateRecord } from '@/lib/brand-design-template-matcher';
@@ -253,7 +256,7 @@ describe('matchIdeaToBrandCatalogSlot', () => {
     expect(matched?.slotKey).toBe('beach_club_aerial_venue_post');
   });
 
-  it('soft-penalizes recent catalog keys across beach_club + local_products_shop', () => {
+  it('hard-excludes recent catalog keys across beach_club + local_products_shop', () => {
     for (const [sector, sticky, peer, announcement, headline] of [
       [
         'beach_club',
@@ -324,6 +327,39 @@ describe('matchIdeaToBrandCatalogSlot', () => {
       activeSlots: set,
     });
     expect(matched?.slotKey).toBe('beach_club_dj_night_teaser_post');
+  });
+
+  it('lets a better same-format peer beat soft preferred without large margin', () => {
+    const sticky = mockSlot('beach_club_aerial_venue_post', 'post', {
+      match_signals: { announcement_types: ['venue_showcase'] },
+    });
+    const sunset = mockSlot('beach_club_sunset_cocktail_post', 'post', {
+      match_signals: {
+        announcement_types: ['venue_showcase', 'product_reveal'],
+        keywords: ['sunset', 'cocktail'],
+      },
+    });
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-soft-peer',
+      sector: 'beach_club',
+      sectorSlots: [sticky, sunset],
+      tenantAssignments: [
+        mockAssignment(sticky.slot_key, true, sticky),
+        mockAssignment(sunset.slot_key, true, sunset),
+      ],
+    });
+    const matched = matchIdeaToBrandCatalogSlot({
+      idea: {
+        calendar_announcement_type: 'venue_showcase',
+        headline: 'Sunset cocktail on the deck',
+        caption: 'Golden hour cocktail hour',
+        content_type: 'instagram_post',
+      },
+      activeSlots: set,
+      preferredCatalogSlotKey: sticky.slot_key,
+      preferredIsDurable: false,
+    });
+    expect(matched?.slotKey).toBe('beach_club_sunset_cocktail_post');
   });
 
   it('vetoes soft preferred social_proof when idea is DJ night (beach_club)', () => {
@@ -512,6 +548,144 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     // not the full catalog id — so LIBRARY_SLOT_TO_TEMPLATE_TYPES still resolves.
     expect(queue[0]!.assignment.library_slot_key).toBe('event_story');
     expect(queue[0]!.assignment.library_slot_key).not.toBe('beach_club_dj_night_teaser_post');
+  });
+
+  it('locks existing plan stamps across beach_club + local_products_shop (produce path)', () => {
+    for (const [sector, sticky, peer, announcement] of [
+      [
+        'beach_club',
+        'beach_club_events_calendar_post',
+        'beach_club_private_event_post',
+        'event_teaser',
+      ],
+      [
+        'local_products_shop',
+        'local_products_shop_atelier_story_post',
+        'local_products_shop_shelf_vitrine_post',
+        'product_reveal',
+      ],
+    ] as const) {
+      const a = mockSlot(sticky, 'post', {
+        sector_id: sector,
+        match_signals: { announcement_types: [announcement] },
+      });
+      const b = mockSlot(peer, 'post', {
+        sector_id: sector,
+        match_signals: { announcement_types: [announcement] },
+      });
+      const activeSet = resolveBrandActiveSlotKeys({
+        workspaceId: `ws-${sector}-lock`,
+        sector,
+        sectorSlots: [a, b],
+        tenantAssignments: [
+          mockAssignment(a.slot_key, true, a),
+          mockAssignment(b.slot_key, true, b),
+        ],
+      });
+
+      const stamped = stampIdeasWithBrandCatalogSlots(
+        [{
+          headline: 'Plan stamp',
+          calendar_announcement_type: announcement,
+          content_type: 'instagram_post',
+          catalog_slot_key: sticky,
+        }],
+        activeSet,
+        {
+          recentCatalogSlotKeys: [sticky],
+          lockExistingCatalogPins: true,
+        },
+      );
+      expect(stamped[0]!.catalog_slot_key).toBe(sticky);
+
+      const queue = enrichProductionQueueWithBrandSlots(
+        [{
+          queueIndex: 0,
+          ideaIndex: 0,
+          idea: {
+            headline: 'Plan stamp',
+            calendar_announcement_type: announcement,
+            content_type: 'instagram_post',
+            catalog_slot_key: sticky,
+          },
+          assignment: {
+            idea_index: 0,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: sticky,
+          },
+        }],
+        activeSet,
+        {
+          recentCatalogSlotKeys: [sticky],
+          lockExistingCatalogPins: true,
+          durablePreferredKeys: collectDurableCatalogPreferredKeys(
+            [{
+              queueIndex: 0,
+              ideaIndex: 0,
+              idea: { catalog_slot_key: sticky },
+              assignment: {
+                idea_index: 0,
+                slot_role: 'fal_designed_post',
+                pipeline: 'fal_design',
+                copy_bundle_id: 'week',
+                publish_channel: 'instagram_organic',
+                catalog_slot_key: sticky,
+              },
+            }],
+            { '0:fal_designed_post': sticky },
+          ),
+        },
+      );
+      expect(queue[0]!.assignment.catalog_slot_key).toBe(sticky);
+      // Soft path without lock still rematches away from recent sticky.
+      const soft = enrichProductionQueueWithBrandSlots(
+        [{
+          queueIndex: 0,
+          ideaIndex: 0,
+          idea: {
+            headline: 'Plan stamp',
+            calendar_announcement_type: announcement,
+            content_type: 'instagram_post',
+            catalog_slot_key: sticky,
+          },
+          assignment: {
+            idea_index: 0,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: sticky,
+          },
+        }],
+        activeSet,
+        { recentCatalogSlotKeys: [sticky] },
+      );
+      expect(soft[0]!.assignment.catalog_slot_key).toBe(peer);
+    }
+  });
+
+  it('collectDurableCatalogPreferredKeys covers role-drift via idea prefix', () => {
+    const bindings = { '2:fal_designed_post': 'beach_club_dj_night_teaser_post' };
+    const queue = [{
+      queueIndex: 0,
+      ideaIndex: 2,
+      idea: { catalog_slot_key: 'beach_club_dj_night_teaser_post' },
+      assignment: {
+        idea_index: 2,
+        slot_role: 'organic_carousel' as const,
+        pipeline: 'fal_design' as const,
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic' as const,
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+      },
+    }];
+    const durable = collectDurableCatalogPreferredKeys(queue, bindings);
+    expect(durable.has('2:fal_designed_post')).toBe(true);
+    expect(durable.has('2:organic_carousel')).toBe(true);
+    expect(isDurableCatalogQueuePin(queue[0]!, durable)).toBe(true);
   });
 
   it('rematches soft-preferred recent keys but keeps durable plan pins', () => {

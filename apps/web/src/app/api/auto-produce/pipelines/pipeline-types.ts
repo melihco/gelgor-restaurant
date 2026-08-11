@@ -131,6 +131,11 @@ export interface SlotProductionInputs {
   falGridSurfaceKind?: import('@/lib/fal-grid-surface-rotation').FalGridSurfaceKind;
   /** When false, keep calendar headline verbatim (no caption-derived headline rewrite). */
   captionAwareHeadline?: boolean;
+  /**
+   * production-loop punchline lock (`mission_tagline` | `canva_field_copy`).
+   * Paint paths must soft-clamp only — no type_budget stem / coherence rewrite.
+   */
+  punchlineLockSource?: string | null;
   /** Designed tagline/subline for fal typography (calendar tagline). */
   falSubtitle?: string;
   falFontPersonality?: string;

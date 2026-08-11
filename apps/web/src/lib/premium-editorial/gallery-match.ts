@@ -98,33 +98,19 @@ export function resolvePremiumEditorialGalleryMatch(
     )
     : null;
 
-  const STRONG_ENOUGH = 35;
-  if (match?.url && match.score >= STRONG_ENOUGH) {
-    if (match.score < 50) {
-      warnings.push(
-        `Gallery match is moderate (score=${match.score}) for "${headline.slice(0, 48)}"`,
-      );
-    }
-    const supporting = matchPool.filter((u) => u !== match.url).slice(0, 3);
-    return {
-      primaryUrl: match.url,
-      supportingUrls: supporting,
-      match,
-      warnings,
-    };
-  }
-
+  // Production-loop pin is SSOT when usable — never swap on moderate rematch score.
+  // Rematch only fills the gap when the pin is missing/unreachable.
   if (preferredUsable) {
     if (match?.url && match.url !== preferredUsable) {
       warnings.push(
-        `Semantic rematch weak (score=${match.score}) — using production-loop gallery pin.`,
+        `Semantic rematch ignored (score=${match.score}) — honoring production-loop gallery pin.`,
       );
     }
     const supporting = matchPool.filter((u) => u !== preferredUsable).slice(0, 3);
     return {
       primaryUrl: preferredUsable,
       supportingUrls: supporting,
-      match: match?.url
+      match: match?.url === preferredUsable
         ? match
         : {
           url: preferredUsable,

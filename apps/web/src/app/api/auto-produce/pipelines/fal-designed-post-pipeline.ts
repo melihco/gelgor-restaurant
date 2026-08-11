@@ -42,16 +42,12 @@ import {
   resolveVisualSourceMode,
 } from '@/lib/ai-visual-production-standard';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import {
-  areFalOverlayTextsRedundant,
-  fitMissionOverlayToTemplateBudget,
-  resolveFalOverlayCopy,
-} from '@/lib/fal-caption-headline';
-import { canShipCaptionDesignPost } from '@/lib/caption-design-post-coherence';
+import { areFalOverlayTextsRedundant } from '@/lib/fal-caption-headline';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
+import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
   detectedCanvasTextOffCaption,
@@ -120,6 +116,8 @@ export interface FalDesignedPostInput {
   galleryPhotoMeta?: GalleryPhotoMeta | null;
   /** economy/agency/premium — cost guards for GPT retry / Ideogram fallthrough. */
   productionTier?: string | null;
+  /** production-loop punchline lock — paint must not stem/rewrite. */
+  punchlineLockSource?: string | null;
 }
 
 export interface FalDesignedPostResult {
@@ -228,61 +226,46 @@ export async function produceFalDesignedPost(
     // Primary engine — GPT-image design grounded on the real gallery photo.
     if (referenceImageUrls.length > 0 && referenceImageUrls.every(isUsableGalleryPhotoUrl)) {
       const canvasChannel = aspectRatio === '9:16' ? 'reel' : 'feed_post';
-      const overlayCopy = resolveFalOverlayCopy({
+      // SSOT: bind overlay once after template match — locked punchlines never stem.
+      const paintOverlay = resolveSlotPaintOverlay({
         headline: input.headline,
-        cta: input.subtitle || input.cta,
+        subtitle: input.subtitle || input.cta,
         caption: input.caption,
+        cta: input.cta,
         channel: canvasChannel,
-        lockIdeationCopy: input.captionAwareHeadline !== true,
         brandName: input.brandName,
         businessType: input.sector,
-      });
-      // Lock mission copy to the template sample footprint so type doesn't overflow
-      // the designed zone (idea / layout / copy / photo stay coherent).
-      const fitted = fitMissionOverlayToTemplateBudget({
-        headline: overlayCopy.headline,
-        subtitle: overlayCopy.subtitle,
-        channel: canvasChannel,
+        punchlineLockSource: input.punchlineLockSource,
+        captionAwareHeadline: input.captionAwareHeadline,
         designIntensity: input.designIntensityLevel,
         sampleHeadline: binding?.matched?.sampleHeadline,
         sampleSubtitle: binding?.matched?.sampleSubtitle,
         showSubline: binding?.matched?.showSubline,
         typeBudget: binding?.matched?.typeBudget,
+        photoUrl: referenceUrl,
+        galleryPhotoMeta: input.galleryPhotoMeta,
+        designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
       });
       if (
-        fitted.budget.source === 'template_sample'
-        || fitted.budget.source === 'operator_type_budget'
-        || fitted.budget.source === 'generated_type_budget'
+        paintOverlay.budgetSource === 'template_sample'
+        || paintOverlay.budgetSource === 'operator_type_budget'
+        || paintOverlay.budgetSource === 'generated_type_budget'
       ) {
         console.log(
           `[auto-produce] [fal-design] template copy budget `
-          + `src=${fitted.budget.source} `
-          + `h≤${fitted.budget.headline.maxLen}/${fitted.budget.headline.maxWords}w `
-          + `sample="${String(binding?.matched?.sampleHeadline ?? '').slice(0, 24)}" `
-          + `"${overlayCopy.headline.slice(0, 36)}" → "${fitted.headline.slice(0, 36)}"`,
+          + `src=${paintOverlay.budgetSource} `
+          + `preserve=${paintOverlay.preserved} `
+          + `"${input.headline.slice(0, 36)}" → "${paintOverlay.headline.slice(0, 36)}"`,
         );
       }
-      let canvasHeadline = fitted.headline;
-      const dedupedSubtitle = resolveSlotSublineForRender(fitted.subtitle, {
-        matchedShowSubline: binding?.matched?.showSubline,
-      });
-      // Caption → design → photo → overlay must all agree before GPT paints.
-      const coherence = canShipCaptionDesignPost({
-        caption: input.caption,
-        overlayHeadline: canvasHeadline,
-        brandName: input.brandName,
-        businessType: input.sector,
-        photoUrl: referenceUrl,
-        galleryMeta: input.galleryPhotoMeta,
-        designSampleHeadline: binding?.matched?.sampleHeadline,
-        designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
-      });
-      if (coherence.repaired && coherence.overlayHeadline) {
+      const canvasHeadline = paintOverlay.headline;
+      const dedupedSubtitle = paintOverlay.subtitle;
+      const coherence = paintOverlay.coherence;
+      if (!paintOverlay.preserved && coherence.repaired && coherence.overlayHeadline) {
         console.warn(
           `[auto-produce] [fal-design] coherence repair: `
-          + `"${canvasHeadline.slice(0, 36)}" → "${coherence.overlayHeadline.slice(0, 36)}"`,
+          + `"${input.headline.slice(0, 36)}" → "${coherence.overlayHeadline.slice(0, 36)}"`,
         );
-        canvasHeadline = coherence.overlayHeadline;
       }
       if (!coherence.ok) {
         console.warn(
@@ -522,6 +505,7 @@ export async function produceFalDesignedPost(
         mood: input.mood,
         grafikerMaxRetries: lockOpts.grafikerMaxRetries,
         captionAwareHeadline: lockOpts.captionAwareHeadline,
+        punchlineLockSource: input.punchlineLockSource,
         requireGroundedGallery: resolveFalRequireGroundedGallery({
           referencePhotoUrl: referenceUrl,
           sector: input.sector,
@@ -786,6 +770,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       brandTemplateBinding: templateBinding,
       aspectRatio: inputs.falAspectRatio,
       captionAwareHeadline: inputs.captionAwareHeadline,
+      punchlineLockSource: inputs.punchlineLockSource,
       subtitle: gatedFalSubtitle,
       fontPersonality: inputs.falFontPersonality,
       headingFont: inputs.falHeadingFont,

@@ -147,6 +147,8 @@ export interface FalDesignerInput {
    * Defaults to false — mission ideation headline + CTA are rendered verbatim.
    */
   captionAwareHeadline?: boolean;
+  /** production-loop punchline lock — Ideogram retry must not invent a stem. */
+  punchlineLockSource?: string | null;
   /** Shared brand-system directives resolved from Brand Theme + Template Library. */
   brandDirectives?: string[];
   /**
@@ -1572,8 +1574,12 @@ export async function produceFalDesignerStill(
     );
   }
 
+  const preserveLockedPunchline =
+    input.punchlineLockSource === 'mission_tagline'
+    || input.punchlineLockSource === 'canva_field_copy';
   const useCaptionAware = input.captionAwareHeadline === true
     && !groundedOnly
+    && !preserveLockedPunchline
     && Boolean(input.caption);
 
   const overlayCopy = resolveFalOverlayCopy({
@@ -1582,6 +1588,7 @@ export async function produceFalDesignerStill(
     caption: input.caption,
     channel: canvasChannel,
     lockIdeationCopy: !useCaptionAware,
+    preservePlannedHeadline: preserveLockedPunchline || !useCaptionAware,
   });
   const displayHeadline = overlayCopy.headline;
   const captionSubtitle = overlayCopy.subtitle;
@@ -1879,7 +1886,12 @@ export async function produceFalDesignerStill(
   }
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const attemptHeadline = shortenFalOverlayForImageRetry(displayHeadline, attempt, canvasChannel);
+    const attemptHeadline = shortenFalOverlayForImageRetry(
+      displayHeadline,
+      attempt,
+      canvasChannel,
+      { preserveLockedPunchline },
+    );
     if (!attemptHeadline) {
       console.warn(`[fal-designer] Ideogram retry ${attempt + 1}: no complete headline after shortening`);
       continue;

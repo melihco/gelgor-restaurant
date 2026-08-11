@@ -278,6 +278,7 @@ import { buildAutoProduceProductionQueue } from '@/lib/auto-produce/build-produc
 import {
   alignAssignmentToCatalogSlotKey,
   applyCatalogSlotBindingsToQueue,
+  collectDurableCatalogPreferredKeys,
   enrichProductionQueueWithBrandSlots,
   resolveSlotBackfillProductionLoop,
   loadBrandActiveSlotSet,
@@ -932,9 +933,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       stampRecentCatalogKeys = [];
     }
   }
+  // Produce path: keep plan/FD/factory catalog pins — do not rematch for recent variety.
+  const hasFactoryCatalogBindings = Boolean(
+    catalogSlotBindings && Object.keys(catalogSlotBindings).length > 0,
+  );
   const brandAwareToProcess = brandActiveSlots
     ? stampIdeasWithBrandCatalogSlots(ideasForStamp, brandActiveSlots, {
       recentCatalogSlotKeys: stampRecentCatalogKeys,
+      lockExistingCatalogPins: hasFactoryCatalogBindings || !adHocBrief,
     })
     : ideasForStamp;
 
@@ -1134,11 +1140,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // Faz 5 — apply durable factory bindings (production_jobs.slot_key) before
   // enrichment so the matcher treats the plan-time catalog slot as preferred.
   const boundQueue = applyCatalogSlotBindingsToQueue(manifestQueue, catalogSlotBindings);
+  const durablePreferredKeys = collectDurableCatalogPreferredKeys(
+    boundQueue,
+    catalogSlotBindings,
+  );
 
   const brandAwareQueue = brandActiveSlots
     ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots, {
       recentCatalogSlotKeys: gctx.recentCatalogSlotKeys,
-      durablePreferredKeys: new Set(Object.keys(catalogSlotBindings ?? {})),
+      durablePreferredKeys,
+      // Mission produce: any stamp already on the row is plan SSOT.
+      lockExistingCatalogPins: hasFactoryCatalogBindings || !adHocBrief,
     })
     : boundQueue;
 
@@ -1475,8 +1487,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const storedIdeationHeadline = (rawOverlayHeadline || rawPlanningHeadline)
       ? enforceDisplayHeadline(rawOverlayHeadline || rawPlanningHeadline, 72)
       : headline;
-    /** Gallery scorer uses the ideation hook, not caption-derived overlay fragments. */
-    const galleryMatchHeadline = storedIdeationHeadline || ideationHeadline;
+    /**
+     * Gallery scorer must use the canvas punchline when Hub/tagline is locked —
+     * otherwise photo locks to concept title while paint uses tagline.
+     */
+    let galleryMatchHeadline = calendarTaglinePublishable
+      ? (ideationHeadline || storedIdeationHeadline)
+      : (storedIdeationHeadline || ideationHeadline);
 
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
@@ -1730,6 +1747,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           // Slot/template closed subline — drop support line entirely.
           cta = '';
         }
+      }
+      // Photo match text follows the locked canvas punchline (not concept title).
+      if (shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource) && headline.trim()) {
+        galleryMatchHeadline = headline;
       }
     }
 
@@ -4166,6 +4187,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           // Strong ideation caption is publish + overlay SSOT — do not rewrite
           // on-canvas copy away from the Instagram under-post text.
           captionAwareHeadline: originalIdeationCaption.trim().length < 24,
+          punchlineLockSource: lockedFalPunchlineSource,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,

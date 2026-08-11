@@ -108,6 +108,9 @@ export interface WorkspaceProductionCostSummary {
     estimated_usd: number;
     slot_count: number;
     event_count: number;
+    mission_graph_usd?: number;
+    feed_slot_usd?: number;
+    by_provider?: Record<string, number>;
     last_recorded_at?: string;
   }>;
 }
