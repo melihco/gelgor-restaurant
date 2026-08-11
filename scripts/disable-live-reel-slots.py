@@ -110,15 +110,18 @@ async def run(dsn: str, *, dry_run: bool) -> None:
         print("before:", dict(before))
         if dry_run:
             print("dry-run: migration not applied")
+            await conn.rollback()
+            await engine.dispose()
             return
 
-        async with conn.begin():
-            defs = await conn.execute(text(UPDATE_DEFS_SQL))
-            assigns = await conn.execute(text(UPDATE_ASSIGNMENTS_SQL))
-            print(f"updated definitions={defs.rowcount} assignments={assigns.rowcount}")
+        defs = await conn.execute(text(UPDATE_DEFS_SQL))
+        assigns = await conn.execute(text(UPDATE_ASSIGNMENTS_SQL))
+        print(f"updated definitions={defs.rowcount} assignments={assigns.rowcount}")
+        await conn.commit()
 
         after = (await conn.execute(text(COUNTS_SQL))).mappings().one()
         print("after:", dict(after))
+        await conn.rollback()
     await engine.dispose()
     print("ok: reel catalog slots disabled")
 
