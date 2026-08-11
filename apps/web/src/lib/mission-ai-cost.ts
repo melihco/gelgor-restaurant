@@ -54,13 +54,13 @@ const PROVIDER_LABELS: Record<string, string> = {
   unknown: 'Diğer sağlayıcı',
 };
 
-const SCOPE_LABELS: Record<string, string> = {
+const SCOPE_LABELS = {
   mission_graph: 'Mission graph (LLM)',
   feed_slot: 'Feed üretimi (slot)',
   integration: 'Entegrasyon',
   gallery: 'Galeri analizi',
   other: 'Diğer',
-};
+} as const;
 
 function parsePerformanceCostBreakdown(
   perf: Record<string, unknown> | null | undefined,
@@ -96,7 +96,7 @@ function providerLabel(key: string): string {
 }
 
 function scopeLabel(key: string): string {
-  return SCOPE_LABELS[key] ?? key;
+  return (SCOPE_LABELS as Record<string, string>)[key] ?? key;
 }
 
 function linesFromCategoryMap(
