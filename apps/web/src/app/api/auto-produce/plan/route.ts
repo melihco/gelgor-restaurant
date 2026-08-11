@@ -18,6 +18,7 @@ import {
 } from '@/lib/mission-production-plan';
 import {
   enrichProductionQueueWithBrandSlots,
+  filterProductionQueueToEnabledFormats,
   loadBrandActiveSlotSet,
   resolveBrandProductionFormatTargets,
   stampIdeasWithBrandCatalogSlots,
@@ -241,11 +242,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       productionProfile,
       packageSlug: pkgLimits.packageSlug,
     });
+    const formatGatedQueue = brandActiveSlots
+      ? (() => {
+        const gated = filterProductionQueueToEnabledFormats(manifestQueue, brandActiveSlots);
+        if (gated.skipped.length > 0) {
+          console.log(
+            `[auto-produce/plan] queue format gate dropped ${gated.skipped.length} slot(s): `
+            + gated.skipped
+              .slice(0, 8)
+              .map((s) => `#${s.ideaIndex}:${s.format}`)
+              .join(', '),
+          );
+        }
+        return gated.kept;
+      })()
+      : manifestQueue;
     const productionQueue = brandActiveSlots
-      ? enrichProductionQueueWithBrandSlots(manifestQueue, brandActiveSlots, {
+      ? enrichProductionQueueWithBrandSlots(formatGatedQueue, brandActiveSlots, {
         recentCatalogSlotKeys: gctx.recentCatalogSlotKeys,
       })
-      : manifestQueue;
+      : formatGatedQueue;
     // Plan-time has no factory durable bindings yet — recent rematch applies to soft stamps.
     const missionGalleryAssignments = await buildMissionGalleryAssignments({
       workspaceId,

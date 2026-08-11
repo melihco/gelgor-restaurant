@@ -426,6 +426,92 @@ export function resolveBrandProductionFormatTargets(
   };
 }
 
+/**
+ * Produce format for an idea/assignment — catalog key → role → idea fields.
+ * Used to drop formats with zero brand-enabled catalog slots before produce.
+ */
+export function resolveProduceFormatForIdea(
+  idea: Record<string, unknown>,
+  assignment?: Pick<ProductionAssignment, 'slot_role' | 'catalog_slot_key'> | null,
+): BrandActiveSlot['format'] {
+  const keyFmt = inferFormatFromCatalogSlotKey(
+    String(assignment?.catalog_slot_key ?? idea.catalog_slot_key ?? '').trim() || null,
+  );
+  if (keyFmt) return keyFmt;
+  const roleFmt = formatFromSlotRole(assignment?.slot_role ?? null);
+  if (roleFmt) return roleFmt;
+  const pkg = detectIdeaPackageFormat(idea);
+  if (pkg === 'story' || pkg === 'reel' || pkg === 'carousel' || pkg === 'post') {
+    return pkg;
+  }
+  return 'post';
+}
+
+export function brandHasEnabledSlotsForFormat(
+  activeSlots: BrandActiveSlotSet,
+  format: BrandActiveSlot['format'],
+): boolean {
+  return activeSlots.slots.some((s) => s.enabled && s.format === format);
+}
+
+export type FormatGateSkip = {
+  ideaIndex: number;
+  format: BrandActiveSlot['format'];
+  headline: string;
+};
+
+/**
+ * Drop queue rows whose produce format has no brand-enabled catalog slots.
+ * Does not cross-format rematch — closed reel/post/story/carousel means skip.
+ * Preserves ideaIndex for factory bindings; renumbers queueIndex only.
+ */
+export function filterProductionQueueToEnabledFormats(
+  queue: ManifestProductionQueueItem[],
+  activeSlots: BrandActiveSlotSet,
+): { kept: ManifestProductionQueueItem[]; skipped: FormatGateSkip[] } {
+  const kept: ManifestProductionQueueItem[] = [];
+  const skipped: FormatGateSkip[] = [];
+  for (const item of queue) {
+    const idea = item.idea as Record<string, unknown>;
+    const format = resolveProduceFormatForIdea(idea, item.assignment);
+    if (!brandHasEnabledSlotsForFormat(activeSlots, format)) {
+      skipped.push({
+        ideaIndex: item.ideaIndex,
+        format,
+        headline: String(idea.headline ?? idea.concept_title ?? idea.title ?? '').slice(0, 80),
+      });
+      continue;
+    }
+    kept.push(item);
+  }
+  return {
+    kept: kept.map((item, queueIndex) => ({ ...item, queueIndex })),
+    skipped,
+  };
+}
+
+/** Idea-list gate (plan/stamp) — same format rule as the production queue. */
+export function filterIdeasToEnabledFormats(
+  ideas: Record<string, unknown>[],
+  activeSlots: BrandActiveSlotSet,
+): { kept: Record<string, unknown>[]; skipped: FormatGateSkip[] } {
+  const kept: Record<string, unknown>[] = [];
+  const skipped: FormatGateSkip[] = [];
+  ideas.forEach((idea, index) => {
+    const format = resolveProduceFormatForIdea(idea);
+    if (!brandHasEnabledSlotsForFormat(activeSlots, format)) {
+      skipped.push({
+        ideaIndex: typeof idea.idea_index === 'number' ? idea.idea_index : index,
+        format,
+        headline: String(idea.headline ?? idea.concept_title ?? idea.title ?? '').slice(0, 80),
+      });
+      return;
+    }
+    kept.push(idea);
+  });
+  return { kept, skipped };
+}
+
 function normalizeToken(value: string | null | undefined): string {
   return String(value ?? '').trim().toLowerCase().replace(/\s+/g, '_');
 }

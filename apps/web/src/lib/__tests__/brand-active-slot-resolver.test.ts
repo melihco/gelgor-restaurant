@@ -6,12 +6,15 @@ import {
   isDurableCatalogQueuePin,
   applyCatalogSlotToAssignment,
   filterDesignTemplatesToActiveSlots,
+  filterIdeasToEnabledFormats,
+  filterProductionQueueToEnabledFormats,
   formatFromSlotRole,
   inferFormatFromCatalogSlotKey,
   matchIdeaToBrandCatalogSlot,
   enrichProductionQueueWithBrandSlots,
   resolveBrandActiveSlotKeys,
   resolveBrandProductionFormatTargets,
+  resolveProduceFormatForIdea,
   resolveSlotBackfillProductionLoop,
   stampIdeasWithBrandCatalogSlots,
   summarizeCatalogSlotStampCoverage,
@@ -154,6 +157,116 @@ describe('resolveBrandProductionFormatTargets', () => {
     expect(targets.post).toBe(1);
     expect(targets.story).toBe(1);
     expect(targets.total).toBe(2);
+  });
+});
+
+describe('filterProductionQueueToEnabledFormats', () => {
+  function queueItem(
+    ideaIndex: number,
+    format: 'post' | 'story' | 'reel' | 'carousel',
+    role: string,
+  ): ManifestProductionQueueItem {
+    const contentType = format === 'reel'
+      ? 'instagram_reel'
+      : format === 'story'
+        ? 'instagram_story'
+        : format === 'carousel'
+          ? 'instagram_carousel'
+          : 'instagram_post';
+    return {
+      queueIndex: ideaIndex,
+      ideaIndex,
+      idea: {
+        headline: `${format} idea ${ideaIndex}`,
+        content_type: contentType,
+        format,
+      },
+      assignment: {
+        idea_index: ideaIndex,
+        slot_role: role as ManifestProductionQueueItem['assignment']['slot_role'],
+        pipeline: 'fal_design',
+        rationale: 'test',
+        publish_channel: 'instagram',
+      },
+    };
+  }
+
+  it('beach_club: drops reel/story rows when only post slots enabled', () => {
+    const slots = [
+      mockSlot('beach_club_dj_night_teaser_post', 'post'),
+      mockSlot('beach_club_sunset_golden_story', 'story'),
+      mockSlot('beach_club_sunset_reel', 'reel', {
+        slot_role: 'organic_reel',
+        pipeline: 'fal_reel',
+      }),
+    ];
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-beach',
+      sector: 'beach_club',
+      sectorSlots: slots,
+      tenantAssignments: [
+        mockAssignment('beach_club_dj_night_teaser_post', true, slots[0]),
+        mockAssignment('beach_club_sunset_golden_story', false, slots[1]),
+        mockAssignment('beach_club_sunset_reel', false, slots[2]),
+      ],
+    });
+
+    const { kept, skipped } = filterProductionQueueToEnabledFormats(
+      [
+        queueItem(0, 'post', 'fal_designed_post'),
+        queueItem(1, 'reel', 'organic_reel'),
+        queueItem(2, 'story', 'fal_story_motion'),
+      ],
+      set,
+    );
+
+    expect(kept.map((q) => q.ideaIndex)).toEqual([0]);
+    expect(skipped.map((s) => s.format).sort()).toEqual(['reel', 'story']);
+    expect(resolveProduceFormatForIdea(
+      { content_type: 'instagram_reel' },
+      { slot_role: 'organic_reel' },
+    )).toBe('reel');
+  });
+
+  it('local_products_shop: drops post rows when only story slots enabled', () => {
+    const slots = [
+      mockSlot('local_products_shop_gift_bundle_post', 'post', {
+        sector_id: 'local_products_shop',
+      }),
+      mockSlot('local_products_shop_sunset_story', 'story', {
+        sector_id: 'local_products_shop',
+        slot_role: 'fal_story_motion',
+        pipeline: 'fal_story',
+      }),
+    ];
+    const set = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-shop',
+      sector: 'local_products_shop',
+      sectorSlots: slots,
+      tenantAssignments: [
+        mockAssignment('local_products_shop_gift_bundle_post', false, slots[0]),
+        mockAssignment('local_products_shop_sunset_story', true, slots[1]),
+      ],
+    });
+
+    const { kept, skipped } = filterProductionQueueToEnabledFormats(
+      [
+        queueItem(0, 'post', 'fal_designed_post'),
+        queueItem(1, 'story', 'fal_story_motion'),
+        queueItem(2, 'reel', 'organic_reel'),
+      ],
+      set,
+    );
+
+    expect(kept.map((q) => q.ideaIndex)).toEqual([1]);
+    expect(skipped.map((s) => s.format).sort()).toEqual(['post', 'reel']);
+    expect(filterIdeasToEnabledFormats(
+      [
+        { content_type: 'instagram_post', headline: 'A' },
+        { content_type: 'instagram_story', headline: 'B' },
+      ],
+      set,
+    ).kept.map((i) => i.headline)).toEqual(['B']);
   });
 });
 

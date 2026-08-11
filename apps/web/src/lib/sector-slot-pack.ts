@@ -1188,7 +1188,9 @@ export function instanceToSlotDefinition(
       ...(instance.promptPackExtras ?? {}),
     },
     optional_tags: instance.optionalTags ?? [],
-    enabled_by_default: instance.enabledByDefault ?? true,
+    // Reel catalog paused platform-wide until reel production is re-enabled.
+    enabled_by_default: instance.enabledByDefault
+      ?? (instance.format !== 'reel'),
     sort_order: sortOrder,
     status: 'active',
   };

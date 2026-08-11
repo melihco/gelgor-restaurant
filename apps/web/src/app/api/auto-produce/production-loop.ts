@@ -280,6 +280,7 @@ import {
   applyCatalogSlotBindingsToQueue,
   collectDurableCatalogPreferredKeys,
   enrichProductionQueueWithBrandSlots,
+  filterProductionQueueToEnabledFormats,
   resolveSlotBackfillProductionLoop,
   loadBrandActiveSlotSet,
   stampIdeasWithBrandCatalogSlots,
@@ -1140,19 +1141,35 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // Faz 5 — apply durable factory bindings (production_jobs.slot_key) before
   // enrichment so the matcher treats the plan-time catalog slot as preferred.
   const boundQueue = applyCatalogSlotBindingsToQueue(manifestQueue, catalogSlotBindings);
+  // Closed formats (no enabled catalog slots) never enter match/produce.
+  const formatGatedQueue = brandActiveSlots
+    ? (() => {
+      const gated = filterProductionQueueToEnabledFormats(boundQueue, brandActiveSlots);
+      if (gated.skipped.length > 0) {
+        console.log(
+          `[auto-produce] queue format gate dropped ${gated.skipped.length} slot(s): `
+          + gated.skipped
+            .slice(0, 8)
+            .map((s) => `#${s.ideaIndex}:${s.format}`)
+            .join(', '),
+        );
+      }
+      return gated.kept;
+    })()
+    : boundQueue;
   const durablePreferredKeys = collectDurableCatalogPreferredKeys(
-    boundQueue,
+    formatGatedQueue,
     catalogSlotBindings,
   );
 
   const brandAwareQueue = brandActiveSlots
-    ? enrichProductionQueueWithBrandSlots(boundQueue, brandActiveSlots, {
+    ? enrichProductionQueueWithBrandSlots(formatGatedQueue, brandActiveSlots, {
       recentCatalogSlotKeys: gctx.recentCatalogSlotKeys,
       durablePreferredKeys,
       // Mission produce: any stamp already on the row is plan SSOT.
       lockExistingCatalogPins: hasFactoryCatalogBindings || !adHocBrief,
     })
-    : boundQueue;
+    : formatGatedQueue;
 
   if (brandActiveSlots && brandActiveSlots.enabledSlotKeys.size > 0) {
     const coverage = summarizeCatalogSlotStampCoverage(brandAwareQueue);
@@ -1186,7 +1203,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
-  const productionLoop: ManifestProductionQueueItem[] = completionPassOnly
+  let productionLoop: ManifestProductionQueueItem[] = completionPassOnly
     ? []
     : slotBackfillPass && backfillSlotKeys?.length
       ? resolveSlotBackfillProductionLoop(
@@ -1195,6 +1212,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           catalogSlotBindings,
         )
       : fullProductionQueue;
+
+  // Backfill repair can reintroduce a closed format — gate again before render.
+  if (brandActiveSlots && productionLoop.length > 0) {
+    const gatedLoop = filterProductionQueueToEnabledFormats(productionLoop, brandActiveSlots);
+    if (gatedLoop.skipped.length > 0) {
+      console.log(
+        `[auto-produce] produce format gate dropped ${gatedLoop.skipped.length} slot(s) before render`,
+      );
+    }
+    productionLoop = gatedLoop.kept;
+  }
 
   if (completionPassOnly && missionId) {
     console.log(
