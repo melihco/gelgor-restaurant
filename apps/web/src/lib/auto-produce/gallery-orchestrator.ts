@@ -208,6 +208,8 @@ export function resolveQueueGalleryCapacityReroutes(input: {
   galleryPhotos: string[];
   hasRealBrandPhotos: boolean;
   resolvedBrandName: string;
+  /** Sector — low galleryReliability + missing subject → fal_only (product shops). */
+  brandBusinessType?: string | null;
 }): Map<string, string> {
   const out = new Map<string, string>();
   if (!input.hasRealBrandPhotos || input.galleryPhotos.length === 0) return out;
@@ -218,6 +220,7 @@ export function resolveQueueGalleryCapacityReroutes(input: {
     resolveGalleryPhotoMeta(url, input.galleryMeta, input.galleryPhotos));
   const relationsForSubject = (subjectKey: string): CanonicalSubjectRelation[] =>
     photoMetas.map((meta) => canonicalSubjectRelationForMeta(subjectKey, meta));
+  const lowGalleryReliability = getSectorProfile(input.brandBusinessType).galleryReliability === 'low';
 
   for (const queueItem of input.productionLoop) {
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
@@ -239,14 +242,16 @@ export function resolveQueueGalleryCapacityReroutes(input: {
     const relations = relationsForSubject(subjectKey);
     if (relations.includes('match')) continue;
 
-    // Doom is guaranteed only when NO alternative pick path remains:
+    // Doom is guaranteed when NO alternative pick path remains:
     // - strict captions forbid relaxed/diversity fallbacks entirely, OR
-    // - every photo hard-conflicts with the subject (veto fires on any pick).
-    // 'unknown' relations + non-strict caption → diversity + judge may still
-    // ship a photo; leave those slots on the gallery pipeline.
+    // - every photo hard-conflicts with the subject (veto fires on any pick), OR
+    // - low-reliability galleries (product shops) with an explicit subject and
+    //   zero matches — rematch/judge rarely recover; escalate early to fal_only.
+    // High-reliability venues keep non-strict + unknown on the gallery pipeline.
     const strict = captionRequiresStrictGalleryMatch(caption, headline);
     const allConflict = relations.length > 0 && relations.every((r) => r === 'conflict');
-    if (!strict && !allConflict) continue;
+    const lowGallerySubjectGap = lowGalleryReliability && Boolean(subjectKey);
+    if (!strict && !allConflict && !lowGallerySubjectGap) continue;
 
     out.set(
       missionGallerySlotKey(queueItem.ideaIndex, String(queueItem.assignment.slot_role)),

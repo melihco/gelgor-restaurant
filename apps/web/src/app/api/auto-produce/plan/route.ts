@@ -287,6 +287,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       galleryPhotos: gctx.photos,
       hasRealBrandPhotos: gctx.hasRealPhotos,
       resolvedBrandName: pctx.brandName,
+      brandBusinessType: pctx.brandBusinessType,
     });
     if (capacityReroutes.size > 0) {
       console.warn(

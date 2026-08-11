@@ -95,6 +95,53 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
     expect(out.size).toBe(0);
   });
 
+  it('reroutes local_products_shop subject gaps even when caption is non-strict', () => {
+    // Unknown (not conflict) photo relation — only low-reliability sector triggers doom.
+    const shelf = 'https://cdn.example.com/shelf.jpg';
+    const softGallery: Record<string, GalleryPhotoMeta> = {
+      [shelf]: { primarySubject: 'atmosphere', contentTags: ['shelf'], description: 'Shop atmosphere.' },
+    };
+    const items = [
+      queueItem(0, 'fal_designed_post', 'fal_design', {
+        caption_draft: 'Çiftlik ziyaretimiz için hazırlıklar sürüyor, gelin görün',
+        headline: 'Çiftlik ziyareti',
+        subject_key: 'farm_visit',
+      }),
+    ];
+    const out = resolveQueueGalleryCapacityReroutes({
+      productionLoop: items,
+      galleryMeta: softGallery,
+      galleryPhotos: [shelf],
+      hasRealBrandPhotos: true,
+      resolvedBrandName: 'Bodrum Lokum',
+      brandBusinessType: 'local_products_shop',
+    });
+    expect(out.get(missionGallerySlotKey(0, 'fal_designed_post'))).toBe('fal_only_post');
+  });
+
+  it('beach_club keeps unknown non-strict subject gaps on gallery pipeline', () => {
+    const shelf = 'https://cdn.example.com/terrace.jpg';
+    const softGallery: Record<string, GalleryPhotoMeta> = {
+      [shelf]: { primarySubject: 'atmosphere', contentTags: ['terrace'], description: 'Terrace view.' },
+    };
+    const items = [
+      queueItem(0, 'fal_designed_post', 'fal_design', {
+        caption_draft: 'Bu hafta sonu terasta buluşalım, gün batımında keyif',
+        headline: 'Hafta sonu',
+        subject_key: 'private_cabana',
+      }),
+    ];
+    const out = resolveQueueGalleryCapacityReroutes({
+      productionLoop: items,
+      galleryMeta: softGallery,
+      galleryPhotos: [shelf],
+      hasRealBrandPhotos: true,
+      resolvedBrandName: 'Marina Beach',
+      brandBusinessType: 'beach_club',
+    });
+    expect(out.size).toBe(0);
+  });
+
   it('maps story slots to fal_only_story (beach_club sector)', () => {
     const beachGallery: Record<string, GalleryPhotoMeta> = {
       [BEACH]: { primarySubject: 'beach_sunset', contentTags: ['beach', 'sunset'], description: 'Sunset over the beach.' },

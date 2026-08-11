@@ -78,7 +78,8 @@ describe('pipeline-registry descriptors', () => {
     expect(isVideoPipeline('fal_reel')).toBe(true);
     expect(isVideoPipeline('fal_only_story')).toBe(true);
     expect(isVideoPipeline('product_showcase')).toBe(true);
-    // Still-image pipelines.
+    // Still-image pipelines — fal_story is a grounded poster (no Kling I2V).
+    expect(isVideoPipeline('fal_story')).toBe(false);
     expect(isVideoPipeline('fal_design')).toBe(false);
     expect(isVideoPipeline('fal_only_post')).toBe(false);
     expect(isVideoPipeline('gallery_photo')).toBe(false);

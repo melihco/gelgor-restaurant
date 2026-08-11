@@ -394,6 +394,7 @@ import {
   type ScratchVisualBrief,
 } from '@/lib/scratch-visual-brief';
 import { generateFalVideo, isFalVideoPipeline, isFalDesignPipeline, isFalOnlyVideoPipeline, isFalOnlyPostPipeline } from '@/lib/fal-video';
+import { isVideoPipeline } from '@/lib/pipeline-registry';
 import { isFalOnlyPipeline, isPremiumEditorialPipeline } from '@/lib/pipeline-registry';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { falVideoHandler } from './pipelines/fal-video-pipeline';
@@ -1259,13 +1260,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // Capacity-aware reroute: strict-subject slots with zero aligned gallery
   // photos switch to the format's fal_only pipeline instead of a guaranteed
   // gallery_theme_mismatch. Deterministic — plan and drain agree.
-  const missionCapacityReroutes = missionId
+    const missionCapacityReroutes = missionId
     ? resolveQueueGalleryCapacityReroutes({
       productionLoop: fullProductionQueue,
       galleryMeta,
       galleryPhotos,
       hasRealBrandPhotos,
       resolvedBrandName,
+      brandBusinessType,
     })
     : new Map<string, string>();
   if (missionCapacityReroutes.size > 0) {
@@ -1363,13 +1365,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    // Fal video when fal circuit is open — exhaust without endless requeue.
-    // Posts/stories (incl. realigned day_pass_story) can still use OpenAI.
+    // True I2V/video pipelines only when fal circuit is open.
+    // fal_story is a grounded GPT-image story poster (no Kling) — keep producing.
     {
-      const needsFalVideo = isFalVideoPipeline(assignment.pipeline)
-        || isFalOnlyVideoPipeline(assignment.pipeline)
-        || assignment.pipeline === 'fal_reel';
-      if (needsFalVideo && liveProviderPreflight.providers.falCircuitOpen) {
+      if (
+        isVideoPipeline(assignment.pipeline)
+        && liveProviderPreflight.providers.falCircuitOpen
+      ) {
         const slotKey = `${ideaIndex}:${assignment.slot_role}`;
         console.warn(
           `[auto-produce] [skip-no-fal-quota] ${slotKey} — fal billing circuit open`,
@@ -2574,6 +2576,39 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
+    /** Rematch / empty-URL gallery miss → fal_only (missions) instead of hard-fail. */
+    const escalateRematchFailureToFalOnly = (stage: string): boolean => {
+      if (galleryEscalatedToFalOnly || !missionId) return false;
+      const venueFallback = pickVenueEscalationFallbackPhoto({
+        currentReferenceUrl: referenceUrl,
+        galleryPhotos,
+        brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
+        sector: brandBusinessType,
+        hasRealBrandPhotos,
+        excludeUrls: referenceUrl ? [referenceUrl] : undefined,
+      });
+      const escalated = tryGalleryFailureEscalation({
+        assignment,
+        postType,
+        missionId,
+        stage,
+        fallbackReferenceUrl: venueFallback,
+      });
+      if (!escalated) return false;
+      console.warn(
+        `[auto-produce] gallery ${stage} → ${String(escalated.assignment.pipeline)} `
+        + `(fal_only escalation${escalated.referenceUrl ? ', venue photo kept' : ', no venue photo'}) `
+        + `"${headline.slice(0, 40)}"`,
+      );
+      assignment = escalated.assignment;
+      referenceUrl = escalated.referenceUrl;
+      galleryMatchScore = escalated.galleryMatchScore;
+      captionDrivenGenerated = escalated.captionDrivenGenerated;
+      agentIdeationGalleryLock = escalated.agentIdeationGalleryLock;
+      galleryEscalatedToFalOnly = true;
+      return true;
+    };
+
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await isProductionGalleryUrlReachable(referenceUrl))) {
       // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
       console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
@@ -2626,19 +2661,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceImageUrls: undefined,
         });
         if (!recovered) {
-          results.push({
-            title: headline,
-            imageUrl: '',
-            error: galleryRematchErrorMessage(rematch.reason),
-            slotKey,
-          });
-          continue;
+          if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
+            results.push({
+              title: headline,
+              imageUrl: '',
+              error: galleryRematchErrorMessage(rematch.reason),
+              slotKey,
+            });
+            continue;
+          }
+        } else {
+          referenceUrl = recovered;
+          referenceIsStock = false;
+          galleryMatchScore = null;
+          captionDrivenGenerated = true;
         }
-        referenceUrl = recovered;
-        referenceIsStock = false;
-        galleryMatchScore = null;
-        captionDrivenGenerated = true;
-      } else {
+      } else if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
         console.warn(`[auto-produce] brand gallery rematch failed (${rematch.reason}) — refusing caption scratch for photo brand`);
         results.push({
           title: headline,
@@ -2650,7 +2688,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!forceAttachedPhotos && !referenceUrl?.trim()) {
+    if (!forceAttachedPhotos && !referenceUrl?.trim() && !galleryEscalatedToFalOnly) {
       // FD or batch assign may leave an empty URL — try a fresh gallery pick before skipping.
       const emptyFallback = galleryPhotos.length
         ? pickMissionGallery(
@@ -2691,7 +2729,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (
-      !forceAttachedPhotos
+      !galleryEscalatedToFalOnly
+      && !forceAttachedPhotos
       && (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))))
     ) {
       const brokenInternal = referenceUrl?.startsWith('/api/');
@@ -2748,21 +2787,24 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           referenceImageUrls: undefined,
         });
           if (!recovered) {
-            results.push({
-              title: headline,
-              imageUrl: '',
-              error: brokenInternal
-                ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
-                : galleryRematchErrorMessage(rematch.reason),
-              slotKey,
-            });
-            continue;
+            if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
+              results.push({
+                title: headline,
+                imageUrl: '',
+                error: brokenInternal
+                  ? 'Üretilen görsel depolamadan okunamadı — birkaç dakika sonra yeniden deneyin'
+                  : galleryRematchErrorMessage(rematch.reason),
+                slotKey,
+              });
+              continue;
+            }
+          } else {
+            referenceUrl = recovered;
+            referenceIsStock = false;
+            galleryMatchScore = null;
+            captionDrivenGenerated = true;
           }
-          referenceUrl = recovered;
-          referenceIsStock = false;
-          galleryMatchScore = null;
-          captionDrivenGenerated = true;
-        } else {
+        } else if (!escalateRematchFailureToFalOnly(`rematch_${rematch.reason}`)) {
           console.warn(`[auto-produce] broken internal gallery URL skipped (${rematch.reason}): ${(referenceUrl ?? '').slice(0, 100)}`);
           results.push({
             title: headline,
