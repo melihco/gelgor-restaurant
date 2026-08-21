@@ -27,6 +27,7 @@ import {
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
+import { textContainsToken, tokenCoversWord } from '@/lib/turkish-morphology';
 
 export interface GalleryPhotoMeta {
   contentTags?: string[];
@@ -634,7 +635,7 @@ function scoreUrlPath(url: string, input: MatchPhotoInput): number {
     if (captionHit && pathHit) score += Math.max(4, Math.floor(bonus / 2));
   }
   for (const w of tokenize(text)) {
-    if (path.includes(w)) score += 2;
+    if (textContainsToken(path, w)) score += 2;
   }
   // Product cluster match via URL path (file names often contain product names)
   for (const cluster of LOCAL_PRODUCT_SKU_CLUSTERS) {
@@ -1342,24 +1343,41 @@ function scorePhotoForContent(
   let descHits = 0;
   let tagHits = 0;
   let headlineDescHits = 0;
+  // Turkish agglutination means the caption carries the inflected form
+  // ("burgerimiz") while vision text carries the dictionary form ("burger").
+  // Plain substring matching only caught these via the weak bidirectional pass,
+  // which left correct photos scoring just under MIN_ACCEPT and withheld slots.
+  // Tokens already paid for a description hit — the reverse pass must not pay
+  // again for the same word under its dictionary spelling.
+  const tokensScoredOnDescription: string[] = [];
   for (const w of headlineWords) {
-    if (descriptionText.includes(w)) { score += 9; headlineDescHits++; }
-    else if (contentTagsText.includes(w)) { score += 7; }
-    else if (searchable.includes(w)) { score += 4; }
+    if (textContainsToken(descriptionText, w)) {
+      score += 9;
+      headlineDescHits++;
+      tokensScoredOnDescription.push(w);
+    }
+    else if (textContainsToken(contentTagsText, w)) { score += 7; }
+    else if (textContainsToken(searchable, w)) { score += 4; }
   }
   if (headlineDescHits >= 2) reasons.push(`headline:${headlineDescHits} desc hits`);
 
   for (const w of captionWords) {
     if (headlineWords.includes(w)) continue;
-    if (descriptionText.includes(w)) { score += 5; descHits++; }
-    else if (contentTagsText.includes(w)) { score += 4; tagHits++; }
-    else if (searchable.includes(w)) { score += 2; }
+    if (textContainsToken(descriptionText, w)) {
+      score += 5;
+      descHits++;
+      tokensScoredOnDescription.push(w);
+    }
+    else if (textContainsToken(contentTagsText, w)) { score += 4; tagHits++; }
+    else if (textContainsToken(searchable, w)) { score += 2; }
   }
   // Also score bidirectionally: description words found in caption
   const descWords = tokenize(meta.description ?? '');
   let biHits = 0;
   for (const w of descWords) {
-    if (text.includes(w) && !captionWords.includes(w)) { score += 3; biHits++; }
+    if (captionWords.includes(w)) continue;
+    if (tokensScoredOnDescription.some((c) => tokenCoversWord(c, w))) continue;
+    if (textContainsToken(text, w)) { score += 3; biHits++; }
   }
   const totalTokenHits = descHits + tagHits + biHits;
   if (totalTokenHits >= 2) reasons.push(`desc:${descHits}+tag:${tagHits}+bi:${biHits} hits`);

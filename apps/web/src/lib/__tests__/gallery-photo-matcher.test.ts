@@ -26,6 +26,7 @@ import {
   STRONG_MATCH_SCORE,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
+import { GALLERY_UNUSED_PHOTO_BOOST } from '@/lib/gallery-usage-tracker';
 import { rematchGalleryAfterHardThemeConflict } from '@/app/api/auto-produce/caption-publish-resolver';
 import { describe, it, expect } from 'vitest';
 
@@ -328,17 +329,20 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
 
   it('boosts never-published photos when usage history is present', () => {
     const counts = new Map<string, number>([[FOOD_PHOTO, 2]]);
-    const caption = 'gourmet pasta food dish plate gourmet';
+    // Venue-led caption: a plated-food caption hard-vetoes the bare interior, so
+    // the unused boost would never be reachable on that pair.
+    const caption = 'cozy interior terrace ambiance at our restaurant';
     const lookup = buildGalleryLookup(restaurantGallery(), [FOOD_PHOTO, VENUE_PHOTO]);
-    const ranked = rankPhotosForContent(
-      { caption, businessType: 'restaurant', globalUsageCounts: counts },
+    const rank = (globalUsageCounts?: Map<string, number>) => rankPhotosForContent(
+      { caption, businessType: 'restaurant', globalUsageCounts },
       [FOOD_PHOTO, VENUE_PHOTO],
       lookup,
       new Set(),
       restaurantGallery(),
-    );
-    const venue = ranked.find((r) => r.url === VENUE_PHOTO);
-    expect(venue?.reason ?? '').toMatch(/unused:\+10/);
+    ).find((r) => r.url === VENUE_PHOTO)?.score;
+
+    // Score delta, not the reason string: `reason` keeps only the top 3 reasons.
+    expect(rank(counts)).toBe((rank() ?? 0) + GALLERY_UNUSED_PHOTO_BOOST);
   });
 
   it('does not assign the same photo across post-type buckets (mission-wide)', () => {

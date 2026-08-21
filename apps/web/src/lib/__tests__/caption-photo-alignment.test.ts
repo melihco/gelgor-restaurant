@@ -11,6 +11,8 @@ import {
   isHardGalleryThemeMismatch,
   matchPhotoToContent,
   assignPhotosToContents,
+  rankPhotosForContent,
+  buildGalleryLookup,
   type GalleryPhotoMeta,
 } from '../gallery-photo-matcher';
 
@@ -354,5 +356,105 @@ describe('matcher hard veto — DJ never picks food', () => {
         FOOD_PHOTO,
       ),
     ).toBe(true);
+  });
+});
+
+describe('empty-venue veto — venue-led captions are not a broken food promise', () => {
+  const EMPTY_VENUE =
+    'interior terrace ambiance cozy restaurant warm ambient lighting seating';
+
+  it('releases the veto when the caption asks for the room itself (restaurant)', () => {
+    const caption = 'lezzetli food in our cozy restaurant interior terrace ambiance';
+    expect(isHardCaptionPhotoConflict(caption, EMPTY_VENUE)).toBe(false);
+    // Doubt remains: the frame stays ranked below a real plate.
+    const penalty = captionPhotoConflictPenalty(caption, EMPTY_VENUE);
+    expect(penalty).toBeGreaterThan(0);
+    expect(penalty).toBeLessThan(HARD_CAPTION_PHOTO_CONFLICT);
+    expect(themeConflictNeedsAiJudge(caption, EMPTY_VENUE)).toBe(true);
+  });
+
+  it('keeps the veto when the caption promises a plate', () => {
+    expect(
+      isHardCaptionPhotoConflict('İmza burgerimiz ve çıtır patates bugün menüde', EMPTY_VENUE),
+    ).toBe(true);
+  });
+
+  it('keeps the veto when food dominates a passing venue mention', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'Şef menüsü, imza tabakları ve mezelerimiz terasımızda',
+        EMPTY_VENUE,
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps the veto for nightlife copy — an event cannot ship as an empty room', () => {
+    expect(
+      isHardCaptionPhotoConflict(
+        'DJ performansı bu gece terasımızda, ambiyans hazır',
+        EMPTY_VENUE,
+      ),
+    ).toBe(true);
+  });
+
+  it('closes the Turkish gap: inflected food copy is vetoed like English (local_products_shop)', () => {
+    // "yemek" never appeared inside "yemeği", so Turkish captions escaped every
+    // veto and shipped bare-room frames under a plated promise.
+    expect(
+      isHardCaptionPhotoConflict(
+        'Şefin imza makarnası — akşam yemeği için rezervasyon alıyoruz',
+        'interior seating lounge shelves warm lighting shop',
+      ),
+    ).toBe(true);
+  });
+});
+
+describe('Turkish morphology in gallery scoring', () => {
+  it('scores an inflected caption exactly like its dictionary form (local_products_shop)', () => {
+    const burgerUrl = 'https://cdn.example.com/gallery/burger-plate-11.jpg';
+    const gallery: Record<string, GalleryPhotoMeta> = {
+      [burgerUrl]: {
+        contentTags: ['burger', 'patates', 'food', 'plate'],
+        description: 'Burger and fries served on a wooden board.',
+        mood: 'warm',
+        suggestedAssetType: 'food_photo',
+        bestFor: ['food_showcase', 'feed_post'],
+      },
+    };
+    const score = (caption: string, headline: string) => rankPhotosForContent(
+      { caption, headline, contentType: 'instagram_post', businessType: 'local_products_shop' },
+      [burgerUrl],
+      buildGalleryLookup(gallery, [burgerUrl]),
+      new Set(),
+      gallery,
+    )[0]?.score ?? 0;
+
+    // Turkish suffixes must not cost score — this gap was withholding slots whose
+    // photo was a literal match for the caption.
+    expect(score('İmza burgerimiz ve çıtır patateslerimiz bugün tezgahta', 'İmza Burgerimiz'))
+      .toBe(score('İmza burger ve çıtır patates bugün tezgahta', 'İmza Burger'));
+  });
+
+  it('still refuses an unrelated photo for the same inflected caption', () => {
+    const gymUrl = 'https://cdn.example.com/gallery/gym-bench-12.jpg';
+    const result = matchPhotoToContent(
+      {
+        caption: 'İmza burgerimiz ve çıtır patateslerimiz bugün tezgahta',
+        headline: 'İmza Burgerimiz',
+        contentType: 'instagram_post',
+        businessType: 'restaurant',
+      },
+      [gymUrl],
+      {
+        [gymUrl]: {
+          contentTags: ['gym', 'equipment', 'dumbbell'],
+          description: 'Gym equipment with dumbbells and a workout bench.',
+          mood: 'energetic',
+          suggestedAssetType: 'equipment_photo',
+          bestFor: ['equipment_showcase'],
+        },
+      },
+    );
+    expect(result).toBeNull();
   });
 });

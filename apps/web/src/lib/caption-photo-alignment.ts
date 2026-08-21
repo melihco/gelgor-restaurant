@@ -21,12 +21,22 @@ import {
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
+import { textContainsHint } from '@/lib/turkish-morphology';
 
 /** Minimal food-topic trigger — one hit is enough to route to AI / hard gates. */
 const FOOD_CAPTION_TRIGGERS = [
   'dish', 'dishes', 'food', 'meal', 'menu', 'menü', 'cuisine', 'chef', 'dining',
   'yemek', 'tabak', 'lezzet', 'meze', 'flavor', 'flavour', 'platter', 'seafood',
   'deniz ürün', 'deniz urun', 'kahvaltı', 'kahvalti', 'brunch', 'breakfast',
+];
+
+/**
+ * Minimal venue/ambiance trigger — the caption is asking for the room itself,
+ * not a plate. Used only to cancel the empty-venue veto, never to add a veto.
+ */
+const VENUE_CAPTION_TRIGGERS = [
+  'interior', 'terrace', 'teras', 'ambiance', 'ambience', 'ambiyans',
+  'atmosphere', 'atmosfer', 'lounge', 'patio', 'venue', 'mekan', 'mekân',
 ];
 
 /** Minimal drink-topic trigger. */
@@ -131,7 +141,10 @@ const BEAUTY_NAIL_PHOTO = [
 
 function textHits(text: string, hints: string[]): number {
   const lower = text.toLowerCase();
-  return hints.filter(h => lower.includes(h)).length;
+  // Turkish softens final consonants before a vowel, so "yemek" never appeared
+  // in "yemeği" — Turkish food/drink captions silently escaped every veto while
+  // English ones were caught.
+  return hints.filter(h => textContainsHint(lower, h)).length;
 }
 
 /** Flatten gallery meta (+ optional URL) for conflict scoring. */
@@ -328,6 +341,15 @@ export function captionPhotoConflictPenalty(
     && photoFood === 0
     && photoNightlifeHard === 0
     && (photoDrink === 0 || photoDecorOnly >= 1);
+  // The empty-venue veto exists to stop a promised plate from shipping as a bare
+  // room. When the caption names the room at least as loudly as the food, the
+  // room *is* the subject and nothing was promised away — the AI judge takes it
+  // from here on the remaining soft penalty. A décor still-life is still not a
+  // venue frame, and nightlife copy is excluded: an event promise cannot be
+  // settled by an empty terrace no matter how the caption describes it.
+  const captionVenue = textHits(caption, VENUE_CAPTION_TRIGGERS);
+  const captionAsksForVenueFrame =
+    captionVenue >= 1 && photoEmptyVenue >= 1 && photoDecorOnly === 0;
 
   // ── Hard (universal category collisions) ─────────────────────────────────
   if (captionNightlife >= 1 && photoFood >= 1 && photoNightlifeHard === 0) {
@@ -348,17 +370,22 @@ export function captionPhotoConflictPenalty(
     return captionNightlife >= 2 ? 78 : 70;
   }
   if (captionFood >= 1 && emptyOrDecorOnly) {
-    return 68;
+    if (!(captionAsksForVenueFrame && captionVenue >= captionFood)) return 68;
   }
   if (captionDrink >= 1 && emptyOrDecorOnly && photoDecorOnly >= 1) {
     return 62;
   }
   if (captionDrink >= 1 && emptyOrDecorOnly && photoEmptyVenue >= 1 && photoDrink === 0) {
-    return 62;
+    if (!(captionAsksForVenueFrame && captionVenue >= captionDrink)) return 62;
   }
 
   // ── Soft (AI judge owns hard reject) ─────────────────────────────────────
   let soft = 0;
+  // Cancelled empty-venue veto still carries doubt — keep it ranked below a real
+  // plate/glass frame so the veto relaxation cannot outrank on-subject photos.
+  if ((captionFood >= 1 || captionDrink >= 1) && emptyOrDecorOnly && captionAsksForVenueFrame) {
+    soft = Math.max(soft, 20);
+  }
   if (captionDrink >= 1 && photoFood >= 1 && photoDrink === 0) {
     soft = Math.max(soft, 28);
   }
