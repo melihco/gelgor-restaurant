@@ -39,6 +39,7 @@ import {
   calendarGalleryMatchCaption,
   isCalendarProductionIdea,
 } from '@/lib/calendar-production-pack';
+import { resolveIdeaFeedBind } from '@/lib/idea-feed-bind';
 
 /** Stable per-slot key: used to match gallery assignments to production loop items. */
 export function missionGallerySlotKey(ideaIndex: number, slotRole: string): string {
@@ -230,12 +231,15 @@ export function resolveQueueGalleryCapacityReroutes(input: {
 
     const idea = queueItem.idea as Record<string, unknown>;
     const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
-    const headline = resolveIdeationHeadline(idea);
+    const bind = resolveIdeaFeedBind(idea, {
+      brandName: input.resolvedBrandName,
+    });
+    const headline = bind.galleryMatchHeadline || resolveIdeationHeadline(idea);
 
     const subjectKey = resolveGalleryMatchSubjectKey({
-      caption,
+      caption: bind.galleryMatchCaption || caption,
       headline,
-      subjectKey: String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined,
+      subjectKey: bind.subjectKey,
     });
     if (!subjectKey) continue;
 
@@ -246,7 +250,10 @@ export function resolveQueueGalleryCapacityReroutes(input: {
     // - strict captions forbid relaxed/diversity fallbacks entirely, OR
     // - every photo hard-conflicts with the subject (veto fires on any pick).
     // Unknown + non-strict → leave on gallery; genuine miss may withhold (no force fal_only).
-    const strict = captionRequiresStrictGalleryMatch(caption, headline);
+    const strict = captionRequiresStrictGalleryMatch(
+      bind.galleryMatchCaption || caption,
+      headline,
+    );
     const allConflict = relations.length > 0 && relations.every((r) => r === 'conflict');
     if (!strict && !allConflict) continue;
 
@@ -315,24 +322,27 @@ export async function buildMissionGalleryAssignments(
     if (!assignmentUsesGalleryPhoto(queueItem.assignment)) continue;
 
     const idea = queueItem.idea as Record<string, unknown>;
-    // Same MatchIntent as production-loop — calendar uses tagline/mood SSOT,
-    // never thin caption_draft alone (batch≠loop drift caused wrong ships).
+    // IdeaFeedBind SSOT — same gallery headline/caption as production-loop
+    // (Hub tagline when publishable; never concept-title drift).
+    const bind = resolveIdeaFeedBind(idea, {
+      brandName: input.resolvedBrandName,
+      catalogSlotKey: queueItem.assignment.catalog_slot_key,
+    });
     const caption = isCalendarProductionIdea(idea)
-      ? calendarGalleryMatchCaption(idea)
-      : String(idea.caption_draft ?? idea.caption ?? '').trim();
-    const rawHeadline = resolveIdeationHeadline(idea);
-    let headline = rawHeadline;
+      ? (bind.galleryMatchCaption || calendarGalleryMatchCaption(idea))
+      : String(idea.caption_draft ?? idea.caption ?? '').trim() || bind.galleryMatchCaption;
+    let headline = bind.galleryMatchHeadline;
 
-    if (!rawHeadline || isMeaninglessBrandEchoHeadline(rawHeadline, input.resolvedBrandName)) {
+    if (!headline || isMeaninglessBrandEchoHeadline(headline, input.resolvedBrandName)) {
       headline = resolveMeaningfulProductionHeadline({
-        headline: rawHeadline,
+        headline,
         caption,
         brandName: input.resolvedBrandName,
         conceptTitle: String(idea.concept_title ?? idea.idea_title ?? idea.title ?? ''),
         maxLen: 72,
       }).headline;
     } else {
-      headline = enforceDisplayHeadline(rawHeadline, 72);
+      headline = enforceDisplayHeadline(headline, 72);
     }
 
     const isStory = String(queueItem.assignment.slot_role ?? '').includes('story')
@@ -342,12 +352,13 @@ export async function buildMissionGalleryAssignments(
     const subjectKey = resolveGalleryMatchSubjectKey({
       caption,
       headline,
-      subjectKey: String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined,
+      subjectKey: bind.subjectKey,
     });
     const catalogSlotKey = String(
-      queueItem.assignment.catalog_slot_key
-        ?? idea.catalog_slot_key
-        ?? '',
+      bind.catalogSlotKey
+      ?? queueItem.assignment.catalog_slot_key
+      ?? idea.catalog_slot_key
+      ?? '',
     ).trim();
     const matchInput = {
       ...buildSlotGalleryMatchInput({

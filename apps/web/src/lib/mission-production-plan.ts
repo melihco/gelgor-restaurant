@@ -110,19 +110,33 @@ function parseCalendarPlanRecordsFromNode(node: MissionNode): Record<string, unk
   ).slice(0, MAX_CALENDAR_PLANS_PER_MISSION);
 }
 
+/**
+ * How a calendar plan found its ideation row. Recorded on the enriched idea so
+ * live audits can tell a real link from an ordering assumption.
+ */
+export type CalendarIdeaMatchSource =
+  | 'idea_index'
+  | 'title'
+  | 'tagline'
+  | 'positional';
+
 function pickIdeationForCalendar(
   plan: Record<string, unknown>,
   planIndex: number,
   ideas: Record<string, unknown>[],
   used: Set<number>,
-): { idea: Record<string, unknown> | null; index: number | null } {
+): {
+  idea: Record<string, unknown> | null;
+  index: number | null;
+  source: CalendarIdeaMatchSource | null;
+} {
   const ideaIdx = typeof plan.idea_index === 'number'
     ? plan.idea_index
     : typeof plan.source_idea_index === 'number'
       ? plan.source_idea_index
       : null;
   if (ideaIdx != null && ideaIdx >= 0 && ideaIdx < ideas.length && !used.has(ideaIdx)) {
-    return { idea: ideas[ideaIdx]!, index: ideaIdx };
+    return { idea: ideas[ideaIdx]!, index: ideaIdx, source: 'idea_index' };
   }
 
   const calTitle = calendarItemHeadline(plan);
@@ -130,19 +144,45 @@ function pickIdeationForCalendar(
     for (let i = 0; i < ideas.length; i += 1) {
       if (used.has(i)) continue;
       if (headlinesMatch(calTitle, ideationHeadline(ideas[i]!))) {
-        return { idea: ideas[i]!, index: i };
+        return { idea: ideas[i]!, index: i, source: 'title' };
       }
     }
   }
 
-  if (planIndex < ideas.length && !used.has(planIndex)) {
-    return { idea: ideas[planIndex]!, index: planIndex };
+  // Quoted Hub punchline — match plan.tagline to idea tagline/overlay so the
+  // wrong concept row cannot steal another idea's calendar quote.
+  const planTagline = String(plan.tagline ?? plan.subline ?? '').trim();
+  if (planTagline) {
+    for (let i = 0; i < ideas.length; i += 1) {
+      if (used.has(i)) continue;
+      const idea = ideas[i]!;
+      const ideaTag = String(idea.tagline ?? idea.subline ?? '').trim()
+        || String(
+          ((idea.canva_field_copy ?? idea.canvaFieldCopy) as Record<string, unknown> | undefined)
+            ?.tagline
+          ?? '',
+        ).trim();
+      const ideaOverlay = String(idea.headline ?? idea.hook ?? '').trim();
+      if (
+        (ideaTag && headlinesMatch(planTagline, ideaTag))
+        || (ideaOverlay && headlinesMatch(planTagline, ideaOverlay))
+      ) {
+        return { idea, index: i, source: 'tagline' };
+      }
+    }
   }
 
-  for (let i = 0; i < ideas.length; i += 1) {
-    if (!used.has(i)) return { idea: ideas[i]!, index: i };
+  /**
+   * Ordering-only fallback. Allowed solely to deliver a quoted Hub punchline the
+   * plan carries — a plan with no quote would contribute nothing but another
+   * concept's brief/mood, which is what paints steak scenes under cocktail copy.
+   * Rows that fail here stay telemetry orphans instead of hijacking an idea.
+   */
+  if (planTagline && planIndex < ideas.length && !used.has(planIndex)) {
+    return { idea: ideas[planIndex]!, index: planIndex, source: 'positional' };
   }
-  return { idea: null, index: null };
+
+  return { idea: null, index: null, source: null };
 }
 
 /** Schedule-only fields from a calendar row — does not replace caption/headline. */
@@ -196,6 +236,7 @@ function enrichIdeationWithCalendarPlan(
   plan: Record<string, unknown>,
   planIndex: number,
   ideaIndex: number,
+  matchSource: CalendarIdeaMatchSource = 'positional',
 ): Record<string, unknown> {
   const overlay = calendarScheduleOverlayFields(plan, planIndex, ideaIndex);
   const eventDetails = mergeEventDetailsFromCalendar(idea, plan);
@@ -221,14 +262,14 @@ function enrichIdeationWithCalendarPlan(
   const ideationSubjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim();
   const subjectKey = ideationSubjectKey || calendarSubjectKey || undefined;
   const ideationCaption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+  const ideationTitle = ideationHeadline(idea);
+  const headline = ideationTitle || calHeadline;
   // Publish caption = ideation/calendar copy — NEVER the visual brief. The brief
   // ("1-2 sentences describing the visual concept") is a scene description for the
   // production pipeline and stays in content_brief / visual_production_spec only.
   const caption = ideationCaption
     || planCaption
     || [tagline, calHeadline].filter(Boolean).join(' — ');
-  const ideationTitle = ideationHeadline(idea);
-  const headline = ideationTitle || calHeadline;
 
   const existingVps = typeof idea.visual_production_spec === 'object' && idea.visual_production_spec
     ? { ...(idea.visual_production_spec as Record<string, unknown>) }
@@ -238,12 +279,10 @@ function enrichIdeationWithCalendarPlan(
     ...idea,
     ...overlay,
     calendar_enriched: true,
+    calendar_match_source: matchSource,
     planning_idea_index: ideaIndex,
-    concept_title: headline,
-    headline,
-    title: headline,
-    caption_draft: caption,
-    caption,
+    ...(headline ? { concept_title: headline, headline, title: headline } : {}),
+    ...(caption ? { caption_draft: caption, caption } : {}),
     ...(subjectKey ? { subject_key: subjectKey } : {}),
     ...(brief ? { content_brief: brief } : {}),
     ...(tagline ? { tagline, subline: tagline } : {}),
@@ -345,16 +384,23 @@ export function applyCalendarProductionEnrichment(
     const calendarIdea = normalizeCalendarPlanToProductionIdea(plan, planIndex);
     if (!String(calendarIdea.headline ?? '').trim()) continue;
 
-    // Soft match (index / title / positional) so Hub quoted taglines still stamp
-    // onto ideation when idea_index is missing — strict orphans dropped the quote.
-    const { index } = pickIdeationForCalendar(plan, planIndex, ideas, usedIdeation);
-    if (index == null || index < 0 || index >= ideas.length) {
+    // Soft match (index / title / tagline / quote-bearing positional) so Hub
+    // quotes still stamp when idea_index is missing, without letting an
+    // unrelated plan hijack an idea's concept.
+    const { index, source } = pickIdeationForCalendar(plan, planIndex, ideas, usedIdeation);
+    if (index == null || index < 0 || index >= ideas.length || source == null) {
       orphanCalendarIdeas.push(calendarIdea);
       continue;
     }
     usedIdeation.add(index);
     linkedPlanIndices.add(planIndex);
-    ideas[index] = enrichIdeationWithCalendarPlan(ideas[index]!, plan, planIndex, index);
+    ideas[index] = enrichIdeationWithCalendarPlan(
+      ideas[index]!,
+      plan,
+      planIndex,
+      index,
+      source,
+    );
   }
 
   return {

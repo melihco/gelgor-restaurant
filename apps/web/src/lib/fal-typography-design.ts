@@ -630,7 +630,12 @@ export async function generateTypographyDesign(input: {
  */
 export async function generateTypographyDesignWithRetry(
   input: Parameters<typeof generateTypographyDesign>[0],
-  opts?: { maxRetries?: number; validateFn?: (imageUrl: string, headline: string) => Promise<boolean> },
+  opts?: {
+    maxRetries?: number;
+    validateFn?: (imageUrl: string, headline: string) => Promise<boolean>;
+    /** Locked Hub/canva punchline — OCR retry must not invent a shorter stem. */
+    preserveLockedPunchline?: boolean;
+  },
 ): Promise<TypographyDesignResult> {
   // Background plates never need text validation — one attempt is sufficient.
   if (input.backgroundOnly) {
@@ -658,6 +663,7 @@ export async function generateTypographyDesignWithRetry(
             sanitizeFalOverlayText(input.headline),
             attempt,
             canvasChannel,
+            { preserveLockedPunchline: opts?.preserveLockedPunchline === true },
           ),
           subtitle: undefined,
         };

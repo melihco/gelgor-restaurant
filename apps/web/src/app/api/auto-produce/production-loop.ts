@@ -239,6 +239,7 @@ import {
   resolveIdeationOverlayHeadline,
   resolveIdeationTagline,
 } from '@/lib/production-idea-parse';
+import { resolveIdeaFeedBind } from '@/lib/idea-feed-bind';
 import {
   buildArtifactListTitle,
   hasPublishableIdeationHeadline,
@@ -1395,14 +1396,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const rawOverlayHeadline = resolveIdeationOverlayHeadline(idea as Record<string, unknown>);
     const calendarTagline = resolveIdeationTagline(idea as Record<string, unknown>);
     const isCalendarIdeaForHeadline = isCalendarProductionIdea(ideaRecord);
+    // IdeaFeedBind is the single publishability SSOT for this slot — the batch
+    // gallery orchestrator resolves the same bind, so photo↔paint cannot drift.
+    const ideaFeedBind = resolveIdeaFeedBind(ideaRecord, {
+      brandName: resolvedBrandName,
+      catalogSlotKey: assignment.catalog_slot_key,
+    });
     // Publishable Hub/calendar tagline is canvas SSOT even when enrichment
     // forgot calendar_* flags (matched plan still carries root `tagline`).
-    const calendarTaglinePublishable = Boolean(
-      calendarTagline
-      && !isMeaninglessBrandEchoHeadline(calendarTagline, resolvedBrandName)
-      && !isLabelStyleHeadline(calendarTagline)
-      && !isIncompleteOverlayPhrase(calendarTagline),
-    );
+    const calendarTaglinePublishable = ideaFeedBind.taglinePublishable;
     const isFalDesignedPostSlotForHeadline =
       isFalDesignPipeline(assignment.pipeline)
       || assignment.slot_role === 'designed_post'
@@ -1520,10 +1522,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     /**
      * Gallery scorer must use the canvas punchline when Hub/tagline is locked —
      * otherwise photo locks to concept title while paint uses tagline.
+     * IdeaFeedBind SSOT matches gallery-orchestrator batch.
      */
-    let galleryMatchHeadline = calendarTaglinePublishable
-      ? (ideationHeadline || storedIdeationHeadline)
-      : (storedIdeationHeadline || ideationHeadline);
+    let galleryMatchHeadline = ideaFeedBind.galleryMatchHeadline
+      || (calendarTaglinePublishable
+        ? (ideationHeadline || storedIdeationHeadline)
+        : (storedIdeationHeadline || ideationHeadline));
 
     // Feed Art Director's visual_subject_hint overrides generic caption for gallery matching.
     // Append the hint keywords to ideationCaption so the gallery scorer sees specific
@@ -1531,7 +1535,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const fdVisualHint = (assignment?.visual_subject_hint ?? '').trim();
     const isCalendarSlot = isCalendarProductionIdea(ideaRecord);
     let ideationCaption = isCalendarSlot
-      ? calendarGalleryMatchCaption(ideaRecord)
+      ? (ideaFeedBind.galleryMatchCaption || calendarGalleryMatchCaption(ideaRecord))
       : fdVisualHint
         ? `${caption} ${fdVisualHint}`.trim()
         : caption;
@@ -1754,9 +1758,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         // Belt: even when source=mission_tagline, never keep a type-budget stem —
         // paint the Hub quote (soft-clamped ≤48) so designs match the plan card.
         if (calendarTaglinePublishable && calendarTagline) {
+          // Bind already proved the quote is renderable, so this never falls back
+          // to an unclamped line that the image model cannot spell.
           const hubLine =
             clampMissionTaglineForCanvas(calendarTagline, falChannel)
-            || calendarTagline;
+            || ideaFeedBind.canvasTagline;
           if (hubLine && hubLine !== headline) {
             console.log(
               `[auto-produce] restore Hub calendar tagline: `

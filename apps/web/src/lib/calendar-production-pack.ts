@@ -26,6 +26,7 @@ import { normalizeCalendarPlanDesignLayout } from '@/lib/calendar-agent-schema';
 import { detectIdeaPackageFormat } from '@/lib/weekly-publish-package';
 import { applyMissionFalStoryAssignment } from '@/lib/mission-fal-story';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
+import { resolveIdeationTagline } from '@/lib/production-idea-parse';
 
 /** Avoid collision with ideation idea_index 0–15 in production_jobs. */
 export const CALENDAR_PRODUCTION_IDEA_INDEX_BASE = 1000;
@@ -137,7 +138,8 @@ function librarySlotForAnnouncement(type: string): string | undefined {
  * Wrong brief tokens (e.g. steak scene under cocktail tagline) must not steer ranking.
  */
 export function calendarGalleryMatchCaption(idea: Record<string, unknown>): string {
-  const tagline = String(idea.tagline ?? idea.subline ?? '').trim();
+  // Prefer unwrapped Hub/calendar quote — keep in sync with idea-feed-bind SSOT.
+  const tagline = resolveIdeationTagline(idea);
   const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
   const headline = String(idea.headline ?? idea.concept_title ?? '').trim();
   const subject = String(idea.subject_key ?? idea.subjectKey ?? '').replace(/_/g, ' ').trim();

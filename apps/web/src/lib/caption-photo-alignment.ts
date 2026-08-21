@@ -254,6 +254,7 @@ export function themeConflictNeedsAiJudge(
   const personDominantNoProduct =
     photoFood === 0
     && photoDrink === 0
+    && photoNightlifeHard === 0
     && (
       (photoPersonFashion >= 1 && photoPersonSubject >= 1)
       || photoPersonFashion >= 2
@@ -308,9 +309,13 @@ export function captionPhotoConflictPenalty(
   const photoPersonSubject = textHits(photo, PERSON_SUBJECT_PHOTO_HINTS);
   // Person/fashion dominant with zero food/drink proof — dining-with-guests
   // (photoFood ≥ 1) and bartender-with-glass (photoDrink ≥ 1) stay allowed.
+  // A DJ/stage/party frame is the product for nightlife copy, so hard nightlife
+  // proof also disqualifies "fashion portrait only" — otherwise one incidental
+  // drink word vetoed every crowd photo and the whole pool emptied out.
   const personDominantNoProduct =
     photoFood === 0
     && photoDrink === 0
+    && photoNightlifeHard === 0
     && (
       (photoPersonFashion >= 1 && photoPersonSubject >= 1)
       || photoPersonFashion >= 2

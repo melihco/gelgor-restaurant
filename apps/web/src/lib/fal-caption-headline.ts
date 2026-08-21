@@ -745,9 +745,13 @@ const INCOMPLETE_EN_OBJECT_PRONOUN_TAIL_RX =
 /**
  * Prenominal adjective after article/of — "best of live", "Experience the best",
  * "refreshed summ…" survivors like "the new".
+ *
+ * `of` + season is an exception: it is a complete noun-phrase head, not a
+ * truncation artifact ("Taste the essence of summer" must stay publishable),
+ * so seasons are only flagged after a determiner ("the summer").
  */
 const INCOMPLETE_EN_PRENOMINAL_TAIL_RX =
-  /\b(the|a|an|of|our|your)\s+(live|best|new|fresh|local|daily|special|signature|great|perfect|next|last|first|summer|winter|spring|autumn|fall)\s*$/iu;
+  /\b(?:(?:the|a|an|our|your)\s+(?:live|best|new|fresh|local|daily|special|signature|great|perfect|next|last|first|summer|winter|spring|autumn|fall)|of\s+(?:live|best|new|fresh|local|daily|special|signature|great|perfect|next|last|first))\s*$/iu;
 
 /**
  * Caption-prefix clamp mid-adjective phrase — "Dive into our delightful new",

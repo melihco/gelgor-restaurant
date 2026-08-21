@@ -467,10 +467,30 @@ export async function produceFalDesignedPost(
       && serverConfig.fal.configured
       && (!purposePinnedForIdeogram || allowPinnedIdeogram)
     ) {
+      const canvasChannelIdeogram = aspectRatio === '9:16' ? 'reel' : 'feed_post';
+      const paintOverlayIdeogram = resolveSlotPaintOverlay({
+        headline: input.headline,
+        subtitle: input.subtitle || input.cta,
+        caption: input.caption,
+        cta: input.cta,
+        channel: canvasChannelIdeogram,
+        brandName: input.brandName,
+        businessType: input.sector,
+        punchlineLockSource: input.punchlineLockSource,
+        captionAwareHeadline: input.captionAwareHeadline,
+        designIntensity: input.designIntensityLevel,
+        sampleHeadline: binding?.matched?.sampleHeadline,
+        sampleSubtitle: binding?.matched?.sampleSubtitle,
+        showSubline: binding?.matched?.showSubline,
+        typeBudget: binding?.matched?.typeBudget,
+        photoUrl: referenceUrl,
+        galleryPhotoMeta: input.galleryPhotoMeta,
+        designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
+      });
       const still = await produceFalDesignedPostStill({
         workspaceId: input.workspaceId,
-        headline: input.headline,
-        subtitle: input.cta || undefined,
+        headline: paintOverlayIdeogram.headline,
+        subtitle: paintOverlayIdeogram.subtitle || input.cta || undefined,
         caption: input.caption,
         brandName: input.brandName,
         brandColors,

@@ -1919,6 +1919,7 @@ export async function produceFalDesignerStill(
       storyDesignMode: canvasChannel === 'story' && isVerticalVideo,
     }, {
       maxRetries: 1,
+      preserveLockedPunchline,
       validateFn: async (imageUrl, headline) => {
         const check = await validateFalCanvasText(imageUrl, {
           headline,
