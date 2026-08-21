@@ -305,46 +305,80 @@ async def mark_deferred(
     reason: str,
     *,
     delay_sec: float = 45.0,
-) -> None:
-    """Re-queue without burning an attempt — e.g. auto-produce 409 production lock."""
+    max_age_sec: float | None = None,
+) -> str:
+    """Re-queue without burning an attempt — e.g. auto-produce 409 production lock.
+
+    Returns the resulting status ('pending', or 'exhausted' when `max_age_sec` is
+    set and the job has outlived it). Deferring costs a full pipeline re-run each
+    pass, so reasons that depend on the slot's own inputs (quality gates) must be
+    bounded — otherwise a job that can never pass loops until someone notices.
+    """
     factory = _get_session_factory()
     row_dict: dict[str, Any] | None = None
+    # -1 disables the bound; keeps the interval argument numeric for asyncpg.
+    bound_sec = float(max_age_sec) if max_age_sec and max_age_sec > 0 else -1.0
     async with factory() as db:
         res = await db.execute(
             text(
                 """
-                UPDATE production_jobs
-                SET status = 'pending',
+                WITH target AS (
+                    SELECT id,
+                           (:bound_sec >= 0
+                            AND created_at < now() - make_interval(secs => :bound_sec))
+                           AS expired
+                    FROM production_jobs
+                    WHERE id = CAST(:id AS UUID)
+                )
+                UPDATE production_jobs p
+                SET status = CASE WHEN t.expired THEN 'exhausted' ELSE 'pending' END,
+                    attempts = CASE WHEN t.expired THEN p.attempts + 1 ELSE p.attempts END,
+                    completed_at = CASE WHEN t.expired THEN now() ELSE p.completed_at END,
                     last_error = :error,
                     claimed_at = NULL,
                     claimed_by = NULL,
                     run_after = now() + make_interval(secs => :delay_sec),
                     updated_at = now()
-                WHERE id = CAST(:id AS UUID)
-                RETURNING *
+                FROM target t
+                WHERE p.id = t.id
+                RETURNING p.*
                 """
             ),
             {
                 "id": str(job_id),
                 "error": (reason or "")[:1000],
                 "delay_sec": max(5.0, float(delay_sec)),
+                "bound_sec": bound_sec,
             },
         )
         row = res.first()
         if row is not None:
             row_dict = _row_to_dict(row)
         await db.commit()
+    status = str(row_dict["status"]) if row_dict else "pending"
     if row_dict:
         from app.services.production_line_telemetry_service import emit_from_job_row
 
+        expired = status == "exhausted"
         await emit_from_job_row(
             row_dict,
-            "deferred",
-            status="pending",
-            error_code="deferred",
+            "exhausted" if expired else "deferred",
+            status=status,
+            error_code=None if expired else "deferred",
             error_message=reason,
-            meta={"delay_sec": max(5.0, float(delay_sec))},
+            meta={
+                "delay_sec": max(5.0, float(delay_sec)),
+                **({"defer_bound_sec": bound_sec} if expired else {}),
+            },
         )
+        if expired:
+            logger.warning(
+                "production_job.defer_bound_exceeded",
+                job_id=str(job_id),
+                reason=(reason or "")[:120],
+                bound_sec=bound_sec,
+            )
+    return status
 
 
 async def mark_failed(

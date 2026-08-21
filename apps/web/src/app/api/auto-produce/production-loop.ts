@@ -507,6 +507,23 @@ export interface RunProductionParams {
   adHocBrief?: boolean;
 }
 
+/**
+ * Pipelines that compose their own visual and treat a gallery pin as optional.
+ *
+ * Narrower than `!assignmentUsesGalleryPhoto`: fal_only slots also run without a
+ * pin, but they are only *reached* after the gallery genuinely missed, and policy
+ * there is to withhold rather than invent an unrelated AI visual for a photo brand.
+ */
+function pipelineComposesWithoutGalleryPin(pipeline: string, slotRole: string): boolean {
+  return isPremiumEditorialPipeline(pipeline)
+    || slotRole === 'premium_editorial_campaign_post'
+    || slotRole === 'premium_editorial_campaign_story'
+    || pipeline === 'meta_ad'
+    || pipeline === 'google_ad'
+    || slotRole === 'paid_ad_creative'
+    || slotRole === 'paid_ad_google_creative';
+}
+
 /** Pipelines that can attempt durable gallery rematch/mirror before aborting. */
 function canRetryBrandGalleryRecovery(pipeline: string, slotRole: string): boolean {
   return isFalDesignPipeline(pipeline)
@@ -530,9 +547,16 @@ function canRetryBrandGalleryRecovery(pipeline: string, slotRole: string): boole
  * When matchInput is provided, only caption-aligned candidates (≥ minScore) are tried —
  * never fall back to the first reachable brand photo without scoring.
  */
+type GalleryRematchFailure =
+  | 'no_photos'
+  | 'no_aligned_candidate'
+  | 'unreachable'
+  /** Pipeline is outside `canRetryBrandGalleryRecovery` — no rematch was attempted. */
+  | 'recovery_unsupported';
+
 type GalleryRematchResult =
   | { ok: true; url: string }
-  | { ok: false; reason: 'no_photos' | 'no_aligned_candidate' | 'unreachable' };
+  | { ok: false; reason: GalleryRematchFailure };
 
 async function rematchMirroredBrandGalleryUrl(opts: {
   workspaceId: string;
@@ -584,14 +608,15 @@ async function rematchMirroredBrandGalleryUrl(opts: {
   return { ok: true, url: picked.url };
 }
 
-function galleryRematchErrorMessage(
-  reason: 'no_photos' | 'no_aligned_candidate' | 'unreachable',
-): string {
+function galleryRematchErrorMessage(reason: GalleryRematchFailure): string {
   if (reason === 'no_aligned_candidate') {
     return 'Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı';
   }
   if (reason === 'no_photos') {
     return 'Marka galerisinde kullanılabilir fotoğraf yok';
+  }
+  if (reason === 'recovery_unsupported') {
+    return 'Slota galeri fotoğrafı atanamadı — caption ile uyumlu marka fotoğrafı gerekiyor';
   }
   return 'Galeri fotoğrafı erişilemiyor (mirror/probe başarısız — URL süresi dolmuş veya fetch engelli olabilir)';
 }
@@ -2618,7 +2643,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           },
           galleryMeta,
         })
-        : { ok: false as const, reason: 'unreachable' as const };
+        : { ok: false as const, reason: 'recovery_unsupported' as const };
       if (rematch.ok) {
         console.log(`[auto-produce] brand gallery rematch/mirror: ${rematch.url.slice(0, 80)}`);
         referenceUrl = rematch.url;
@@ -2703,6 +2728,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     if (
       !forceAttachedPhotos
       && (!referenceUrl || (referenceUrl.startsWith('/api/') && !(await probeMediaUrlReliable(referenceUrl, { timeoutMs: 4_000 }))))
+      // premium_editorial / ad pipelines rematch internally — an empty or stale
+      // pin must not withhold a slot they can compose without.
+      && !pipelineComposesWithoutGalleryPin(assignment.pipeline, assignment.slot_role)
     ) {
       const brokenInternal = referenceUrl?.startsWith('/api/');
       const internalFallback = brokenInternal && galleryPhotos.length
@@ -2742,7 +2770,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             },
             galleryMeta,
           })
-          : { ok: false as const, reason: 'unreachable' as const };
+          : { ok: false as const, reason: 'recovery_unsupported' as const };
         if (rematch.ok) {
           console.log(`[auto-produce] brand gallery rematch after internal miss: ${rematch.url.slice(0, 80)}`);
           referenceUrl = rematch.url;
@@ -2789,6 +2817,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (referenceUrl && !referenceIsStock) {
+      const slotRequiresGalleryPhoto = !pipelineComposesWithoutGalleryPin(
+        assignment.pipeline,
+        assignment.slot_role,
+      );
       try {
         const picked = await pickReachableProductionGalleryUrl(
           workspaceId,
@@ -2803,6 +2835,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             );
           }
           referenceUrl = picked.url;
+        } else if (!slotRequiresGalleryPhoto) {
+          console.warn(
+            `[auto-produce] ${assignment.pipeline}: unreachable gallery pin dropped — `
+            + 'pipeline composes without it',
+          );
+          referenceUrl = null;
         } else if (!referenceUrl.startsWith('/api/media?key=')) {
           if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
             console.warn(
@@ -2839,7 +2877,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }
       } catch (mirrorErr) {
         console.warn('[auto-produce] pickReachableProductionGalleryUrl failed:', mirrorErr);
-        if (!referenceUrl.startsWith('/api/media?key=')) {
+        if (!slotRequiresGalleryPhoto) {
+          referenceUrl = null;
+        } else if (!referenceUrl?.startsWith('/api/media?key=')) {
           if (allowsCaptionScratchGalleryFallback(brandBusinessType, hasRealBrandPhotos)) {
             const recovered = await runScratchVibeImage({
           referenceImageUrls: undefined,

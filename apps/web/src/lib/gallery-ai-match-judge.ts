@@ -51,6 +51,13 @@ import { getAiModelProfile } from '@/lib/ai-model-tier';
 /** Candidate photo metadata the judge is allowed to see (no raw image). */
 export interface GalleryJudgeCandidate {
   url: string;
+  /**
+   * Externally fetchable variant of `url`, used only to attach the image to the
+   * vision call. R2-backed galleries are stored as relative `/api/media?key=…`
+   * paths that OpenAI cannot fetch, and a presigned link expires within the
+   * hour — so it must never replace `url` as the match result.
+   */
+  visionUrl?: string;
   primarySubject?: string;
   subjectFamily?: string;
   subjectAliases?: string[];
@@ -149,6 +156,49 @@ function isPublicHttpImageUrl(url: string): boolean {
   return /^https?:\/\//i.test(url.trim());
 }
 
+/** Tenant-uploaded photos live behind `/api/media` and need presigning for vision. */
+function needsVisionUrlResolution(url: string): boolean {
+  const trimmed = url.trim();
+  return trimmed.startsWith('/api/media') && !isPublicHttpImageUrl(trimmed);
+}
+
+/** The URL to attach as an image, or null when the candidate stays invisible. */
+function visionImageUrl(candidate: GalleryJudgeCandidate): string | null {
+  const target = (candidate.visionUrl ?? candidate.url).trim();
+  return isPublicHttpImageUrl(target) ? target : null;
+}
+
+/**
+ * Presign R2-backed candidates so the judge can actually see them. Without this
+ * a gallery of uploaded photos reaches the model with zero images attached, and
+ * a fail-closed gate then withholds every strict-caption slot.
+ */
+async function withResolvedVisionUrls(
+  candidates: GalleryJudgeCandidate[],
+): Promise<GalleryJudgeCandidate[]> {
+  const shortlist = candidates.slice(0, JUDGE_MAX_CANDIDATES);
+  if (!shortlist.some((c) => needsVisionUrlResolution(c.url))) return candidates;
+
+  const { resolveExternallyAccessibleUrl } = await import('@/lib/media-url');
+  const resolved = await Promise.all(
+    shortlist.map(async (candidate) => {
+      if (!needsVisionUrlResolution(candidate.url)) return candidate;
+      try {
+        const visionUrl = await resolveExternallyAccessibleUrl(candidate.url);
+        return isPublicHttpImageUrl(visionUrl) ? { ...candidate, visionUrl } : candidate;
+      } catch (err) {
+        console.warn(
+          '[gallery-judge] vision URL resolve failed:',
+          candidate.url.slice(0, 80),
+          err instanceof Error ? err.message : err,
+        );
+        return candidate;
+      }
+    }),
+  );
+  return [...resolved, ...candidates.slice(JUDGE_MAX_CANDIDATES)];
+}
+
 /** Vision for strict captions unless explicitly disabled. */
 export function galleryJudgeVisionEnabled(): boolean {
   if (process.env.GALLERY_JUDGE_VISION === 'false') return false;
@@ -156,7 +206,13 @@ export function galleryJudgeVisionEnabled(): boolean {
 }
 
 function buildJudgeUserPayload(input: GalleryJudgeInput): string {
-  const candidates = input.candidates.slice(0, JUDGE_MAX_CANDIDATES).map((c, i) => ({
+  const shortlist = input.candidates.slice(0, JUDGE_MAX_CANDIDATES);
+  // Claiming vision while attaching nothing makes the model answer "No images
+  // available" instead of judging the metadata it did receive.
+  const attachedCount = input.useVision
+    ? shortlist.filter((c) => visionImageUrl(c)).length
+    : 0;
+  const candidates = shortlist.map((c, i) => ({
     index: i,
     primary_subject: c.primarySubject ?? null,
     subject_family: c.subjectFamily ?? null,
@@ -165,7 +221,7 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     description: (c.description ?? '').slice(0, 240),
     content_tags: (c.contentTags ?? []).slice(0, 10),
     deterministic_score: c.deterministicScore ?? null,
-    has_image: Boolean(input.useVision && isPublicHttpImageUrl(c.url)),
+    has_image: attachedCount > 0 && Boolean(visionImageUrl(c)),
   }));
   return JSON.stringify({
     caption: input.caption.slice(0, 600),
@@ -173,7 +229,7 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     canonical_subject_hint: input.canonicalSubject ?? null,
     business_type: input.businessType ?? null,
     content_type: input.contentType ?? null,
-    vision_attached: Boolean(input.useVision),
+    vision_attached: attachedCount > 0,
     candidates,
   });
 }
@@ -189,11 +245,12 @@ function buildJudgeUserContent(
   ];
   const detail = getAiModelProfile().visionDetail === 'high' ? 'high' : 'low';
   input.candidates.slice(0, JUDGE_MAX_CANDIDATES).forEach((c, i) => {
-    if (!isPublicHttpImageUrl(c.url)) return;
+    const imageUrl = visionImageUrl(c);
+    if (!imageUrl) return;
     parts.push({ type: 'text', text: `Candidate index ${i} image:` });
     parts.push({
       type: 'image_url',
-      image_url: { url: c.url, detail },
+      image_url: { url: imageUrl, detail },
     });
   });
   return parts.length > 1 ? parts : text;
@@ -248,6 +305,18 @@ export async function judgeGalleryMatch(
     ?? (input.useVision
       ? profile.visionGrafiker
       : serverConfig.ai.chatModel('standard'));
+  const visionInput = input.useVision
+    ? { ...input, candidates: await withResolvedVisionUrls(input.candidates) }
+    : input;
+  if (
+    input.useVision
+    && !visionInput.candidates.slice(0, JUDGE_MAX_CANDIDATES).some((c) => visionImageUrl(c))
+  ) {
+    console.warn(
+      '[gallery-judge] vision requested but no candidate image is fetchable — '
+      + 'judging on metadata only',
+    );
+  }
   try {
     const openai = deps?.openai ?? new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
@@ -257,7 +326,7 @@ export async function judgeGalleryMatch(
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: JUDGE_SYSTEM_PROMPT },
-        { role: 'user', content: buildJudgeUserContent(input) },
+        { role: 'user', content: buildJudgeUserContent(visionInput) },
       ],
     });
     const raw = response.choices[0]?.message?.content?.trim() ?? '{}';

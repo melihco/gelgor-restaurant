@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from typing import Any
@@ -608,7 +609,12 @@ async def drain_production_jobs(
             if eq_reason in _bullmq_defer_reasons() or eq is None:
                 delay = _bullmq_defer_delay_sec(eq_reason)
                 for job in batch:
-                    await jobs.mark_deferred(job["id"], eq_reason, delay_sec=delay)
+                    await jobs.mark_deferred(
+                        job["id"],
+                        eq_reason,
+                        delay_sec=delay,
+                        max_age_sec=_defer_max_age_sec(eq_reason),
+                    )
             else:
                 for job in batch:
                     await jobs.mark_failed(job["id"], eq_reason[:500])
@@ -674,7 +680,12 @@ async def drain_production_jobs(
         if _is_ops_defer_reason(batch_reason):
             delay = _bullmq_defer_delay_sec(batch_reason)
             for job in batch:
-                await jobs.mark_deferred(job["id"], batch_reason, delay_sec=delay)
+                await jobs.mark_deferred(
+                    job["id"],
+                    batch_reason,
+                    delay_sec=delay,
+                    max_age_sec=_defer_max_age_sec(batch_reason),
+                )
             logger.info(
                 "production_factory.batch_deferred",
                 mission_id=str(mission_id),
@@ -696,7 +707,12 @@ async def drain_production_jobs(
                     slot_reason = _resolve_slot_failure_reason(produce_data, key, batch_reason)
                     if _is_ops_defer_reason(slot_reason):
                         delay = _bullmq_defer_delay_sec(slot_reason)
-                        await jobs.mark_deferred(job["id"], slot_reason, delay_sec=delay)
+                        await jobs.mark_deferred(
+                            job["id"],
+                            slot_reason,
+                            delay_sec=delay,
+                            max_age_sec=_defer_max_age_sec(slot_reason),
+                        )
                         logger.info(
                             "production_factory.slot_deferred",
                             mission_id=str(mission_id),
@@ -851,44 +867,70 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
     return summary_after
 
 
-def _is_ops_defer_reason(reason: str) -> bool:
-    """Transient ops blocks — defer without burning attempts (line must not clog).
+# External blocks that clear themselves or via ops (top-up, lock release, worker
+# restart). Retrying costs nothing until they clear, so these defer indefinitely.
+_TRANSIENT_OPS_DEFER_MARKERS = (
+    "production_in_flight",
+    "provider_billing_circuit_open",
+    "skip-no-fal-quota",
+    "aylık kredi",
+    "sa kredi",
+    "token_wallet",
+    "günlük api bütçesi",
+    "günlük içerik limiti",
+    "daily_budget",
+    "budget_exhausted",
+    "auto_produce_unreachable",
+    "production_worker_offline",
+    "enqueue_failed",
+    "bullmq enqueue failed",
+    "route_still_running",
+)
 
-    Billing circuits, monthly SA Kredi, daily budget, and workspace locks clear
-    themselves or via ops; exhausting slots on these traps the mission.
-    """
+# Quality / template gates — defer so the line does not clog while overlay repair
+# or layout-ref Ideogram recovers, but each pass re-runs the whole slot against the
+# same inputs. Bounded by `_QUALITY_DEFER_MAX_AGE_SEC` so a slot that can never
+# pass terminates instead of billing a retry forever.
+_QUALITY_DEFER_MARKERS = (
+    "overlay_ungrounded",
+    "caption–tasarım–görsel tutarsız",
+    "caption-tasarım-görsel tutarsız",
+    "caption_design_incoherent",
+    "library template replica",
+    "library_template_replica_failed",
+    "library_template_required",
+    "grounded gallery design failed",
+    "ideogram fallback disabled",
+)
+
+
+def _quality_defer_max_age_sec() -> float:
+    raw = os.getenv("PRODUCTION_QUALITY_DEFER_MAX_AGE_SEC", "")
+    try:
+        parsed = float(raw)
+    except (TypeError, ValueError):
+        parsed = 0.0
+    return parsed if parsed > 0 else 21_600.0  # 6h
+
+
+def _is_quality_defer_reason(reason: str) -> bool:
+    lower = (reason or "").strip().lower()
+    return bool(lower) and any(m in lower for m in _QUALITY_DEFER_MARKERS)
+
+
+def _defer_max_age_sec(reason: str) -> float | None:
+    """Age bound for this defer reason, or None when it may defer indefinitely."""
+    return _quality_defer_max_age_sec() if _is_quality_defer_reason(reason) else None
+
+
+def _is_ops_defer_reason(reason: str) -> bool:
+    """Blocks that defer without burning attempts (line must not clog)."""
     lower = (reason or "").strip().lower()
     if not lower:
         return False
-    markers = (
-        "production_in_flight",
-        "provider_billing_circuit_open",
-        "skip-no-fal-quota",
-        "aylık kredi",
-        "sa kredi",
-        "token_wallet",
-        "günlük api bütçesi",
-        "günlük içerik limiti",
-        "daily_budget",
-        "budget_exhausted",
-        "auto_produce_unreachable",
-        "production_worker_offline",
-        "enqueue_failed",
-        "bullmq enqueue failed",
-        "route_still_running",
-        # Quality / template — defer without burning attempts so the line
-        # does not clog while overlay repair or layout-ref Ideogram recovers.
-        "overlay_ungrounded",
-        "caption–tasarım–görsel tutarsız",
-        "caption-tasarım-görsel tutarsız",
-        "caption_design_incoherent",
-        "library template replica",
-        "library_template_replica_failed",
-        "library_template_required",
-        "grounded gallery design failed",
-        "ideogram fallback disabled",
-    )
-    return any(m in lower for m in markers)
+    if any(m in lower for m in _TRANSIENT_OPS_DEFER_MARKERS):
+        return True
+    return _is_quality_defer_reason(lower)
 
 
 def _resolve_bullmq_batch_reason(
@@ -1018,8 +1060,16 @@ async def apply_bullmq_completion(
                 job_uuid = uuid.UUID(str(job_id))
             except (ValueError, TypeError):
                 continue
-            await jobs.mark_deferred(job_uuid, reason, delay_sec=delay)
-            deferred += 1
+            defer_status = await jobs.mark_deferred(
+                job_uuid,
+                reason,
+                delay_sec=delay,
+                max_age_sec=_defer_max_age_sec(reason),
+            )
+            if defer_status == "exhausted":
+                failed += 1
+            else:
+                deferred += 1
     else:
         for fj in factory_jobs:
             job_id = fj.get("id")
@@ -1037,8 +1087,16 @@ async def apply_bullmq_completion(
                 slot_reason = _resolve_slot_failure_reason(produce_data, key, reason)
                 if _is_ops_defer_reason(slot_reason):
                     delay = _bullmq_defer_delay_sec(slot_reason)
-                    await jobs.mark_deferred(job_uuid, slot_reason, delay_sec=delay)
-                    deferred += 1
+                    defer_status = await jobs.mark_deferred(
+                        job_uuid,
+                        slot_reason,
+                        delay_sec=delay,
+                        max_age_sec=_defer_max_age_sec(slot_reason),
+                    )
+                    if defer_status == "exhausted":
+                        failed += 1
+                    else:
+                        deferred += 1
                 else:
                     await _mark_slot_failed(job_uuid, produce_data, key, reason)
                     failed += 1
