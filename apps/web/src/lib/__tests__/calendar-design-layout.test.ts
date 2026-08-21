@@ -2,8 +2,30 @@ import { describe, expect, it } from 'vitest';
 import {
   isKnownCalendarDesignLayoutFamily,
   resolveCalendarDesignLayout,
+  SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS,
   storyLayoutHintForCanvaArchetype,
 } from '@/lib/calendar-design-layout';
+import { normalizeSectorId } from '@/lib/sector-production-profile';
+
+describe('sector layout override table', () => {
+  it('every sector key survives normalization and reaches its playbook', () => {
+    // Keys are indexed by canonical id; two aliases collapsing to the same id
+    // would silently drop one vertical's playbook.
+    const canonical = SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS.map((s) => normalizeSectorId(s));
+    expect(new Set(canonical).size).toBe(canonical.length);
+  });
+
+  it('resolves overrides for aliased sectors, not just literal ones', () => {
+    for (const sector of ['nightclub_lounge', 'nightclub', 'hotel_resort', 'beach_club']) {
+      const layout = resolveCalendarDesignLayout({
+        announcementType: sector.startsWith('hotel') ? 'offer_campaign' : 'event_teaser',
+        channel: 'story',
+        sector,
+      });
+      expect(layout.source).toMatch(/^sector_matrix:/);
+    }
+  });
+});
 
 describe('resolveCalendarDesignLayout', () => {
   it('maps event_teaser story to editorial_date_masthead by default', () => {
@@ -83,7 +105,8 @@ describe('resolveCalendarDesignLayout', () => {
       sector: 'nightclub_lounge',
     });
     expect(layout.canvaArchetypeId).toBe('neon_night_promo');
-    expect(layout.source).toBe('sector_matrix:nightclub_lounge:event_teaser');
+    // Source reports the canonical sector id ("nightclub_lounge" aliases to it).
+    expect(layout.source).toBe('sector_matrix:nightclub:event_teaser');
   });
 
   it('sector override wins over derived idea hint without explicit lock', () => {

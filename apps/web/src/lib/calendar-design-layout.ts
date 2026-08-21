@@ -102,6 +102,34 @@ export function storyLayoutHintForCanvaArchetype(
   return CANVA_TO_REMOTION_LAYOUT[archetypeId] ?? 'split_panel';
 }
 
+/**
+ * Overrides indexed by canonical sector id.
+ *
+ * The table above is written with the sector names people use, but lookups go
+ * through `normalizeSectorId`, which aliases some of them ("nightclub_lounge" →
+ * "nightclub", "hotel_resort" → "hospitality"). Indexing the raw spellings meant
+ * those verticals silently lost their playbook and fell back to the generic
+ * matrix, so the keys are normalized once here instead.
+ */
+const SECTOR_LAYOUT_OVERRIDES_BY_CANONICAL_ID = new Map(
+  Object.entries(SECTOR_CALENDAR_LAYOUT_OVERRIDES)
+    .map(([sector, table]) => [normalizeSectorId(sector), table] as const),
+);
+
+/** Table keys as written — a test asserts none of them collide once normalized. */
+export const SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS = Object.keys(
+  SECTOR_CALENDAR_LAYOUT_OVERRIDES,
+);
+
+function sectorLayoutOverride(
+  sector: string | undefined,
+  announcementKey: string,
+  channel: CalendarLayoutChannel,
+): CanvaArchetypeId | undefined {
+  const canonical = normalizeSectorId(sector ?? '') || 'default';
+  return SECTOR_LAYOUT_OVERRIDES_BY_CANONICAL_ID.get(canonical)?.[announcementKey]?.[channel];
+}
+
 function resolveFromMatrix(
   announcementType: string,
   channel: CalendarLayoutChannel,
@@ -110,8 +138,7 @@ function resolveFromMatrix(
   const key = normalizeAnnouncementKey(announcementType);
   if (!key) return null;
 
-  const sectorKey = normalizeSectorId(sector ?? '') || 'default';
-  const sectorOverride = SECTOR_CALENDAR_LAYOUT_OVERRIDES[sectorKey]?.[key]?.[channel];
+  const sectorOverride = sectorLayoutOverride(sector, key, channel);
   if (sectorOverride) return sectorOverride;
 
   return DEFAULT_CALENDAR_LAYOUT[key]?.[channel] ?? null;
@@ -146,7 +173,7 @@ export function resolveCalendarDesignLayout(input: {
   if (fromMatrix) {
     const sectorKey = normalizeSectorId(input.sector ?? '') || 'default';
     const key = normalizeAnnouncementKey(input.announcementType);
-    const sectorSpecific = SECTOR_CALENDAR_LAYOUT_OVERRIDES[sectorKey]?.[key]?.[channel];
+    const sectorSpecific = sectorLayoutOverride(input.sector, key, channel);
     return {
       canvaArchetypeId: fromMatrix,
       layoutFamilyHint: storyLayoutHintForCanvaArchetype(fromMatrix),

@@ -7,6 +7,7 @@
 
 import type { TypographyBackgroundStyle, TypographyVibe } from '@/types/brand-theme';
 import { defaultTypographyVibeForSector } from '@/types/brand-theme';
+import { typographyVibeFromBrandDna } from '@/lib/typography-vibe-inference';
 import { generateTypographyDesignWithRetry, getVibePromptSpec } from '@/lib/fal-typography-design';
 import {
   generateStoryMotionPlateWithRetry,
@@ -337,7 +338,9 @@ const VIBE_KEYWORD_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
   { vibe: 'anatolian_warm', rx: /\b(anadolu|anatolian|ocakba[sş][ıi]|meyhane|mezze|mangal|kebap|baklava|etnik|terracotta|toprak)\b/i },
   { vibe: 'quiet_luxury', rx: /\b(sessiz lüks|quiet luxury|understated luxury|sofistike|steakhouse|omakase|fine dining)\b/i },
   { vibe: 'clinical_clean', rx: /\b(diş|dental|klinik|clinic|steril|hijyen|kuaför|berber|barber|grooming)\b/i },
-  { vibe: 'neon_glow', rx: /\b(gece|night|parti|party|dj|club|kulüp|bar|lounge|after|set|live|canlı)\b/i },
+  // "after", "set" and "live" alone are ordinary words ("after a long day",
+  // "live the moment") and used to buy nightclub neon typography outright.
+  { vibe: 'neon_glow', rx: /\b(gece|night|parti|party|dj|club|kulüp|bar|lounge|after.?party|afterwork|dj.?set|live.?(?:music|set)|canlı.?müzik)\b/i },
   { vibe: 'handwritten', rx: /\b(doğal|natural|organik|organic|el yapımı|handmade|spa|wellness|huzur|sakin|cilt|skin|bakım)\b/i },
   { vibe: 'editorial_serif', rx: /\b(lüks|luxury|premium|şık|elegant|özel|exclusive|fine|gurme|gourmet|signature|imza)\b/i },
   { vibe: 'street_bold', rx: /\b(yeni sezon|drop|koleksiyon|collection|streetwear|moda|fashion|stil|style|trend|enerji|energy|güçlü)\b/i },
@@ -347,45 +350,42 @@ const VIBE_KEYWORD_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
   { vibe: 'bubble_3d', rx: /\b(eğlence|fun|genç|çocuk|kids|playful|şenlik|festival|kampanya|indirim|fırsat|%)\b/i },
 ];
 
-/** Map distilled brand soul phrases → typography vibe (general brand DNA layer). */
-const SOUL_VIBE_RULES: Array<{ vibe: TypographyVibe; rx: RegExp }> = [
-  { vibe: 'warm_coastal', rx: /\b(aegean|mediterranean|bodrum|coastal|beach|marina|sun.?bleach|turquoise|bohemian)\b/i },
-  { vibe: 'anatolian_warm', rx: /\b(anatolian|anadolu|ocakba[sş][ıi]|meyhane|mezze|terracotta|heritage.?warm|etnik)\b/i },
-  { vibe: 'quiet_luxury', rx: /\b(quiet.?luxury|understated.?luxury|muted.?luxury|whispered.?luxury|restrained.?luxury)\b/i },
-  { vibe: 'clinical_clean', rx: /\b(clinical|sterile|dental|diş|klinik|hygienic|medical.?clean|barber.?premium)\b/i },
-  { vibe: 'editorial_serif', rx: /\b(luxury|lüks|premium|elegant|refined|michelin|fine dining|sophisticated)\b/i },
-  { vibe: 'handwritten', rx: /\b(artisan|organic|natural|hand.?craft|wellness|spa|warm|samimi)\b/i },
-  { vibe: 'retro_poster', rx: /\b(craft|artisan|coffee|roast|vintage|nostalg|warm|rustic)\b/i },
-  { vibe: 'minimal_modern', rx: /\b(minimal|clean|modern|contemporary|sleek|understated)\b/i },
-  { vibe: 'neon_glow', rx: /\b(neon|nightlife|club|dj|electric|after.?dark|speakeasy)\b/i },
-  { vibe: 'street_bold', rx: /\b(bold|urban|street|energy|dynamic|impact)\b/i },
-];
-
 function inferVibeFromBrandSoul(visualDnaTone?: string | null): TypographyVibe | null {
-  const soul = (visualDnaTone ?? '').trim();
-  if (!soul) return null;
-  for (const rule of SOUL_VIBE_RULES) {
-    if (rule.rx.test(soul)) return rule.vibe;
+  return typographyVibeFromBrandDna(visualDnaTone);
+}
+
+/**
+ * Vibes loud enough to redefine a brand's look. A premium venue needs more than
+ * one incidental word before its curated sector default is overruled — "bright
+ * inviting bar scene" must not turn an Aegean beach club into a nightclub.
+ */
+const LOUD_VIBES = new Set<TypographyVibe>(['neon_glow', 'street_bold', 'bubble_3d']);
+
+/** Distinct keyword hits, so a single word is distinguishable from a real theme. */
+function matchVibeKeywords(text: string): { vibe: TypographyVibe; hits: number } | null {
+  for (const rule of VIBE_KEYWORD_RULES) {
+    const found = new Set<string>();
+    for (const match of text.matchAll(new RegExp(rule.rx.source, 'gi'))) {
+      found.add(match[0].toLowerCase());
+    }
+    if (found.size > 0) return { vibe: rule.vibe, hits: found.size };
   }
   return null;
 }
 
-function inferVibeFromPostMood(postMood?: string | null): TypographyVibe | null {
+function inferVibeFromPostMood(postMood?: string | null): { vibe: TypographyVibe; hits: number } | null {
   const mood = (postMood ?? '').trim();
   if (mood.length < 8) return null;
-  for (const rule of VIBE_KEYWORD_RULES) {
-    if (rule.rx.test(mood)) return rule.vibe;
-  }
-  return null;
+  return matchVibeKeywords(mood);
 }
 
-function inferVibeFromCaptionKeywords(caption?: string, headline?: string): TypographyVibe | null {
+function inferVibeFromCaptionKeywords(
+  caption?: string,
+  headline?: string,
+): { vibe: TypographyVibe; hits: number } | null {
   const text = `${headline ?? ''} ${caption ?? ''}`.trim();
   if (!text) return null;
-  for (const rule of VIBE_KEYWORD_RULES) {
-    if (rule.rx.test(text)) return rule.vibe;
-  }
-  return null;
+  return matchVibeKeywords(text);
 }
 
 /**
@@ -412,26 +412,22 @@ export function resolveTypographyVibeFromContext(input: {
   if (input.brandVibe) return input.brandVibe;
 
   const fromSoul = inferVibeFromBrandSoul(input.visualDnaTone);
-  if (fromSoul) {
-    // Premium soul wins — don't let one nightlife keyword override editorial restraint.
-    if (input.lockPremiumVibe) return fromSoul;
-    return fromSoul;
-  }
-
-  const fromPost = inferVibeFromPostMood(input.postMood);
-  if (fromPost) return fromPost;
+  if (fromSoul) return fromSoul;
 
   const sectorDefault = defaultTypographyVibeForSector(input.sector ?? '');
+  const guardLoudVibe = input.lockPremiumVibe || isPremiumVenueSector(input.sector);
+  // One incidental word must not redefine a venue brand; a genuine theme (two or
+  // more distinct keywords) still comes through.
+  const survivesGuard = (match: { vibe: TypographyVibe; hits: number }) =>
+    !(guardLoudVibe && LOUD_VIBES.has(match.vibe) && match.hits < 2);
+
+  const fromPost = inferVibeFromPostMood(input.postMood);
+  if (fromPost && survivesGuard(fromPost)) return fromPost.vibe;
+
   const fromCaption = inferVibeFromCaptionKeywords(input.caption, input.headline);
-  // Beach / hospitality: prefer coastal/editorial defaults over neon unless mood is explicit.
-  if (
-    input.lockPremiumVibe
-    && fromCaption
-    && (fromCaption === 'neon_glow' || fromCaption === 'street_bold' || fromCaption === 'bubble_3d')
-  ) {
-    return sectorDefault;
+  if (fromCaption && survivesGuard(fromCaption) && fromCaption.vibe !== sectorDefault) {
+    return fromCaption.vibe;
   }
-  if (fromCaption && fromCaption !== sectorDefault) return fromCaption;
 
   return sectorDefault;
 }

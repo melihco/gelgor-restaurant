@@ -4,6 +4,7 @@
  */
 
 import { defaultTypographyVibeForSector, type TypographyVibe } from '@/types/brand-theme';
+import { typographyVibeFromBrandDna } from '@/lib/typography-vibe-inference';
 import type { FalDesignIntensityLevel } from '@/lib/fal-design-intensity';
 
 export type ProductionTextEffect =
@@ -71,23 +72,7 @@ export function isHospitalitySector(sector: string): boolean {
 }
 
 function inferVibeFromVisualDna(visualDna: string): TypographyVibe | null {
-  const text = visualDna.toLowerCase();
-  const rules: Array<[RegExp, TypographyVibe]> = [
-    [/\b(bohemian|cycladic|aegean|coastal|beach|marina|sun.?bleach|turquoise)\b/i, 'warm_coastal'],
-    [/\b(anatolian|anadolu|ocakba[sş][ıi]|meyhane|mezze|terracotta|toprak|etnik|heritage.?warm|baklava|mangal)\b/i, 'anatolian_warm'],
-    [/\b(quiet.?luxury|understated.?luxury|muted.?luxury|whispered.?luxury|restrained.?luxury)\b/i, 'quiet_luxury'],
-    [/\b(clinical|sterile|dental|diş|klinik|hygienic|medical.?clean|barber.?premium)\b/i, 'clinical_clean'],
-    [/\b(luxury|lüks|premium|elegant|refined|sophisticated)\b/i, 'editorial_serif'],
-    [/\b(artisan|organic|natural|hand.?craft|wellness|spa|warm|samimi)\b/i, 'handwritten'],
-    [/\b(craft|coffee|roast|vintage|nostalg|rustic|bakery)\b/i, 'retro_poster'],
-    [/\b(minimal|clean|modern|contemporary|sleek|understated)\b/i, 'minimal_modern'],
-    [/\b(neon|nightlife|club|dj|electric|after.?dark)\b/i, 'neon_glow'],
-    [/\b(bold|urban|street|energy|dynamic|impact)\b/i, 'street_bold'],
-  ];
-  for (const [rx, vibe] of rules) {
-    if (rx.test(text)) return vibe;
-  }
-  return null;
+  return typographyVibeFromBrandDna(visualDna);
 }
 
 export function resolveTypographyVibe(input: ProductionDesignPolicyInput): TypographyVibe {

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import {
@@ -81,7 +81,18 @@ describe('pickReachableProductionGalleryUrl', () => {
 });
 
 describe('ensureProductionGalleryPhotoUrlServer', () => {
+  // The mirror branch is gated on serverConfig.r2.configured, which reads env
+  // directly — without these the branch is skipped and the mocked call order
+  // below no longer describes what the function actually does.
+  beforeEach(() => {
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'test-account');
+    vi.stubEnv('R2_ACCESS_KEY_ID', 'test-key');
+    vi.stubEnv('R2_SECRET_ACCESS_KEY', 'test-secret');
+    vi.stubEnv('R2_BUCKET_NAME', 'test-bucket');
+  });
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });

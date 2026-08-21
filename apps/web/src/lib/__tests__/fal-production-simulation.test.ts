@@ -37,8 +37,11 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
     expect(plan.engine).toBe('gpt_image_designed');
     expect(plan.intensity).toBe('photo_first');
     expect(plan.intensitySource).toContain('hardcoded');
-    expect(plan.vibeSource).toBe('visual_dna.soul');
-    expect(plan.resolvedVibe).toBe('handwritten');
+    // Yula's distilled soul is colour/lighting prose ("warm", "terracotta") with
+    // no typographic identity, and the "bar scene" photo mood is one incidental
+    // word — so the curated beach_club default owns the character.
+    expect(plan.vibeSource).toBe('sector.default');
+    expect(plan.resolvedVibe).toBe('warm_coastal');
     expect(plan.promptConflicts).toHaveLength(0);
     expect(plan.designCardPrompt).toContain('DESIGN INTENSITY: PHOTO-FIRST');
     expect(plan.productionGate.passed).toBe(true);
@@ -83,11 +86,14 @@ describe('simulateFalFeedProduction — Yula New Citrus', () => {
     const comparison = simulateYulaNewCitrusBeforeAfter();
 
     expect(comparison.briefId).toBe('yula-new-citrus-cocktail-launch');
-    expect(comparison.before.resolvedVibe).toBe('handwritten');
+    // Inference and the brand-theme lock now agree on the character, so the
+    // remaining gain is provenance: a stable tenant vibe instead of a guess.
+    expect(comparison.before.resolvedVibe).toBe('warm_coastal');
     expect(comparison.after.resolvedVibe).toBe('warm_coastal');
+    expect(comparison.before.vibeSource).toBe('sector.default');
+    expect(comparison.after.vibeSource).toBe('brand_theme.typography_design.vibe');
 
     const fields = comparison.deltas.map((d) => d.field);
-    expect(fields).toContain('resolvedVibe');
     expect(fields).toContain('vibeSource');
     expect(fields).toContain('intensitySource');
   });
