@@ -468,7 +468,7 @@ export function BrandHubDashboard({
                 boxShadow: '0 12px 28px rgba(212,160,85,0.28), inset 0 1px 0 rgba(255,255,255,0.35)',
               }}
             >
-              {confirmingConstitution ? 'Onaylanıyor…' : 'Marka anayasasını kilitle'}
+              {confirmingConstitution ? 'Onaylanıyor…' : 'Marka anayasasını onayla'}
             </button>
           )}
           {constitutionConfirmError && (

@@ -28,7 +28,7 @@ import {
 } from '@/lib/gallery-upload';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
-import type { CompanyProfile, SaveCompanyProfileRequest, ApprovalMode } from '@/types';
+import type { CompanyProfile, SaveCompanyProfileRequest } from '@/types';
 import type { T } from '../theme-context';
 import {
   buildCompanyProfilePatchFromPython,
@@ -68,8 +68,6 @@ import {
   evaluateGalleryAssetPolicy,
   resolveTenantOperatingProfile,
 } from '@/lib/tenant-operating-policy';
-import { resolveKitForSector } from '@/lib/story-template-registry';
-import { tenantKitSeed } from '@/lib/tenant-template-seed';
 import { BrandColorPalettePicker } from '@/components/brand/BrandColorPalettePicker';
 import { BrandFalTemplateGalleryPanel } from '@/components/brand/BrandFalTemplateGalleryPanel';
 import { BrandSlotFacilitiesPanel } from '../BrandSlotFacilitiesPanel';
@@ -101,7 +99,6 @@ import {
 } from '@/lib/content-pillars-sync';
 import { resolveBrandLogoDisplayUrl } from '@/lib/brand-logo-production';
 import { BrandLoadingScreen } from '../BrandLoadingScreen';
-import { BrandLogoPreviewCard } from '../BrandLogoPreviewCard';
 import { BrandIdentityProfileCard } from '../BrandIdentityProfileCard';
 import { BrandIdentityAtelier, BRAND_ATELIER_ACCENTS } from '../BrandIdentityAtelier';
 import {
@@ -129,11 +126,9 @@ import {
   buildBrandHubAssistantNavItem,
   buildBrandHubNavItems,
   buildBrandHubStrategyNavItem,
-  ReadinessRing,
 } from '../BrandHubDashboard';
 import { BrandVisionerGroup, BrandVisionerList, BrandVisionerNavRow } from '../BrandVisionerNavRow';
 import { MobileBrandNavbar } from '../MobileBrandNavbar';
-import { SA_CHROME, SA_STUDIO_ACCENTS } from '../sa-chrome';
 import { MoreMenuPanel } from './MoreMenu';
 
 const BrandChatbotProfileCard = dynamic(
@@ -666,6 +661,39 @@ function Field({ t, label, value, onSave, multiline = false, hint, displayValue 
 Field.displayName = 'Field';
 
 // ─── Read-only info row ────────────────────────────────────────────────
+/**
+ * iOS-style switch. The visual track stays 28px tall, but the button around it
+ * spans 44px so the tap target clears the minimum without changing the layout.
+ */
+function Toggle({ t, on, onToggle, label, color }: {
+  t: T; on: boolean; onToggle: () => void; label: string; color?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={onToggle}
+      style={{
+        flexShrink: 0, minWidth: 44, minHeight: 44, padding: 0,
+        border: 'none', background: 'transparent', cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+      }}
+    >
+      <span aria-hidden style={{
+        display: 'block', position: 'relative', width: 50, height: 28, borderRadius: 14,
+        background: on ? (color ?? t.accent) : t.separator, transition: 'background 0.2s',
+      }}>
+        <span style={{
+          position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%',
+          background: '#fff', left: on ? 25 : 3, transition: 'left 0.2s',
+        }} />
+      </span>
+    </button>
+  );
+}
+
 function InfoRow({ t, label, value, color }: { t: T; label: string; value: string; color?: string }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, padding: '13px 16px', minHeight: 44 }}>
@@ -1243,668 +1271,6 @@ function TagChip({ text, color, t }: { text: string; color: string; t: T }) {
 
 type Tab = 'identity' | 'content' | 'design' | 'gallery' | 'strategy' | 'chatbot';
 
-// ─── Brand Kit Tab ───────────────────────────────────────────────────────────
-
-function ColorSwatch({ hex, label }: { hex: string; label: string }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-      <div style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: hex,
-        border: '0.5px solid rgba(0,0,0,0.12)',
-        boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
-      }} />
-      <span style={{ fontSize: 9, opacity: 0.6, fontFamily: 'monospace' }}>{hex}</span>
-      <span style={{ fontSize: 9, opacity: 0.5 }}>{label}</span>
-    </div>
-  );
-}
-
-function normalizeHex(value: string, fallback: string): string {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/);
-  if (!match?.[1]) return fallback;
-  let hex = match[1].toLowerCase();
-  if (hex.length === 3) {
-    hex = hex.split('').map(c => c + c).join('');
-  }
-  return `#${hex}`;
-}
-
-function PaletteColorEditor({
-  label,
-  value,
-  fallback,
-  onChange,
-  t,
-}: {
-  label: string;
-  value: string;
-  fallback: string;
-  onChange: (hex: string) => void;
-  t: T;
-}) {
-  const safe = normalizeHex(value, fallback);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
-      <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 600 }}>{label}</span>
-      <input
-        type="color"
-        value={safe}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width: 48, height: 48, borderRadius: 12, border: 'none',
-          cursor: 'pointer', padding: 2, background: 'transparent',
-        }}
-      />
-      <input
-        type="text"
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        onBlur={() => onChange(normalizeHex(value, safe))}
-        placeholder="#000000"
-        spellCheck={false}
-        style={{
-          width: '100%', maxWidth: 110, textAlign: 'center',
-          fontSize: 16, fontFamily: 'monospace', padding: '8px 8px',
-          borderRadius: 8, border: `0.5px solid ${t.separator}`,
-          background: t.isDark ? '#1e1e1e' : '#f5f5f5',
-          color: t.textPrimary, letterSpacing: '-0.02em',
-        }}
-      />
-    </div>
-  );
-}
-
-const BRAND_SAFE_FONTS = [
-  'Playfair Display', 'Montserrat', 'Lora', 'Raleway', 'Cormorant Garamond',
-  'DM Sans', 'DM Serif Display', 'Libre Baskerville', 'Poppins', 'Fraunces',
-  'Space Grotesk', 'Inter', 'Josefin Sans', 'Syne',
-  'Great Vibes', 'Allura', 'Anton', 'Bebas Neue',
-] as const;
-
-function BrandKitTab({ t, tenantId }: { t: T; tenantId: string | null }) {
-  const [theme, setTheme] = React.useState<Record<string, unknown> | null>(null);
-  const [loading, setLoading] = React.useState(false);
-  const [deriving, setDeriving] = React.useState(false);
-  const [saving, setSaving] = React.useState(false);
-  const [status, setStatus] = React.useState<string>('');
-  const [editMode, setEditMode] = React.useState(false);
-  const [paletteEditMode, setPaletteEditMode] = React.useState(false);
-  // Editable overrides
-  const [editPrimary, setEditPrimary] = React.useState('#1a1a1a');
-  const [editAccent, setEditAccent] = React.useState('#4f8ef7');
-  const [editNeutral, setEditNeutral] = React.useState('#f5f5f5');
-  const [editShadow, setEditShadow] = React.useState('#000000');
-  const [editHeadingFont, setEditHeadingFont] = React.useState('Playfair Display');
-  const [editBodyFont, setEditBodyFont] = React.useState('DM Sans');
-  const [editDensity, setEditDensity] = React.useState<'minimal' | 'medium' | 'dense'>('minimal');
-  const [editOverlayOpacity, setEditOverlayOpacity] = React.useState(0.28);
-  const [editHeadlineColor, setEditHeadlineColor] = React.useState('#ffffff');
-
-  const fetchTheme = React.useCallback(async () => {
-    if (!tenantId) return;
-    setLoading(true);
-    try {
-      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
-        headers: getTenantBffHeaders(tenantId),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        const t2 = data.theme as Record<string, unknown> | null;
-        setTheme(t2 ?? null);
-        if (t2) {
-          const p = t2.palette as Record<string, string> | undefined;
-          const ty = t2.typography as Record<string, string> | undefined;
-          if (p?.primary)  setEditPrimary(p.primary);
-          if (p?.accent)   setEditAccent(p.accent);
-          if (p?.neutral)  setEditNeutral(p.neutral);
-          if (p?.shadow)   setEditShadow(p.shadow);
-          const headingFont = ty?.headingFont ?? ty?.heading_font;
-          const bodyFont = ty?.bodyFont ?? ty?.body_font;
-          const density = ty?.textOverlayDensity ?? ty?.text_overlay_density;
-          const headlineColor = ty?.headlineColor ?? ty?.headline_color;
-          if (headingFont) setEditHeadingFont(headingFont);
-          if (bodyFont) setEditBodyFont(bodyFont);
-          if (density) setEditDensity(density as 'minimal' | 'medium' | 'dense');
-          if (headlineColor) setEditHeadlineColor(headlineColor);
-          const ov = t2.overlay as Record<string, unknown> | undefined;
-          if (typeof ov?.opacity === 'number') setEditOverlayOpacity(ov.opacity);
-        } else {
-          // Tema yoksa marka renklerinden başlangıç değerlerini al
-          try {
-            const ctxRes = await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId);
-            if (ctxRes.ok) {
-              const ctx = await ctxRes.json() as Record<string, string | undefined>;
-              if (ctx.brand_primary_color) setEditPrimary(ctx.brand_primary_color);
-              if (ctx.brand_accent_color) setEditAccent(ctx.brand_accent_color);
-            }
-          } catch { /* */ }
-        }
-      }
-    } catch { /* */ }
-    setLoading(false);
-  }, [tenantId]);
-
-  const buildThemeSavePayload = React.useCallback(() => {
-    if (!tenantId) return null;
-
-    const primary = normalizeHex(editPrimary, '#1a1a1a');
-    const accent = normalizeHex(editAccent, '#4f8ef7');
-    const neutral = normalizeHex(editNeutral, '#f5f5f5');
-    const shadow = normalizeHex(editShadow, '#000000');
-
-    const existingPalette = theme?.palette as Record<string, unknown> | undefined;
-    const existingTypography = theme?.typography as Record<string, unknown> | undefined;
-    const existingComposition = theme?.composition as Record<string, unknown> | undefined;
-    const existingGrading = theme?.grading as Record<string, unknown> | undefined;
-    const existingLayout = theme?.layout as Record<string, unknown> | undefined;
-
-    return {
-      theme: {
-        workspace_id: tenantId,
-        derived_at: new Date().toISOString(),
-        source: 'manual_colors',
-        palette: {
-          primary,
-          accent,
-          neutral,
-          shadow,
-          description: (existingPalette?.description as string) || 'Manuel renk paleti',
-        },
-        typography: {
-          heading_font: editHeadingFont,
-          body_font: editBodyFont,
-          text_overlay_density: editDensity,
-          headline_color: normalizeHex(editHeadlineColor, '#ffffff'),
-          personality: (existingTypography?.personality as string)
-            ?? (existingTypography as Record<string, string> | undefined)?.personality
-            ?? '',
-        },
-        composition: {
-          primary_pattern: (existingComposition?.primaryPattern as string)
-            ?? (existingComposition as Record<string, string> | undefined)?.primary_pattern
-            ?? 'centered subject',
-          text_safe_area_fraction: editDensity === 'minimal' ? 0.32 : editDensity === 'dense' ? 0.68 : 0.52,
-          subject_focus: (existingComposition?.subjectFocus as string)
-            ?? (existingComposition as Record<string, string> | undefined)?.subject_focus
-            ?? 'main subject sharp, background softly blurred',
-        },
-        grading: {
-          look: (existingGrading?.look as string) ?? 'natural editorial',
-          lut_directive: (existingGrading?.lutDirective as string)
-            ?? (existingGrading as Record<string, string> | undefined)?.lut_directive
-            ?? 'natural colors, balanced exposure',
-        },
-        overlay: {
-          opacity: editOverlayOpacity,
-          color: shadow,
-        },
-        motion_profile: {
-          ...((theme?.motion_profile ?? theme?.motionProfile) as Record<string, unknown> ?? {}),
-          text_density: editDensity,
-        },
-        layout: {
-          border_radius: (existingLayout?.borderRadius as number)
-            ?? (existingLayout as Record<string, number> | undefined)?.border_radius
-            ?? 12,
-          spacing_base: (existingLayout?.spacingBase as number)
-            ?? (existingLayout as Record<string, number> | undefined)?.spacing_base
-            ?? 8,
-          default_layout_id: (existingLayout?.defaultLayoutId as string)
-            ?? (existingLayout as Record<string, string> | undefined)?.default_layout_id
-            ?? 'feed_square',
-        },
-        caption_voice_rules: (theme?.captionVoiceRules as string[])
-          ?? (theme?.caption_voice_rules as string[])
-          ?? [],
-        anti_patterns: (theme?.antiPatterns as string[])
-          ?? (theme?.anti_patterns as string[])
-          ?? [],
-        contrast_valid: true,
-      },
-    };
-  }, [
-    tenantId, theme, editPrimary, editAccent, editNeutral, editShadow,
-    editHeadingFont, editBodyFont, editDensity,
-  ]);
-
-  const syncBrandContextColors = async (primary: string, accent: string) => {
-    if (!tenantId) return;
-    await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        brand_primary_color: primary,
-        brand_accent_color: accent,
-      }),
-    }).catch(() => {/* non-fatal */});
-  };
-
-  const handleSavePalette = async (successMessage = 'Renk paleti güncellendi ✓') => {
-    if (!tenantId) return;
-    const payload = buildThemeSavePayload();
-    if (!payload) return;
-
-    const primary = normalizeHex(editPrimary, '#1a1a1a');
-    const accent = normalizeHex(editAccent, '#4f8ef7');
-    const neutral = normalizeHex(editNeutral, '#f5f5f5');
-    const shadow = normalizeHex(editShadow, '#000000');
-    setEditPrimary(primary);
-    setEditAccent(accent);
-    setEditNeutral(neutral);
-    setEditShadow(shadow);
-
-    setSaving(true);
-    setStatus('Renk paleti kaydediliyor…');
-    try {
-      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme`, tenantId, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
-        body: JSON.stringify(payload),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        setTheme(data.theme ?? null);
-        await syncBrandContextColors(primary, accent);
-        setPaletteEditMode(false);
-        setStatus(successMessage);
-      } else {
-        setStatus('Kayıt başarısız');
-      }
-    } catch { setStatus('Bağlantı hatası'); }
-    setSaving(false);
-    setTimeout(() => setStatus(''), 3000);
-  };
-
-  const handleSaveOverride = async () => {
-    await handleSavePalette('Marka kiti güncellendi ✓');
-    setEditMode(false);
-  };
-
-  React.useEffect(() => { void fetchTheme(); }, [fetchTheme]);
-
-  const handleRederive = async () => {
-    if (!tenantId) return;
-    setDeriving(true);
-    setStatus('Tema türetiliyor…');
-    try {
-      const r = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/derive`, tenantId, {
-        method: 'POST',
-        headers: getTenantBffHeaders(tenantId),
-      });
-      if (r.ok) {
-        const data = await r.json();
-        setTheme(data.theme ?? null);
-        setStatus('Tema güncellendi ✓');
-      } else {
-        setStatus('Hata oluştu');
-      }
-    } catch { setStatus('Bağlantı hatası'); }
-    setDeriving(false);
-    setTimeout(() => setStatus(''), 3000);
-  };
-
-  const palette = theme ? (theme.palette as Record<string, string>) : null;
-  const typography = theme ? (theme.typography as Record<string, unknown>) : null;
-  const grading = theme ? (theme.grading as Record<string, string>) : null;
-  const displayPalette = {
-    primary: palette?.primary ?? editPrimary,
-    accent: palette?.accent ?? editAccent,
-    neutral: palette?.neutral ?? editNeutral,
-    shadow: palette?.shadow ?? editShadow,
-    description: palette?.description ?? '',
-  };
-
-  const resetPaletteEdits = () => {
-    if (palette) {
-      if (palette.primary) setEditPrimary(palette.primary);
-      if (palette.accent) setEditAccent(palette.accent);
-      if (palette.neutral) setEditNeutral(palette.neutral);
-      if (palette.shadow) setEditShadow(palette.shadow);
-    }
-    setPaletteEditMode(false);
-  };
-
-  const headingFontDisplay = (typography?.headingFont ?? typography?.heading_font ?? editHeadingFont) as string;
-  const bodyFontDisplay = (typography?.bodyFont ?? typography?.body_font ?? editBodyFont) as string;
-  const densityDisplay = (typography?.textOverlayDensity ?? typography?.text_overlay_density ?? editDensity) as string;
-  const headlineColorDisplay = (typography?.headlineColor ?? typography?.headline_color ?? editHeadlineColor) as string;
-  const sourceLabel: Record<string, string> = {
-    vibe_profile: 'Vibe DNA\'dan',
-    visual_dna: 'Görsel Analiz\'den',
-    manual_colors: 'Manuel Renkler\'den',
-    sector_default: 'Sektör Varsayılanından',
-  };
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, paddingBottom: 32 }}>
-
-      {/* Header Card */}
-      <SCard t={t} title="Marka Kiti" accent={t.accent}>
-        {theme && (
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            padding: '4px 10px', borderRadius: 20,
-            background: t.accentDim, marginBottom: 12,
-          }}>
-            <span style={{ fontSize: 10, color: t.accent, fontWeight: 600 }}>
-              Kaynak: {sourceLabel[(theme.source as string) ?? ''] ?? (theme.source as string)}
-            </span>
-            {!(theme.contrastValid as boolean ?? theme.contrast_valid as boolean) && (
-              <span style={{ fontSize: 10, color: '#f97316', fontWeight: 600, marginLeft: 6 }}>
-                ⚠ Kontrast düzeltildi
-              </span>
-            )}
-          </div>
-        )}
-
-        <button
-          onClick={handleRederive}
-          disabled={deriving || !tenantId}
-          style={{
-            width: '100%', padding: '12px 16px', borderRadius: 14,
-            background: deriving ? t.accentDim : t.accent,
-            color: '#fff', border: 'none', cursor: deriving ? 'wait' : 'pointer',
-            fontSize: 13, fontWeight: 600,
-          }}
-        >
-          {deriving ? 'Türetiliyor…' : '⟳  Yeniden Türet'}
-        </button>
-        {status && (
-          <div style={{ marginTop: 8, fontSize: 12, color: t.textSecondary, textAlign: 'center' }}>{status}</div>
-        )}
-      </SCard>
-
-      {loading && (
-        <div style={{ textAlign: 'center', padding: 32, color: t.textMuted, fontSize: 13 }}>
-          Yükleniyor…
-        </div>
-      )}
-
-      {!loading && !theme && (
-        <SCard t={t} title="Tema Yok" accent={t.warning}>
-          <div style={{ fontSize: 13, color: t.textSecondary }}>
-            Henüz otomatik tema yok — Yeniden Türet veya Renk Paleti ile oluştur.
-          </div>
-        </SCard>
-      )}
-
-      {palette && (
-        <SCard t={t} title="Renk Paleti" accent={t.accent}>
-          {!paletteEditMode ? (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-around', padding: '8px 0' }}>
-                <ColorSwatch hex={displayPalette.primary} label="Ana Renk" />
-                <ColorSwatch hex={displayPalette.accent} label="Vurgu" />
-                <ColorSwatch hex={displayPalette.neutral} label="Nötr" />
-                <ColorSwatch hex={displayPalette.shadow} label="Gölge" />
-              </div>
-              {displayPalette.description && (
-                <div style={{ marginTop: 10, fontSize: 11, color: t.textMuted, textAlign: 'center', fontStyle: 'italic' }}>
-                  {displayPalette.description}
-                </div>
-              )}
-              <button
-                onClick={() => setPaletteEditMode(true)}
-                style={{
-                  marginTop: 14, width: '100%', padding: '10px 16px', borderRadius: 12,
-                  cursor: 'pointer', background: t.accentDim,
-                  border: `0.5px solid ${t.accentBorder ?? t.accent}`,
-                  color: t.accent, fontSize: 12, fontWeight: 600,
-                }}
-              >
-                ✎  Renkleri Düzenle
-              </button>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <PaletteColorEditor label="Ana Renk" value={editPrimary} fallback="#1a1a1a" onChange={setEditPrimary} t={t} />
-                <PaletteColorEditor label="Vurgu" value={editAccent} fallback="#4f8ef7" onChange={setEditAccent} t={t} />
-                <PaletteColorEditor label="Nötr" value={editNeutral} fallback="#f5f5f5" onChange={setEditNeutral} t={t} />
-                <PaletteColorEditor label="Gölge" value={editShadow} fallback="#000000" onChange={setEditShadow} t={t} />
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-                <button
-                  onClick={() => void handleSavePalette()}
-                  disabled={saving}
-                  style={{
-                    flex: 1, padding: '12px', borderRadius: 12,
-                    cursor: saving ? 'wait' : 'pointer',
-                    background: t.accent, color: '#fff', border: 'none',
-                    fontSize: 13, fontWeight: 700,
-                  }}
-                >
-                  {saving ? 'Kaydediliyor…' : '💾 Kaydet'}
-                </button>
-                <button
-                  onClick={resetPaletteEdits}
-                  disabled={saving}
-                  style={{
-                    padding: '12px 16px', borderRadius: 12, cursor: 'pointer',
-                    background: 'transparent', border: `0.5px solid ${t.separator}`,
-                    color: t.textMuted, fontSize: 13,
-                  }}
-                >
-                  İptal
-                </button>
-              </div>
-            </>
-          )}
-        </SCard>
-      )}
-
-      {typography && (
-        <SCard t={t} title="Tipografi" accent={t.accent}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontSize: 11, color: t.textMuted }}>Başlık Fontu</span>
-              <span style={{
-                fontSize: 18,
-                fontFamily: `'${headingFontDisplay}', serif`,
-                color: t.textPrimary,
-                fontWeight: 600,
-              }}>
-                {headingFontDisplay}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <span style={{ fontSize: 11, color: t.textMuted }}>Gövde Fontu</span>
-              <span style={{
-                fontSize: 14,
-                fontFamily: `'${bodyFontDisplay}', sans-serif`,
-                color: t.textPrimary,
-              }}>
-                {bodyFontDisplay}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: t.textMuted }}>Metin Yoğunluğu</span>
-              <span style={{
-                padding: '3px 10px', borderRadius: 20,
-                background: t.accentDim, color: t.accent,
-                fontSize: 11, fontWeight: 600,
-              }}>
-                {densityDisplay === 'minimal' ? 'Minimal'
-                  : densityDisplay === 'medium' ? 'Orta'
-                  : 'Yoğun'}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: t.textMuted }}>Başlık rengi</span>
-              <span style={{
-                fontSize: 13, fontWeight: 600, color: headlineColorDisplay,
-                fontFamily: `'${headingFontDisplay}', serif`,
-              }}>
-                {headlineColorDisplay}
-              </span>
-            </div>
-            {(typography.personality as string) && (
-              <div style={{ fontSize: 11, color: t.textMuted, fontStyle: 'italic', borderTop: `0.5px solid ${t.separator}`, paddingTop: 8 }}>
-                Ses tonu: {typography.personality as string}
-              </div>
-            )}
-          </div>
-        </SCard>
-      )}
-
-      {grading && (
-        <SCard t={t} title="Görsel Grading" accent={t.accent}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 11, color: t.textMuted }}>Görünüm</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{grading.look}</span>
-            </div>
-            <div style={{
-              padding: '10px 12px', borderRadius: 10,
-              background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-              border: `0.5px solid ${t.separator}`,
-            }}>
-              <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Image Gen Direktifi</div>
-              <div style={{ fontSize: 11, color: t.textSecondary, lineHeight: 1.5 }}>{grading.lut_directive}</div>
-            </div>
-          </div>
-        </SCard>
-      )}
-
-      {/* Manual typography override */}
-      {tenantId && (
-        <SCard t={t} title="Tipografi Düzenle" accent={t.accent}>
-          <button
-            onClick={() => setEditMode(v => !v)}
-            style={{
-              padding: '9px 16px', borderRadius: 12, cursor: 'pointer',
-              background: editMode ? t.accentDim : 'transparent',
-              border: `0.5px solid ${t.accentBorder ?? t.accent}`,
-              color: t.accent, fontSize: 12, fontWeight: 600, width: '100%',
-            }}
-          >
-            {editMode ? '▼ Düzenleme Modunu Kapat' : '✎  Fontları Düzenle'}
-          </button>
-
-          {editMode && (
-            <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {/* Font selectors */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: t.textMuted }}>Başlık Fontu</span>
-                  <select
-                    value={editHeadingFont}
-                    onChange={e => setEditHeadingFont(e.target.value)}
-                    style={{
-                      fontSize: 12, fontFamily: `'${editHeadingFont}', serif`,
-                      padding: '5px 8px', borderRadius: 8,
-                      background: t.isDark ? '#1e1e1e' : '#f5f5f5',
-                      color: t.textPrimary, border: `0.5px solid ${t.separator}`,
-                      maxWidth: 160,
-                    }}
-                  >
-                    {BRAND_SAFE_FONTS.map(f => <option key={f} value={f} style={{ fontFamily: `'${f}'` }}>{f}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, color: t.textMuted }}>Gövde Fontu</span>
-                  <select
-                    value={editBodyFont}
-                    onChange={e => setEditBodyFont(e.target.value)}
-                    style={{
-                      fontSize: 12, padding: '5px 8px', borderRadius: 8,
-                      background: t.isDark ? '#1e1e1e' : '#f5f5f5',
-                      color: t.textPrimary, border: `0.5px solid ${t.separator}`,
-                      maxWidth: 160,
-                    }}
-                  >
-                    {BRAND_SAFE_FONTS.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ fontSize: 11, color: t.textMuted }}>Metin Yoğunluğu</span>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {(['minimal', 'medium', 'dense'] as const).map(d => (
-                        <button
-                          key={d}
-                          onClick={() => {
-                            setEditDensity(d);
-                            setEditOverlayOpacity(d === 'minimal' ? 0.28 : d === 'dense' ? 0.58 : 0.45);
-                          }}
-                          style={{
-                            padding: '4px 10px', borderRadius: 8, cursor: 'pointer', border: 'none',
-                            fontSize: 10, fontWeight: 600,
-                            background: editDensity === d ? t.accent : t.accentDim,
-                            color: editDensity === d ? '#fff' : t.accent,
-                          }}
-                        >
-                          {d === 'minimal' ? 'Min' : d === 'medium' ? 'Orta' : 'Yoğun'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, color: t.textMuted }}>Overlay koyuluğu</span>
-                    <span style={{ fontSize: 11, color: t.textSecondary, fontVariantNumeric: 'tabular-nums' }}>
-                      {Math.round(editOverlayOpacity * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={18}
-                    max={65}
-                    value={Math.round(editOverlayOpacity * 100)}
-                    onChange={(e) => setEditOverlayOpacity(Number(e.target.value) / 100)}
-                    style={{ width: '100%', accentColor: t.accent }}
-                  />
-                </div>
-                <PaletteColorEditor
-                  label="Başlık metin rengi"
-                  value={editHeadlineColor}
-                  fallback="#ffffff"
-                  onChange={setEditHeadlineColor}
-                  t={t}
-                />
-                <div style={{ fontSize: 10, color: t.textTertiary, lineHeight: 1.45 }}>
-                  Vurgu rengi (yukarıdaki palet) dekoratif çizgileri belirler — örn. altın şeritler.
-                </div>
-              </div>
-
-              {/* Save button */}
-              <button
-                onClick={handleSaveOverride}
-                disabled={saving}
-                style={{
-                  padding: '12px', borderRadius: 12, cursor: saving ? 'wait' : 'pointer',
-                  background: t.accent, color: '#fff', border: 'none',
-                  fontSize: 13, fontWeight: 700, marginTop: 4,
-                }}
-              >
-                {saving ? 'Kaydediliyor…' : '💾  Değişiklikleri Kaydet'}
-              </button>
-            </div>
-          )}
-        </SCard>
-      )}
-
-      {theme && Array.isArray(theme.anti_patterns) && (theme.anti_patterns as string[]).length > 0 && (
-        <SCard t={t} title="Anti-Pattern Kuralları" accent="#ef4444">
-          {(theme.anti_patterns as string[]).map((p, i) => (
-            <div key={i} style={{
-              display: 'flex', gap: 8, alignItems: 'flex-start',
-              padding: '6px 0', borderBottom: i < (theme.anti_patterns as string[]).length - 1 ? `0.5px solid ${t.separator}` : 'none',
-            }}>
-              <span style={{ color: '#ef4444', fontWeight: 700, flexShrink: 0 }}>✕</span>
-              <span style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.4 }}>{p}</span>
-            </div>
-          ))}
-        </SCard>
-      )}
-
-    </div>
-  );
-}
-
 // ─── Gallery Tab ────────────────────────────────────────────────────────────
 // Patterns to auto-flag as non-product (harita, logo, footer, menu, etc.)
 const AUTO_EXCLUDE = ['harita', '-map', 'map-', '_map', 'footer', 'menu.', 'fran', 'franchise',
@@ -1926,7 +1292,10 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
   const [uploading, setUploading] = useState(false);
   const [page, setPage] = useState(0);
   const [deleteMode, setDeleteMode] = useState(false);
-  const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [uploadAssetType, setUploadAssetType] = useState<'venue_photo' | 'client_photo' | 'before_after_image'>('venue_photo');
   const galleryFileInputRef = useRef<HTMLInputElement>(null);
   const PAGE_SIZE = 18;
@@ -1986,22 +1355,32 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
     (assets as { url?: string }[]).map((a) => String(a?.url || '')).filter(Boolean),
   );
 
-  // Delete a single URL from the full gallery SSOT (not refs-only).
-  async function deleteImage(urlToRemove: string) {
-    setDeletingUrl(urlToRemove);
+  /**
+   * Remove photos from the full gallery SSOT.
+   *
+   * Always derives the next list from `gallerySourceUrls`. The display list is
+   * deduped and CDN-upscaled, so writing it back would drop merged entries and
+   * rewrite the stored URLs.
+   */
+  async function deleteGalleryUrls(keysToRemove: Set<string>): Promise<boolean> {
+    if (keysToRemove.size === 0) return false;
+    setDeleting(true);
+    setDeleteError(null);
     try {
-      const key = galleryUrlKey(urlToRemove);
-      const updated = gallerySourceUrls.filter((u) => galleryUrlKey(u) !== key);
-      await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
+      const updated = gallerySourceUrls.filter((u) => !keysToRemove.has(galleryUrlKey(u)));
+      const res = await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reference_image_urls: JSON.stringify(updated) }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await invalidateBrandContextWriteQueries(queryClient, tenantId);
+      return true;
     } catch {
-      /* non-fatal */
+      setDeleteError('Fotoğraflar silinemedi — bağlantını kontrol edip tekrar dene.');
+      return false;
     } finally {
-      setDeletingUrl(null);
+      setDeleting(false);
     }
   }
 
@@ -2365,9 +1744,10 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
                   disabled={blocked}
                   onClick={() => setUploadAssetType(opt.id)}
                   style={{
-                    padding: '8px 12px',
-                    borderRadius: 20,
-                    fontSize: 12,
+                    minHeight: 44,
+                    padding: '0 16px',
+                    borderRadius: 22,
+                    fontSize: 13,
                     fontWeight: 600,
                     cursor: blocked ? 'not-allowed' : 'pointer',
                     opacity: blocked ? 0.35 : 1,
@@ -2468,6 +1848,7 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
         const pageUrls = displayUrls.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
         const autoFlaggedCount = displayUrls.filter(u =>
           AUTO_EXCLUDE.some(p => u.toLowerCase().includes(p))).length;
+        const selectedCount = selectedKeys.size;
 
         return (
           <SCard t={t} title={`${displayUrls.length} fotoğraf`}>
@@ -2483,13 +1864,22 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
                   ⚠ {autoFlaggedCount} görsel harita/logo/footer içeriyor
                 </div>
               )}
-              <button onClick={() => setDeleteMode(d => !d)} style={{
-                flexShrink: 0, padding: '6px 12px', borderRadius: 20, cursor: 'pointer',
-                background: deleteMode ? 'rgba(239,68,68,0.12)' : t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-                border: `0.5px solid ${deleteMode ? 'rgba(239,68,68,0.3)' : t.separator}`,
-                color: deleteMode ? '#F87171' : t.textMuted, fontSize: 11, fontWeight: 600,
-              }}>
-                {deleteMode ? '✓ Bitti' : '✎ Düzenle'}
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteMode(d => !d);
+                  setSelectedKeys(new Set());
+                  setConfirmingDelete(false);
+                  setDeleteError(null);
+                }}
+                style={{
+                  flexShrink: 0, minHeight: 44, padding: '0 16px', borderRadius: 22, cursor: 'pointer',
+                  background: deleteMode ? 'rgba(239,68,68,0.12)' : t.isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+                  border: `0.5px solid ${deleteMode ? 'rgba(239,68,68,0.3)' : t.separator}`,
+                  color: deleteMode ? '#F87171' : t.textSecondary, fontSize: 13, fontWeight: 600,
+                }}
+              >
+                {deleteMode ? 'Bitti' : 'Seç'}
               </button>
             </div>
 
@@ -2497,14 +1887,40 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
               {pageUrls.map((url, i) => {
                 const isAutoFlagged = AUTO_EXCLUDE.some(p => url.toLowerCase().includes(p));
-                const isDeleting = deletingUrl === url;
                 const isAnalyzed = analyzedKeySet.has(normGalleryUrl(url));
+                const key = galleryUrlKey(url);
+                const isSelected = selectedKeys.has(key);
+                const toggleSelected = () => {
+                  setConfirmingDelete(false);
+                  setDeleteError(null);
+                  setSelectedKeys(prev => {
+                    const next = new Set(prev);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  });
+                };
                 return (
-                  <div key={page * PAGE_SIZE + i} style={{ position: 'relative', aspectRatio: '1/1',
+                  <div
+                    key={page * PAGE_SIZE + i}
+                    // Whole tile is the selection target — a small overlay button
+                    // would sit far below the 44px minimum on a 3-column grid.
+                    role={deleteMode ? 'checkbox' : undefined}
+                    aria-checked={deleteMode ? isSelected : undefined}
+                    tabIndex={deleteMode ? 0 : undefined}
+                    onClick={deleteMode ? toggleSelected : undefined}
+                    onKeyDown={deleteMode ? (e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleSelected();
+                      }
+                    } : undefined}
+                    style={{ position: 'relative', aspectRatio: '1/1',
                     borderRadius: 10, overflow: 'hidden',
                     background: t.isDark ? '#111120' : '#E8E8EF',
-                    border: isAutoFlagged && deleteMode ? '2px solid rgba(245,158,11,0.6)' : 'none',
-                    opacity: isDeleting ? 0.4 : 1, transition: 'opacity 200ms' }}>
+                    cursor: deleteMode ? 'pointer' : 'default',
+                    border: isAutoFlagged && deleteMode && !isSelected ? '2px solid rgba(245,158,11,0.6)' : 'none',
+                    opacity: deleting && isSelected ? 0.4 : 1, transition: 'opacity 200ms' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={resolveGalleryImageSrc(url)}
@@ -2542,55 +1958,148 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
                       </div>
                     )}
 
-                    {/* Delete button — shown in edit mode */}
+                    {/* Selection mark — the tile itself carries the tap */}
                     {deleteMode && (
-                      <button onClick={() => deleteImage(url)} disabled={isDeleting}
-                        style={{
-                          position: 'absolute', top: 4, right: 4, width: 24, height: 24,
-                          borderRadius: '50%', border: 'none', cursor: 'pointer',
-                          background: 'rgba(239,68,68,0.9)',
+                      <>
+                        {isSelected && (
+                          // Sits after the <img> so the tint and ring always paint on top.
+                          <div style={{
+                            position: 'absolute', inset: 0, borderRadius: 10,
+                            background: 'rgba(239,68,68,0.28)',
+                            boxShadow: 'inset 0 0 0 2px #F87171',
+                          }} />
+                        )}
+                        <div aria-hidden style={{
+                          position: 'absolute', top: 6, right: 6, width: 26, height: 26,
+                          borderRadius: '50%',
+                          background: isSelected ? '#EF4444' : 'rgba(0,0,0,0.35)',
+                          border: `1.5px solid ${isSelected ? '#EF4444' : 'rgba(255,255,255,0.85)'}`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: 14, color: '#fff', fontWeight: 800, lineHeight: 1,
                         }}>
-                        ×
-                      </button>
+                          {isSelected ? '✓' : ''}
+                        </div>
+                      </>
                     )}
                   </div>
                 );
               })}
             </div>
 
-            {/* Pagination — only when more than one page */}
-            {/* Bulk delete auto-flagged */}
-            {deleteMode && autoFlaggedCount > 0 && (
-              <button onClick={async () => {
-                const clean = displayUrls.filter(u => !AUTO_EXCLUDE.some(p => u.toLowerCase().includes(p)));
-                await fetchTenantBff(`/api/brand-context-data/${tenantId}`, tenantId, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ reference_image_urls: JSON.stringify(clean) }),
-                });
-                void invalidateBrandContextWriteQueries(queryClient, tenantId);
-                setDeleteMode(false);
-              }} style={{
-                width: '100%', marginTop: 10, padding: '10px', borderRadius: 12, cursor: 'pointer',
-                background: 'rgba(245,158,11,0.1)', border: '0.5px solid rgba(245,158,11,0.3)',
-                color: t.warning, fontSize: 12, fontWeight: 700,
-              }}>
-                🧹 {autoFlaggedCount} harita/logo/footer görselini hepsini sil
-              </button>
+            {/* Selection actions — deletion always goes through one confirmed path */}
+            {deleteMode && (
+              <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {deleteError && (
+                  <p style={{ fontSize: 12, color: '#F87171', lineHeight: 1.45, margin: 0 }}>
+                    {deleteError}
+                  </p>
+                )}
+
+                {selectedCount === 0 ? (
+                  <>
+                    <p style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, margin: 0 }}>
+                      Silmek istediğin fotoğraflara dokun.
+                    </p>
+                    {autoFlaggedCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError(null);
+                          setSelectedKeys(new Set(
+                            displayUrls
+                              .filter(u => AUTO_EXCLUDE.some(p => u.toLowerCase().includes(p)))
+                              .map(galleryUrlKey),
+                          ));
+                        }}
+                        style={{
+                          width: '100%', minHeight: 44, padding: '0 14px', borderRadius: 12, cursor: 'pointer',
+                          background: 'rgba(245,158,11,0.1)', border: '0.5px solid rgba(245,158,11,0.3)',
+                          color: t.warning, fontSize: 13, fontWeight: 700,
+                        }}
+                      >
+                        Uyarılı {autoFlaggedCount} görseli seç
+                      </button>
+                    )}
+                  </>
+                ) : confirmingDelete ? (
+                  <>
+                    <p style={{ fontSize: 13, color: t.textPrimary, lineHeight: 1.45, margin: 0, fontWeight: 600 }}>
+                      {selectedCount} fotoğraf galeriden kalıcı olarak silinecek.
+                    </p>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => setConfirmingDelete(false)}
+                        style={{
+                          flex: 1, minHeight: 44, borderRadius: 12, cursor: deleting ? 'default' : 'pointer',
+                          background: 'transparent', border: `0.5px solid ${t.separator}`,
+                          color: t.textSecondary, fontSize: 14, fontWeight: 600,
+                        }}
+                      >
+                        Vazgeç
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={async () => {
+                          const ok = await deleteGalleryUrls(selectedKeys);
+                          if (!ok) return;
+                          setSelectedKeys(new Set());
+                          setConfirmingDelete(false);
+                          setDeleteMode(false);
+                          setPage(0);
+                        }}
+                        style={{
+                          flex: 1, minHeight: 44, borderRadius: 12, cursor: deleting ? 'wait' : 'pointer',
+                          background: 'rgba(239,68,68,0.14)', border: '0.5px solid rgba(239,68,68,0.35)',
+                          color: '#F87171', fontSize: 14, fontWeight: 700, opacity: deleting ? 0.6 : 1,
+                        }}
+                      >
+                        {deleting ? 'Siliniyor…' : 'Sil'}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedKeys(new Set())}
+                      style={{
+                        minHeight: 44, padding: '0 14px', borderRadius: 12, cursor: 'pointer',
+                        background: 'transparent', border: `0.5px solid ${t.separator}`,
+                        color: t.textSecondary, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Temizle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDelete(true)}
+                      style={{
+                        flex: 1, minHeight: 44, borderRadius: 12, cursor: 'pointer',
+                        background: 'rgba(239,68,68,0.12)', border: '0.5px solid rgba(239,68,68,0.3)',
+                        color: '#F87171', fontSize: 14, fontWeight: 700,
+                      }}
+                    >
+                      {selectedCount} fotoğrafı sil
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
 
             {totalPages > 1 && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 marginTop: 12, padding: '8px 0' }}>
                 <button
+                  type="button"
                   disabled={page === 0}
                   onClick={() => setPage(p => p - 1)}
-                  style={{ padding: '7px 16px', borderRadius: 20, cursor: page === 0 ? 'default' : 'pointer',
+                  style={{ minHeight: 44, padding: '0 18px', borderRadius: 22, cursor: page === 0 ? 'default' : 'pointer',
                     background: page === 0 ? 'transparent' : t.accentDim,
                     border: `0.5px solid ${page === 0 ? t.separator : t.accentBorder}`,
-                    color: page === 0 ? t.textMuted : t.accent, fontSize: 13, fontWeight: 600 }}>
+                    color: page === 0 ? t.textMuted : t.accent, fontSize: 14, fontWeight: 600 }}>
                   ← Önceki
                 </button>
                 <span style={{ fontSize: 12, color: t.textMuted }}>
@@ -2598,13 +2107,14 @@ function GalleryTab({ t, tenantId, pyCtx, queryClient, companyProfile, initialGr
                   <span style={{ color: t.textTertiary }}> · {displayUrls.length} fotoğraf</span>
                 </span>
                 <button
+                  type="button"
                   disabled={page >= totalPages - 1}
                   onClick={() => setPage(p => p + 1)}
-                  style={{ padding: '7px 16px', borderRadius: 20,
+                  style={{ minHeight: 44, padding: '0 18px', borderRadius: 22,
                     cursor: page >= totalPages - 1 ? 'default' : 'pointer',
                     background: page >= totalPages - 1 ? 'transparent' : t.accentDim,
                     border: `0.5px solid ${page >= totalPages - 1 ? t.separator : t.accentBorder}`,
-                    color: page >= totalPages - 1 ? t.textMuted : t.accent, fontSize: 13, fontWeight: 600 }}>
+                    color: page >= totalPages - 1 ? t.textMuted : t.accent, fontSize: 14, fontWeight: 600 }}>
                   Sonraki →
                 </button>
               </div>
@@ -2891,17 +2401,18 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
             <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>AI Fotoğraf İyileştirme</div>
             </div>
-            <button
-              onClick={() => {
+            <Toggle
+              t={t}
+              on={aiEnabled}
+              label="AI Fotoğraf İyileştirme"
+              onToggle={() => {
                 const next = !aiEnabled;
                 saveAiSetting(buildVisualSourceModeFromFlags({
                   aiPhotoEnhance: next,
                   aiCaptionDrivenVisual: next ? aiCaptionDriven : false,
                 }));
               }}
-              style={{ width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: aiEnabled ? t.accent : t.separator, position: 'relative' }}>
-              <div style={{ position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: aiEnabled ? 25 : 3, transition: 'left 0.2s' }} />
-            </button>
+            />
           </div>
 
           {aiEnabled && (
@@ -2925,10 +2436,13 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Galeri fotoğrafını düzelt</div>
                 </div>
-                <button onClick={() => saveAiSetting({ ai_enhance_gallery_selected: !aiGalleryRevise })}
-                  style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aiGalleryRevise ? '#10B981' : t.separator, position: 'relative' }}>
-                  <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: aiGalleryRevise ? 21 : 3, transition: 'left 0.2s' }} />
-                </button>
+                <Toggle
+                  t={t}
+                  on={aiGalleryRevise}
+                  color="#10B981"
+                  label="Galeri fotoğrafını düzelt"
+                  onToggle={() => saveAiSetting({ ai_enhance_gallery_selected: !aiGalleryRevise })}
+                />
               </div>
 
               <div style={{ fontSize: 11, color: (t as any).labelColor ?? t.textMuted, letterSpacing: '0.06em', textTransform: 'uppercase', margin: '16px 0 10px' }}>Görsel standardı</div>
@@ -2939,10 +2453,7 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
               ].map(({ key, on, title }) => (
                 <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', borderRadius: 12, marginBottom: 6, border: `0.5px solid ${t.separator}` }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: t.textPrimary }}>{title}</div>
-                  <button onClick={() => saveAiSetting({ [key]: !on })}
-                    style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: on ? t.accent : t.separator, position: 'relative' }}>
-                    <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: on ? 21 : 3, transition: 'left 0.2s' }} />
-                  </button>
+                  <Toggle t={t} on={on} label={title} onToggle={() => saveAiSetting({ [key]: !on })} />
                 </div>
               ))}
 
@@ -2968,10 +2479,13 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a uygun sahne</div>
                   <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{aiAdaptiveScene ? 'Aktif' : 'Kapalı'}</div>
                 </div>
-                <button onClick={() => saveAiSetting({ ai_adaptive_scene: !aiAdaptiveScene })}
-                  style={{ width: 44, height: 26, borderRadius: 13, border: 'none', cursor: 'pointer', background: aiAdaptiveScene ? '#4D7088' : t.separator, position: 'relative' }}>
-                  <div style={{ position: 'absolute', top: 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', left: aiAdaptiveScene ? 21 : 3, transition: 'left 0.2s' }} />
-                </button>
+                <Toggle
+                  t={t}
+                  on={aiAdaptiveScene}
+                  color="#4D7088"
+                  label="Caption'a uygun sahne"
+                  onToggle={() => saveAiSetting({ ai_adaptive_scene: !aiAdaptiveScene })}
+                />
               </div>
               {aiAdaptiveScene && (
                 <div style={{ marginBottom: 12 }}>
@@ -3014,10 +2528,12 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
                 <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Crew görsel direktör</div>
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{themeFlag(currentTheme, 'enable_visual_production_director') ? 'Açık' : 'Kapalı'}</div>
               </div>
-              <button onClick={() => saveAiSetting({ enable_visual_production_director: !themeFlag(currentTheme, 'enable_visual_production_director') })}
-                style={{ width: 50, height: 28, borderRadius: 14, border: 'none', cursor: 'pointer', background: themeFlag(currentTheme, 'enable_visual_production_director') ? t.accent : t.separator, position: 'relative' }}>
-                <div style={{ position: 'absolute', top: 3, width: 22, height: 22, borderRadius: '50%', background: '#fff', left: themeFlag(currentTheme, 'enable_visual_production_director') ? 25 : 3, transition: 'left 0.2s' }} />
-              </button>
+              <Toggle
+                t={t}
+                on={themeFlag(currentTheme, 'enable_visual_production_director')}
+                label="Crew görsel direktör"
+                onToggle={() => saveAiSetting({ enable_visual_production_director: !themeFlag(currentTheme, 'enable_visual_production_director') })}
+              />
             </div>
           </div>
         </div>
@@ -3043,6 +2559,9 @@ export function BrandConstitution() {
   const [strategyGroup, setStrategyGroup] = useState<StrategyGroup | null>(null);
   const [identityGroup, setIdentityGroup] = useState<IdentityGroup | null>(null);
   const [saved, setSaved] = useState(false);
+  // A rejected settings PATCH silently reverted the toggle; the user had no way
+  // to tell the setting never took.
+  const [settingsError, setSettingsError] = useState<string | null>(null);
 
   const openSection = React.useCallback((
     next: Tab,
@@ -3967,6 +3486,24 @@ export function BrandConstitution() {
       {saved && (
         <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 12, background: t.successDim, fontSize: 14, color: t.success, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
           ✓ Kaydedildi
+        </div>
+      )}
+      {settingsError && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 12, background: 'rgba(239,68,68,0.1)', border: '0.5px solid rgba(239,68,68,0.3)', fontSize: 14, color: '#F87171', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}
+        >
+          <span aria-hidden>⚠</span>
+          <span style={{ flex: 1, lineHeight: 1.45 }}>{settingsError}</span>
+          <button
+            type="button"
+            onClick={() => setSettingsError(null)}
+            aria-label="Uyarıyı kapat"
+            style={{ minWidth: 44, minHeight: 44, marginRight: -10, background: 'transparent', border: 'none', color: '#F87171', fontSize: 18, cursor: 'pointer' }}
+          >
+            ×
+          </button>
         </div>
       )}
       {(pyCtxLoadFailed || hydrateMutation.isPending) && (
@@ -4993,6 +4530,7 @@ export function BrandConstitution() {
                     theme: optimistic,
                   }),
                 );
+                setSettingsError(null);
                 try {
                   const res = await fetchTenantBff(`/api/brand-context/${tenantId}/theme/ai-settings`, tenantId, {
                     method: 'PATCH',
@@ -5003,6 +4541,7 @@ export function BrandConstitution() {
                     const err = await res.text().catch(() => '');
                     console.warn('[BrandConstitution] AI settings save failed:', res.status, err);
                     queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                    setSettingsError('Ayar kaydedilemedi — eski değere döndürüldü. Tekrar dene.');
                     return;
                   }
                   const data = await res.json() as { theme?: Record<string, unknown> | null };
@@ -5012,6 +4551,7 @@ export function BrandConstitution() {
                 } catch (e) {
                   console.warn('[BrandConstitution] AI settings save error:', e);
                   queryClient.setQueryData(['brand-theme-kit', tenantId], { theme: prev });
+                  setSettingsError('Ayar kaydedilemedi — bağlantını kontrol edip tekrar dene.');
                 }
               };
 

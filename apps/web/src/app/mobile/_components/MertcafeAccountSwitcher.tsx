@@ -11,6 +11,7 @@ import {
 } from '@/lib/mertcafe-accounts';
 import type { T } from './theme-context';
 import { isDebugUiMode } from './mobile-client-config';
+import { MobileConfirmSheet } from './ui-primitives';
 
 const IG_GRADIENT = 'linear-gradient(135deg, #F58529 0%, #DD2A7B 50%, #8134AF 100%)';
 
@@ -57,6 +58,11 @@ export function MertcafeAccountSwitcher({
   const [showAccountList, setShowAccountList] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [oauthUrlBroken, setOauthUrlBroken] = useState(false);
+  const [pendingConfirm, setPendingConfirm] = useState<
+    | { kind: 'remove'; accountId: string; label: string }
+    | { kind: 'reset' }
+    | null
+  >(null);
 
   const { data: status, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['mertcafe-status', workspaceId],
@@ -447,11 +453,11 @@ export function MertcafeAccountSwitcher({
                           }}
                           onRemove={
                             saveThemePatch && !isActive && accounts.length > 1
-                              ? () => {
-                                  if (window.confirm(`${accountDisplayLabel(acc)} listeden kaldırılsın mı?`)) {
-                                    removeMutation.mutate(acc.id);
-                                  }
-                                }
+                              ? () => setPendingConfirm({
+                                  kind: 'remove',
+                                  accountId: acc.id,
+                                  label: accountDisplayLabel(acc),
+                                })
                               : undefined
                           }
                         />
@@ -564,13 +570,7 @@ export function MertcafeAccountSwitcher({
                   <button
                     type="button"
                     disabled={provisionMutation.isPending}
-                    onClick={() => {
-                      if (window.confirm(
-                        'Mevcut API anahtarı ve kayıtlı Instagram hesapları silinir, yeni Mertcafe kaydı oluşturulur. Devam?',
-                      )) {
-                        provisionMutation.mutate(true);
-                      }
-                    }}
+                    onClick={() => setPendingConfirm({ kind: 'reset' })}
                     style={{
                       width: '100%', padding: '11px 14px', borderRadius: 12, cursor: 'pointer',
                       background: 'rgba(245,158,11,0.1)', border: '0.5px solid rgba(245,158,11,0.35)',
@@ -628,6 +628,27 @@ export function MertcafeAccountSwitcher({
           </div>
         )}
       </div>
+
+      <MobileConfirmSheet
+        t={t}
+        open={pendingConfirm !== null}
+        destructive
+        pending={removeMutation.isPending || provisionMutation.isPending}
+        title={pendingConfirm?.kind === 'remove'
+          ? 'Hesabı listeden kaldır'
+          : 'API anahtarını sıfırla'}
+        body={pendingConfirm?.kind === 'remove'
+          ? `${pendingConfirm.label} kayıtlı hesaplar listesinden kaldırılacak.`
+          : 'Mevcut API anahtarı ve kayıtlı Instagram hesapları silinir, yeni bir Mertcafe kaydı oluşturulur.'}
+        confirmLabel={pendingConfirm?.kind === 'remove' ? 'Kaldır' : 'Sıfırla'}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          if (!pendingConfirm) return;
+          if (pendingConfirm.kind === 'remove') removeMutation.mutate(pendingConfirm.accountId);
+          else provisionMutation.mutate(true);
+          setPendingConfirm(null);
+        }}
+      />
     </div>
   );
 }

@@ -268,6 +268,101 @@ export function MobileStackHeader({
   );
 }
 
+// ─── Confirm sheet ─────────────────────────────────────────────────────
+// Bottom sheet for destructive confirmations. Browser `confirm()` renders an
+// OS dialog that names the host in a WebView and cannot be themed, so it reads
+// as a website prompt inside the native app.
+export function MobileConfirmSheet({
+  t,
+  open,
+  title,
+  body,
+  confirmLabel = 'Onayla',
+  cancelLabel = 'Vazgeç',
+  destructive = false,
+  pending = false,
+  onConfirm,
+  onCancel,
+}: {
+  t: T;
+  open: boolean;
+  title: string;
+  body?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  destructive?: boolean;
+  pending?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!open) return null;
+
+  const accentColor = destructive ? '#F87171' : t.accent;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      onClick={pending ? undefined : onCancel}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        background: 'rgba(0,0,0,0.55)',
+        display: 'flex', alignItems: 'flex-end',
+        // Backdrop must not sit under the home indicator.
+        paddingBottom: 'env(safe-area-inset-bottom)',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          background: t.isDark ? '#16161c' : '#ffffff',
+          borderTopLeftRadius: 22, borderTopRightRadius: 22,
+          padding: '20px 18px 18px',
+          borderTop: `0.5px solid ${t.separator}`,
+        }}
+      >
+        <div style={{ fontSize: 17, fontWeight: 700, color: t.textPrimary, letterSpacing: '-0.02em', marginBottom: body ? 6 : 16 }}>
+          {title}
+        </div>
+        {body && (
+          <p style={{ fontSize: 14, color: t.textTertiary, lineHeight: 1.5, margin: '0 0 16px' }}>
+            {body}
+          </p>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onConfirm}
+            style={{
+              width: '100%', minHeight: 50, borderRadius: 14, cursor: pending ? 'wait' : 'pointer',
+              background: destructive ? 'rgba(239,68,68,0.14)' : t.accentDim,
+              border: `0.5px solid ${destructive ? 'rgba(239,68,68,0.35)' : t.accentBorder}`,
+              color: accentColor, fontSize: 16, fontWeight: 700,
+              opacity: pending ? 0.6 : 1,
+            }}
+          >
+            {pending ? 'İşleniyor…' : confirmLabel}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCancel}
+            style={{
+              width: '100%', minHeight: 50, borderRadius: 14, cursor: pending ? 'default' : 'pointer',
+              background: 'transparent', border: `0.5px solid ${t.separator}`,
+              color: t.textSecondary, fontSize: 16, fontWeight: 600,
+            }}
+          >
+            {cancelLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Page Header ───────────────────────────────────────────────────────
 export function PageHeader({ t, eyebrow, title, subtitle, right }: {
   t: T; eyebrow?: string; title: string; subtitle?: string; right?: React.ReactNode;

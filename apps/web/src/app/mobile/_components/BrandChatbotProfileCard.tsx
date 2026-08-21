@@ -69,25 +69,30 @@ function Field({
   value,
   onChange,
   multiline = false,
+  inputMode,
+  autoComplete,
 }: {
   t: T;
   label: string;
   value: string;
   onChange: (v: string) => void;
   multiline?: boolean;
+  inputMode?: 'text' | 'tel' | 'email' | 'url';
+  autoComplete?: string;
 }) {
   const style: CSSProperties = {
     width: '100%',
     boxSizing: 'border-box',
-    padding: '10px 12px',
+    padding: '12px',
     borderRadius: 12,
     border: `0.5px solid ${t.separator}`,
     background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
     color: t.textPrimary,
-    fontSize: 14,
+    // 16px minimum — iOS WebView zooms the whole page on focus below this.
+    fontSize: 16,
     fontFamily: 'inherit',
     resize: multiline ? 'vertical' : 'none',
-    minHeight: multiline ? 88 : undefined,
+    minHeight: multiline ? 88 : 48,
   };
   return (
     <label style={{ display: 'block', marginBottom: 12 }}>
@@ -95,7 +100,14 @@ function Field({
       {multiline ? (
         <textarea value={value} onChange={(e) => onChange(e.target.value)} style={style} rows={4} />
       ) : (
-        <input value={value} onChange={(e) => onChange(e.target.value)} style={style} />
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={style}
+          inputMode={inputMode}
+          autoComplete={autoComplete}
+          enterKeyHint="done"
+        />
       )}
     </label>
   );
@@ -160,7 +172,10 @@ export function BrandChatbotProfileCard({
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(profileToForm(null));
-  const [message, setMessage] = useState<string | null>(null);
+  // A failed save must never read like a successful one — tone drives the banner.
+  const [notice, setNotice] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
+  const setMessage = (text: string) => setNotice({ text, tone: 'success' });
+  const setErrorMessage = (text: string) => setNotice({ text, tone: 'error' });
   const [showAgentContext, setShowAgentContext] = useState(false);
   const [chatGroup, setChatGroup] = useState<ChatGroup | null>(null);
 
@@ -189,7 +204,7 @@ export function BrandChatbotProfileCard({
       await queryClient.invalidateQueries({ queryKey: ['brand-chatbot-profile', workspaceId] });
     },
     onError: (e: unknown) => {
-      setMessage(e instanceof Error ? e.message : 'Analiz başarısız');
+      setErrorMessage(e instanceof Error ? e.message : 'Analiz başarısız');
     },
   });
 
@@ -200,7 +215,7 @@ export function BrandChatbotProfileCard({
       await queryClient.invalidateQueries({ queryKey: ['brand-chatbot-profile', workspaceId] });
     },
     onError: (e: unknown) => {
-      setMessage(e instanceof Error ? e.message : 'Kayıt başarısız');
+      setErrorMessage(e instanceof Error ? e.message : 'Kayıt başarısız');
     },
   });
 
@@ -215,7 +230,7 @@ export function BrandChatbotProfileCard({
       notes: form.operatorNotes || form.agentContextMarkdown?.slice(0, 500) || 'SmartAgency chatbot profili',
     }),
     onSuccess: () => setMessage('Mertcafe chatbot\'a senkronize edildi'),
-    onError: (e: unknown) => setMessage(e instanceof Error ? e.message : 'Mertcafe sync başarısız'),
+    onError: (e: unknown) => setErrorMessage(e instanceof Error ? e.message : 'Mertcafe sync başarısız'),
   });
 
   const profile = data?.profile;
@@ -241,13 +256,22 @@ export function BrandChatbotProfileCard({
 
   return (
     <>
-      {message && (
-        <div style={{
-          marginBottom: 14, padding: '10px 12px', borderRadius: 12, fontSize: 12, lineHeight: 1.45,
-          color: t.textSecondary, background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-          border: `0.5px solid ${t.separator}`,
-        }}>
-          {message}
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            marginBottom: 14, padding: '10px 12px', borderRadius: 12, fontSize: 12, lineHeight: 1.45,
+            display: 'flex', gap: 8,
+            color: notice.tone === 'error' ? '#F87171' : t.textSecondary,
+            background: notice.tone === 'error'
+              ? 'rgba(239,68,68,0.08)'
+              : t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+            border: `0.5px solid ${notice.tone === 'error' ? 'rgba(239,68,68,0.3)' : t.separator}`,
+          }}
+        >
+          <span aria-hidden>{notice.tone === 'error' ? '⚠' : '✓'}</span>
+          <span>{notice.text}</span>
         </div>
       )}
 
@@ -299,7 +323,7 @@ export function BrandChatbotProfileCard({
         <button
           type="button"
           onClick={() => openChatGroup(null)}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: 0, marginBottom: 16 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, border: 'none', background: 'none', cursor: 'pointer', color: t.accent, fontSize: 14, fontWeight: 600, padding: '0 8px 0 0', minHeight: 44, marginBottom: 8, marginLeft: -8, paddingLeft: 8 }}
         >
           <svg width="8" height="13" viewBox="0 0 9 15" fill="none" aria-hidden><path d="M7.5 1.5 1.5 7.5l6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
           Müşteri Asistanı · <span style={{ color: t.textPrimary }}>{activeChatGroup?.label}</span>
@@ -313,9 +337,9 @@ export function BrandChatbotProfileCard({
               onChange={(v) => setForm((f) => ({ ...f, businessDisplayName: v }))} />
             <Field t={t} label="Çalışma saatleri" value={form.businessHours}
               onChange={(v) => setForm((f) => ({ ...f, businessHours: v }))} />
-            <Field t={t} label="Adres" value={form.address}
+            <Field t={t} label="Adres" value={form.address} autoComplete="street-address"
               onChange={(v) => setForm((f) => ({ ...f, address: v }))} />
-            <Field t={t} label="Telefon" value={form.phone}
+            <Field t={t} label="Telefon" value={form.phone} inputMode="tel" autoComplete="tel"
               onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
             <SaveButton t={t} pending={saveMutation.isPending} onClick={() => saveMutation.mutate()} />
           </SCard>
