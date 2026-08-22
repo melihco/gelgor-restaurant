@@ -614,6 +614,7 @@ async def drain_production_jobs(
                         eq_reason,
                         delay_sec=delay,
                         max_age_sec=_defer_max_age_sec(eq_reason),
+                        count_attempt=_defer_counts_attempt(eq_reason),
                     )
             else:
                 for job in batch:
@@ -679,19 +680,25 @@ async def drain_production_jobs(
 
         if _is_ops_defer_reason(batch_reason):
             delay = _bullmq_defer_delay_sec(batch_reason)
+            batch_spent = 0
             for job in batch:
-                await jobs.mark_deferred(
+                defer_status = await jobs.mark_deferred(
                     job["id"],
                     batch_reason,
                     delay_sec=delay,
                     max_age_sec=_defer_max_age_sec(batch_reason),
+                    count_attempt=_defer_counts_attempt(batch_reason),
                 )
+                if defer_status == "exhausted":
+                    batch_spent += 1
+            failed_total += batch_spent
             logger.info(
                 "production_factory.batch_deferred",
                 mission_id=str(mission_id),
                 slots=slot_keys,
                 reason=batch_reason,
                 delay_sec=delay,
+                exhausted=batch_spent,
             )
         else:
             for job, key in zip(batch, slot_keys):
@@ -707,18 +714,22 @@ async def drain_production_jobs(
                     slot_reason = _resolve_slot_failure_reason(produce_data, key, batch_reason)
                     if _is_ops_defer_reason(slot_reason):
                         delay = _bullmq_defer_delay_sec(slot_reason)
-                        await jobs.mark_deferred(
+                        defer_status = await jobs.mark_deferred(
                             job["id"],
                             slot_reason,
                             delay_sec=delay,
                             max_age_sec=_defer_max_age_sec(slot_reason),
+                            count_attempt=_defer_counts_attempt(slot_reason),
                         )
+                        if defer_status == "exhausted":
+                            failed_total += 1
                         logger.info(
                             "production_factory.slot_deferred",
                             mission_id=str(mission_id),
                             slot=key,
                             reason=slot_reason[:160],
                             delay_sec=delay,
+                            status=defer_status,
                         )
                         continue
                     status = await _mark_slot_failed(job["id"], produce_data, key, batch_reason)
@@ -868,7 +879,9 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
 
 
 # External blocks that clear themselves or via ops (top-up, lock release, worker
-# restart). Retrying costs nothing until they clear, so these defer indefinitely.
+# restart). Retrying is cheap until they clear, so these defer without burning an
+# attempt — but still under `_OPS_DEFER_MAX_AGE_SEC`, because a provider circuit
+# that nobody clears otherwise keeps re-claiming a worker slot for weeks.
 _TRANSIENT_OPS_DEFER_MARKERS = (
     "production_in_flight",
     "provider_billing_circuit_open",
@@ -887,10 +900,10 @@ _TRANSIENT_OPS_DEFER_MARKERS = (
     "route_still_running",
 )
 
-# Quality / template gates — defer so the line does not clog while overlay repair
-# or layout-ref Ideogram recovers, but each pass re-runs the whole slot against the
-# same inputs. Bounded by `_QUALITY_DEFER_MAX_AGE_SEC` so a slot that can never
-# pass terminates instead of billing a retry forever.
+# Quality / template gates — the slot's own inputs failed a gate, so every retry
+# re-runs the whole pipeline (LLM caption + gallery judge + paint) against inputs
+# that are only nondeterministic at the margins. These burn an attempt and back off
+# exponentially: a few retries are worth it, hundreds are not.
 _QUALITY_DEFER_MARKERS = (
     "overlay_ungrounded",
     "caption–tasarım–görsel tutarsız",
@@ -904,13 +917,21 @@ _QUALITY_DEFER_MARKERS = (
 )
 
 
-def _quality_defer_max_age_sec() -> float:
-    raw = os.getenv("PRODUCTION_QUALITY_DEFER_MAX_AGE_SEC", "")
+def _env_positive_float(name: str, default: float) -> float:
+    raw = os.getenv(name, "")
     try:
         parsed = float(raw)
     except (TypeError, ValueError):
         parsed = 0.0
-    return parsed if parsed > 0 else 21_600.0  # 6h
+    return parsed if parsed > 0 else default
+
+
+def _quality_defer_max_age_sec() -> float:
+    return _env_positive_float("PRODUCTION_QUALITY_DEFER_MAX_AGE_SEC", 21_600.0)  # 6h
+
+
+def _ops_defer_max_age_sec() -> float:
+    return _env_positive_float("PRODUCTION_OPS_DEFER_MAX_AGE_SEC", 86_400.0)  # 24h
 
 
 def _is_quality_defer_reason(reason: str) -> bool:
@@ -919,12 +940,19 @@ def _is_quality_defer_reason(reason: str) -> bool:
 
 
 def _defer_max_age_sec(reason: str) -> float | None:
-    """Age bound for this defer reason, or None when it may defer indefinitely."""
-    return _quality_defer_max_age_sec() if _is_quality_defer_reason(reason) else None
+    """Wall-clock backstop for this defer reason."""
+    if _is_quality_defer_reason(reason):
+        return _quality_defer_max_age_sec()
+    return _ops_defer_max_age_sec() if _is_ops_defer_reason(reason) else None
+
+
+def _defer_counts_attempt(reason: str) -> bool:
+    """Quality gates retry the same inputs — bound them by attempts, not just age."""
+    return _is_quality_defer_reason(reason)
 
 
 def _is_ops_defer_reason(reason: str) -> bool:
-    """Blocks that defer without burning attempts (line must not clog)."""
+    """Blocks that re-queue instead of failing outright (line must not clog)."""
     lower = (reason or "").strip().lower()
     if not lower:
         return False
@@ -1065,6 +1093,7 @@ async def apply_bullmq_completion(
                 reason,
                 delay_sec=delay,
                 max_age_sec=_defer_max_age_sec(reason),
+                count_attempt=_defer_counts_attempt(reason),
             )
             if defer_status == "exhausted":
                 failed += 1
@@ -1092,6 +1121,7 @@ async def apply_bullmq_completion(
                         slot_reason,
                         delay_sec=delay,
                         max_age_sec=_defer_max_age_sec(slot_reason),
+                        count_attempt=_defer_counts_attempt(slot_reason),
                     )
                     if defer_status == "exhausted":
                         failed += 1

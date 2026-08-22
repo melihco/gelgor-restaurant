@@ -306,18 +306,25 @@ async def mark_deferred(
     *,
     delay_sec: float = 45.0,
     max_age_sec: float | None = None,
+    count_attempt: bool = False,
 ) -> str:
     """Re-queue without burning an attempt — e.g. auto-produce 409 production lock.
 
-    Returns the resulting status ('pending', or 'exhausted' when `max_age_sec` is
-    set and the job has outlived it). Deferring costs a full pipeline re-run each
-    pass, so reasons that depend on the slot's own inputs (quality gates) must be
-    bounded — otherwise a job that can never pass loops until someone notices.
+    Returns the resulting status ('pending', or 'exhausted' when the job hit a
+    bound). Every defer costs a full pipeline re-run (LLM caption + gallery judge),
+    so a defer that depends on the slot's own inputs must be bounded twice over:
+
+    * ``count_attempt`` burns an attempt and escalates the retry delay
+      exponentially. An age bound alone is not enough — at a flat 60 s cadence a
+      job burns ~60 worker runs per hour, so a 6 h bound still costs ~360 runs.
+    * ``max_age_sec`` is the wall-clock backstop for reasons that legitimately
+      defer without burning attempts (external provider circuits).
     """
     factory = _get_session_factory()
     row_dict: dict[str, Any] | None = None
     # -1 disables the bound; keeps the interval argument numeric for asyncpg.
     bound_sec = float(max_age_sec) if max_age_sec and max_age_sec > 0 else -1.0
+    base_delay = max(5.0, float(delay_sec))
     async with factory() as db:
         res = await db.execute(
             text(
@@ -326,18 +333,29 @@ async def mark_deferred(
                     SELECT id,
                            (:bound_sec >= 0
                             AND created_at < now() - make_interval(secs => :bound_sec))
-                           AS expired
+                           AS expired,
+                           (:count_attempt AND attempts + 1 >= max_attempts)
+                           AS spent
                     FROM production_jobs
                     WHERE id = CAST(:id AS UUID)
                 )
                 UPDATE production_jobs p
-                SET status = CASE WHEN t.expired THEN 'exhausted' ELSE 'pending' END,
-                    attempts = CASE WHEN t.expired THEN p.attempts + 1 ELSE p.attempts END,
-                    completed_at = CASE WHEN t.expired THEN now() ELSE p.completed_at END,
+                SET status = CASE
+                        WHEN t.expired OR t.spent THEN 'exhausted'
+                        ELSE 'pending' END,
+                    attempts = CASE
+                        WHEN t.expired OR :count_attempt THEN p.attempts + 1
+                        ELSE p.attempts END,
+                    completed_at = CASE
+                        WHEN t.expired OR t.spent THEN now()
+                        ELSE p.completed_at END,
                     last_error = :error,
                     claimed_at = NULL,
                     claimed_by = NULL,
-                    run_after = now() + make_interval(secs => :delay_sec),
+                    run_after = now() + make_interval(secs => CASE
+                        WHEN :count_attempt
+                            THEN LEAST(:cap, :delay_sec * power(2, p.attempts))
+                        ELSE :delay_sec END),
                     updated_at = now()
                 FROM target t
                 WHERE p.id = t.id
@@ -347,8 +365,10 @@ async def mark_deferred(
             {
                 "id": str(job_id),
                 "error": (reason or "")[:1000],
-                "delay_sec": max(5.0, float(delay_sec)),
+                "delay_sec": base_delay,
                 "bound_sec": bound_sec,
+                "count_attempt": bool(count_attempt),
+                "cap": _BACKOFF_CAP_SEC,
             },
         )
         row = res.first()
@@ -367,7 +387,8 @@ async def mark_deferred(
             error_code=None if expired else "deferred",
             error_message=reason,
             meta={
-                "delay_sec": max(5.0, float(delay_sec)),
+                "delay_sec": base_delay,
+                **({"defer_attempt": row_dict.get("attempts")} if count_attempt else {}),
                 **({"defer_bound_sec": bound_sec} if expired else {}),
             },
         )
@@ -377,6 +398,8 @@ async def mark_deferred(
                 job_id=str(job_id),
                 reason=(reason or "")[:120],
                 bound_sec=bound_sec,
+                attempts=row_dict.get("attempts"),
+                counted_attempt=bool(count_attempt),
             )
     return status
 
@@ -708,8 +731,13 @@ async def requeue_exhausted(
     of rows requeued. The attempts ceiling prevents infinite retry loops."""
     # Permanent failures: do not auto-requeue (needs new gallery or templates).
     # Billing/quota: skipped unless include_billing_retry (operator kick / circuit clear).
+    # Coherence-gate exhaustion already spent its bounded retries against the same
+    # inputs; requeuing raises max_attempts and restarts the same loop at full cost.
     permanent_filter = """
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%tutarsız%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%caption_design_incoherent%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%ops-terminated%'
     """
     if not include_billing_retry:
         permanent_filter += """

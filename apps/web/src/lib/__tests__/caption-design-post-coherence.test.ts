@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateCaptionDesignPostCoherence } from '@/lib/caption-design-post-coherence';
+import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
 const FOOD_META: GalleryPhotoMeta = {
@@ -105,4 +106,43 @@ describe('caption-design-post-coherence', () => {
     // Prefer ship after force punchline when caption has scene nouns.
     expect(result.ok || result.repaired).toBe(true);
   });
+
+  it.each([
+    {
+      sector: 'restaurant_cafe',
+      caption: 'Mutfağımızın imza lezzetleri bugün sofranızda, mevsimin en taze ürünleriyle hazırlandı.',
+      photoUrl: 'https://cdn.example.com/dish.jpg',
+      meta: {
+        contentTags: ['food', 'plate', 'dish'],
+        description: 'Signature plated dish on a restaurant table',
+        suggestedAssetType: 'food_drink_photo',
+      } satisfies GalleryPhotoMeta,
+    },
+    {
+      sector: 'local_products_shop',
+      caption: 'Mevsimin ilk hasadı raflarda, köy pazarından gelen ürünler sınırlı sayıda.',
+      photoUrl: 'https://cdn.example.com/harvest.jpg',
+      meta: {
+        contentTags: ['product', 'harvest', 'shelf'],
+        description: 'Seasonal harvest products on a shop shelf',
+        suggestedAssetType: 'product_photo',
+      } satisfies GalleryPhotoMeta,
+    },
+  ])(
+    '$sector: empty overlay recovers a caption-grounded line instead of overlay_meaningless',
+    ({ sector, caption, photoUrl, meta }) => {
+      const result = evaluateCaptionDesignPostCoherence({
+        caption,
+        overlayHeadline: '',
+        brandName: 'Test Marka',
+        businessType: sector,
+        photoUrl,
+        galleryMeta: meta,
+      });
+      expect(result.breaks).not.toContain('overlay_meaningless');
+      expect(result.repaired).toBe(true);
+      expect(result.overlayHeadline.trim().length).toBeGreaterThan(0);
+      expect(overlayHeadlineGroundedInCaption(result.overlayHeadline, caption)).toBe(true);
+    },
+  );
 });

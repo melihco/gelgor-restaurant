@@ -3882,6 +3882,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
+    let carouselShortfallReason: string | null = null;
     let videoProduceMeta: VideoProduceMeta | null = null;
 
     // ── Product Showcase pipeline (AI background replacement) ───────
@@ -4422,6 +4423,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         console.log(
           `[auto-produce] Carousel under-filled (${carouselUrls.length}/${CAROUSEL_MIN_SLIDES} caption-aligned) — "${headline.slice(0, 40)}"`,
         );
+        // No slides and no pinned photo means the gallery could not serve this
+        // slot. Say so, instead of the generic "no image or video URL" that reads
+        // as a render bug and gets retried until attempts run out.
+        if (!carouselUrls.length) {
+          carouselShortfallReason = galleryPhotos.length
+            ? galleryRematchErrorMessage('no_aligned_candidate')
+            : galleryRematchErrorMessage('no_photos');
+        }
       } else {
         console.log(
           `[auto-produce] Carousel slides: ${carouselUrls.length} (gallery=${carouselGalleryUrls.length}`
@@ -4788,7 +4797,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.warn(`[auto-produce] no contentUrl produced for "${headline.slice(0, 50)}", skipping save`);
       }
-      const pipelineErr = falPipelineFailureReason;
+      const pipelineErr = falPipelineFailureReason ?? carouselShortfallReason;
       results.push({
         title: headline,
         imageUrl: '',

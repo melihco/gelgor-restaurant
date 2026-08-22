@@ -84,6 +84,47 @@ function overlayLooksBad(
   return false;
 }
 
+const OVERLAY_FALLBACK_MAX_CLAUSES = 4;
+const OVERLAY_FALLBACK_MAX_STARTS = 4;
+
+/**
+ * Last-resort overlay drawn verbatim from the caption, so it is grounded by
+ * construction. A single 3-word probe is not enough: the incomplete-phrase rules
+ * reject many word windows on morphology alone (Turkish case/genitive tails), and
+ * one rejected probe used to leave the slot with no shippable overlay at all.
+ * Scanning several windows per clause finds a phrase that satisfies every gate
+ * without loosening any of them.
+ */
+function deriveGroundedOverlayFallback(
+  caption: string,
+  maxLen: number,
+  brandName: string,
+  businessType?: string,
+): string {
+  const clauses = caption
+    .replace(/[#@]\S+/g, ' ')
+    .split(/[.!?\n|—–,;:]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 8)
+    .slice(0, OVERLAY_FALLBACK_MAX_CLAUSES);
+
+  for (const clause of clauses) {
+    const words = clause.split(/\s+/).filter(Boolean);
+    for (let start = 0; start < Math.min(words.length, OVERLAY_FALLBACK_MAX_STARTS); start++) {
+      // Longer windows first — more informative than a bare two-word stub.
+      for (let size = 5; size >= 2; size--) {
+        if (start + size > words.length) continue;
+        const candidate = words.slice(start, start + size).join(' ');
+        if (candidate.length > maxLen) continue;
+        if (!overlayHeadlineGroundedInCaption(candidate, caption)) continue;
+        if (overlayLooksBad(candidate, brandName, caption, businessType)) continue;
+        return candidate;
+      }
+    }
+  }
+  return '';
+}
+
 /**
  * Evaluate (and lightly repair) caption ↔ overlay ↔ photo ↔ design coherence.
  * Callers must fail-closed when `ok === false`.
@@ -166,10 +207,25 @@ export function evaluateCaptionDesignPostCoherence(
     if (forced && !overlayLooksBad(forced, brandName, caption, input.businessType)) {
       overlay = forced;
       repaired = true;
-    } else if (clauseHook && overlayHeadlineGroundedInCaption(clauseHook, caption)) {
+    } else if (
+      clauseHook
+      && overlayHeadlineGroundedInCaption(clauseHook, caption)
+      && !overlayLooksBad(clauseHook, brandName, caption, input.businessType)
+    ) {
       // Last resort: 2–3 caption words — grounded by construction.
       overlay = clauseHook;
       repaired = true;
+    } else {
+      const derived = deriveGroundedOverlayFallback(
+        caption,
+        maxLen,
+        brandName,
+        input.businessType,
+      );
+      if (derived) {
+        overlay = derived;
+        repaired = true;
+      }
     }
   }
 

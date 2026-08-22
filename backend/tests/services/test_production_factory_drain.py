@@ -134,6 +134,25 @@ def test_ops_defer_reasons_cover_billing_and_credit() -> None:
     ).startswith("Aylık kredi")
 
 
+def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
+    """A flat-delay defer that never burns an attempt loops ~60x/hour forever."""
+    quality = "Caption–tasarım–görsel tutarsız (overlay_meaningless)"
+    template = "library_template_required: no renderable template for catalog_slot_key=x"
+    ops = "provider_billing_circuit_open [skip-no-fal-quota]"
+
+    # Quality gates re-run the same inputs — bound by attempts, not just wall clock.
+    assert pfs._defer_counts_attempt(quality) is True
+    assert pfs._defer_counts_attempt(template) is True
+    assert pfs._defer_counts_attempt(ops) is False
+    assert pfs._defer_counts_attempt("production_in_flight") is False
+
+    # Both categories still get a wall-clock backstop; nothing defers forever.
+    assert pfs._defer_max_age_sec(quality) == pfs._quality_defer_max_age_sec()
+    assert pfs._defer_max_age_sec(ops) == pfs._ops_defer_max_age_sec()
+    assert pfs._defer_max_age_sec("no_artifact") is None
+    assert pfs._quality_defer_max_age_sec() < pfs._ops_defer_max_age_sec()
+
+
 # ── Drain flow helpers ───────────────────────────────────────────────────────
 
 
@@ -150,6 +169,7 @@ class _JobsRecorder:
         self.ready: list[tuple[uuid.UUID, str | None]] = []
         self.failed: list[tuple[uuid.UUID, str]] = []
         self.deferred: list[tuple[uuid.UUID, str]] = []
+        self.defer_opts: list[dict] = []
         self.running: list[uuid.UUID] = []
 
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
@@ -177,8 +197,20 @@ class _JobsRecorder:
         self.failed.append((job_id, reason, retryable))
         return "exhausted" if retryable is False else "failed"
 
-    async def mark_deferred(self, job_id: uuid.UUID, reason: str, *, delay_sec: float = 45.0) -> None:
+    async def mark_deferred(
+        self,
+        job_id: uuid.UUID,
+        reason: str,
+        *,
+        delay_sec: float = 45.0,
+        max_age_sec: float | None = None,
+        count_attempt: bool = False,
+    ) -> str:
         self.deferred.append((job_id, reason))
+        self.defer_opts.append(
+            {"delay_sec": delay_sec, "max_age_sec": max_age_sec, "count_attempt": count_attempt}
+        )
+        return "pending"
 
     async def mission_job_summary(self, mission_id: uuid.UUID) -> dict:
         return self._summary
