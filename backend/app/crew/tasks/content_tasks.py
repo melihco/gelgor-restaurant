@@ -508,6 +508,37 @@ def _build_recent_titles_block(brand: BrandInfo) -> str:
     return "\n".join(parts)
 
 
+def _format_mix_rule(count: int, format_targets: dict[str, int] | None) -> str:
+    """
+    Spell out the exact per-format counts the mission can publish.
+
+    The rule used to be hardcoded in the prompt ("EXACTLY 6 post + 5 story +
+    1 carousel + 4 reel"), which both contradicted the package geometry and
+    ordered formats most brands have no enabled slot for — production then
+    discarded those ideas and the week shipped short.
+    """
+    wanted = {
+        fmt: int(n)
+        for fmt, n in (format_targets or {}).items()
+        if fmt in ("post", "story", "carousel", "reel") and int(n) > 0
+    }
+    if not wanted or sum(wanted.values()) != int(count):
+        # Unknown catalog — fall back to proportions rather than a fixed count.
+        return (
+            f"- Spread the {count} concepts across post / story / carousel, "
+            "roughly 40%% post, 40%% story, 10%% carousel, 10%% reel."
+        )
+    parts = ", ".join(f"{n} {fmt}" for fmt, n in wanted.items())
+    closed = [f for f in ("post", "story", "carousel", "reel") if f not in wanted]
+    line = f"- EXACTLY {parts} ({count} total). These counts are the brand's enabled slots."
+    if closed:
+        line += (
+            f"\n- Produce NO {' and no '.join(closed)} concepts — this brand has no "
+            f"{'/'.join(closed)} slot enabled and such ideas are dropped before production."
+        )
+    return line
+
+
 def create_content_ideation_task(
     agent: Agent,
     brand: BrandInfo,
@@ -517,6 +548,7 @@ def create_content_ideation_task(
     content_pillars: list[str] | None = None,
     autonomy_mode: bool = False,
     mission_id: str | None = None,
+    format_targets: dict[str, int] | None = None,
 ) -> Task:
     gallery_scene_block = _build_gallery_scene_block(brand)
     recent_titles_block = _build_recent_titles_block(brand)
@@ -549,6 +581,7 @@ def create_content_ideation_task(
         autonomy_mode="enabled" if autonomy_mode else "disabled",
         reference_image_urls_list=gallery_scene_block,
         output_language=output_language,
+        format_mix_rule=_format_mix_rule(count, format_targets),
     )
 
     # Variation seed — run-unique token to prevent same-context repetition

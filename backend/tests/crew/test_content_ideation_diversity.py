@@ -51,6 +51,39 @@ def test_enforce_strategist_idea_diversity_does_not_clone_pad() -> None:
     assert out[0]["concept_title"] == "Tek fikir"
 
 
+def test_format_mix_rule_names_the_closed_formats() -> None:
+    """The prompt used to hardcode "4 reel" for brands with no reel slot."""
+    from app.crew.tasks.content_tasks import _format_mix_rule
+
+    rule = _format_mix_rule(16, {"post": 6, "story": 9, "carousel": 1, "reel": 0})
+    assert "6 post" in rule and "9 story" in rule and "1 carousel" in rule
+    assert "no reel" in rule.lower()
+    assert "4 reel" not in rule
+
+    # restaurant_cafe live shape: carousel and reel both closed.
+    rule2 = _format_mix_rule(16, {"post": 7, "story": 9})
+    assert "7 post" in rule2 and "9 story" in rule2
+    assert "carousel" in rule2 and "reel" in rule2
+
+    # Unknown catalog falls back to proportions instead of inventing counts.
+    assert "%" in _format_mix_rule(16, None)
+    # A mix that does not add up to the ask is not trusted either.
+    assert "%" in _format_mix_rule(16, {"post": 2})
+
+
+def test_topup_targets_follow_the_shaped_mix() -> None:
+    """Top-ups asked for reels off the raw geometry even when reels were closed."""
+    from app.crew.crews.content_crew import _missing_format_breakdown
+
+    have = [idea(f"Post {i}", "post") for i in range(4)]
+    missing, gap = _missing_format_breakdown(
+        have, 16, {"post": 6, "story": 9, "carousel": 1, "reel": 0}
+    )
+    assert gap == 12
+    assert missing.get("reel", 0) == 0
+    assert missing["story"] == 9
+
+
 def test_revision_that_drops_ideas_is_rejected() -> None:
     """Live regression: a 16-idea batch came back from revision as 7 and was kept."""
     from app.crew.crews.content_crew import _revision_loses_ideas

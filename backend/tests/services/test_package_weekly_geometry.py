@@ -29,6 +29,55 @@ def test_geometry_total_matches_its_own_mix() -> None:
         assert geo["total"] == geo["post"] + geo["story"] + geo["carousel"] + geo["reel"]
 
 
+def test_closed_formats_hand_their_quota_to_open_ones() -> None:
+    """Live: 12 of 13 tenants had no reel slot, so 2 ideas per mission were binned."""
+    from app.services.package_weekly_geometry import (
+        redistribute_geometry_to_open_formats,
+    )
+
+    geo = resolve_weekly_package_geometry(None)  # 5 post, 8 story, 1 carousel, 2 reel
+    shaped = redistribute_geometry_to_open_formats(geo, {"post", "story", "carousel"})
+
+    assert shaped["reel"] == 0
+    assert shaped["total"] == geo["total"]
+    assert shaped["post"] + shaped["story"] + shaped["carousel"] == geo["total"]
+    # The freed quota follows the existing weighting, so story stays dominant.
+    assert shaped["story"] > shaped["post"] > shaped["carousel"]
+
+
+def test_reshaping_covers_a_second_sector_shape() -> None:
+    from app.services.package_weekly_geometry import (
+        redistribute_geometry_to_open_formats,
+    )
+
+    geo = resolve_weekly_package_geometry(None)
+    # restaurant_cafe live: neither reel nor carousel enabled.
+    shaped = redistribute_geometry_to_open_formats(geo, {"post", "story"})
+    assert (shaped["reel"], shaped["carousel"]) == (0, 0)
+    assert shaped["post"] + shaped["story"] == geo["total"]
+
+    # A brand with every format open is left exactly as planned.
+    full = redistribute_geometry_to_open_formats(
+        geo, {"post", "story", "carousel", "reel"}
+    )
+    assert full == geo
+
+    # An unreadable catalog must not starve the mission.
+    assert redistribute_geometry_to_open_formats(geo, set()) == geo
+    assert redistribute_geometry_to_open_formats(geo, None) == geo
+
+
+def test_reshaping_handles_a_single_open_format() -> None:
+    from app.services.package_weekly_geometry import (
+        redistribute_geometry_to_open_formats,
+    )
+
+    geo = resolve_weekly_package_geometry(None)
+    shaped = redistribute_geometry_to_open_formats(geo, {"story"})
+    assert shaped["story"] == geo["total"]
+    assert shaped["total"] == geo["total"]
+
+
 def test_content_ideation_iterations_default_one() -> None:
     assert resolve_content_ideation_iterations("starter") == 1
     assert resolve_content_ideation_iterations("growth") == 1

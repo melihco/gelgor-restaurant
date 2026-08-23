@@ -404,6 +404,24 @@ async def list_tenant_enabled_slots(
     return out
 
 
+async def list_tenant_open_formats(
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+) -> set[str]:
+    """
+    Formats the brand can actually publish — those with an enabled catalog slot.
+
+    Production skips ideas whose format has no enabled slot, so ideation must be
+    shaped by this set or the mission pays for deliverables it will discard.
+    """
+    rows = await list_tenant_enabled_slots(db, workspace_id)
+    return {
+        str(row["slot"].format).strip().lower()
+        for row in rows
+        if getattr(row["slot"], "format", None)
+    }
+
+
 async def bootstrap_tenant_slot_assignments(
     db: AsyncSession,
     workspace_id: uuid.UUID,

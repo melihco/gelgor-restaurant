@@ -264,10 +264,11 @@ Autonomy mode: {autonomy_mode}
 
 ⚠️ CONTENT FORMAT MIX RULE (agency standard — MANDATORY, not a suggestion):
 The JSON array length MUST equal {count}. Follow this EXACT format distribution:
-- When count ≥ 16 (standard weekly mission): EXACTLY 6 post + 5 story + 1 carousel + 4 reel (16 total). Each concept is ONE production slot — unique headline, caption_draft, and hashtags. A carousel is REQUIRED — do not skip it.
-- When count ≥ 10 (legacy buffer package): EXACTLY 4 post + 3 story + 1 carousel + 2 reel (10 total).
-- Otherwise: ~40%% post / ~30%% story / ~20%% reel / ~10%% carousel; minimum 1 reel with reel_motion_spec.
+{format_mix_rule}
+Each concept is ONE production slot — unique headline, caption_draft, and hashtags.
 Set each concept's content_type/format/content_kind to match its assigned slot so the counts above are verifiable.
+Never invent a format that is absent from the distribution above: the brand cannot
+publish it, so the idea would be discarded and the plan would come up short.
 
 🎨 PREMIUM CREATIVE COMPOSITION RULE (MANDATORY — at least 3 of {count}):
 At least 3 ideas MUST be Premium Creative Compositions — portfolio-quality, art-directed designs.

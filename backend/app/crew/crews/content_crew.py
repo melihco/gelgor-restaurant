@@ -634,6 +634,7 @@ def _run_single_ideation(
     autonomy_mode: bool,
     llm: Any,
     mission_id: str | None = None,
+    format_targets: dict[str, int] | None = None,
 ) -> tuple[str, int]:
     """Single ideation run — returns (raw_output, tokens_used)."""
     from app.services.package_weekly_geometry import resolve_content_ideation_agent_timeout_seconds
@@ -648,7 +649,7 @@ def _run_single_ideation(
     ideation_task = create_content_ideation_task(
         content_agent, brand, count, time_period,
         brief=brief, content_pillars=content_pillars, autonomy_mode=autonomy_mode,
-        mission_id=mission_id,
+        mission_id=mission_id, format_targets=format_targets,
     )
     crew = Crew(
         agents=[content_agent], tasks=[ideation_task],
@@ -677,10 +678,16 @@ def _norm_title(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
-def _missing_format_breakdown(concepts: list, count: int) -> tuple[dict[str, int], int]:
+def _missing_format_breakdown(
+    concepts: list,
+    count: int,
+    format_targets: dict[str, int] | None = None,
+) -> tuple[dict[str, int], int]:
     """Return (missing-by-format, total_gap) needed to reach `count`.
 
-    Mix follows package_weekly_geometry SSOT; remainder prefers story.
+    Mix follows the caller's targets when given — those are already shaped to the
+    brand's enabled slots. Topping up against the raw package geometry ordered
+    formats the brand cannot publish, and production dropped them on arrival.
     """
     from app.services.package_weekly_geometry import resolve_weekly_package_geometry
 
@@ -693,7 +700,7 @@ def _missing_format_breakdown(concepts: list, count: int) -> tuple[dict[str, int
     if total_gap <= 0:
         return {}, 0
 
-    geo = resolve_weekly_package_geometry(None)
+    geo = format_targets or resolve_weekly_package_geometry(None)
     targets = {
         "story": int(geo.get("story", 0)),
         "post": int(geo.get("post", 0)),
@@ -748,6 +755,7 @@ def _ensure_distinct_ideation_batch(
     mission_id: str | None,
     *,
     max_topups: int | None = None,
+    format_targets: dict[str, int] | None = None,
 ) -> tuple[list, int]:
     """
     Dedupe near-duplicate headlines, then LLM top-up until `count` unique ideas
@@ -772,6 +780,7 @@ def _ensure_distinct_ideation_batch(
         batch, topup_tokens = _topup_ideation(
             brand, batch, count, time_period,
             content_pillars, autonomy_mode, llm, mission_id,
+            format_targets=format_targets,
         )
         tokens += topup_tokens
         batch = dedupe_ideation_by_headline(batch)
@@ -801,13 +810,14 @@ def _topup_ideation(
     autonomy_mode: bool,
     llm: Any,
     mission_id: str | None,
+    format_targets: dict[str, int] | None = None,
 ) -> tuple[list, int]:
     """
     Generate genuinely NEW distinct concepts when the first ideation pass
     under-delivered (LLM returned < count). Far better than cloning donors,
     which produces duplicate-looking ideas. Only runs on a shortfall.
     """
-    missing, total_gap = _missing_format_breakdown(existing, count)
+    missing, total_gap = _missing_format_breakdown(existing, count, format_targets)
     if total_gap <= 0:
         return existing, 0
 
@@ -829,6 +839,7 @@ def _topup_ideation(
         raw, tokens = _run_single_ideation(
             brand, total_gap, time_period, topup_brief,
             content_pillars, autonomy_mode, llm, mission_id=mission_id,
+            format_targets=missing or format_targets,
         )
     except Exception as exc:  # noqa: BLE001 — top-up is best-effort
         logger.warning("ideation_topup_failed: error=%s", str(exc)[:200])
@@ -895,23 +906,30 @@ def run_content_ideation(
     llm: LLM | None = None,
     iterations: int = 1,
     mission_id: str | None = None,
+    format_targets: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     """
     Generate content concepts for a brand.
 
     iterations=2 → runs twice, picks the better output (higher quality, ~2x cost).
     iterations=1 → single run (default, backward compatible).
+
+    `format_targets` is the per-format split the brand can actually publish;
+    ideas in a format with no enabled slot are dropped before production, so the
+    ask has to be shaped by it rather than by the raw package geometry.
     """
     settings = get_settings()
 
     raw_output_a, tokens_a = _run_single_ideation(
-        brand, count, time_period, brief, content_pillars, autonomy_mode, llm, mission_id=mission_id,
+        brand, count, time_period, brief, content_pillars, autonomy_mode, llm,
+        mission_id=mission_id, format_targets=format_targets,
     )
     total_tokens = tokens_a
 
     if iterations >= 2:
         raw_output_b, tokens_b = _run_single_ideation(
-            brand, count, time_period, brief, content_pillars, autonomy_mode, llm, mission_id=mission_id,
+            brand, count, time_period, brief, content_pillars, autonomy_mode, llm,
+            mission_id=mission_id, format_targets=format_targets,
         )
         total_tokens += tokens_b
         raw_output = _pick_better_output(raw_output_a, raw_output_b, brand)
@@ -929,6 +947,7 @@ def run_content_ideation(
             concepts, topup_tokens = _ensure_distinct_ideation_batch(
                 brand, concepts, count, time_period,
                 content_pillars, autonomy_mode, llm, mission_id,
+                format_targets=format_targets,
             )
             total_tokens += topup_tokens
             concepts = _enforce_idea_completeness(concepts, brand)
@@ -982,7 +1001,7 @@ def run_content_ideation(
                         revised_concepts, revision_topup_tokens = _ensure_distinct_ideation_batch(
                             brand, revised_concepts, count, time_period,
                             content_pillars, autonomy_mode, llm, mission_id,
-                            max_topups=1,
+                            max_topups=1, format_targets=format_targets,
                         )
                         total_tokens += revision_topup_tokens
                         revised_concepts = _enforce_idea_completeness(revised_concepts, brand)

@@ -668,13 +668,41 @@ async def _execute_node_body(
     if task_type == "content_ideation":
         from app.services.package_weekly_geometry import (
             format_mix_label,
+            redistribute_geometry_to_open_formats,
             resolve_content_ideation_iterations,
             resolve_weekly_package_geometry,
         )
+        from app.services.slot_catalog_service import list_tenant_open_formats
 
         weekly_geo = resolve_weekly_package_geometry(resolved_subscription_plan_slug)
+        # Production skips ideas whose format has no enabled catalog slot, so a
+        # closed format costs an ideation call and a deliverable. Shape the ask
+        # around what the brand can publish instead of discarding the result.
+        try:
+            async with factory() as _slot_db:
+                open_formats = await list_tenant_open_formats(_slot_db, workspace_id)
+        except Exception as exc:  # noqa: BLE001 — never block ideation on a catalog read
+            logger.warning(
+                "ideation_open_format_lookup_failed",
+                node_key=node_key,
+                error=str(exc)[:200],
+            )
+            open_formats = set()
+        shaped_geo = redistribute_geometry_to_open_formats(weekly_geo, open_formats)
+        if shaped_geo != weekly_geo:
+            logger.info(
+                "content_ideation_mix_reshaped",
+                node_key=node_key,
+                open_formats=sorted(open_formats),
+                before={k: weekly_geo[k] for k in ("post", "story", "carousel", "reel")},
+                after={k: shaped_geo[k] for k in ("post", "story", "carousel", "reel")},
+            )
+        weekly_geo = shaped_geo
         effective_input["count"] = weekly_geo["total"]
         effective_input.setdefault("format_mix", format_mix_label(weekly_geo))
+        effective_input["format_targets"] = {
+            f: weekly_geo[f] for f in ("post", "story", "carousel", "reel")
+        }
         if "iterations" not in effective_input:
             effective_input["iterations"] = resolve_content_ideation_iterations(
                 resolved_subscription_plan_slug,

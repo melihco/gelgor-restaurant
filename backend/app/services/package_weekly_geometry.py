@@ -38,6 +38,55 @@ def resolve_weekly_package_geometry(package_slug: str | None = None) -> dict[str
     return dict(AGENCY_WEEKLY_GEOMETRY)
 
 
+WEEKLY_FORMATS: tuple[str, ...] = ("post", "story", "carousel", "reel")
+
+
+def redistribute_geometry_to_open_formats(
+    geometry: dict[str, int],
+    open_formats: set[str] | frozenset[str] | None,
+) -> dict[str, int]:
+    """
+    Move the quota of formats a brand cannot publish onto the ones it can.
+
+    Production drops any idea whose format has no enabled catalog slot, so
+    asking for a closed format spends an ideation call on something that is
+    thrown away *and* shrinks the package by exactly that many deliverables.
+    Live, twelve of thirteen tenants have no reel slot, so every mission
+    ordered two reels it could never ship.
+
+    An unknown catalog (empty input) keeps the package as-is: better to ask for
+    a format that may be dropped than to starve the mission on a read failure.
+    """
+    total = int(geometry.get("total") or sum(int(geometry.get(f, 0)) for f in WEEKLY_FORMATS))
+    if not open_formats:
+        return dict(geometry)
+    open_list = [f for f in WEEKLY_FORMATS if f in open_formats]
+    if not open_list or len(open_list) == len(WEEKLY_FORMATS):
+        return dict(geometry)
+
+    base = {f: int(geometry.get(f, 0)) for f in open_list}
+    surplus = total - sum(base.values())
+    if surplus > 0:
+        weight_total = sum(base.values())
+        if weight_total <= 0:
+            # No open format carries a quota — split the package evenly.
+            for i, f in enumerate(open_list):
+                base[f] = surplus // len(open_list) + (1 if i < surplus % len(open_list) else 0)
+        else:
+            shares = {f: surplus * base[f] / weight_total for f in open_list}
+            add = {f: int(shares[f]) for f in open_list}
+            # Largest remainder, so the reshaped mix still sums to the package.
+            leftover = surplus - sum(add.values())
+            for f in sorted(open_list, key=lambda k: (shares[k] - add[k], base[k]), reverse=True)[:leftover]:
+                add[f] += 1
+            for f in open_list:
+                base[f] += add[f]
+
+    out = {f: base.get(f, 0) for f in WEEKLY_FORMATS}
+    out["total"] = sum(out[f] for f in WEEKLY_FORMATS)
+    return out
+
+
 def resolve_content_ideation_iterations(package_slug: str | None = None) -> int:
     """
     Ideation A/B passes. Default 1 for all plans (cost-safe).
