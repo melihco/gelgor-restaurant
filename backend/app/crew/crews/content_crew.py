@@ -103,17 +103,33 @@ def _validate_and_sanitize_ideas(
     known_service_terms: set[str] = set()
     wi = getattr(brand, 'website_intelligence', None) or {}
     if isinstance(wi, dict):
-        for cat in wi.get('menu_catalog', []):
-            name = cat.get('name', '').lower()
+        catalog = wi.get('menu_catalog')
+        for cat in catalog if isinstance(catalog, list) else []:
+            # Crawls return either categories ({name, items}) or a flat list of
+            # dish names. Assuming the former raised AttributeError here, and the
+            # caller swallows it — which discarded the whole topped-up batch.
+            if isinstance(cat, str):
+                if cat.strip():
+                    known_service_terms.add(cat.strip().lower())
+                continue
+            if not isinstance(cat, dict):
+                continue
+            name = str(cat.get('name') or '').lower()
             if name:
                 known_service_terms.add(name)
-            for item in cat.get('items', []):
-                item_name = (item if isinstance(item, str) else item.get('name', '')).lower()
+            items = cat.get('items')
+            for item in items if isinstance(items, list) else []:
+                item_name = str(
+                    item if isinstance(item, str)
+                    else (item.get('name') or '') if isinstance(item, dict)
+                    else ''
+                ).lower()
                 if item_name:
                     known_service_terms.add(item_name)
     # Also add content_pillars as known scope
     for pillar in (getattr(brand, 'content_pillars', None) or []):
-        known_service_terms.add(pillar.lower())
+        if isinstance(pillar, str) and pillar.strip():
+            known_service_terms.add(pillar.lower())
 
     sanitized = []
     for idea in concepts:
@@ -950,6 +966,12 @@ def run_content_ideation(
                 format_targets=format_targets,
             )
             total_tokens += topup_tokens
+            # `raw_output` is what the mission persists, and everything below is
+            # best-effort polish. Publishing it only at the end meant a swallowed
+            # error silently reverted the batch to the first pass: live, every
+            # mission generated 13-15 ideas, hit an exception in the passes below
+            # and stored 7-8. Bank the topped-up batch before risking it.
+            raw_output = json.dumps(concepts, ensure_ascii=False)
             # Several deterministic passes below may drop ideas, and a package
             # that arrives short is expensive to diagnose after the fact — the
             # node only persists the survivors. Record the count per stage so a
@@ -1072,10 +1094,13 @@ def run_content_ideation(
                 "batch_grade": "A" if avg_score >= 80 else "B" if avg_score >= 60 else "C" if avg_score >= 40 else "D",
             }
     except Exception as _qe:
+        # The message alone ("'str' object has no attribute 'get'") named neither
+        # the pass nor the field, so this failed on every mission unnoticed.
         logger.warning(
             "content_quality_gate_failed: error=%s tenant=%s",
             str(_qe)[:300],
             getattr(brand, "tenant_id", "unknown"),
+            exc_info=True,
         )
 
     return {

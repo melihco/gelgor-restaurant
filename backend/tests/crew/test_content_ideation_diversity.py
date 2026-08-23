@@ -51,6 +51,38 @@ def test_enforce_strategist_idea_diversity_does_not_clone_pad() -> None:
     assert out[0]["concept_title"] == "Tek fikir"
 
 
+def test_flat_menu_catalog_does_not_break_the_scope_guard() -> None:
+    """
+    Live root cause: a crawl that returned dish names instead of category objects
+    raised AttributeError here. The caller swallowed it, `raw_output` stayed on
+    the first ideation pass, and every topped-up idea was thrown away — missions
+    generated 13-15 ideas and stored 7-8.
+    """
+    from app.crew.context import BrandInfo
+    from app.crew.crews.content_crew import _validate_and_sanitize_ideas
+
+    ideas = [idea("Serpme Kahvaltı", "post"), idea("Akşam Menüsü", "story")]
+
+    flat = BrandInfo(business_name="T", business_type="restaurant_cafe", languages="tr")
+    flat.website_intelligence = {"menu_catalog": ["Kahvaltı", "Tatlılar"]}
+    out, _ = _validate_and_sanitize_ideas(ideas, flat)
+    assert len(out) == 2
+
+    # Nested shape still works, and mixed/garbage entries are tolerated.
+    nested = BrandInfo(business_name="T", business_type="local_products_shop", languages="tr")
+    nested.website_intelligence = {
+        "menu_catalog": [
+            {"name": "Reçeller", "items": ["İncir", {"name": "Kayısı"}, None]},
+            "Zeytinyağı",
+            None,
+            {"name": "Ballar", "items": "not-a-list"},
+        ],
+    }
+    nested.content_pillars = ["üretim", None]
+    out2, _ = _validate_and_sanitize_ideas(ideas, nested)
+    assert len(out2) == 2
+
+
 def test_format_mix_rule_names_the_closed_formats() -> None:
     """The prompt used to hardcode "4 reel" for brands with no reel slot."""
     from app.crew.tasks.content_tasks import _format_mix_rule
