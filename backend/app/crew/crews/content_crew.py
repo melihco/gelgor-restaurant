@@ -950,13 +950,22 @@ def run_content_ideation(
                 format_targets=format_targets,
             )
             total_tokens += topup_tokens
+            # Several deterministic passes below may drop ideas, and a package
+            # that arrives short is expensive to diagnose after the fact — the
+            # node only persists the survivors. Record the count per stage so a
+            # shortfall names its own cause.
+            stage_counts: list[tuple[str, int]] = [("topup", len(concepts))]
             concepts = _enforce_idea_completeness(concepts, brand)
             # Harmonize AFTER enforce — enforce may refill cta from default_ctas.
             concepts = harmonize_content_concepts(concepts, brand.languages)
+            stage_counts.append(("harmonize", len(concepts)))
             concepts = dedupe_ideation_by_headline(concepts)
+            stage_counts.append(("dedupe", len(concepts)))
             concepts = _enforce_strategist_idea_diversity(concepts, brand, count)
+            stage_counts.append(("diversity", len(concepts)))
             # ── Hallucination & scope guard (deterministic, no LLM) ─────────
             concepts, scope_warnings = _validate_and_sanitize_ideas(concepts, brand)
+            stage_counts.append(("scope", len(concepts)))
             if scope_warnings:
                 logger.info(
                     "ideation_scope_warnings: count=%d tenant=%s warnings=%s",
@@ -973,6 +982,14 @@ def run_content_ideation(
                     "pillar_coverage_enforced: filled=%s tenant=%s",
                     pillars_filled,
                     getattr(brand, "tenant_id", "unknown"),
+                )
+            stage_counts.append(("pillars", len(concepts)))
+            if len(concepts) < count:
+                logger.warning(
+                    "ideation_stage_attrition: want=%d tenant=%s stages=%s",
+                    count,
+                    getattr(brand, "tenant_id", "unknown"),
+                    " ".join(f"{name}={n}" for name, n in stage_counts),
                 )
             raw_output = json.dumps(concepts, ensure_ascii=False)
             report = check_weekly_content(
