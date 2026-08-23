@@ -13,6 +13,8 @@ import {
   type BrandDynamicsAngle,
 } from '@/lib/brand-dynamics';
 import { resolveIdeationHeadline } from '@/lib/production-idea-parse';
+import { isInternalStrategyBriefing } from '@/lib/fal-caption-headline';
+import { isLabelStyleHeadline } from '@/lib/production-headline-quality';
 import { strategistHeadlineKey } from '@/lib/production-pipeline-router';
 
 /** Free-trial / demo hook — max once per batch; block if produced in last 14 days. */
@@ -34,6 +36,17 @@ const ROTATION_HEADLINES_TR: Record<string, string> = {
   product_highlight: 'Özellik vitrini',
   campaign_offer: 'Kampanya duyurusu',
 };
+
+/**
+ * The agent's marketing headline is worth keeping through a theme rotation when
+ * it can actually ship on canvas — i.e. it is not itself a planning label or an
+ * internal briefing line.
+ */
+function hasPublishableIdeationHeadline(idea: Record<string, unknown>): boolean {
+  const marketing = String(idea.headline ?? idea.hook ?? '').trim();
+  if (marketing.length < 8) return false;
+  return !isLabelStyleHeadline(marketing) && !isInternalStrategyBriefing(marketing);
+}
 
 export interface RecentHeadlineHistory {
   /** Normalized headline keys from recent artifacts (14 days). */
@@ -185,6 +198,13 @@ function emptyHeadlineHistory(days?: number): RecentHeadlineHistory {
   };
 }
 
+/**
+ * Two ideas in one batch touching the same theme are not a repeat — they carry
+ * their own captions and headlines. Vary the design angle, but keep the copy;
+ * a burned or already-published theme still has to be re-pitched.
+ */
+const SOFT_ROTATION_REASONS = new Set(['theme_cluster_batch_dup']);
+
 function rotateIdea(
   idea: Record<string, unknown>,
   rotationIndex: number,
@@ -196,16 +216,29 @@ function rotateIdea(
     : null;
   const idx = rotationIndex % ROTATION_USE_CASES.length;
   const useCase = dynamic?.useCase ?? ROTATION_USE_CASES[idx]!;
-  const newHeadline = dynamic?.headline ?? ROTATION_HEADLINES_TR[useCase] ?? 'Yeni içerik';
+  // Rotation labels are planning angles (context-signal hooks like
+  // "Yaz sezonu / serinletici menü", or "Perde arkası") — they steer the brief,
+  // they are never publishable on-canvas copy.
+  const angleLabel = dynamic?.headline ?? ROTATION_HEADLINES_TR[useCase] ?? 'Yeni içerik';
   const out = { ...idea };
   out.template_use_case = useCase;
-  out.headline = newHeadline;
-  out.concept_title = newHeadline;
-  out.idea_title = newHeadline;
-  out.title = newHeadline;
+  out.rotation_angle_label = angleLabel;
   out.cross_mission_headline_rotated = true;
   out.rotated_from = reason;
   if (dynamic?.angleId) out.brand_dynamics_angle_id = dynamic.angleId;
+
+  // Overwriting a caption-coherent agent headline with a planning label makes
+  // the label fail the on-canvas quality gate downstream, which then paints a
+  // truncated caption prefix. Keep the copy whenever the rotation is only about
+  // spreading design angles across a batch.
+  const keepCopy = SOFT_ROTATION_REASONS.has(reason)
+    && hasPublishableIdeationHeadline(idea);
+  if (!keepCopy) {
+    out.headline = angleLabel;
+    out.concept_title = angleLabel;
+    out.idea_title = angleLabel;
+    out.title = angleLabel;
+  }
   return out;
 }
 

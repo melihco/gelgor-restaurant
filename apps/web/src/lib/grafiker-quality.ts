@@ -4,6 +4,7 @@
 import type { CreativeDirectorLayoutOverrides } from './creative-director-routing';
 import type { StoryLayoutFamily } from './story-template-types';
 import { sanitizePosterText } from './announcement-text-fit';
+import { isIncompleteOverlayPhrase } from './fal-caption-headline';
 
 export const GRAFIKER_PASS_THRESHOLD = 8;
 export const GRAFIKER_HARD_FLOOR = 4;
@@ -40,12 +41,78 @@ export interface GrafikerReviewResult {
   verdict?: string;
 }
 
-/** Punchy display copy — word-safe truncation for story frames. */
+/** Dangling connectives read as a cut-off sentence when they end an overlay. */
+const ORPHAN_TAIL_WORD_RX =
+  /[\s]+(ve|ile|için|icin|ya|veya|ama|fakat|de|da|ki|bir|bu|şu|su|o|and|with|for|to|of|the|a|an|in|on|at)$/i;
+
+/** Strip trailing punctuation/connectives left behind by a mid-phrase cut. */
+function trimOverlayTail(text: string): string {
+  let out = text.trim();
+  for (let i = 0; i < 3; i++) {
+    const next = out.replace(/[\s,;:·|/\\\-–—]+$/u, '').replace(ORPHAN_TAIL_WORD_RX, '');
+    if (next === out) break;
+    out = next.trim();
+  }
+  return out;
+}
+
+function fits(text: string, maxChars: number): boolean {
+  return Boolean(text) && text.length <= maxChars;
+}
+
+/** A phrase opening on a connective reads as a mid-sentence fragment. */
+const ORPHAN_LEAD_WORD_RX =
+  /^(ve|ile|için|icin|ya|veya|ama|fakat|ki|and|with|for|to|of|in|on|at|the)\s/i;
+
+/**
+ * Drop leading modifiers to reach the budget.
+ *
+ * Turkish is head-final: the syntactic head (and any verb) sits at the end, so
+ * cutting the tail strips what makes the phrase a sentence
+ * ("Mutlu Müşteri Yorumlarıyla" ← "…Yorumlarıyla Tanışın!"), while shedding
+ * front modifiers keeps it grammatical ("Müşteri Yorumlarıyla Tanışın!").
+ */
+function dropLeadingWordsToFit(text: string, maxChars: number): string {
+  const words = text.split(/\s+/).filter(Boolean);
+  for (let drop = 1; drop <= words.length - 1; drop++) {
+    const candidate = words.slice(drop).join(' ').trim();
+    if (!fits(candidate, maxChars)) continue;
+    if (ORPHAN_LEAD_WORD_RX.test(candidate)) continue;
+    if (isIncompleteOverlayPhrase(candidate)) continue;
+    if (candidate.split(/\s+/).length < 2 && candidate.length < 8) continue;
+    return candidate;
+  }
+  return '';
+}
+
+/**
+ * Punchy display copy for story/post frames.
+ *
+ * Cutting a headline mid-phrase paints broken copy on the canvas
+ * ("Yaz Pikniği Seti: Herkesin", "Zafer Bayramı için Eğlenceli"), so prefer a
+ * self-contained clause, then a finished prefix, before word-safe truncation.
+ */
 export function enforceDisplayHeadline(headline: string, maxChars = 28): string {
   const trimmed = sanitizePosterText(headline);
   if (trimmed.length <= maxChars) return trimmed;
+
+  // Clause boundaries carry a complete authored thought — "A: B" → "A".
+  const clause = trimOverlayTail(
+    trimmed.split(/\s*[:—–|·]\s*|\s+[-]\s+/u)[0]?.trim() ?? '',
+  );
+  if (
+    fits(clause, maxChars)
+    && (clause.split(/\s+/).filter(Boolean).length >= 2 || clause.length >= 8)
+  ) {
+    return clause;
+  }
+
+  const shortened = dropLeadingWordsToFit(trimmed, maxChars);
+  if (shortened) return shortened;
+
   const wordSafe = trimmed.slice(0, maxChars + 1).replace(/\s+\S*$/, '').trim();
-  return (wordSafe || trimmed.slice(0, maxChars)).trim();
+  const cleaned = trimOverlayTail(wordSafe);
+  return (cleaned || wordSafe || trimmed.slice(0, maxChars)).trim();
 }
 
 const PROMO_KEYWORDS = /\b(%|off|discount|promo|launch|offer|sale|indirim|fırsat|kampanya|save|deal)\b/i;

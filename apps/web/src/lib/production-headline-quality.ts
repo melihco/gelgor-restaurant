@@ -7,6 +7,7 @@ import {
   isInternalStrategyBriefing,
 } from './fal-caption-headline';
 import { hasDaypartCopyConflict } from './brand-operating-profile';
+import { overlayHeadlineGroundedInCaption } from './overlay-caption-grounding';
 import { enforceDisplayHeadline } from './grafiker-quality';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from './vision-text-guard';
 import { isNonVenueSector } from './sector-gallery-seed';
@@ -121,11 +122,21 @@ export function isLabelStyleHeadline(headline: string): boolean {
   // e.g. "Serpme Köy Kahvaltısı", "Bahçede Serpme Keyfi", "Doğanın Tazeliği"
   const hasAtmosphereSubject = /\b(kahvaltı|kahvaltısı|serpme|kokteyl|kokteyli|cocktail|breakfast|brunch|bahçe|bahçede|garden|zeytinyağı|reçel|bal|lezzet|lezzetleri|tadım|hasat|harvest|mezze|gün\s*batımı|sunset|sunrise|gece|gecesi|keyfi|tazeliği|doğallığı|stars|night)\b/i.test(lower);
 
+  // Turkish expresses a claim through case marking, not only through verbs:
+  // ablative → dative ("Bahçemizden Sofranıza") is a complete "from X to Y"
+  // promise. Category labels ("Yaz sezonu", "Müşteri yorumları") never take
+  // that pairing, so it separates real taglines from slot vocabulary.
+  // `\w` excludes ç/ğ/ı/ö/ş/ü, so these must be Unicode letter classes.
+  const hasDirectionalCaseFraming =
+    /[\p{L}\p{N}]{2,}(?:den|dan|ten|tan)\b/iu.test(lower)
+    && /[\p{L}\p{N}]{2,}(?:ya|ye|na|ne|a|e)$/iu.test(words[words.length - 1] ?? '');
+
   // 3-word noun stacks without verb/CTA energy (signal hooks pasted as headlines)
   if (
     words.length <= 3
     && !/[!?.]$/.test(h)
     && !hasAtmosphereSubject
+    && !hasDirectionalCaseFraming
     && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir|for|with|your|our|the)\b/i.test(h)
   ) {
     const hasVerbEnergy =
@@ -134,7 +145,12 @@ export function isLabelStyleHeadline(headline: string): boolean {
     if (!hasVerbEnergy) return true;
   }
 
-  if (words.length <= 2 && !/[!?.]$/.test(h) && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir)\b/i.test(h)) {
+  if (
+    words.length <= 2
+    && !/[!?.]$/.test(h)
+    && !hasDirectionalCaseFraming
+    && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir)\b/i.test(h)
+  ) {
     const hasTurkishVerb = /[ıiuü]yor|[aeiıoöuü]n$|[aeiıoöuü]r$|[aeiıoöuü]cak$|[dt]ı$|[dt]i$|mış$|miş$|[aeiıoöuü]lım$|[aeiıoöuü]!$/i.test(h);
     if (!hasTurkishVerb) return true;
   }
@@ -329,13 +345,29 @@ export function resolveMeaningfulProductionHeadline(input: {
     };
   }
 
+  const labelStyle = isLabelStyleHeadline(headline);
   const isBadHeadline =
     isMeaninglessBrandEchoHeadline(headline, brandName)
-    || isLabelStyleHeadline(headline)
+    || labelStyle
     || isInternalStrategyBriefing(headline)
     || isIncompleteOverlayPhrase(headline);
 
   if (!isBadHeadline) {
+    return { headline: enforceDisplayHeadline(headline, maxLen), replaced: false };
+  }
+
+  // A noun-phrase headline that names what the caption is about is the idea's own
+  // subject, not a reusable slot label ("Yaz sezonu", "Perde arkası"). Generic
+  // labels are not grounded in tenant copy, so grounding separates the two and
+  // keeps us from painting a truncated caption prefix over a valid headline.
+  if (
+    labelStyle
+    && caption
+    && !isMeaninglessBrandEchoHeadline(headline, brandName)
+    && !isInternalStrategyBriefing(headline)
+    && !isIncompleteOverlayPhrase(headline)
+    && overlayHeadlineGroundedInCaption(headline, caption)
+  ) {
     return { headline: enforceDisplayHeadline(headline, maxLen), replaced: false };
   }
 

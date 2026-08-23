@@ -840,6 +840,12 @@ export function matchIdeaToBrandCatalogSlot(
   const preferred = input.preferredCatalogSlotKey
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
+  // A Feed Art Director pick is a deliberate idea↔slot match, not a rotation
+  // hint: rematching it ships copy under an unrelated slot design.
+  const preferredIsDurable = input.preferredIsDurable
+    || (assignment?.catalog_slot_source === 'feed_director'
+      && Boolean(assignment.catalog_slot_key)
+      && preferred === assignment.catalog_slot_key);
   const recentSet = recentCatalogSlotKeys?.length
     ? new Set(recentCatalogSlotKeys)
     : null;
@@ -893,8 +899,8 @@ export function matchIdeaToBrandCatalogSlot(
   if (preferred && activeSlots.enabledSlotKeys.has(preferred)) {
     const exact = activeSlots.slots.find((s) => s.slotKey === preferred);
     if (exact && (!usedSlotKeys || !usedSlotKeys.has(exact.slotKey))) {
-      // Durable plan/factory pins always win.
-      if (input.preferredIsDurable) {
+      // Durable plan/factory/Feed-Director pins always win.
+      if (preferredIsDurable) {
         return exact;
       }
       // Soft preferred (FD/stamp): compete fairly without +60 self-key bonus.
@@ -1033,6 +1039,12 @@ export function applyCatalogSlotToAssignment(
     {
       ...assignment,
       catalog_slot_key: matched.slotKey,
+      // Provenance must not survive a rematch, or the heuristic key inherits the
+      // Feed Director's immunity on the next enrich pass.
+      catalog_slot_source: assignment.catalog_slot_source === 'feed_director'
+        && assignment.catalog_slot_key === matched.slotKey
+        ? 'feed_director'
+        : 'heuristic',
       catalog_slot_label: matched.labelTr,
       library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
       slot_role: slotRole,
@@ -1199,7 +1211,14 @@ export function enrichProductionQueueWithBrandSlots(
       ?? (item.idea as Record<string, unknown>).catalog_slot_key
       ?? '',
     ).trim() || null;
+    // A Feed Art Director pick already accounts for the catalog it was given, so
+    // shipping the idea under a semantically unrelated slot for the sake of slot
+    // variety is the worse trade.
+    const isFeedDirectorPin = item.assignment.catalog_slot_source === 'feed_director'
+      && Boolean(item.assignment.catalog_slot_key)
+      && preferredKey === item.assignment.catalog_slot_key;
     const isDurablePin = isDurableCatalogQueuePin(item, durablePreferredKeys)
+      || isFeedDirectorPin
       || Boolean(opts?.lockExistingCatalogPins && preferredKey);
     // Soft stamp / FD pick that already ran recently → clear preferred for variety.
     // Intent veto inside matchIdeaToBrandCatalogSlot also rematches soft misfits.

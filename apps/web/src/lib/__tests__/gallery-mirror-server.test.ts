@@ -78,6 +78,19 @@ describe('pickReachableProductionGalleryUrl', () => {
     expect(picked?.url).toContain('/api/media?key=');
     expect(picked?.fallbackFrom).toBe(R2_URL);
   });
+
+  it('keeps the caption-matched photo when it is reachable', async () => {
+    const matched = 'https://karamandatca.com.tr/wp-content/uploads/2026/03/zeytinyagi.jpeg';
+    vi.mocked(fetchExternalImageBuffer).mockResolvedValue(Buffer.alloc(400));
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      headers: { get: () => 'image/jpeg' },
+    })));
+
+    const picked = await pickReachableProductionGalleryUrl(TENANT, matched, [R2_URL]);
+    expect(picked?.fallbackFrom).toBeUndefined();
+    expect(picked?.fromTenantInventory).toBeUndefined();
+  });
 });
 
 describe('ensureProductionGalleryPhotoUrlServer', () => {
@@ -85,6 +98,8 @@ describe('ensureProductionGalleryPhotoUrlServer', () => {
   // directly — without these the branch is skipped and the mocked call order
   // below no longer describes what the function actually does.
   beforeEach(() => {
+    // Module-factory mocks keep their call history across describes.
+    vi.mocked(fetchExternalImageBuffer).mockReset();
     vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'test-account');
     vi.stubEnv('R2_ACCESS_KEY_ID', 'test-key');
     vi.stubEnv('R2_SECRET_ACCESS_KEY', 'test-secret');

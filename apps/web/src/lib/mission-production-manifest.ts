@@ -114,6 +114,13 @@ export interface ProductionAssignment {
    * Bridge until production_jobs.slot_key (Faz 5); set by brand-active-slot-resolver.
    */
   catalog_slot_key?: string;
+  /**
+   * Provenance of `catalog_slot_key`. `feed_director` means the Feed Art Director
+   * deliberately matched this idea to this slot, so heuristic rematching must not
+   * silently reassign it (that shipped breakfast copy under a "private dining"
+   * design). Absent/`heuristic` keys stay soft hints.
+   */
+  catalog_slot_source?: 'feed_director' | 'heuristic';
   /** Brand-facing catalog label (label_tr) — set by catalog-first Feed Director. */
   catalog_slot_label?: string;
   /**

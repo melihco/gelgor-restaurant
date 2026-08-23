@@ -868,6 +868,53 @@ describe('enrichProductionQueueWithBrandSlots', () => {
       },
     );
     expect(durable[0]!.assignment.catalog_slot_key).toBe(sticky.slot_key);
+    expect(softRematch[0]!.assignment.catalog_slot_source).toBe('heuristic');
+  });
+
+  it('keeps a Feed Director slot pick even when the slot ran recently', () => {
+    const planned = mockSlot('beach_club_events_calendar_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const peer = mockSlot('beach_club_private_event_post', 'post', {
+      design_template_type: 'event_special',
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-fd-pin',
+      sector: 'beach_club',
+      sectorSlots: [planned, peer],
+      tenantAssignments: [
+        mockAssignment(planned.slot_key, true, planned),
+        mockAssignment(peer.slot_key, true, peer),
+      ],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Weekend gathering',
+          calendar_announcement_type: 'event_teaser',
+          content_type: 'instagram_post',
+          catalog_slot_key: planned.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: planned.slot_key,
+          catalog_slot_source: 'feed_director',
+        },
+      }],
+      activeSet,
+      { recentCatalogSlotKeys: [planned.slot_key] },
+    );
+
+    expect(queue[0]!.assignment.catalog_slot_key).toBe(planned.slot_key);
+    expect(queue[0]!.assignment.catalog_slot_source).toBe('feed_director');
+    expect(queue[0]!.assignment.catalog_slot_key).not.toBe(peer.slot_key);
   });
 
   it('dedupes repeated preferred catalog keys across designed posts (restaurant_cafe)', () => {

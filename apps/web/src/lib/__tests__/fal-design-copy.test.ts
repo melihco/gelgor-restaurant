@@ -37,6 +37,14 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
     expect(isLabelStyleHeadline('Serpme Kahvaltı Keyfi')).toBe(false);
   });
 
+  it('keeps ablative→dative taglines that carry a claim without a verb', () => {
+    expect(isLabelStyleHeadline('Bahçemizden Sofranıza')).toBe(false);
+    expect(isLabelStyleHeadline('Tarladan Tabağa')).toBe(false);
+    expect(isLabelStyleHeadline('Datçadan Sofranıza')).toBe(false);
+    // Still a slot label: no directional framing, just a category noun phrase.
+    expect(isLabelStyleHeadline('Müşteri yorumları')).toBe(true);
+  });
+
   it('rejects catalog slot labels with format suffix', () => {
     expect(isLabelStyleHeadline('Çiftlik ziyareti story')).toBe(true);
     expect(isLabelStyleHeadline('DJ gecesi reel')).toBe(true);

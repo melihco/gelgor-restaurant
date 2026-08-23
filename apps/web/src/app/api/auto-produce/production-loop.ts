@@ -2834,6 +2834,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               `[auto-produce] gallery production fallback: ${picked.fallbackFrom.slice(0, 80)} → ${picked.url.slice(0, 80)}`,
             );
           }
+          // Any substitute skipped caption scoring, so keeping the matched photo's
+          // score would misreport it as a caption-aligned pick.
+          if (picked.fallbackFrom) galleryMatchScore = null;
           referenceUrl = picked.url;
         } else if (!slotRequiresGalleryPhoto) {
           console.warn(
@@ -4923,6 +4926,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
 
+    // `headline` still holds the exact text handed to the design/overlay prompts
+    // above. The publish sanitize below re-derives copy under a different budget,
+    // so snapshot the canvas value first — otherwise the stored overlay metadata
+    // describes a headline nobody ever painted.
+    const paintedOverlayHeadline = headline;
+
     const falOverlayMaxLen =
       kind === 'instagram_reel' ? 22
         : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
@@ -4979,6 +4988,22 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       galleryPreviewUrl,
     );
 
+    // Gallery-only posts carry no on-canvas text, so claiming an overlay headline
+    // makes Feed render a caption line as if it were painted typography.
+    const overlayWasPainted = Boolean(
+      designedPosterSyncUrl
+      || falDesignedStillUrl
+      || (markyBranded && imageUrl)
+      || (usesFalDesignCopy && (imageUrl || videoUrl)),
+    );
+    const canvasOverlayHeadline = overlayWasPainted ? paintedOverlayHeadline : null;
+    if (canvasOverlayHeadline && canvasOverlayHeadline !== designOverlayHeadline) {
+      console.warn(
+        `[auto-produce] overlay/publish headline drift: canvas "${canvasOverlayHeadline.slice(0, 36)}" `
+        + `vs publish "${designOverlayHeadline.slice(0, 36)}"`,
+      );
+    }
+
     const contentJson = JSON.stringify({
       kind: effectiveKind,
       contentType: effectiveFmt,
@@ -4993,8 +5018,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       carousel_urls: carouselUrls.length ? carouselUrls : undefined,
       gallery_photo_urls: carouselGalleryUrls.length ? carouselGalleryUrls : undefined,
       ...(carouselGalleryUrls.length >= 2 ? { carousel_multi_photo: true } : {}),
-      headline: designOverlayHeadline,
-      design_overlay_headline: designOverlayHeadline,
+      headline: canvasOverlayHeadline ?? designOverlayHeadline,
+      ...(canvasOverlayHeadline
+        ? { design_overlay_headline: canvasOverlayHeadline }
+        : {}),
       ideation_headline: storedIdeationHeadline || undefined,
       idea_index: ideaIndex,
       mission_id: missionId || undefined,
@@ -5089,8 +5116,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }
         : {}),
       platform: 'instagram',
-      headline: designOverlayHeadline,
-      design_overlay_headline: designOverlayHeadline,
+      headline: canvasOverlayHeadline ?? designOverlayHeadline,
+      ...(canvasOverlayHeadline
+        ? { design_overlay_headline: canvasOverlayHeadline }
+        : {}),
       caption: publishCaption.slice(0, 2200),
       cta,
       hashtags: publishHashtags,

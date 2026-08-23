@@ -173,13 +173,13 @@ export async function ensureProductionGalleryPhotoUrl(
   return normalizePhotoUrlForRender(trimmed);
 }
 
-/** Try primary + candidate gallery URLs — tenant R2 keys first when brand site is down. */
+/** Matched photo first, then candidates; raw tenant storage only as last resort. */
 export async function pickReachableProductionGalleryUrl(
   workspaceId: string,
   primaryUrl: string,
   candidateUrls: string[],
   opts?: { timeoutMs?: number },
-): Promise<{ url: string; fallbackFrom?: string } | null> {
+): Promise<{ url: string; fallbackFrom?: string; fromTenantInventory?: boolean } | null> {
   const { pickReachableProductionGalleryUrl: pickServer } = await import('@/lib/gallery-mirror-server');
   return pickServer(workspaceId, primaryUrl, candidateUrls, opts);
 }

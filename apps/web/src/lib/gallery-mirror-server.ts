@@ -252,26 +252,53 @@ export async function resolveTenantGalleryFallbackUrls(
   }
 }
 
+/**
+ * Resolve a renderable URL for the photo the matcher chose, degrading only when
+ * that photo cannot be fetched.
+ *
+ * Order matters for coherence, not just availability: `primaryUrl` is the
+ * caption-matched photo, so it is probed before anything else. Tenant R2
+ * ordering applies to *fallbacks* only — it also holds previously produced
+ * cards, so promoting it ahead of the match would let storage layout, not the
+ * caption, decide what the post shows.
+ */
 export async function pickReachableProductionGalleryUrl(
   workspaceId: string,
   primaryUrl: string,
   candidateUrls: string[],
   opts?: { timeoutMs?: number },
-): Promise<{ url: string; fallbackFrom?: string } | null> {
+): Promise<{ url: string; fallbackFrom?: string; fromTenantInventory?: boolean } | null> {
   const timeoutMs = opts?.timeoutMs ?? 12_000;
-  const r2Inventory = await resolveTenantGalleryFallbackUrls(workspaceId, { maxKeys: 100 });
-  const ordered = prioritizeTenantStoredGalleryUrls(
-    [primaryUrl, ...candidateUrls.filter((u) => u !== primaryUrl), ...r2Inventory],
+  const primary = primaryUrl.trim();
+  if (primary) {
+    const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, primary, { timeoutMs });
+    if (ensured) return { url: ensured };
+  }
+
+  const primaryKey = primary ? galleryUrlIdentityKey(primary) : '';
+  const fallbacks = prioritizeTenantStoredGalleryUrls(
+    candidateUrls.filter((u) => u.trim() && galleryUrlIdentityKey(u) !== primaryKey),
     workspaceId,
   );
+  for (const candidate of fallbacks) {
+    const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, candidate, { timeoutMs });
+    if (ensured) return { url: ensured, fallbackFrom: candidate };
+  }
 
-  for (const candidate of ordered) {
+  // Raw tenant storage is not the brand gallery — it has no caption relevance and
+  // no photo analysis behind it, so it is only worth trying once the whole
+  // matched pool proved unreachable.
+  const inventory = await resolveTenantGalleryFallbackUrls(workspaceId, { maxKeys: 100 });
+  const known = new Set([primaryKey, ...fallbacks.map(galleryUrlIdentityKey)]);
+  for (const candidate of inventory) {
+    if (known.has(galleryUrlIdentityKey(candidate))) continue;
     const ensured = await ensureProductionGalleryPhotoUrlServer(workspaceId, candidate, { timeoutMs });
     if (ensured) {
-      return {
-        url: ensured,
-        fallbackFrom: candidate !== primaryUrl ? candidate : undefined,
-      };
+      console.warn(
+        '[gallery-mirror] gallery pool unreachable — falling back to tenant storage object '
+        + `(no caption match): ${ensured.slice(0, 90)}`,
+      );
+      return { url: ensured, fallbackFrom: candidate, fromTenantInventory: true };
     }
   }
   return null;

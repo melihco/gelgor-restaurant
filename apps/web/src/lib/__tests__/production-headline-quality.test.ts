@@ -96,3 +96,51 @@ describe('visual design card headline preference', () => {
     expect(r.headline).toBe('Yaz Moduna Geçtik!');
   });
 });
+
+describe('caption-grounded noun-phrase headlines survive the label gate', () => {
+  // Two sectors: the label detector used to reject short Turkish noun phrases
+  // and paint a truncated caption prefix instead.
+  it.each([
+    {
+      sector: 'restaurant_cafe',
+      brand: 'Gel Gör Restaurant',
+      headline: 'Zafer Bayramı Eğlencesi',
+      caption:
+        '30 Ağustos Zafer Bayramı’nda, ailece kutlamalar için Gel Gör Restaurant’ta buluşalım!'
+        + ' Doğanın içinde huzur dolu anlar sizi bekliyor.',
+    },
+    {
+      sector: 'local_products_shop',
+      brand: 'Karaman Datça',
+      headline: 'Zeytin Hasadı',
+      caption:
+        'Zeytin hasadı başladı! Datça’nın bereketli topraklarından gelen zeytinlerimizi'
+        + ' soğuk sıkım yöntemiyle işliyoruz.',
+    },
+  ])('keeps $headline for $sector', ({ sector, brand, headline, caption }) => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline,
+      caption,
+      brandName: brand,
+      businessType: sector,
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(r.headline).toBe(headline);
+    expect(r.replaced).toBe(false);
+  });
+
+  it('still replaces a generic slot label that the caption never mentions', () => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline: 'Yaz sezonu',
+      caption:
+        'Müşterilerimizin doğal ballarımıza yaptığı yorumlar, ürünümüzün kalitesinin bir kanıtı!',
+      brandName: 'Karaman Datça',
+      businessType: 'local_products_shop',
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(r.replaced).toBe(true);
+    expect(r.headline).not.toBe('Yaz sezonu');
+  });
+});

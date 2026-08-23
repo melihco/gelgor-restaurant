@@ -117,4 +117,48 @@ describe('cross-mission headline dedupe with theme clusters', () => {
     expect(out[1]?.cross_mission_headline_rotated).toBe(true);
     expect(String(out[0]?.headline)).not.toMatch(/dj/i);
   });
+
+  // Same-batch theme overlap is not a repeat: the ideas keep their own copy and
+  // only the design angle rotates. Planning labels on canvas fail the on-canvas
+  // quality gate downstream, which then paints a truncated caption prefix.
+  it.each([
+    {
+      sector: 'restaurant_cafe',
+      ideas: [
+        { headline: 'Bahçemizden Sofranıza!', caption_draft: 'Bahçemizdeki taze ürünlerle aile lezzetleri.' },
+        { headline: 'Bungalovda Ailece Keyifli Anlar!', caption_draft: 'Bahçemizde ailenizle doğa içinde konaklama.' },
+      ],
+    },
+    {
+      sector: 'local_products_shop',
+      ideas: [
+        { headline: 'Zeytin Hasadı Başladı!', caption_draft: 'Datça zeytin hasadımız için soğuk sıkım süreci.' },
+        { headline: 'Reçelimi Nasıl Yaparım?', caption_draft: 'Datça zeytin ve reçel üretim sürecimizi anlatıyoruz.' },
+      ],
+    },
+  ])('keeps publishable copy on same-batch theme overlap ($sector)', ({ ideas }) => {
+    const out = applyCrossMissionHeadlineDedupe(
+      ideas as Record<string, unknown>[],
+      emptyHistory(),
+    );
+    for (let i = 0; i < ideas.length; i++) {
+      expect(out[i]?.headline).toBe(ideas[i]!.headline);
+    }
+    // The later idea rotates its angle without losing its headline.
+    const rotated = out.find((o) => o.cross_mission_headline_rotated === true);
+    if (rotated) {
+      expect(rotated.template_use_case).toBeTruthy();
+      expect(rotated.rotation_angle_label).toBeTruthy();
+    }
+  });
 });
+
+function emptyHistory() {
+  return {
+    recentKeys: new Set<string>(),
+    freeTrialBurned: false,
+    themeClusterCounts: new Map<string, number>(),
+    burnedThemeClusters: new Set<string>(),
+    days: 14,
+  };
+}
