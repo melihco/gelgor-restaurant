@@ -108,18 +108,20 @@ describe('resolveMissionContentProductionScope', () => {
         mergedItemCount: 0,
         missionType: 'weekly_content',
       }),
-    ).toBe(15);
+    ).toBe(16);
   });
 
-  it('hard-caps content-scoped production at 12 ideas', () => {
+  it('hard-caps content-scoped production at 16 ideas', () => {
     expect(
       resolveMissionProductionTargetCount({
         hasCalendar: false,
         mergedItemCount: 20,
         missionType: 'weekly_content',
       }),
-    ).toBe(12);
-    const ideas = Array.from({ length: 16 }, (_, i) => ({
+    ).toBe(16);
+    // A full 16-slot package must survive the ceiling intact; the cap only exists
+    // to stop a runaway pool, not to trim the week that was planned.
+    const ideas = Array.from({ length: 20 }, (_, i) => ({
       concept_title: `Idea ${i + 1}`,
       caption_draft: `caption ${i + 1}`,
       content_type: 'instagram_post',
@@ -133,8 +135,8 @@ describe('resolveMissionContentProductionScope', () => {
         },
       ],
     });
-    expect(scope.requiredProductionCount).toBe(12);
-    expect(scope.items).toHaveLength(12);
+    expect(scope.requiredProductionCount).toBe(16);
+    expect(scope.items).toHaveLength(16);
   });
 });
 

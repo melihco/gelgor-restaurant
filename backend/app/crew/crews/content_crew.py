@@ -726,27 +726,48 @@ def _ensure_distinct_ideation_batch(
     llm: Any,
     mission_id: str | None,
     *,
-    max_topups: int = 2,
+    max_topups: int | None = None,
 ) -> tuple[list, int]:
     """
     Dedupe near-duplicate headlines, then LLM top-up until `count` unique ideas
     or top-up attempts exhausted. Never clone-pad with repeated headlines.
+
+    The batch is truncated when it overshoots, so tolerating a shortfall made the
+    package one-sided: a 16-slot week shipped as 8 or 9 deliverables. Keep asking
+    while each pass still contributes, and stop as soon as one adds nothing —
+    a stuck model will not become unstuck on the next identical request.
     """
+    from app.services.package_weekly_geometry import CONTENT_IDEATION_MAX_TOPUPS
+
+    # The executor timeout budgets for exactly this many passes.
+    passes = CONTENT_IDEATION_MAX_TOPUPS if max_topups is None else max_topups
     tokens = 0
     batch = dedupe_ideation_by_headline([c for c in concepts if isinstance(c, dict)])
 
-    for _ in range(max_topups):
+    for attempt in range(passes):
         if len(batch) >= count or count < 3:
             break
+        before = len(batch)
         batch, topup_tokens = _topup_ideation(
             brand, batch, count, time_period,
             content_pillars, autonomy_mode, llm, mission_id,
         )
         tokens += topup_tokens
         batch = dedupe_ideation_by_headline(batch)
+        if len(batch) <= before:
+            logger.warning(
+                "ideation_topup_stalled: attempt=%d have=%d want=%d tenant=%s",
+                attempt + 1, len(batch), count, getattr(brand, "tenant_id", "unknown"),
+            )
+            break
 
     if len(batch) > count:
         batch = batch[:count]
+    elif len(batch) < count:
+        logger.warning(
+            "ideation_under_delivered: have=%d want=%d tenant=%s",
+            len(batch), count, getattr(brand, "tenant_id", "unknown"),
+        )
     return batch, tokens
 
 

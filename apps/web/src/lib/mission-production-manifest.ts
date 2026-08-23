@@ -176,14 +176,14 @@ export interface MissionProductionManifest {
 
 /**
  * Default weekly mission mix when package geometry is unavailable.
- * 4 post · 8 story · 1 carousel · 2 reel.
+ * 5 post · 8 story · 1 carousel · 2 reel.
  */
 export const MISSION_WEEKLY_PACKAGE_COUNTS = {
   story: 8,
-  post: 4,
+  post: 5,
   carousel: 1,
   reel: 2,
-  total: 15,
+  total: 16,
 } as const;
 
 export type PackageGeometry = {
@@ -196,7 +196,7 @@ export type PackageGeometry = {
 
 /**
  * Resolve package geometry from brand theme overrides or plan tier.
- * Falls back to the default ~15-slot weekly package (4 post · 8 story · 1 carousel · 2 reel).
+ * Falls back to the default ~16-slot weekly package (5 post · 8 story · 1 carousel · 2 reel).
  */
 export function resolvePackageGeometry(
   brandOverride?: Partial<PackageGeometry> | null,
@@ -438,7 +438,7 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
   },
 ];
 
-/** Mix — 4 post · 8 story · 1 carousel · 2 reel (15 slots). */
+/** Mix — 5 post · 8 story · 1 carousel · 2 reel (16 slots). */
 const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   {
     role: 'organic_post',
@@ -447,6 +447,14 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     captionSurface: 'feed_card',
     required: true,
     intentHint: 'daily_story',
+  },
+  {
+    role: 'organic_post',
+    pipeline: 'gallery_photo',
+    format: 'post',
+    captionSurface: 'feed_card',
+    required: false,
+    intentHint: 'social_proof',
   },
   {
     role: 'designed_post',

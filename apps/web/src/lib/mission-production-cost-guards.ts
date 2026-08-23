@@ -7,8 +7,14 @@
 
 import { isVideoTierScopeActive } from '@/lib/video-tier-scope';
 
-/** Hard ceiling for content-scoped missions (1 idea → 1 deliverable). */
-export const MISSION_CONTENT_PRODUCTION_IDEA_CAP = 12;
+/**
+ * Hard ceiling for content-scoped missions (1 idea → 1 deliverable).
+ *
+ * Must stay at or above the weekly package total, or the ceiling silently
+ * truncates a full package: at 12 a 16-slot week lost its last four
+ * deliverables after they had already been ideated and scheduled.
+ */
+export const MISSION_CONTENT_PRODUCTION_IDEA_CAP = 16;
 
 /** Soft Grafiker score: accept mid-retry instead of burning another GPT edit. */
 export const GROUNDED_SOFT_ACCEPT_SCORE = 6;

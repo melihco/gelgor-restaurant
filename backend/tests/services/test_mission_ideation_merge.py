@@ -19,29 +19,29 @@ def idea(title: str, fmt: str) -> dict:
 
 def test_resolve_mission_production_target_uses_idea_count() -> None:
     assert resolve_mission_production_target(25, has_calendar=True, mission_type="seasonal") == 25
-    assert resolve_mission_production_target(0, has_calendar=True, mission_type="seasonal") == 15
+    assert resolve_mission_production_target(0, has_calendar=True, mission_type="seasonal") == 16
     assert resolve_mission_production_target(8, has_calendar=False, mission_type="seasonal") == 8
     assert resolve_mission_production_target(11, has_calendar=True, mission_type="seasonal") == 11
 
 
     assert resolve_feed_package_total("opportunity") == 3
     assert resolve_feed_package_total(hub_production_package="opportunity") == 3
-    assert resolve_feed_package_total("seasonal") == 15
-    assert resolve_feed_package_total("seasonal", subscription_plan_slug="starter") == 15
+    assert resolve_feed_package_total("seasonal") == 16
+    assert resolve_feed_package_total("seasonal", subscription_plan_slug="starter") == 16
 
 
 def test_resolve_format_targets_switches_for_opportunity_and_starter() -> None:
     assert resolve_format_targets("opportunity") == {"story": 1, "post": 1, "reel": 1}
-    assert resolve_format_targets("seasonal")["post"] == 4
+    assert resolve_format_targets("seasonal")["post"] == 5
     assert resolve_format_targets("seasonal")["story"] == 8
     assert resolve_format_targets("seasonal")["reel"] == 2
     starter = resolve_format_targets("seasonal", subscription_plan_slug="starter")
-    assert starter == {"story": 8, "post": 4, "carousel": 1, "reel": 2}
+    assert starter == {"story": 8, "post": 5, "carousel": 1, "reel": 2}
 
 
 def test_merge_ideation_ideas_hits_agency_format_targets_and_dedupes() -> None:
     stories = [idea(f"Story {i} unique", "story") for i in range(10)]
-    posts = [idea(f"Post {i} unique", "post") for i in range(5)]
+    posts = [idea(f"Post {i} unique", "post") for i in range(6)]
     ideas = [
         *stories,
         *posts,
@@ -53,9 +53,9 @@ def test_merge_ideation_ideas_hits_agency_format_targets_and_dedupes() -> None:
 
     merged = merge_ideation_ideas([ideas], mission_type="seasonal")
 
-    assert len(merged) == 15
+    assert len(merged) == 16
     assert sum(1 for x in merged if x["format"] == "story") == 8
-    assert sum(1 for x in merged if x["format"] == "post") == 4
+    assert sum(1 for x in merged if x["format"] == "post") == 5
     assert sum(1 for x in merged if x["format"] == "carousel") == 1
     assert sum(1 for x in merged if x["format"] == "reel") == 2
     assert [x["concept_title"] for x in merged].count("Reel B unique") == 1
@@ -63,7 +63,7 @@ def test_merge_ideation_ideas_hits_agency_format_targets_and_dedupes() -> None:
 
 def test_merge_ideation_ideas_hits_starter_format_targets() -> None:
     stories = [idea(f"Story {i}", "story") for i in range(8)]
-    posts = [idea(f"Post {i}", "post") for i in range(4)]
+    posts = [idea(f"Post {i}", "post") for i in range(5)]
     ideas = [
         *stories,
         *posts,
@@ -78,8 +78,8 @@ def test_merge_ideation_ideas_hits_starter_format_targets() -> None:
         subscription_plan_slug="starter",
     )
 
-    assert len(merged) == 15
-    assert sum(1 for x in merged if x["format"] == "post") == 4
+    assert len(merged) == 16
+    assert sum(1 for x in merged if x["format"] == "post") == 5
     assert sum(1 for x in merged if x["format"] == "story") == 8
     assert sum(1 for x in merged if x["format"] == "reel") == 2
 
@@ -100,6 +100,7 @@ def test_merge_ideation_ideas_prefers_distinct_headlines_over_near_duplicates() 
         idea("Post B unique", "post"),
         idea("Post C unique", "post"),
         idea("Post D unique", "post"),
+        idea("Post E unique", "post"),
         idea("Carousel unique", "carousel"),
         idea("Reel A unique", "reel"),
         idea("Reel B unique", "reel"),
@@ -108,7 +109,7 @@ def test_merge_ideation_ideas_prefers_distinct_headlines_over_near_duplicates() 
     merged = merge_ideation_ideas([ideas], mission_type="seasonal")
     story_titles = [x["concept_title"] for x in merged if x["format"] == "story"]
 
-    assert len(merged) == 15
+    assert len(merged) == 16
     assert len(story_titles) == 8
     assert "Kahvaltı keyfi başlıyor" not in story_titles
     assert "Kahvaltı keyfi" in story_titles

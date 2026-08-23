@@ -5,22 +5,26 @@
 
 import type { PackageGeometry } from '@/lib/mission-production-manifest';
 
-/** ~15 deliverables: 4 post · 8 story · 1 carousel · 2 reel */
+/**
+ * ~16 deliverables: 5 post · 8 story · 1 carousel · 2 reel.
+ * The extra deliverable is a post, not a reel: reels cost the most and stall on
+ * fal quota, so widening there adds spend without adding published output.
+ */
 export const STARTER_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
-  post: 4,
+  post: 5,
   story: 8,
   carousel: 1,
   reel: 2,
-  total: 15,
+  total: 16,
 };
 
 /** Growth: same mix (idea_count still wins at produce time). */
 export const AGENCY_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
-  post: 4,
+  post: 5,
   story: 8,
   carousel: 1,
   reel: 2,
-  total: 15,
+  total: 16,
 };
 
 function normalizePlanSlug(packageSlug?: string | null): string {

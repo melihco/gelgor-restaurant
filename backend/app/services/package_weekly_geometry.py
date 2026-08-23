@@ -3,20 +3,23 @@
 from __future__ import annotations
 
 # Keep in sync with apps/web/src/lib/package-weekly-geometry.ts
+# The extra deliverable is a post, not a reel: reels are the most expensive slot
+# and the one that stalls on fal quota, so widening the package there would add
+# cost without adding published output.
 STARTER_WEEKLY_GEOMETRY: dict[str, int] = {
-    "post": 4,
+    "post": 5,
     "story": 8,
     "carousel": 1,
     "reel": 2,
-    "total": 15,
+    "total": 16,
 }
 
 AGENCY_WEEKLY_GEOMETRY: dict[str, int] = {
-    "post": 4,
+    "post": 5,
     "story": 8,
     "carousel": 1,
     "reel": 2,
-    "total": 15,
+    "total": 16,
 }
 
 
@@ -56,15 +59,24 @@ def resolve_content_ideation_agent_timeout_seconds(count: int) -> int:
     return min(max(floor, scaled), 720)
 
 
+#: Top-up passes `_ensure_distinct_ideation_batch` may spend to fill the package.
+CONTENT_IDEATION_MAX_TOPUPS = 4
+
+
 def resolve_content_ideation_executor_timeout_seconds(count: int, iterations: int) -> int:
     """asyncio.wait_for cap for full content_ideation (all iterations + quality gate)."""
     from app.config import get_settings
 
     settings = get_settings()
     per_run = resolve_content_ideation_agent_timeout_seconds(count)
-    total = per_run * max(1, int(iterations)) + 180
+    # Top-ups run inside this window and each is its own kickoff. Without room for
+    # them the node times out mid-fill and retries with a single iteration, which
+    # is exactly when the package ends up short. Gaps are small, so budget them at
+    # a third of a full run each.
+    topup_budget = (per_run // 3) * CONTENT_IDEATION_MAX_TOPUPS
+    total = per_run * max(1, int(iterations)) + topup_budget + 180
     floor = int(settings.crew_execution_timeout_seconds)
-    return min(max(floor, total), 1200)
+    return min(max(floor, total), 1800)
 
 
 def format_mix_label(geometry: dict[str, int]) -> str:

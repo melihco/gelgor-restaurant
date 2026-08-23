@@ -36,8 +36,13 @@ from app.crew.token_usage import total_tokens_from_crew
 
 logger = structlog.get_logger()
 
-# Haftalık Feed paketi — her misyonda tam 16 üretim slotu (7 günlük yayın hedefi + buffer)
-_WEEKLY_PACKAGE_TOTAL = 15
+def _weekly_package_total() -> int:
+    """Fallback deliverable count when ideation yielded nothing parseable."""
+    from app.services.package_weekly_geometry import resolve_weekly_package_geometry
+
+    return resolve_weekly_package_geometry(None)["total"]
+
+
 _WEEKLY_SLOT_SPECS: list[tuple[str, str]] = [
     ("organic_post", "gallery_photo"),
     ("organic_post", "gallery_photo"),
@@ -653,7 +658,7 @@ def _fallback_report(
         ideas = parse_content_ideas_json(content_ideas_json)
         idea_count = len(ideas)
         if idea_count == 0 and catalog_slots:
-            idea_count = 3 if production_package == "opportunity" else _WEEKLY_PACKAGE_TOTAL
+            idea_count = 3 if production_package == "opportunity" else _weekly_package_total()
             ideas = [{} for _ in range(idea_count)]
         if idea_count > 0:
             _normalize_production_assignments(

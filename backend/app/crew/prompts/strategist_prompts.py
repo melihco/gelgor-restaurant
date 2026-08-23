@@ -144,7 +144,7 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
         "title": "Görev başlığı",
         "task_type": "yukarıdaki tablodan",
         "agent_role": "yukarıdaki tablodan",
-        "input_data": {{"brief": "görev için spesifik yönlendirme — 16 slotluk haftalık paket (5 story, 6 post, 1 carousel, 4 reel; slot başına benzersiz caption)", "count": 16}},
+        "input_data": {{"brief": "görev için spesifik yönlendirme — 16 slotluk haftalık paket (8 story, 5 post, 1 carousel, 2 reel; slot başına benzersiz caption)", "count": 16}},
         "depends_on": []
       }}
     ],
@@ -186,7 +186,7 @@ SADECE geçerli bir JSON array döndür. Her obje tam olarak bu yapıya sahip ol
       "title": "İçerik Fikirleri (16 slot — haftalık paket)",
       "task_type": "content_ideation",
       "agent_role": "content_agent",
-      "input_data": {{"count": 16, "time_period": "önümüzdeki 2 hafta", "brief": "[content_pillars'a uygun brief — 5 story, 6 post, 1 carousel, 4 reel; her slot için benzersiz caption/hashtag]"}},
+      "input_data": {{"count": 16, "time_period": "önümüzdeki 2 hafta", "brief": "[content_pillars'a uygun brief — 8 story, 5 post, 1 carousel, 2 reel; her slot için benzersiz caption/hashtag]"}},
       "depends_on": ["strategy"]
     }},
     {{
