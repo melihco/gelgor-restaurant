@@ -536,6 +536,15 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       .toBe('Eğlence Dolu Anlar');
     expect(fitPunchlineUnderBudget('Mutlu Müşteri Yorumlarıyla Tanışın!', 36, 3))
       .toBe('Müşteri Yorumlarıyla Tanışın');
+
+    // A window may not open on a separator or a postposition: those read as a
+    // fragment of a list, so a shorter window carries the phrase instead.
+    expect(fitPunchlineUnderBudget('Yaz Pikniği İçin Hediye Paketleri', 29, 3))
+      .toBe('Hediye Paketleri');
+    expect(fitPunchlineUnderBudget('Dolunay temalı gece etkinliği / özel menü', 22, 3))
+      .toBe('özel menü');
+    expect(fitPunchlineUnderBudget('Zafer Bayramı için Eğlenceli Aile Buluşması', 29, 3))
+      .toBe('Eğlenceli Aile Buluşması');
     expect(isAcceptablePunchlineStem(stem)).toBe(true);
     expect(isIncompleteOverlayPhrase(stem)).toBe(false);
 

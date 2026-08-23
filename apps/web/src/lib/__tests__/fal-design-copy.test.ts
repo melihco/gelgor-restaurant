@@ -45,6 +45,15 @@ describe('isLabelStyleHeadline — seasonal / occasion signals', () => {
     expect(isLabelStyleHeadline('Müşteri yorumları')).toBe(true);
   });
 
+  it('rejects separator-joined planning notes at any length', () => {
+    // These reached the canvas as "/ özel menü" — planning notes list
+    // alternatives with a slash no matter how many words they run to.
+    expect(isLabelStyleHeadline('Dolunay temalı gece etkinliği / özel menü')).toBe(true);
+    expect(isLabelStyleHeadline('Yaz sezonu / serinletici menü')).toBe(true);
+    // A connective (matched through Turkish casing) still marks written copy.
+    expect(isLabelStyleHeadline('Kahvaltı / Brunch Menümüz İçin Rezervasyon')).toBe(false);
+  });
+
   it('rejects catalog slot labels with format suffix', () => {
     expect(isLabelStyleHeadline('Çiftlik ziyareti story')).toBe(true);
     expect(isLabelStyleHeadline('DJ gecesi reel')).toBe(true);

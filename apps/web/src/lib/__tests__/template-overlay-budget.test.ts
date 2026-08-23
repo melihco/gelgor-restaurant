@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   fitMissionOverlayToTemplateBudget,
+  fitPunchlineUnderBudget,
   resolveOverlayHeadlineWordBudget,
   resolveTemplateOverlayCopyBudget,
 } from '../fal-caption-headline';
@@ -12,9 +13,10 @@ describe('template-locked overlay budget', () => {
       designIntensity: 'bold_editorial',
       sampleHeadline: 'Harika',
     });
-    // Soft floor (18/3) prevents single-word library samples from crushing TR copy.
-    expect(budget.maxLen).toBe(18);
+    // A one-word library sample must not clamp the char budget below what its
+    // own word budget needs in Turkish ("Zeytinyağının Faydaları" = 23).
     expect(budget.maxWords).toBe(3);
+    expect(budget.maxLen).toBeGreaterThanOrEqual(23);
 
     const longer = resolveOverlayHeadlineWordBudget({
       channel: 'feed_post',
@@ -22,7 +24,24 @@ describe('template-locked overlay budget', () => {
       sampleHeadline: 'Gün Batımı',
     });
     expect(longer.maxWords).toBe(3);
-    expect(longer.maxLen).toBe(18);
+    expect(longer.maxLen).toBe(budget.maxLen);
+  });
+
+  it('keeps two-word Turkish phrases whole under an inferred zone', () => {
+    // Live regression: a 14-char library sample clamped these to "Faydaları"
+    // and "Yorumları" — the bare possessive tail, painted on canvas.
+    for (const [headline, channel] of [
+      ['Zeytinyağının Faydaları', 'feed_post'],
+      ['Müşterilerimizin Yorumları!', 'story'],
+    ] as const) {
+      const budget = resolveOverlayHeadlineWordBudget({
+        channel,
+        designIntensity: 'balanced',
+        sampleHeadline: 'Yaz Lezzetleri',
+      });
+      expect(fitPunchlineUnderBudget(headline, budget.maxLen, budget.maxWords))
+        .toBe(headline.replace(/!$/, ''));
+    }
   });
 
   it('falls back to channel budget when sample missing', () => {
@@ -45,7 +64,7 @@ describe('template-locked overlay budget', () => {
       showSubline: true,
     });
     expect(fitted.budget.source).toBe('template_sample');
-    expect(fitted.headline.length).toBeLessThanOrEqual(18);
+    expect(fitted.headline.length).toBeLessThanOrEqual(fitted.budget.headline.maxLen);
     expect(fitted.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
     expect(fitted.headline.length).toBeGreaterThan(0);
   });
@@ -84,7 +103,7 @@ describe('template-locked overlay budget', () => {
       showSubline: false,
     });
     expect(fitted.subtitle).toBeUndefined();
-    expect(fitted.headline.length).toBeLessThanOrEqual(18);
+    expect(fitted.headline.length).toBeLessThanOrEqual(fitted.budget.headline.maxLen);
     expect(fitted.headline.length).toBeGreaterThan(0);
   });
 });

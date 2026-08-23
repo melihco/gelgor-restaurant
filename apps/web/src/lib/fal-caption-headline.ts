@@ -708,6 +708,26 @@ const TR_PLANNING_NOUN_RX =
 const DANGLING_TAIL_RX =
   /\b(and|or|the|a|an|for|with|to|of|in|on|at|by|from|that|this|ve|ile|için|icin|bir|bu|da|de|ya|veya)\s*$/iu;
 
+/**
+ * Words that cannot open an overlay phrase: list separators and postpositions /
+ * conjunctions that only make sense attached to what came before them.
+ */
+/** Dotted capital İ lowercases to "i̇" outside the tr locale, so /i/ misses it. */
+function trLower(text: string): string {
+  return text.toLocaleLowerCase('tr-TR').normalize('NFC');
+}
+
+const ORPHAN_OVERLAY_LEAD_WORDS = new Set([
+  'ile', 'için', 'icin', 've', 'veya', 'ya', 'da', 'de', 'ki', 'gibi', 'kadar',
+  'and', 'or', 'for', 'with', 'of', 'to', 'in', 'on', 'at', 'by', 'from',
+]);
+
+function isOrphanOverlayLeadWord(word: string): boolean {
+  const w = trLower(word).replace(/[^\p{L}\p{N}]/gu, '');
+  if (!w) return true;
+  return ORPHAN_OVERLAY_LEAD_WORDS.has(w);
+}
+
 /** Trailing modifiers that leave a headline mid-thought (e.g. "This weekend just"). */
 const INCOMPLETE_MODIFIER_TAIL_RX =
   /\b(just|only|even|still|already|more|so|very|really|quite|about|almost|nearly|now|then|here|there|yet|also|too)\s*$/iu;
@@ -922,11 +942,29 @@ export function fitPunchlineUnderBudget(
     return starts;
   };
 
+  const tryWindow = (i: number, n: number): string => {
+    // A window opening on a separator or a postposition reads as a fragment of a
+    // list ("/ özel menü", "İçin Hediye Paketleri"); shift past it and let a
+    // shorter window carry the phrase instead.
+    if (i > 0 && isOrphanOverlayLeadWord(words[i]!)) return '';
+    const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
+    return accepts(candidate) ? candidate : '';
+  };
+
+  // Head-final copy: try the phrase head first at every width, so a two-word
+  // close ("Hediye Paketleri") wins over a wider window that opens mid-list.
+  if (headFinal) {
+    for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
+      const hit = tryWindow(words.length - n, n);
+      if (hit) return hit;
+    }
+  }
+
   for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
     for (const i of windowStarts(n)) {
       if (n === 1 && i !== 0 && !headFinal) continue;
-      const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
-      if (accepts(candidate)) return candidate;
+      const hit = tryWindow(i, n);
+      if (hit) return hit;
     }
   }
 
@@ -1173,6 +1211,21 @@ export const FAL_FEED_OVERLAY_MAX_CHARS = 36;
 
 export type OverlayHeadlineChannel = 'reel' | 'feed_post' | 'story';
 
+const MISSION_PUNCH_FLOOR_WORDS = 3;
+
+/**
+ * Character room a word budget needs before the clamp starts mutilating copy.
+ * Turkish stacks suffixes, so two words routinely run past 20 characters
+ * ("Zeytinyağının Faydaları" = 23). A char floor taken from a short library
+ * sample ("Yaz Lezzetleri" = 14) then cuts such phrases down to a bare tail
+ * ("Faydaları"), so an inferred budget lets the word count do the limiting and
+ * only the channel ceiling binds. Operator-set zones are exact and skip this.
+ */
+function missionPunchFloorLen(maxWords: number, channelMaxLen: number): number {
+  const AGGLUTINATIVE_CHARS_PER_WORD = 9;
+  return Math.min(channelMaxLen, maxWords * AGGLUTINATIVE_CHARS_PER_WORD + (maxWords - 1));
+}
+
 /**
  * On-canvas word budget from channel + design paint density.
  * Dense paint (bold) can hold 4 words; photo-first / elegant stays at 2–3.
@@ -1196,14 +1249,15 @@ export function resolveOverlayHeadlineWordBudget(input: {
 
   const tb = input.typeBudget;
   if (tb?.headline) {
-    const MISSION_PUNCH_FLOOR_LEN = 18;
-    const MISSION_PUNCH_FLOOR_WORDS = 3;
     const soft = tb.source !== 'operator';
     let maxLen = Math.min(channelMaxLen, tb.headline.maxChars);
     let maxWords = Math.min(6, tb.headline.maxWords);
     if (soft) {
-      maxLen = Math.min(channelMaxLen, Math.max(maxLen, MISSION_PUNCH_FLOOR_LEN));
       maxWords = Math.max(maxWords, MISSION_PUNCH_FLOOR_WORDS);
+      maxLen = Math.min(
+        channelMaxLen,
+        Math.max(maxLen, missionPunchFloorLen(maxWords, channelMaxLen)),
+      );
     }
     return { maxWords, maxLen };
   }
@@ -1228,16 +1282,15 @@ export function resolveOverlayHeadlineWordBudget(input: {
   const sample = String(input.sampleHeadline ?? '').trim();
   if (sample.length >= 2) {
     const sampleWords = sample.split(/\s+/).filter(Boolean).length;
-    // Soft floor: tiny library samples ("DJ Night", 8/2) must not crush mission
-    // punchlines into empty / single stock TR words — type zone may grow slightly.
-    const MISSION_PUNCH_FLOOR_LEN = 18;
-    const MISSION_PUNCH_FLOOR_WORDS = 3;
-    maxLen = Math.min(maxLen, Math.max(sample.length, MISSION_PUNCH_FLOOR_LEN));
     // Raise (never lower) the intensity budget toward the mission punch floor when
     // the sample is tiny — Math.min(photo_first=3, floor=3) stays complete.
     maxWords = Math.min(
       Math.max(maxWords, MISSION_PUNCH_FLOOR_WORDS),
       Math.max(sampleWords, MISSION_PUNCH_FLOOR_WORDS),
+    );
+    maxLen = Math.min(
+      maxLen,
+      Math.max(sample.length, missionPunchFloorLen(maxWords, channelMaxLen)),
     );
   }
 

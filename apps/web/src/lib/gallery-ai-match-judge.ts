@@ -138,6 +138,10 @@ Rules:
 - A generic family caption (e.g. "our jams" / "reçel çeşitlerimiz") may match any specific variant of that family.
 - Never pick a photo of a different product just because it looks nice or is on-brand.
 - When candidate images are attached, TRUST THE IMAGE over metadata tags if they disagree.
+- \`evidence\` says what you were given. With "vision_metadata" no image is attached: the
+  description and content_tags of each candidate were written by an earlier vision pass over
+  that exact photo, so treat them as what the photo shows and decide from them. Never answer
+  that images are unavailable and never reject a candidate merely because you cannot see it.
 - Theme alignment (meaning over keywords):
   * Nightlife / DJ / party / dance copy → need nightlife proof (DJ booth, stage, dancing crowd, neon party). A plated meal is NOT OK.
   * Any other caption → the photo must depict the same subject/scene/mood the copy is about. Generic "on-brand" venue shots are NOT enough when the copy names a different subject.
@@ -221,7 +225,7 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     description: (c.description ?? '').slice(0, 240),
     content_tags: (c.contentTags ?? []).slice(0, 10),
     deterministic_score: c.deterministicScore ?? null,
-    has_image: attachedCount > 0 && Boolean(visionImageUrl(c)),
+    ...(attachedCount > 0 ? { has_image: Boolean(visionImageUrl(c)) } : {}),
   }));
   return JSON.stringify({
     caption: input.caption.slice(0, 600),
@@ -229,7 +233,10 @@ function buildJudgeUserPayload(input: GalleryJudgeInput): string {
     canonical_subject_hint: input.canonicalSubject ?? null,
     business_type: input.businessType ?? null,
     content_type: input.contentType ?? null,
-    vision_attached: attachedCount > 0,
+    // Metadata-only rounds describe their evidence rather than announcing an
+    // absence: a bare `vision_attached: false` reads as "you were shown
+    // nothing" and the model answers "No images available" for every candidate.
+    evidence: attachedCount > 0 ? 'attached_images_and_metadata' : 'vision_metadata',
     candidates,
   });
 }

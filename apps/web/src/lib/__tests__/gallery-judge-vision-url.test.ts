@@ -91,7 +91,7 @@ describe('judgeGalleryMatch — vision URL resolution', () => {
     expect(imageUrls(captured.content)).toEqual([
       'https://pub-abc.r2.dev/ws-1/image/2026-08-21/dish.jpg?sig=abc',
     ]);
-    expect(payloadJson(captured.content).vision_attached).toBe(true);
+    expect(payloadJson(captured.content).evidence).toBe('attached_images_and_metadata');
   });
 
   it('leaves already public URLs untouched', async () => {
@@ -104,7 +104,7 @@ describe('judgeGalleryMatch — vision URL resolution', () => {
     expect(imageUrls(captured.content)).toEqual([ABSOLUTE]);
   });
 
-  it('reports vision_attached false when no image could be attached', async () => {
+  it('asks for a metadata verdict when no image could be attached', async () => {
     const captured: { content?: CapturedContent } = {};
     // A relative path that is not an R2 media key stays unresolvable.
     await judgeGalleryMatch(foodInput('/local/only/dish.jpg'), {
@@ -114,8 +114,22 @@ describe('judgeGalleryMatch — vision URL resolution', () => {
 
     expect(imageUrls(captured.content)).toEqual([]);
     const payload = payloadJson(captured.content);
-    expect(payload.vision_attached).toBe(false);
-    const candidates = payload.candidates as Array<{ has_image: boolean }>;
-    expect(candidates[0]?.has_image).toBe(false);
+    // Announcing an absence made the model answer "No images available" and the
+    // fail-closed gate then dropped every gallery match for the brand.
+    expect(payload.evidence).toBe('vision_metadata');
+    const candidates = payload.candidates as Array<Record<string, unknown>>;
+    expect(candidates[0]).not.toHaveProperty('has_image');
+    expect(candidates[0]?.content_tags).toEqual(['food', 'pasta']);
+  });
+
+  it('describes evidence as metadata when vision is not requested', async () => {
+    const captured: { content?: CapturedContent } = {};
+    await judgeGalleryMatch(
+      { ...foodInput(ABSOLUTE), useVision: false },
+      { openai: recordingOpenai(captured), model: 'gpt-4o-mini' },
+    );
+
+    expect(imageUrls(captured.content)).toEqual([]);
+    expect(payloadJson(captured.content).evidence).toBe('vision_metadata');
   });
 });

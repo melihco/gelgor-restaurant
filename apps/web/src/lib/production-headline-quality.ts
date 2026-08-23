@@ -70,7 +70,9 @@ export function isLabelStyleHeadline(headline: string): boolean {
   if (!h) return true;
 
   const words = h.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
-  const lower = h.toLowerCase();
+  // Dotted capital İ lowercases to "i̇" (i + combining dot) outside the tr
+  // locale, which makes /için/i miss "İçin" and mislabel real copy.
+  const lower = h.toLocaleLowerCase('tr-TR').normalize('NFC');
 
   if (words.length <= 1 && h.length < 15) return true;
   if (isSoullessMenuHourHeadline(h)) return true;
@@ -89,9 +91,12 @@ export function isLabelStyleHeadline(headline: string): boolean {
   ];
   if (seasonalOccasionLabels.some((p) => p.test(lower))) return true;
 
-  // Slash / pipe category labels: "plaj/havuz", "DJ / gece"
-  if (words.length <= 5 && /[\/|]/.test(h) && !/[!?]/.test(h)) {
-    if (!/\b(ile|için|ve|for|with|your|our)\b/i.test(h)) return true;
+  // Slash / pipe category labels: "plaj/havuz", "DJ / gece",
+  // "Dolunay temalı gece etkinliği / özel menü". Planning notes join alternatives
+  // with a separator at any length, so only a connective or an exclamation marks
+  // the phrase as written-for-canvas copy rather than slot vocabulary.
+  if (/[\/|]/.test(h) && !/[!?]/.test(h)) {
+    if (!/(^|\s)(ile|için|ve|for|with|your|our)(\s|$)/.test(lower)) return true;
   }
 
   // Catalog slot labels with format suffix — "Çiftlik ziyareti story", "DJ gecesi reel"

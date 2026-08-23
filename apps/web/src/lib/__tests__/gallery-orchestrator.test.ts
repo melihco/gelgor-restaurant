@@ -8,6 +8,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  buildMissionGalleryAssignments,
   pickVenueEscalationFallbackPhoto,
   resolveQueueGalleryCapacityReroutes,
   missionGallerySlotKey,
@@ -150,6 +151,55 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
       resolvedBrandName: 'Yerel Lezzetler',
     });
     expect(out.size).toBe(0);
+  });
+});
+
+describe('buildMissionGalleryAssignments judge rejections', () => {
+  it('reports the photo the judge refused so the slot fallback can skip it', async () => {
+    const BREAKFAST = 'https://cdn.example.com/gallery/breakfast.jpg';
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      [BREAKFAST]: {
+        primarySubject: 'turkish_breakfast',
+        suggestedAssetType: 'food_drink_photo',
+        contentTags: [
+          'turkish breakfast', 'kahvaltı', 'serpme kahvaltı', 'eggs', 'yumurta',
+          'cheese', 'olives', 'tomato', 'tea',
+        ],
+        description:
+          'A generous Turkish serpme breakfast spread with eggs, cheeses, olives, '
+          + 'jams, tomatoes and tea on a wooden table.',
+      },
+    };
+    const judgeRejectedBySlot = new Map<string, string[]>();
+    const result = await buildMissionGalleryAssignments({
+      missionId: 'm-1',
+      productionLoop: [
+        queueItem(0, 'designed_post', 'fal_design', {
+          caption_draft:
+            'Serpme köy kahvaltımızla sevdiklerinizi şımartın! Taze ve doğal lezzetlerin tadını çıkarın.',
+          headline: 'Serpme Köy Kahvaltısı',
+        }),
+      ],
+      galleryPhotos: [BREAKFAST],
+      galleryMeta,
+      brandBusinessType: 'restaurant_cafe',
+      resolvedBrandName: 'Gel Gör',
+      hasGallery: true,
+      hasRealBrandPhotos: true,
+      judgeRejectedBySlot,
+      judgeFn: async () => ({
+        pickIndex: null,
+        confidence: 0,
+        reason: 'no food visible',
+        rejectReason: 'no food visible',
+        usage: null,
+        model: 'test',
+      }),
+    });
+
+    const slotKey = missionGallerySlotKey(0, 'designed_post');
+    expect(result.get(slotKey)?.url).toBeUndefined();
+    expect(judgeRejectedBySlot.get(slotKey)).toContain(BREAKFAST);
   });
 });
 

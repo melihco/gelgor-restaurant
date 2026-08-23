@@ -166,8 +166,10 @@ describe('type_budget production precedence', () => {
       }),
     });
     expect(budget.source).toBe('generated_type_budget');
-    expect(budget.headline.maxLen).toBe(18);
     expect(budget.headline.maxWords).toBeGreaterThanOrEqual(3);
+    // Inferred (non-operator) zones only advise on characters: the floor has to
+    // hold the word budget, or Turkish copy gets cut to a bare suffix.
+    expect(budget.headline.maxLen).toBeGreaterThanOrEqual(23);
   });
 
   it('operator fit does not relax past declared zone', () => {

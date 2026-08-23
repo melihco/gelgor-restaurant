@@ -19,6 +19,7 @@ import {
 } from '@/lib/gallery-photo-matcher';
 import { captionRequiresStrictGalleryMatch } from '@/lib/caption-photo-alignment';
 import { escalateSubjectAlignedPick, gatePhotoMatchResult } from '@/lib/gallery-ai-match-judge';
+import type { GalleryJudgeInput, GalleryJudgeVerdict } from '@/lib/gallery-ai-match-judge';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
 import {
   isMeaninglessBrandEchoHeadline,
@@ -285,6 +286,14 @@ export interface GalleryOrchestrationInput {
    * so a drain-time recompute for uncovered slots cannot double-book them.
    */
   preassignedUrls?: string[];
+  /**
+   * Filled with the photos the judge refused, per slot key. The slot-level
+   * fallback has to skip them — a rejection followed by a blind fallback onto
+   * the same frame spends a vision call and changes nothing about the post.
+   */
+  judgeRejectedBySlot?: Map<string, string[]>;
+  /** Overrides the AI verdict (tests). */
+  judgeFn?: (input: GalleryJudgeInput) => Promise<GalleryJudgeVerdict | null>;
 }
 
 /**
@@ -418,6 +427,11 @@ export async function buildMissionGalleryAssignments(
   let judgeSwapped = 0;
   let judgeEscalated = 0;
   let redistributed = 0;
+  const noteJudgeReject = (slotKey: string, url: string): void => {
+    if (!input.judgeRejectedBySlot || !url) return;
+    const prev = input.judgeRejectedBySlot.get(slotKey) ?? [];
+    input.judgeRejectedBySlot.set(slotKey, [...prev, url]);
+  };
   for (const [key, val] of batchAssigned) {
     const item = assignItems.find((i) => i.key === key);
     if (!item || !val) {
@@ -429,8 +443,12 @@ export async function buildMissionGalleryAssignments(
       workspaceId: input.workspaceId,
       missionId: input.missionId,
       slotKey: key,
+      ...(input.judgeFn ? { judgeFn: input.judgeFn } : {}),
     });
-    if (val && !gated) judgeRejected += 1;
+    if (val && !gated) {
+      judgeRejected += 1;
+      noteJudgeReject(key, val.url);
+    }
     if (gated && gated.url !== val.url) judgeSwapped += 1;
     result.set(key, gated);
   }
@@ -462,11 +480,14 @@ export async function buildMissionGalleryAssignments(
           workspaceId: input.workspaceId,
           missionId: input.missionId,
           slotKey: `${item.key}::redistribute`,
+          ...(input.judgeFn ? { judgeFn: input.judgeFn } : {}),
         });
         if (gated?.url) {
           result.set(item.key, { ...gated, reason: `${gated.reason},redistributed` });
           reservedNow.push(gated.url);
           redistributed += 1;
+        } else {
+          noteJudgeReject(item.key, val.url);
         }
       }
     }

@@ -1303,6 +1303,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
+  const missionGalleryJudgeRejects = new Map<string, string[]>();
   const missionGalleryAssignments = uncoveredQueue.length > 0
     ? await buildMissionGalleryAssignments({
       workspaceId,
@@ -1318,6 +1319,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       creativeBrief: creativeBrief ?? undefined,
       galleryUsage,
       preassignedUrls: precomputedAssignments.map(([, entry]) => String(entry.url)),
+      judgeRejectedBySlot: missionGalleryJudgeRejects,
     })
     : new Map<string, import('@/lib/gallery-photo-matcher').PhotoMatchResult | null>();
 
@@ -2342,11 +2344,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           console.warn(
             `[auto-produce] no gallery match for slot ${gallerySlotKey} "${ideationHeadline.slice(0, 48)}" — fallback pick`,
           );
+          // The judge already ruled these frames wrong for this copy, so the
+          // fallback must look elsewhere instead of landing on them again.
+          const slotFallbackExclude = [
+            ...missionGalleryExclude,
+            ...(missionGalleryJudgeRejects.get(gallerySlotKey) ?? []),
+          ];
           const diverseFallback = pickMissionDiverseFallbackPhoto(
             galleryPhotos,
-            new Set(missionGalleryExclude.map(normalizeGalleryUrl)),
+            new Set(slotFallbackExclude.map(normalizeGalleryUrl)),
             galleryMeta,
-            missionGalleryExclude,
+            slotFallbackExclude,
             batchMatchInput,
           );
           if (diverseFallback?.url) {
@@ -2363,7 +2371,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             mood,
             galleryMeta,
             galleryPhotos,
-            missionGalleryExclude,
+            slotFallbackExclude,
             batchExclude,
             postType,
             typeof agentUrl === 'string' && (agentUrl.startsWith('http') || agentUrl.startsWith('/api/'))
