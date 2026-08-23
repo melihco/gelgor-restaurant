@@ -917,6 +917,64 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     expect(queue[0]!.assignment.catalog_slot_key).not.toBe(peer.slot_key);
   });
 
+  it('rematches a Feed Director pin that contradicts the idea intent', () => {
+    // Live regression: the Feed Art Director assigns slots by pipeline ordinal
+    // ("second reel"), so a gift-set idea landed on the craft-process shell. The
+    // pin survives rotation churn but must not survive an intent conflict.
+    const bts = mockSlot('local_products_shop_craft_process_reel', 'reel', {
+      design_template_type: 'behind_the_scenes',
+      slot_role: 'organic_reel',
+      match_signals: {
+        announcement_types: ['behind_the_scenes'],
+        keywords: ['üretim', 'atölye', 'craft'],
+      },
+    });
+    const gift = mockSlot('local_products_shop_gift_bundle_reel', 'reel', {
+      design_template_type: 'product_highlight',
+      slot_role: 'organic_reel',
+      match_signals: {
+        announcement_types: ['product_reveal'],
+        keywords: ['hediye', 'gift', 'bundle'],
+      },
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-fd-conflict',
+      sector: 'local_products_shop',
+      sectorSlots: [bts, gift],
+      tenantAssignments: [
+        mockAssignment(bts.slot_key, true, bts),
+        mockAssignment(gift.slot_key, true, gift),
+      ],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Kendinize Doğal Hediye Seti Hazırlayın!',
+          caption_draft: 'Sevdiklerinize özel bir hediye seti oluşturmayı düşünün!',
+          template_use_case: 'product_highlight',
+          content_type: 'instagram_reel',
+          catalog_slot_key: bts.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'organic_reel',
+          pipeline: 'fal_reel',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: bts.slot_key,
+          catalog_slot_source: 'feed_director' as const,
+        },
+      }],
+      activeSet,
+    );
+
+    expect(queue[0]!.assignment.catalog_slot_key).toBe(gift.slot_key);
+    expect(queue[0]!.assignment.catalog_slot_source).toBe('heuristic');
+  });
+
   it('dedupes repeated preferred catalog keys across designed posts (restaurant_cafe)', () => {
     const activeSet = resolveBrandActiveSlotKeys({
       workspaceId: 'ws-gelgor',

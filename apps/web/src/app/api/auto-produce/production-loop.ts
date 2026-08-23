@@ -2836,6 +2836,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           galleryPhotos,
           { timeoutMs: 12_000 },
         );
+        if (picked?.fromTenantInventory && slotRequiresGalleryPhoto) {
+          // Raw tenant storage has no photo analysis and no caption relevance, so
+          // it cannot be scored. Shipping it hands the slot an arbitrary image —
+          // withhold instead and let the gallery gap surface as a real gap.
+          console.warn(
+            `[auto-produce] tenant-inventory photo cannot be caption-scored — withhold "${headline.slice(0, 40)}"`,
+          );
+          results.push({
+            title: headline,
+            imageUrl: '',
+            error: 'Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı',
+            slotKey,
+          });
+          continue;
+        }
         if (picked) {
           if (picked.fallbackFrom) {
             console.log(
@@ -5228,7 +5243,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_designer_produced: true,
             fal_design_engine: falDesignEngine,
             ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
-            typography_text_valid: true,
+            // A designed post that came back without painted copy is a failed
+            // design, and an unverified render is not a passing one either — only
+            // claim valid typography when the canvas actually carries the line.
+            ...(overlayWasPainted
+              ? (falGrafikerPass != null ? { typography_text_valid: falGrafikerPass } : {})
+              : { typography_text_valid: false }),
           }
         : isPremiumEditorial && imageUrl && falDesignEngine
           ? {

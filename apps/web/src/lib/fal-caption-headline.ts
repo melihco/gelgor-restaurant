@@ -728,6 +728,60 @@ function isOrphanOverlayLeadWord(word: string): boolean {
   return ORPHAN_OVERLAY_LEAD_WORDS.has(w);
 }
 
+/**
+ * Genitive possessor — "Doğanın", "Müşterilerimizin", "Datça'nın".
+ *
+ * Restricted to the unambiguous shapes: the buffered genitive after a vowel
+ * (-nın/-nin/-nun/-nün) and the genitive stacked on a possessive person marker
+ * (-imizin/-inizin). Bare -ın/-in is left out because it is also the 2nd-person
+ * plural imperative ("Tanışın", "Keşfedin"), which is perfectly publishable.
+ */
+const TR_GENITIVE_WORD_RX =
+  /^[\p{L}']{2,}(?:'?(?:nın|nin|nun|nün)|[ıiuü]m[ıi]z[ıiuü]n|[ıiuü]n[ıi]z[ıiuü]n)$/iu;
+
+/**
+ * Oblique personal pronouns. A window opening on one has lost the subject that
+ * governed the clause ("Müşterilerimizin Yorumları | Bize Güç Veriyor").
+ */
+const TR_OBLIQUE_PRONOUNS = new Set([
+  'bana', 'bize', 'bizlere', 'sana', 'size', 'sizlere', 'ona', 'onlara',
+  'buna', 'bunlara', 'şuna', 'suna',
+  'beni', 'bizi', 'bizleri', 'seni', 'sizi', 'sizleri', 'onu', 'onları',
+  'bunu', 'bunları', 'şunu', 'sunu',
+  'bende', 'bizde', 'sende', 'sizde', 'onda', 'onlarda',
+  'benden', 'bizden', 'senden', 'sizden', 'ondan', 'onlardan',
+]);
+
+/**
+ * Would starting the window at `i` sever a grammatical dependency?
+ *
+ * Turkish marks possession on both ends: the possessor carries the genitive and
+ * the possessum carries the agreement suffix. Dropping the possessor to reach a
+ * word budget leaves the possessum stranded ("Doğanın Tazeliği Sizleri Bekliyor"
+ * → "Tazeliği Sizleri Bekliyor"), and dropping a whole subject phrase leaves a
+ * finite verb with nothing to predicate over ("Bize Güç Veriyor").
+ */
+export function windowSeversTurkishDependency(words: string[], i: number): boolean {
+  // A genitive possessor governs a later possessum, and an oblique pronoun is an
+  // argument of the clause's verb. Dropping either to reach a word budget leaves
+  // the rest stranded ("Doğanın | Tazeliği Sizleri Bekliyor", "…Yorumları | Bize
+  // Güç Veriyor"). Ablative and locative leads are plain modifiers and may go.
+  for (let k = 0; k < i; k += 1) {
+    const dropped = trLower(words[k]!).replace(/[^\p{L}']/gu, '');
+    if (TR_GENITIVE_WORD_RX.test(dropped)) return true;
+    if (TR_OBLIQUE_PRONOUNS.has(dropped)) return true;
+  }
+  return false;
+}
+
+/** Overlay closing on a dependent that needs the words we cut — "…Yorumları Bize". */
+export function endsOnStrandedTurkishDependent(text: string): boolean {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  const last = trLower(words[words.length - 1]!).replace(/[^\p{L}']/gu, '');
+  return TR_OBLIQUE_PRONOUNS.has(last) || TR_GENITIVE_WORD_RX.test(last);
+}
+
 /** Trailing modifiers that leave a headline mid-thought (e.g. "This weekend just"). */
 const INCOMPLETE_MODIFIER_TAIL_RX =
   /\b(just|only|even|still|already|more|so|very|really|quite|about|almost|nearly|now|then|here|there|yet|also|too)\s*$/iu;
@@ -927,6 +981,7 @@ export function fitPunchlineUnderBudget(
     Boolean(candidate)
     && candidate.length <= maxLen
     && candidate.split(/\s+/).filter(Boolean).length <= maxWords
+    && !endsOnStrandedTurkishDependent(candidate)
     && isAcceptablePunchlineStem(candidate);
 
   // Turkish puts the head of a noun phrase last, so a window that keeps the final
@@ -947,6 +1002,7 @@ export function fitPunchlineUnderBudget(
     // list ("/ özel menü", "İçin Hediye Paketleri"); shift past it and let a
     // shorter window carry the phrase instead.
     if (i > 0 && isOrphanOverlayLeadWord(words[i]!)) return '';
+    if (headFinal && windowSeversTurkishDependency(words, i)) return '';
     const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
     return accepts(candidate) ? candidate : '';
   };
@@ -963,6 +1019,9 @@ export function fitPunchlineUnderBudget(
   for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
     for (const i of windowStarts(n)) {
       if (n === 1 && i !== 0 && !headFinal) continue;
+      // A window carved out of the middle belongs to neither the opening nor the
+      // closing thought, so keep it anchored to one end of the authored line.
+      if (headFinal && i !== 0 && i + n !== words.length) continue;
       const hit = tryWindow(i, n);
       if (hit) return hit;
     }

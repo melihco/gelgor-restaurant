@@ -79,15 +79,32 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
     signals.push(...produced);
   };
 
+  // Sector pack — resolve from business_type + brand name + description for richer detection.
+  const pack = resolveSectorPack(input.businessType, input.brandName, input.brandDescription);
+
   const season = seasonSignal(date, language);
   const lunar = lunarSignals(date, horizonDays, language);
   const fullMoonActive = lunar.length > 0;
+  // Full-moon hooks are nightlife/beach programming ("dolunay partisi", "rooftop
+  // konsepti"). Sectors that do not emphasise lunar have no use for them, and an
+  // out-of-sector hook can end up steering the brief of a jam shop. The phase
+  // still feeds sector packs below via `fullMoonActive`.
+  const lunarApplicable = pack.emphasis.includes('lunar');
 
   run('season', true, () => [season]);
   run('day_of_week', true, () => [dayOfWeekSignal(date, language)]);
   run('weekly_rhythm', true, () => weeklyRhythmSignals(date, operatingProfile, language));
   run('holiday', true, () => holidaySignals(date, horizonDays, region));
-  run('lunar', true, () => lunar);
+  run(
+    'lunar',
+    lunarApplicable,
+    () => lunar,
+    lunarApplicable
+      ? undefined
+      : (language === 'en'
+        ? `Lunar programming not relevant for ${pack.label}`
+        : `${pack.label} için dolunay programı geçerli değil`),
+  );
   run('solstice_equinox', true, () => solsticeSignals(date, horizonDays, language));
   run(
     'golden_hour',
@@ -101,8 +118,6 @@ export function buildActiveSignals(input: ContextSignalInputs): ContextSignalRes
       : (language === 'en' ? 'Missing coordinates (lat/lng)' : 'Koordinat (lat/lng) yok'),
   );
 
-  // Sector pack — resolve from business_type + brand name + description for richer detection.
-  const pack = resolveSectorPack(input.businessType, input.brandName, input.brandDescription);
   const dow = date.getUTCDay();
   run('sector', true, () => sectorPackSignals(pack, {
     date,

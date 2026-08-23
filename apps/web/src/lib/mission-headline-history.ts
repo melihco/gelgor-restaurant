@@ -231,23 +231,19 @@ function rotateIdea(
   // the label fail the on-canvas quality gate downstream, which then paints a
   // truncated caption prefix. Keep the copy whenever the rotation is only about
   // spreading design angles across a batch.
-  const hadPublishableCopy = hasPublishableIdeationHeadline(idea);
-  const keepCopy = SOFT_ROTATION_REASONS.has(reason) && hadPublishableCopy;
-  if (!keepCopy && hadPublishableCopy) {
-    // Burned theme: the copy has to move off the angle, and the label is the
-    // only pitch we have at this point.
-    out.headline = angleLabel;
-    out.concept_title = angleLabel;
-    out.idea_title = angleLabel;
-    out.title = angleLabel;
-  } else if (!keepCopy) {
-    // Story ideas often arrive with a caption and no headline. Writing the angle
-    // label in would make it the stored ideation headline and get it painted, so
-    // leave the field empty and let the caption drive the overlay.
+  const keepCopy = SOFT_ROTATION_REASONS.has(reason)
+    && hasPublishableIdeationHeadline(idea);
+  if (!keepCopy) {
+    // A burned theme still has to move off the angle, but `angleLabel` is a
+    // brief hook ("Dolunay temalı gece etkinliği / özel menü"), not copy — and
+    // hooks are not sector-scoped, so writing one in can hand a jam shop a
+    // nightlife line. Clear the copy fields instead and let the caption-driven
+    // chain write the overlay; the angle survives in `rotation_angle_label`.
     delete out.headline;
     delete out.concept_title;
     delete out.idea_title;
     delete out.title;
+    out.theme_rotation_suppressed_copy = true;
   }
   return out;
 }

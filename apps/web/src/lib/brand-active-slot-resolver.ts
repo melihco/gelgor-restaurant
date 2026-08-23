@@ -840,12 +840,15 @@ export function matchIdeaToBrandCatalogSlot(
   const preferred = input.preferredCatalogSlotKey
     ?? (idea.catalog_slot_key as string | undefined)
     ?? assignment?.catalog_slot_key;
-  // A Feed Art Director pick is a deliberate idea↔slot match, not a rotation
-  // hint: rematching it ships copy under an unrelated slot design.
-  const preferredIsDurable = input.preferredIsDurable
-    || (assignment?.catalog_slot_source === 'feed_director'
-      && Boolean(assignment.catalog_slot_key)
-      && preferred === assignment.catalog_slot_key);
+  // A plan/factory pin is a contract — it wins outright. A Feed Art Director
+  // pick is a deliberate idea↔slot match too, so it also resists rotation churn,
+  // but FD assigns by pipeline ordinal ("second reel") and can therefore pin a
+  // contradicting shell; that case still has to rematch.
+  const planPinIsDurable = Boolean(input.preferredIsDurable);
+  const fdPinIsDurable = assignment?.catalog_slot_source === 'feed_director'
+    && Boolean(assignment.catalog_slot_key)
+    && preferred === assignment.catalog_slot_key;
+  const preferredIsDurable = planPinIsDurable || fdPinIsDurable;
   const recentSet = recentCatalogSlotKeys?.length
     ? new Set(recentCatalogSlotKeys)
     : null;
@@ -899,15 +902,14 @@ export function matchIdeaToBrandCatalogSlot(
   if (preferred && activeSlots.enabledSlotKeys.has(preferred)) {
     const exact = activeSlots.slots.find((s) => s.slotKey === preferred);
     if (exact && (!usedSlotKeys || !usedSlotKeys.has(exact.slotKey))) {
-      // Durable plan/factory/Feed-Director pins always win.
-      if (preferredIsDurable) {
+      const ideaFamily = resolveIdeaIntentFamily(idea);
+      const slotFamily = resolveSlotIntentFamily(exact);
+      const intentConflict = catalogIntentFamiliesConflict(ideaFamily, slotFamily);
+      if (planPinIsDurable || (fdPinIsDurable && !intentConflict)) {
         return exact;
       }
       // Soft preferred (FD/stamp): compete fairly without +60 self-key bonus.
       // Intent conflict → any-format rematch; otherwise same-format best wins.
-      const ideaFamily = resolveIdeaIntentFamily(idea);
-      const slotFamily = resolveSlotIntentFamily(exact);
-      const intentConflict = catalogIntentFamiliesConflict(ideaFamily, slotFamily);
       const neutralAssignment = assignment
         ? {
             ...assignment,
@@ -921,6 +923,8 @@ export function matchIdeaToBrandCatalogSlot(
       if (intentConflict) {
         const rematch = pickBestWithRecentVariety({ neutralAssignment });
         if (rematch) return rematch.slot;
+        // Nothing better exists — a durable pin still beats an unrelated pick.
+        if (preferredIsDurable) return exact;
       } else {
         const bestSameFormat = pickBestWithRecentVariety({
           format: exact.format,
@@ -1217,14 +1221,16 @@ export function enrichProductionQueueWithBrandSlots(
     const isFeedDirectorPin = item.assignment.catalog_slot_source === 'feed_director'
       && Boolean(item.assignment.catalog_slot_key)
       && preferredKey === item.assignment.catalog_slot_key;
-    const isDurablePin = isDurableCatalogQueuePin(item, durablePreferredKeys)
-      || isFeedDirectorPin
+    // Plan/factory bindings are contracts and keep their exact shell. An FD pick
+    // only earns immunity from recency churn — the intent veto inside
+    // matchIdeaToBrandCatalogSlot still gets to rematch it, since FD assigns by
+    // pipeline ordinal and can pin a contradicting slot.
+    const isPlanDurablePin = isDurableCatalogQueuePin(item, durablePreferredKeys)
       || Boolean(opts?.lockExistingCatalogPins && preferredKey);
-    // Soft stamp / FD pick that already ran recently → clear preferred for variety.
-    // Intent veto inside matchIdeaToBrandCatalogSlot also rematches soft misfits.
-    // Plan/factory durable bindings keep their exact shell (preferredIsDurable).
+    const pinResistsRecency = isPlanDurablePin || isFeedDirectorPin;
+    // Soft stamp that already ran recently → clear preferred for variety.
     const rematchRecent = Boolean(
-      !isDurablePin
+      !pinResistsRecency
       && preferredKey
       && recentCatalogSlotKeys?.includes(preferredKey),
     );
@@ -1242,7 +1248,7 @@ export function enrichProductionQueueWithBrandSlots(
       usedSlotKeys: usedKeys,
       recentCatalogSlotKeys,
       preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
-      preferredIsDurable: isDurablePin,
+      preferredIsDurable: isPlanDurablePin,
     });
     // Content packages often exceed enabled catalog size — rotate with soft penalty, never drop.
     if (!matched && activeSlots.slots.length > 0) {
@@ -1253,7 +1259,7 @@ export function enrichProductionQueueWithBrandSlots(
         slotUsageCounts: usage,
         recentCatalogSlotKeys,
         preferredCatalogSlotKey: rematchRecent ? null : preferredKey,
-        preferredIsDurable: isDurablePin,
+        preferredIsDurable: isPlanDurablePin,
       });
     }
     if (!matched) {

@@ -29,8 +29,10 @@ import {
   fitMissionOverlayToTemplateBudget,
   fitPunchlineUnderBudget,
   isAcceptablePunchlineStem,
+  endsOnStrandedTurkishDependent,
 } from '../fal-caption-headline';
 import { resolveFalCanvasChannel } from '../fal-designer-production';
+import { enforceDisplayHeadline } from '../grafiker-quality';
 
 describe('correctTurkishSpelling', () => {
   it('fixes "Koketyl" → "Kokteyl"', () => {
@@ -560,6 +562,36 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     });
     expect(fitted.headline).toBe('Join us');
     expect(fitted.budget.source).toBe('operator_type_budget');
+  });
+
+  it('keeps a genitive possessor with its possessum instead of stranding it', () => {
+    // Live regression: "Doğanın Tazeliği Sizleri Bekliyor!" was painted as
+    // "Tazeliği Sizleri Bekliyor" — the possessum lost the possessor that
+    // licenses its agreement suffix.
+    expect(fitPunchlineUnderBudget('Doğanın Tazeliği Sizleri Bekliyor!', 28, 3))
+      .toBe('Doğanın Tazeliği');
+    expect(enforceDisplayHeadline('Doğanın Tazeliği Sizleri Bekliyor!', 28))
+      .toBe('Doğanın Tazeliği');
+
+    // "Müşterilerimizin Yorumları Bize Güç Veriyor!" became "Bize Güç Veriyor",
+    // a predicate with no subject.
+    expect(fitPunchlineUnderBudget('Müşterilerimizin Yorumları Bize Güç Veriyor!', 36, 3))
+      .toBe('Müşterilerimizin Yorumları');
+
+    // Ablative and locative leads are plain modifiers — still droppable.
+    expect(fitPunchlineUnderBudget('Müşterilerimizden Gelen Harika Yorumlar!', 28, 3))
+      .toBe('Gelen Harika Yorumlar');
+    expect(fitPunchlineUnderBudget('Bir Günümüzde Sayfanıza Hızla Ekleyin!', 28, 3))
+      .toBe('Sayfanıza Hızla Ekleyin');
+  });
+
+  it('treats -ın imperatives as verbs, not genitives', () => {
+    // "Tanışın" / "Keşfedin" end like a genitive but are publishable verbs.
+    expect(fitPunchlineUnderBudget('Mutlu Müşteri Yorumlarıyla Tanışın!', 36, 3))
+      .toBe('Müşteri Yorumlarıyla Tanışın');
+    expect(endsOnStrandedTurkishDependent('Yorumlarıyla Tanışın')).toBe(false);
+    expect(endsOnStrandedTurkishDependent('Yorumları Bize')).toBe(true);
+    expect(endsOnStrandedTurkishDependent('Tazeliği Doğanın')).toBe(true);
   });
 
   it('corrects misplaced apostrophes in plural suffixes', () => {

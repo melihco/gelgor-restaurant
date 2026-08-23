@@ -4,7 +4,11 @@
 import type { CreativeDirectorLayoutOverrides } from './creative-director-routing';
 import type { StoryLayoutFamily } from './story-template-types';
 import { sanitizePosterText } from './announcement-text-fit';
-import { isIncompleteOverlayPhrase } from './fal-caption-headline';
+import {
+  endsOnStrandedTurkishDependent,
+  isIncompleteOverlayPhrase,
+  windowSeversTurkishDependency,
+} from './fal-caption-headline';
 
 export const GRAFIKER_PASS_THRESHOLD = 8;
 export const GRAFIKER_HARD_FLOOR = 4;
@@ -78,6 +82,9 @@ function dropLeadingWordsToFit(text: string, maxChars: number): string {
     const candidate = words.slice(drop).join(' ').trim();
     if (!fits(candidate, maxChars)) continue;
     if (ORPHAN_LEAD_WORD_RX.test(candidate)) continue;
+    // Shedding a front modifier is safe; shedding a genitive possessor or a
+    // whole subject phrase is not — it strands the possessum or the verb.
+    if (windowSeversTurkishDependency(words, drop)) continue;
     if (isIncompleteOverlayPhrase(candidate)) continue;
     if (candidate.split(/\s+/).length < 2 && candidate.length < 8) continue;
     return candidate;
@@ -111,7 +118,12 @@ export function enforceDisplayHeadline(headline: string, maxChars = 28): string 
   if (shortened) return shortened;
 
   const wordSafe = trimmed.slice(0, maxChars + 1).replace(/\s+\S*$/, '').trim();
-  const cleaned = trimOverlayTail(wordSafe);
+  let cleaned = trimOverlayTail(wordSafe);
+  // The cut can land on a possessor or a verb argument, which reads as a
+  // sentence broken in half; shed those words too rather than paint them.
+  while (cleaned && endsOnStrandedTurkishDependent(cleaned)) {
+    cleaned = trimOverlayTail(cleaned.replace(/\s+\S+$/u, ''));
+  }
   return (cleaned || wordSafe || trimmed.slice(0, maxChars)).trim();
 }
 
