@@ -144,3 +144,58 @@ describe('caption-grounded noun-phrase headlines survive the label gate', () => 
     expect(r.headline).not.toBe('Yaz sezonu');
   });
 });
+
+describe('caption-derived hooks read as whole thoughts', () => {
+  // Live regression (Karaman / Gel Gör, 23 Aug): with no ideation headline the
+  // chain trimmed the caption's opening sentence down to the character budget,
+  // which shed the lead words and painted a lower-case mid-sentence slice
+  // ("zeytinlerden elde edilmiş erken hasat…", "dolu anlarda yer alan…").
+  it('prefers a later complete sentence over a trimmed opener', () => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline: '',
+      caption:
+        'Bu yaz taptaze zeytinlerden elde edilmiş erken hasat zeytinyağımızı denemeye'
+        + ' ne dersin? Doğallık ve lezzet bir arada! Hemen incele.',
+      brandName: 'Karaman Datça',
+      businessType: 'local_products_shop',
+      language: 'tr',
+      maxLen: 72,
+    });
+    expect(r.headline).toBe('Doğallık ve lezzet bir arada');
+  });
+
+  it('never opens a hook mid-sentence in lower case', () => {
+    const r = resolveMeaningfulProductionHeadline({
+      headline: '',
+      caption:
+        'Lezzet dolu anlarda yer alan kahvaltı çeşitlerimizin tadına bakmaya ne dersin?'
+        + " Gel Gör'ün samimi atmosferinde buluşalım.",
+      brandName: 'Gel Gör',
+      businessType: 'restaurant_cafe',
+      language: 'tr',
+      maxLen: 72,
+    });
+    expect(r.headline[0]).toBe(r.headline[0]!.toLocaleUpperCase('tr-TR'));
+    expect(r.headline).not.toMatch(/^dolu anlarda/);
+  });
+
+  it('keeps a concrete product noun phrase instead of falling back to caption', () => {
+    // "Yaz Bahçesinde Mola" / "Kahvaltı Hazırlıkları" are authored taglines; the
+    // label detector used ASCII \b, which never closes after ı/ç/ğ/ö/ş/ü, so an
+    // inflected stem ("bahçesinde") escaped the product-noun allowance.
+    for (const headline of ['Yaz Bahçesinde Mola', 'Kahvaltı Hazırlıkları']) {
+      const r = resolveMeaningfulProductionHeadline({
+        headline,
+        caption:
+          'Yazın sıcağında, bahçemizde serin masalarda dinlenme fırsatını yakalayın!'
+          + ' Huzurlu anlar için Gel Gör sizi bekliyor!',
+        brandName: 'Gel Gör',
+        businessType: 'restaurant_cafe',
+        language: 'tr',
+        maxLen: 32,
+      });
+      expect(r.headline).toBe(headline);
+      expect(r.replaced).toBe(false);
+    }
+  });
+});

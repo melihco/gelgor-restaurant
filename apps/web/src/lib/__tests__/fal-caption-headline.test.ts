@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   correctTurkishSpelling,
+  windowStrandsCompoundVerb,
   resolveFalDisplayHeadline,
   resolveFalVideoHeadline,
   resolveFalSubtitle,
@@ -729,5 +730,25 @@ describe('resolveFalCanvasChannel', () => {
 
   it('defaults 9:16 without pipeline to story', () => {
     expect(resolveFalCanvasChannel({ aspectRatio: '9:16' })).toBe('story');
+  });
+});
+
+describe('compound-verb and prose-slice guards', () => {
+  it('does not split a NOUN + auxiliary verb across the budget', () => {
+    // Live regression: "Müşterilerimiz Bizi Tercih Ediyor!" was painted as
+    // "Bizi Tercih Ediyor" (no subject), then as "Müşterilerimiz Bizi Tercih"
+    // (no verb). The line fits 36 chars whole, so paint it whole.
+    expect(fitPunchlineUnderBudget('Müşterilerimiz Bizi Tercih Ediyor!', 36, 3))
+      .toBe('Müşterilerimiz Bizi Tercih Ediyor');
+    expect(windowStrandsCompoundVerb(['Bizi', 'Tercih', 'Ediyor'], 0, 2)).toBe(true);
+    expect(windowStrandsCompoundVerb(['Özel', 'Davet', 'Var'], 0, 2)).toBe(false);
+  });
+
+  it('does not open a window on a lower-case word mid-sentence', () => {
+    expect(fitPunchlineUnderBudget('Doğallık ve lezzet bir arada', 20, 3))
+      .not.toBe('lezzet bir arada');
+    // A separator does close a segment, so the phrase after it is a real start.
+    expect(fitPunchlineUnderBudget('Dolunay temalı gece etkinliği / özel menü', 20, 3))
+      .toBe('özel menü');
   });
 });

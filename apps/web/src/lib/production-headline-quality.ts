@@ -65,6 +65,23 @@ export function isSoullessMenuHourHeadline(headline: string): boolean {
   return patterns.some((p) => p.test(lower));
 }
 
+// Concrete things a brand actually sells or stages. A headline built on one of
+// these is product copy, not slot vocabulary. Turkish stacks suffixes onto the
+// stem ("bahçe" → "bahçesinde", "kahvaltı" → "kahvaltımızı"), and JS `\b` is
+// ASCII-only so it never closes after ı/ç/ğ/ö/ş/ü — match the stem at a letter
+// boundary and let any suffix follow instead.
+const ATMOSPHERE_SUBJECT_STEMS = [
+  'kahvaltı', 'serpme', 'kokteyl', 'cocktail', 'breakfast', 'brunch', 'bahçe',
+  'garden', 'zeytinyağ', 'zeytin', 'reçel', 'bal', 'lezzet', 'tadım', 'hasat',
+  'harvest', 'mezze', 'sunset', 'sunrise', 'gece', 'keyif', 'keyf', 'tazelik',
+  'tazeli', 'doğallık', 'doğalli', 'stars', 'night', 'menü', 'mola', 'sofra',
+  'ürün', 'hediye', 'atölye', 'demleme', 'fırın', 'tarla', 'çiftlik',
+];
+const ATMOSPHERE_SUBJECT_RX = new RegExp(
+  `(?<!\\p{L})(?:${ATMOSPHERE_SUBJECT_STEMS.join('|')}|gün\\s*batımı)\\p{L}*`,
+  'iu',
+);
+
 export function isLabelStyleHeadline(headline: string): boolean {
   const h = headline.trim();
   if (!h) return true;
@@ -124,8 +141,8 @@ export function isLabelStyleHeadline(headline: string): boolean {
   }
 
   // Concrete product / atmosphere hooks are valid short overlays (≤4 words).
-  // e.g. "Serpme Köy Kahvaltısı", "Bahçede Serpme Keyfi", "Doğanın Tazeliği"
-  const hasAtmosphereSubject = /\b(kahvaltı|kahvaltısı|serpme|kokteyl|kokteyli|cocktail|breakfast|brunch|bahçe|bahçede|garden|zeytinyağı|reçel|bal|lezzet|lezzetleri|tadım|hasat|harvest|mezze|gün\s*batımı|sunset|sunrise|gece|gecesi|keyfi|tazeliği|doğallığı|stars|night)\b/i.test(lower);
+  // e.g. "Serpme Köy Kahvaltısı", "Yaz Bahçesinde Mola", "Kahvaltı Hazırlıkları"
+  const hasAtmosphereSubject = ATMOSPHERE_SUBJECT_RX.test(lower);
 
   // Turkish expresses a claim through case marking, not only through verbs:
   // ablative → dative ("Bahçemizden Sofranıza") is a complete "from X to Y"
@@ -154,6 +171,7 @@ export function isLabelStyleHeadline(headline: string): boolean {
     words.length <= 2
     && !/[!?.]$/.test(h)
     && !hasDirectionalCaseFraming
+    && !hasAtmosphereSubject
     && !/\b(ile|için|ve|ya da|veya|gibi|kadar|nasıl|ne|neden|bir)\b/i.test(h)
   ) {
     const hasTurkishVerb = /[ıiuü]yor|[aeiıoöuü]n$|[aeiıoöuü]r$|[aeiıoöuü]cak$|[dt]ı$|[dt]i$|mış$|miş$|[aeiıoöuü]lım$|[aeiıoöuü]!$/i.test(h);
@@ -196,6 +214,14 @@ function stripTrailingOrphanFragment(headline: string): string {
   return headline.replace(/\s+\d{1,2}$/, '').trim();
 }
 
+/** Hook lost its lead words and now opens lower-case — a severed clause. */
+function startsMidSentence(hook: string, clause: string): boolean {
+  const h = hook.trim();
+  if (!h || clause.trim().startsWith(h)) return false;
+  const first = h[0] ?? '';
+  return first === first.toLocaleLowerCase('tr-TR');
+}
+
 function extractHookFromCaption(caption: string, brandName: string, maxLen = 32): string {
   const cap = caption.trim();
   if (!cap) return '';
@@ -205,20 +231,38 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
     .map((s) => s.trim())
     .filter((s) => s.length >= 10);
 
+  const usable = (hook: string) =>
+    hook.length >= 8
+    && !isMeaninglessBrandEchoHeadline(hook, brandName)
+    && !isIncompleteOverlayPhrase(hook);
+
+  // Pass 1 — a sentence that already fits is a whole thought. Captions are
+  // sentence-case prose, so shortening one always costs either its opening or
+  // its verb; a later short sentence ("Doğallık ve lezzet bir arada") beats a
+  // trimmed opener every time.
+  for (const chunk of chunks) {
+    if (isVisionAnalysisDescription(chunk)) continue;
+    if (isMeaninglessBrandEchoHeadline(chunk, brandName)) continue;
+    const clause = chunk.split(/[,—–-]/)[0]?.trim() ?? chunk;
+    if (clause.length > maxLen) continue;
+    if (isIncompleteOverlayPhrase(clause)) continue;
+    if (usable(clause)) return clause;
+  }
+
   for (const chunk of chunks) {
     if (isVisionAnalysisDescription(chunk)) continue;
     if (isMeaninglessBrandEchoHeadline(chunk, brandName)) continue;
     if (isIncompleteOverlayPhrase(chunk)) continue;
-    // Prefer a complete short sentence over a 5-word mid-phrase stub.
     const clause = chunk.split(/[,—–-]/)[0]?.trim() ?? chunk;
     const hook = clause.length <= maxLen
       ? clause
       : enforceDisplayHeadline(clause, maxLen);
-    if (
-      hook.length >= 8
-      && !isMeaninglessBrandEchoHeadline(hook, brandName)
-      && !isIncompleteOverlayPhrase(hook)
-    ) {
+    // Trimming may have shed the opening words. In sentence-case prose that
+    // leaves a lower-case mid-sentence slice ("zeytinlerden elde edilmiş…"),
+    // which reads as a severed clause on canvas — a title-cased headline that
+    // loses a front modifier still reads as a phrase.
+    if (startsMidSentence(hook, clause)) continue;
+    if (usable(hook)) {
       return hook.length <= maxLen ? hook : enforceDisplayHeadline(hook, maxLen);
     }
   }

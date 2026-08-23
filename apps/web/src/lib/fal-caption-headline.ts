@@ -766,15 +766,37 @@ export function windowSeversTurkishDependency(words: string[], i: number): boole
   // argument of the clause's verb. Dropping either to reach a word budget leaves
   // the rest stranded ("Doğanın | Tazeliği Sizleri Bekliyor", "…Yorumları | Bize
   // Güç Veriyor"). Ablative and locative leads are plain modifiers and may go.
+  if (i <= 0) return false;
   for (let k = 0; k < i; k += 1) {
     const dropped = trLower(words[k]!).replace(/[^\p{L}']/gu, '');
     if (TR_GENITIVE_WORD_RX.test(dropped)) return true;
     if (TR_OBLIQUE_PRONOUNS.has(dropped)) return true;
   }
-  return false;
+  // Opening on the verb's own object means the subject was left behind
+  // ("Müşterilerimiz | Bizi Tercih Ediyor").
+  const head = trLower(words[i]!).replace(/[^\p{L}']/gu, '');
+  return TR_OBLIQUE_PRONOUNS.has(head);
 }
 
 /** Overlay closing on a dependent that needs the words we cut — "…Yorumları Bize". */
+// Turkish builds many verbs as NOUN + auxiliary ("tercih ediyor", "davet
+// ediyoruz", "hizmet veriyor"). A window that stops on the noun and leaves the
+// auxiliary outside paints half a verb ("Müşterilerimiz Bizi Tercih").
+const TR_LIGHT_VERB_AUX = new Set([
+  'ediyor', 'ediyoruz', 'ediyorlar', 'ediyorum', 'eder', 'ederiz', 'edecek',
+  'edeceğiz', 'etti', 'ettik', 'etmek', 'edin', 'ediniz', 'edelim', 'etsin',
+  'oluyor', 'oluyoruz', 'olur', 'oluruz', 'olacak', 'olacağız', 'oldu', 'olduk',
+  'olmak', 'olun', 'olunuz', 'olalım',
+  'yapıyor', 'yapıyoruz', 'yapar', 'yapacak', 'yaptı', 'yapmak', 'yapın',
+  'yapalım', 'kılıyor', 'kılar', 'kıldı', 'kılmak',
+]);
+
+export function windowStrandsCompoundVerb(words: string[], i: number, n: number): boolean {
+  const next = words[i + n];
+  if (!next) return false;
+  return TR_LIGHT_VERB_AUX.has(trLower(next).replace(/[^\p{L}']/gu, ''));
+}
+
 export function endsOnStrandedTurkishDependent(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length < 2) return false;
@@ -1003,29 +1025,58 @@ export function fitPunchlineUnderBudget(
     // shorter window carry the phrase instead.
     if (i > 0 && isOrphanOverlayLeadWord(words[i]!)) return '';
     if (headFinal && windowSeversTurkishDependency(words, i)) return '';
+    if (headFinal && windowStrandsCompoundVerb(words, i, n)) return '';
+    // A headline is title-cased, prose is sentence-cased. Opening a window on a
+    // lower-case word therefore means we cut into the middle of a sentence
+    // ("…lezzet bir arada"), which reads as a severed clause on canvas — unless
+    // a separator closed the previous segment, where a new phrase really starts.
+    const prev = words[i - 1] ?? '';
+    if (
+      i > 0
+      && !/[/|—–:;,.!?]$/.test(prev)
+      && words[i]![0] === trLower(words[i]![0]!)
+    ) {
+      return '';
+    }
     const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
     return accepts(candidate) ? candidate : '';
   };
 
   // Head-final copy: try the phrase head first at every width, so a two-word
   // close ("Hediye Paketleri") wins over a wider window that opens mid-list.
+  let picked = '';
   if (headFinal) {
-    for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
-      const hit = tryWindow(words.length - n, n);
-      if (hit) return hit;
+    for (let n = Math.min(maxWords, words.length); n >= 1 && !picked; n -= 1) {
+      picked = tryWindow(words.length - n, n);
     }
   }
 
-  for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
+  for (let n = Math.min(maxWords, words.length); n >= 1 && !picked; n -= 1) {
     for (const i of windowStarts(n)) {
       if (n === 1 && i !== 0 && !headFinal) continue;
       // A window carved out of the middle belongs to neither the opening nor the
       // closing thought, so keep it anchored to one end of the authored line.
       if (headFinal && i !== 0 && i + n !== words.length) continue;
       const hit = tryWindow(i, n);
-      if (hit) return hit;
+      if (hit) {
+        picked = hit;
+        break;
+      }
     }
   }
+
+  // Every window severed the phrase and only a bare noun survived. The word cap
+  // is a layout preference while the character cap is the real canvas limit, so
+  // an authored line that still fits the width beats its own first noun.
+  if (
+    picked.split(/\s+/).filter(Boolean).length < 2
+    && bare.length <= maxLen
+    && !endsOnStrandedTurkishDependent(bare)
+    && isAcceptablePunchlineStem(bare)
+  ) {
+    return bare;
+  }
+  if (picked) return picked;
 
   return tightenOverlayHeadline(clean, maxLen, maxWords) || '';
 }
