@@ -110,6 +110,19 @@ export interface ProductionIdea {
   visualDirection?: string;
   motionCue?: string;
   strategicPurpose?: string;
+
+  // ── Calendar provenance (must survive ICS round-trip) ─────────────────────────
+  /**
+   * Quoted calendar/Mission Hub line — the planned on-canvas punchline. Distinct
+   * from `headline`, which may be a planning label for a calendar-bound idea.
+   */
+  tagline?: string;
+  /** Idea was enriched from a content_calendar entry. */
+  calendarEnriched?: boolean;
+  /** Which mission node the idea came from — 'calendar' marks calendar rows. */
+  sourceTrack?: string;
+  /** Index of the originating calendar entry. */
+  calendarPlanIndex?: number;
 }
 
 /** Fields that must be present and non-empty for an idea to count as ICS-complete. */

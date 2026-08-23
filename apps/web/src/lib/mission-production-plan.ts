@@ -120,6 +120,12 @@ export type CalendarIdeaMatchSource =
   | 'tagline'
   | 'positional';
 
+function coerceIdeaIndex(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isInteger(v) ? v : null;
+  if (typeof v === 'string' && /^\d+$/.test(v.trim())) return Number(v.trim());
+  return null;
+}
+
 function pickIdeationForCalendar(
   plan: Record<string, unknown>,
   planIndex: number,
@@ -130,11 +136,10 @@ function pickIdeationForCalendar(
   index: number | null;
   source: CalendarIdeaMatchSource | null;
 } {
-  const ideaIdx = typeof plan.idea_index === 'number'
-    ? plan.idea_index
-    : typeof plan.source_idea_index === 'number'
-      ? plan.source_idea_index
-      : null;
+  // The calendar agent emits the join key as JSON text ("idea_index": "0"), so a
+  // numeric-only read discarded every explicit pairing and fell through to fuzzy
+  // title matching, which binds a slot to the wrong idea.
+  const ideaIdx = coerceIdeaIndex(plan.idea_index) ?? coerceIdeaIndex(plan.source_idea_index);
   if (ideaIdx != null && ideaIdx >= 0 && ideaIdx < ideas.length && !used.has(ideaIdx)) {
     return { idea: ideas[ideaIdx]!, index: ideaIdx, source: 'idea_index' };
   }

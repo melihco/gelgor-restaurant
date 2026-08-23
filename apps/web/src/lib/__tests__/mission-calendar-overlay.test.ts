@@ -8,6 +8,11 @@ import {
   mergeCalendarPlansForProduction,
 } from '@/lib/mission-production-plan';
 import { CALENDAR_PRODUCTION_IDEA_INDEX_BASE } from '@/lib/calendar-production-pack';
+import {
+  productionIdeaFromRecord,
+  productionIdeaToRecord,
+  resolveIdeationOverlayHeadline,
+} from '@/lib/production-idea-parse';
 
 describe('applyCalendarProductionEnrichment', () => {
   const ideation = [
@@ -261,5 +266,50 @@ describe('buildMissionProductionIdeas with calendar overlay', () => {
     expect(matched?.content_brief).toBe('Calendar brief wins when richer.');
     expect(matched?.caption_draft).toBe('Caption korunmalı.');
     expect(production.some((row) => row.headline === 'Weekend DJ Nights')).toBe(false);
+  });
+});
+
+describe('launch-calendar joins and overlay provenance', () => {
+  // Live regression (Karaman mission 4dc6a42e): the calendar agent emits the
+  // join key as JSON text, so every explicit pairing was discarded and slots
+  // bound to whichever idea matched by title. The publishable tagline was then
+  // dropped on the plan-phase round-trip, so production sliced a headline out
+  // of the caption instead of painting the planned line.
+  const ideation = [
+    { headline: 'Doğanın Mucizesi Bir Kavanozda!', caption_draft: 'Zeytinyağı hikayesi.' },
+    { headline: 'Ücretsiz Kargo Fırsatı!', caption_draft: 'Kargo kampanyası.' },
+  ];
+  const plans = [
+    {
+      event_name: 'Erken Hasat Zeytinyağı',
+      tagline: 'Doğanın en saf lezzeti şimdi sizlerle!',
+      idea_index: '0',
+      format: 'post',
+      date: '2026-08-25',
+    },
+    {
+      event_name: 'Kampanya Duyurusu',
+      tagline: '2500₺ üzeri tüm siparişlerde kargo ücretsiz!',
+      idea_index: '1',
+      format: 'post',
+      date: '2026-08-26',
+    },
+  ];
+
+  it('joins a string idea_index and keeps the idea headline over the label', () => {
+    const { ideas } = applyCalendarProductionEnrichment(ideation, plans);
+    expect(ideas[0]!.calendar_match_source).toBe('idea_index');
+    expect(ideas[1]!.calendar_match_source).toBe('idea_index');
+    expect(ideas[0]!.headline).toBe('Doğanın Mucizesi Bir Kavanozda!');
+    expect(ideas[1]!.headline).toBe('Ücretsiz Kargo Fırsatı!');
+  });
+
+  it('carries the planned tagline through the production-idea round trip', () => {
+    const { ideas } = applyCalendarProductionEnrichment(ideation, plans);
+    const record = productionIdeaToRecord(productionIdeaFromRecord(ideas[0]!, 0));
+    expect(record.tagline).toBe('Doğanın en saf lezzeti şimdi sizlerle!');
+    expect(record.calendar_enriched).toBe(true);
+    expect(resolveIdeationOverlayHeadline(record))
+      .toBe('Doğanın en saf lezzeti şimdi sizlerle!');
   });
 });

@@ -236,9 +236,15 @@ export function buildMissionIdeationCaptionLookup(
     const caption = pickIdeationCaptionFromIdea(plan);
     if (!caption || isGalleryDerivedCaption(caption)) return;
     lookup.set(CALENDAR_PRODUCTION_IDEA_INDEX_BASE + planIndex, caption);
+    // The calendar agent emits this join key as JSON text ("idea_index": "0").
     const rawIdx = plan.idea_index ?? plan.ideaIndex;
-    if (typeof rawIdx === 'number' && Number.isFinite(rawIdx)) {
-      lookup.set(rawIdx, caption);
+    const ideaIdx = typeof rawIdx === 'number'
+      ? rawIdx
+      : typeof rawIdx === 'string' && /^\d+$/.test(rawIdx.trim())
+        ? Number(rawIdx.trim())
+        : null;
+    if (ideaIdx != null && Number.isFinite(ideaIdx)) {
+      lookup.set(ideaIdx, caption);
     }
   });
   return lookup;

@@ -1,4 +1,7 @@
 from app.services.mission_ideation_merge import (
+    _coerce_idea_index,
+    _enrich_ideation_with_calendar_plan,
+    _pick_ideation_for_calendar_strict,
     merge_ideation_ideas,
     resolve_feed_package_total,
     resolve_mission_production_target,
@@ -259,3 +262,56 @@ def test_calendar_enrichment_keeps_ideation_caption_over_brief() -> None:
     assert row["content_brief"] == (
         "Premium early harvest olive oil launch scene with sunlit grove."
     )
+
+
+def test_calendar_enrichment_keeps_idea_copy_and_promotes_tagline() -> None:
+    """Live regression (Karaman mission 4dc6a42e).
+
+    The calendar agent emits `idea_index` as JSON text, so the explicit pairing
+    was discarded and matching fell through to fuzzy title heuristics. Enrichment
+    then wrote the calendar's planning label ("Kampanya Duyurusu") over the idea's
+    publishable headline, and the quoted tagline never reached the canvas — so
+    production sliced an overlay out of the caption instead.
+    """
+    ideas = [
+        {"headline": "Doğanın Mucizesi Bir Kavanozda!", "caption_draft": "Zeytinyağı hikayesi."},
+        {"headline": "Ücretsiz Kargo Fırsatı!", "caption_draft": "Kargo kampanyası."},
+    ]
+    plans = [
+        {
+            "event_name": "Erken Hasat Zeytinyağı",
+            "tagline": "Doğanın en saf lezzeti şimdi sizlerle!",
+            "idea_index": "0",
+            "format": "post",
+            "date": "2026-08-25",
+        },
+        {
+            "event_name": "Kampanya Duyurusu",
+            "tagline": "2500₺ üzeri tüm siparişlerde kargo ücretsiz!",
+            "idea_index": "1",
+            "format": "post",
+            "date": "2026-08-26",
+        },
+    ]
+
+    for plan_index, plan in enumerate(plans):
+        picked, idea_index = _pick_ideation_for_calendar_strict(plan, ideas, set())
+        assert idea_index == plan_index, "string idea_index must still join"
+        row = _enrich_ideation_with_calendar_plan(picked, plan, plan_index, idea_index)
+
+        expected_headline = ideas[plan_index]["headline"]
+        assert row["headline"] == expected_headline
+        assert row["concept_title"] == expected_headline
+        assert row["tagline"] == plan["tagline"]
+        # Overlay SSOT: the quoted line paints, the planning label may only support it.
+        assert row["canva_field_copy"]["headline"] == plan["tagline"]
+        assert row["canva_field_copy"]["subtitle"] == expected_headline
+
+
+def test_coerce_idea_index_accepts_text_but_not_booleans() -> None:
+    assert _coerce_idea_index("0") == 0
+    assert _coerce_idea_index(" 12 ") == 12
+    assert _coerce_idea_index(3) == 3
+    assert _coerce_idea_index("second") is None
+    assert _coerce_idea_index(None) is None
+    assert _coerce_idea_index(True) is None

@@ -286,15 +286,26 @@ def _resolve_planning_caption(idea: dict[str, Any] | None, plan: dict[str, Any])
     ).strip()
 
 
+def _coerce_idea_index(value: Any) -> int | None:
+    """Calendar agents emit the join key as JSON text ("idea_index": "0")."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 def _pick_ideation_for_calendar_strict(
     plan: dict[str, Any],
     ideas: list[dict[str, Any]],
     used: set[int],
 ) -> tuple[dict[str, Any] | None, int | None]:
-    idea_idx = plan.get("idea_index")
+    idea_idx = _coerce_idea_index(plan.get("idea_index"))
     if idea_idx is None:
-        idea_idx = plan.get("source_idea_index")
-    if isinstance(idea_idx, int) and 0 <= idea_idx < len(ideas) and idea_idx not in used:
+        idea_idx = _coerce_idea_index(plan.get("source_idea_index"))
+    if idea_idx is not None and 0 <= idea_idx < len(ideas) and idea_idx not in used:
         return ideas[idea_idx], idea_idx
 
     cal_title = _calendar_item_headline(plan)
@@ -313,10 +324,10 @@ def _pick_ideation_for_calendar(
     ideas: list[dict[str, Any]],
     used: set[int],
 ) -> tuple[dict[str, Any] | None, int | None]:
-    idea_idx = plan.get("idea_index")
+    idea_idx = _coerce_idea_index(plan.get("idea_index"))
     if idea_idx is None:
-        idea_idx = plan.get("source_idea_index")
-    if isinstance(idea_idx, int) and 0 <= idea_idx < len(ideas) and idea_idx not in used:
+        idea_idx = _coerce_idea_index(plan.get("source_idea_index"))
+    if idea_idx is not None and 0 <= idea_idx < len(ideas) and idea_idx not in used:
         return ideas[idea_idx], idea_idx
 
     cal_title = _calendar_item_headline(plan)
@@ -603,7 +614,12 @@ def _enrich_ideation_with_calendar_plan(
     # Publish caption = ideation/calendar copy — NEVER the visual brief.
     # The brief is a scene description for production and stays in content_brief/VPS.
     caption = ideation_caption or plan_caption or " — ".join(p for p in (tagline, cal_title) if p)
-    headline = cal_title or _idea_headline(idea)
+    # The calendar's `event_name` is a planning label ("Erken Hasat Zeytinyağı",
+    # "Kampanya Duyurusu") while the idea's own headline is written as publishable
+    # copy ("Doğanın Mucizesi Bir Kavanozda!"). Taking the label first overwrote
+    # good copy and the label was then rejected downstream, leaving production to
+    # slice a headline out of the caption. Mirror the TS enricher: idea first.
+    headline = _idea_headline(idea) or cal_title
     vps = dict(idea.get("visual_production_spec") or {}) if isinstance(idea.get("visual_production_spec"), dict) else {}
 
     row: dict[str, Any] = {
@@ -632,6 +648,13 @@ def _enrich_ideation_with_calendar_plan(
     if tagline:
         row["tagline"] = tagline
         row["subline"] = tagline
+        # Overlay SSOT, same as the TS enricher: the quoted calendar line is the
+        # on-canvas punchline, and the planning label may only be a subtitle.
+        canva = dict(row.get("canva_field_copy") or {}) if isinstance(row.get("canva_field_copy"), dict) else {}
+        canva["headline"] = tagline
+        if headline and headline != tagline:
+            canva.setdefault("subtitle", headline)
+        row["canva_field_copy"] = canva
     if mood:
         row["photo_mood"] = mood
         row["mood"] = mood

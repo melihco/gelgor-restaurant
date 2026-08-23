@@ -335,6 +335,12 @@ export function productionIdeaFromRecord(
     visualDirection: firstStr(rec, 'visual_direction', 'visualDirection') || undefined,
     motionCue: firstStr(rec, 'motion_cue', 'motionCue') || undefined,
     strategicPurpose: firstStr(rec, 'strategic_purpose', 'strategicPurpose') || undefined,
+    tagline: resolveIdeationTagline(rec) || undefined,
+    calendarEnriched: isCalendarIdeationRecord(rec) || undefined,
+    sourceTrack: firstStr(rec, 'source_track', 'sourceTrack') || undefined,
+    calendarPlanIndex: typeof rec.calendar_plan_index === 'number'
+      ? rec.calendar_plan_index
+      : undefined,
   };
 }
 
@@ -366,6 +372,15 @@ export function productionIdeaToRecord(idea: ProductionIdea): Record<string, unk
     scene_hint: idea.sceneHint || undefined,
     visual_direction: idea.visualDirection || vps?.imageEditPrompt || undefined,
     motion_cue: idea.motionCue || undefined,
+    // Calendar provenance decides whether the quoted tagline outranks the
+    // planning label on canvas — dropping it here made every calendar-bound
+    // slot fall back to slicing a headline out of its caption.
+    ...(idea.tagline ? { tagline: idea.tagline, subline: idea.tagline } : {}),
+    ...(idea.calendarEnriched ? { calendar_enriched: true } : {}),
+    ...(idea.sourceTrack ? { source_track: idea.sourceTrack } : {}),
+    ...(idea.calendarPlanIndex != null
+      ? { calendar_plan_index: idea.calendarPlanIndex }
+      : {}),
     ...(idea.attachedPhotoUrls?.length
       ? {
           attached_photo_urls: idea.attachedPhotoUrls,
