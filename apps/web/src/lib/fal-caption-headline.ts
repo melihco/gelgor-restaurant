@@ -903,30 +903,30 @@ export function fitPunchlineUnderBudget(
     return bare;
   }
 
-  // Prefix windows first (preserve punchline opening).
-  for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
-    const candidate = stripDanglingOverlayTail(words.slice(0, n).join(' '));
-    if (
-      candidate
-      && candidate.length <= maxLen
-      && candidate.split(/\s+/).filter(Boolean).length <= maxWords
-      && isAcceptablePunchlineStem(candidate)
-    ) {
-      return candidate;
-    }
-  }
+  const accepts = (candidate: string): boolean =>
+    Boolean(candidate)
+    && candidate.length <= maxLen
+    && candidate.split(/\s+/).filter(Boolean).length <= maxWords
+    && isAcceptablePunchlineStem(candidate);
 
-  // Sliding windows when the opening is weak under a tiny budget.
-  for (let n = Math.min(maxWords, words.length); n >= 2; n -= 1) {
-    for (let i = 1; i <= words.length - n; i += 1) {
+  // Turkish puts the head of a noun phrase last, so a window that keeps the final
+  // word survives as a phrase ("Gelen Harika Yorumlar") while the prefix window
+  // stops on a modifier that still needs its noun ("Müşterilerimizden Gelen").
+  // Head-initial copy is the mirror case, so the opening is preserved there.
+  const headFinal = detectOverlayLocale(bare) === 'tr';
+  const windowStarts = (n: number): number[] => {
+    const last = words.length - n;
+    const starts = headFinal
+      ? Array.from({ length: last + 1 }, (_, k) => last - k)
+      : Array.from({ length: last + 1 }, (_, k) => k);
+    return starts;
+  };
+
+  for (let n = Math.min(maxWords, words.length); n >= 1; n -= 1) {
+    for (const i of windowStarts(n)) {
+      if (n === 1 && i !== 0 && !headFinal) continue;
       const candidate = stripDanglingOverlayTail(words.slice(i, i + n).join(' '));
-      if (
-        candidate
-        && candidate.length <= maxLen
-        && isAcceptablePunchlineStem(candidate)
-      ) {
-        return candidate;
-      }
+      if (accepts(candidate)) return candidate;
     }
   }
 

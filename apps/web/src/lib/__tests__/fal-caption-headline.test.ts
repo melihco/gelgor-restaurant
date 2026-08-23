@@ -527,6 +527,15 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       2,
     );
     expect(stem).toBe('Join us');
+
+    // Turkish is head-final: dropping the head leaves a modifier waiting for its
+    // noun, so the window must keep the end of the phrase.
+    expect(fitPunchlineUnderBudget('Müşterilerimizden Gelen Harika Yorumlar!', 36, 3))
+      .toBe('Gelen Harika Yorumlar');
+    expect(fitPunchlineUnderBudget('Bahçemizde Eğlence Dolu Anlar!', 36, 3))
+      .toBe('Eğlence Dolu Anlar');
+    expect(fitPunchlineUnderBudget('Mutlu Müşteri Yorumlarıyla Tanışın!', 36, 3))
+      .toBe('Müşteri Yorumlarıyla Tanışın');
     expect(isAcceptablePunchlineStem(stem)).toBe(true);
     expect(isIncompleteOverlayPhrase(stem)).toBe(false);
 

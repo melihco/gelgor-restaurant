@@ -151,6 +151,27 @@ describe('cross-mission headline dedupe with theme clusters', () => {
       expect(rotated.rotation_angle_label).toBeTruthy();
     }
   });
+
+  it('never turns a planning angle into the headline of a caption-only idea', () => {
+    const history = buildRecentHeadlineHistory([
+      { createdAt: new Date().toISOString(), metadata: { headline: 'Bahçemizde kahvaltı keyfi' } },
+      { createdAt: new Date().toISOString(), metadata: { headline: 'Serpme köy kahvaltısı' } },
+      { createdAt: new Date().toISOString(), metadata: { headline: 'Kahvaltı sofrası hazır' } },
+    ]);
+    const out = applyCrossMissionHeadlineDedupe(
+      [{
+        caption_draft:
+          'Serpme köy kahvaltımızda her şey taze! Bahçemizde kahvaltı keyfi sizi bekliyor.',
+      }],
+      history,
+    );
+    expect(out[0]?.cross_mission_headline_rotated).toBe(true);
+    expect(out[0]?.rotation_angle_label).toBeTruthy();
+    // An absent headline lets the caption drive the overlay; a planning label
+    // here would be stored as the ideation headline and painted on the canvas.
+    expect(out[0]?.headline ?? '').toBe('');
+    expect(out[0]?.concept_title ?? '').toBe('');
+  });
 });
 
 function emptyHistory() {
