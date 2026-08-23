@@ -556,6 +556,25 @@ def _enforce_strategist_idea_diversity(concepts: list, brand: BrandInfo, target_
     return concepts
 
 
+def _revision_loses_ideas(concepts: list, revised: list) -> bool:
+    """
+    True when a revision came back with fewer deliverables than it was given.
+
+    The quality gate adopts a revision when it carries fewer issues than the
+    original, and a shorter batch trivially does — so a truncated revision
+    looked like the better one and a 16-idea week shipped as 7. Losing ideas is
+    a regression however clean the survivors are.
+    """
+    return len(revised) < len(concepts)
+
+
+#: A full 16-idea batch runs well past the old 8 000-char / 4 000-token budgets,
+#: and whatever did not fit came back as a shorter array that then replaced the
+#: batch — the package lost its tail to the reviewer rather than to the writer.
+_REVISION_INPUT_MAX_CHARS = 32_000
+_REVISION_MAX_OUTPUT_TOKENS = 12_000
+
+
 def _run_revision_pass(
     brand: BrandInfo,
     original_output: str,
@@ -583,7 +602,9 @@ def _run_revision_pass(
             f"## Required output language: {lang_label}\n"
             f"ALL text fields (headline, caption_draft, caption_draft_alt, cta, subline) "
             f"MUST be native {lang_label}. Never leave Turkish copy when {lang_label} is required.\n\n"
-            f"## Original output:\n```json\n{original_output[:8000]}\n```\n\n"
+            f"## Original output:\n```json\n{original_output[:_REVISION_INPUT_MAX_CHARS]}\n```\n\n"
+            f"Return ALL {original_output.count('\"headline\"')} ideas — dropping any is a failure, "
+            f"not a fix.\n\n"
             f"## Quality issues found:\n{revision_prompt}\n\n"
             f"Brand: {brand.business_name} ({brand.business_type})\n"
             f"Fix the issues and return the corrected JSON array."
@@ -595,7 +616,7 @@ def _run_revision_pass(
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.4,
-            max_tokens=4000,
+            max_tokens=_REVISION_MAX_OUTPUT_TOKENS,
         )
         revised = response.choices[0].message.content or ""
         tokens = (response.usage.total_tokens if response.usage else 0)
@@ -978,7 +999,17 @@ def run_content_ideation(
                             brand_ctas=brand.default_ctas,
                             brand_languages=brand.languages,
                         )
-                        if revised_report.passed or len(revised_report.issues) < len(report.issues):
+                        if _revision_loses_ideas(concepts, revised_concepts):
+                            logger.warning(
+                                "ideation_revision_rejected_shrinkage: had=%d revised=%d tenant=%s",
+                                len(concepts), len(revised_concepts),
+                                getattr(brand, "tenant_id", "unknown"),
+                            )
+                        elif (
+                            revised_report.passed
+                            or len(revised_report.issues) < len(report.issues)
+                        ):
+                            concepts = revised_concepts
                             raw_output = revised_output
                             report = revised_report
                             revision_used = True
