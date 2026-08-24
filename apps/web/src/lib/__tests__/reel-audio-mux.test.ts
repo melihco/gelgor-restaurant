@@ -21,13 +21,23 @@ describe('muxBackgroundMusicOntoVideoUrl guards', () => {
     });
   });
 
-  it('skips local and data URLs that ffmpeg could not fetch back', async () => {
-    for (const videoUrl of ['/api/media?key=x', 'data:video/mp4;base64,AAA', '']) {
+  it('skips only URLs that cannot be fetched back', async () => {
+    for (const videoUrl of ['data:video/mp4;base64,AAA', '', 'not-a-url']) {
       const res = await muxBackgroundMusicOntoVideoUrl({ videoUrl, trackId: 'deep house' });
       expect(res.audioApplied).toBe(false);
       expect(res.skipReason).toBe('no_remote_video');
       expect(res.videoUrl).toBe(videoUrl);
     }
+  });
+
+  it('accepts R2-backed media paths, which is how persisted reels arrive', async () => {
+    // Live reels are stored as `/api/media?key=...`; rejecting them skipped the
+    // only videos that had already been through post-production.
+    const res = await muxBackgroundMusicOntoVideoUrl({
+      videoUrl: '/api/media?key=tenant%2Freel%2F2026-08-24%2Fclip.mp4',
+      trackId: 'deep house',
+    });
+    expect(res.skipReason).not.toBe('no_remote_video');
   });
 });
 

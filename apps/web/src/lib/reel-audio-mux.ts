@@ -125,7 +125,11 @@ export async function muxBackgroundMusicOntoVideoUrl(input: {
 }): Promise<ReelAudioMuxResult> {
   const videoUrl = (input.videoUrl || '').trim();
   const trackId = (input.trackId || '').trim();
-  if (!videoUrl || !videoUrl.startsWith('http')) {
+  // R2-backed videos arrive as `/api/media?key=...`, which `resolveMediaFetchUrl`
+  // turns into an internal absolute URL. Requiring `http` here skipped exactly
+  // the reels that had already been persisted — the ones most worth scoring.
+  const fetchable = videoUrl.startsWith('http') || videoUrl.startsWith('/');
+  if (!videoUrl || !fetchable) {
     return { videoUrl, audioApplied: false, trackId: null, skipReason: 'no_remote_video' };
   }
   if (!trackId) {
