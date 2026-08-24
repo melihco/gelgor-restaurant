@@ -11,7 +11,7 @@
  * silent reel still publishes while a thrown error loses the whole slot.
  */
 
-import { resolveStoryMusicSource } from './story-audio-catalog';
+import { resolveStoryMusicSource, storyMusicProxyUrl } from './story-audio-catalog';
 import { resolveMediaFetchUrl } from './logo-compositor';
 
 export interface ReelAudioMuxResult {
@@ -85,15 +85,19 @@ async function readTrackBytes(trackId: string): Promise<{ bytes: Buffer; ext: st
   if (!source) return null;
 
   if (source.type === 'remote') {
-    const url = source.track.url;
-    if (!url) return null;
-    const res = await fetch(url, { signal: AbortSignal.timeout(60_000) });
+    // Catalog links serve an HTML download page, not the file — fetching them
+    // directly wrote markup into track.mp3 and ffmpeg rejected it, which is why
+    // only the bundled legacy tracks ever landed. The proxy route unwraps it.
+    const res = await fetch(storyMusicProxyUrl(source.track.id), {
+      signal: AbortSignal.timeout(60_000),
+    });
     if (!res.ok) return null;
-    const ext = url.split('?')[0]?.split('.').pop()?.toLowerCase();
-    return {
-      bytes: Buffer.from(await res.arrayBuffer()),
-      ext: ext && ext.length <= 4 ? ext : 'mp3',
-    };
+    const contentType = (res.headers.get('content-type') || '').toLowerCase();
+    if (contentType && !contentType.startsWith('audio/') && !contentType.includes('octet-stream')) {
+      console.warn(`[reel-audio-mux] track "${trackId}" served ${contentType}, not audio`);
+      return null;
+    }
+    return { bytes: Buffer.from(await res.arrayBuffer()), ext: 'mp3' };
   }
 
   // Legacy tracks ship in the web bundle rather than the remote catalog.
