@@ -92,3 +92,17 @@ export function storyAudioResolveFromArtifactMeta(
       : null);
   return { explicit, slotIndex, artifactId: artifactId ?? null };
 }
+
+/**
+ * True when the produced video file already carries its music bed.
+ *
+ * Previews mute the video and run a parallel `<audio>` loop, which is the only
+ * way to score a still or a legacy silent render. Doing that over a muxed file
+ * would stack two beds out of sync, so those players must unmute instead.
+ */
+export function artifactCarriesEmbeddedAudio(
+  meta: Record<string, unknown> | null | undefined,
+): boolean {
+  const m = meta ?? {};
+  return m.story_audio_muxed === true || m.storyAudioMuxed === true;
+}

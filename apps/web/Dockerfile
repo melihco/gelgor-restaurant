@@ -32,10 +32,15 @@ FROM node:20-bookworm-slim AS runtime
 
 WORKDIR /app
 
+# ffmpeg (ships ffprobe too) backs three video post-production steps that are
+# non-fatal by design and were therefore degrading silently in this image:
+# background-music mux, multi-beat montage, and the burned-in logo overlay.
+# Reels published silent, single-shot and unbranded until it was installed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-noto-color-emoji \
     ca-certificates \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production

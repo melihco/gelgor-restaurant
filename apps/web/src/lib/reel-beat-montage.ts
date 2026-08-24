@@ -16,10 +16,6 @@ import type { ReelRecipe } from '@/lib/reel-production-recipe';
 import { applyVideoTierScopeToMontageStrategy } from '@/lib/video-tier-scope';
 import { REEL_BEAT_MONTAGE_PHOTO_CAP } from '@/lib/mission-production-cost-guards';
 
-function resolveFfmpegBin(): string {
-  return '/opt/homebrew/bin/ffmpeg';
-}
-
 async function findFfmpeg(): Promise<string | null> {
   const candidates = [
     '/opt/homebrew/bin/ffmpeg',
@@ -35,7 +31,10 @@ async function findFfmpeg(): Promise<string | null> {
       /* next */
     }
   }
-  return resolveFfmpegBin();
+  // Returning a macOS path here made the caller's "ffmpeg missing" branch dead
+  // code, so a container without ffmpeg reported a generic spawn failure
+  // instead of the missing binary.
+  return null;
 }
 
 function runFfmpeg(bin: string, args: string[]): Promise<void> {

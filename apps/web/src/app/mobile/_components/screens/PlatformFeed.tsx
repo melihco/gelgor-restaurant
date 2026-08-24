@@ -62,6 +62,7 @@ import {
 } from '@/lib/feed-slot-filter';
 import { useActiveTenantId } from '@/hooks/useActiveTenantId';
 import {
+  artifactCarriesEmbeddedAudio,
   storyAudioResolveFromArtifactMeta,
   useBrandStoryAudio,
 } from '@/hooks/useBrandStoryAudio';
@@ -3604,6 +3605,10 @@ function PlatformFeedInner() {
                 const artMusicUrl = resolveMusicUrl(
                   storyAudioResolveFromArtifactMeta(artMeta, art.id),
                 );
+                // A muxed file scores itself; a parallel loop would double the bed.
+                const artVideoMusicUrl = artifactCarriesEmbeddedAudio(artMeta)
+                  ? null
+                  : artMusicUrl;
                 return (
                   <>
                     {poster ? (
@@ -3626,10 +3631,10 @@ function PlatformFeedInner() {
                     }}>
                     {vid ? (
                       <StoryPreviewVideo
-                        key={`${vid}:${artMusicUrl}`}
+                        key={`${vid}:${artVideoMusicUrl}`}
                         src={vid}
                         poster={poster ?? undefined}
-                        backgroundMusicUrl={artMusicUrl}
+                        backgroundMusicUrl={artVideoMusicUrl}
                         style={mediaStyle}
                       />
                     ) : poster ? (

@@ -4900,6 +4900,44 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     const persistedCarouselUrls = carouselPublishAsFeed ? [] : carouselUrls;
 
+    const needsStoryAudioStamp = isReel
+      || kind === 'instagram_story'
+      || kind === 'instagram_canvas'
+      || effectiveKind === 'instagram_story'
+      || effectiveKind === 'instagram_reel'
+      || assignmentImpliesStoryFormat(assignment.slot_role);
+    const storyAudioSlotIndex = assignmentImpliesStoryFormat(assignment.slot_role)
+      ? storyIndex
+      : ideaIndex;
+    const resolvedStoryAudioMood = needsStoryAudioStamp
+      ? resolveStoryAudioMood({
+        selected: motionProfile.storyAudioMood,
+        pool: motionProfile.audioMoodPool,
+        slotIndex: storyAudioSlotIndex,
+        sector: brandBusinessType,
+      })
+      : null;
+
+    // fal returns silent MP4s and the montage step strips audio outright, so the
+    // brand's track has to be written into the file here — preview-only playback
+    // never reaches a download, a scheduler, or the platform itself.
+    let storyAudioMuxed = false;
+    let storyAudioMuxSkip: string | null = null;
+    if (videoUrl && isPlayableVideoUrl(videoUrl) && resolvedStoryAudioMood) {
+      const { muxBackgroundMusicOntoVideoUrl } = await import('@/lib/reel-audio-mux');
+      const muxed = await muxBackgroundMusicOntoVideoUrl({
+        videoUrl,
+        trackId: resolvedStoryAudioMood,
+        workspaceId,
+      });
+      if (muxed.audioApplied) {
+        videoUrl = muxed.videoUrl;
+        storyAudioMuxed = true;
+      } else {
+        storyAudioMuxSkip = muxed.skipReason ?? 'unknown';
+      }
+    }
+
     const isStoryIdea = kind === 'instagram_story' || kind === 'instagram_canvas'
       || assignmentImpliesStoryFormat(assignment.slot_role);
     const bundleReadyNow = designedPosterReady || markyBranded;
@@ -5101,23 +5139,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const slotFalRequests = getCapturedFalRequests();
-    const needsStoryAudioStamp = isReel
-      || kind === 'instagram_story'
-      || kind === 'instagram_canvas'
-      || effectiveKind === 'instagram_story'
-      || effectiveKind === 'instagram_reel'
-      || assignmentImpliesStoryFormat(assignment.slot_role);
-    const storyAudioSlotIndex = assignmentImpliesStoryFormat(assignment.slot_role)
-      ? storyIndex
-      : ideaIndex;
-    const resolvedStoryAudioMood = needsStoryAudioStamp
-      ? resolveStoryAudioMood({
-        selected: motionProfile.storyAudioMood,
-        pool: motionProfile.audioMoodPool,
-        slotIndex: storyAudioSlotIndex,
-        sector: brandBusinessType,
-      })
-      : null;
     const metadata: Record<string, unknown> = {
       ...(brandDesignTemplateId
         ? {
@@ -5136,6 +5157,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? {
           story_audio_mood: resolvedStoryAudioMood,
           story_audio_slot_index: storyAudioSlotIndex,
+          // Players must not stack a second bed on a file that already carries
+          // one — the flag is what lets the preview unmute instead.
+          story_audio_muxed: storyAudioMuxed,
+          ...(storyAudioMuxSkip ? { story_audio_mux_skip: storyAudioMuxSkip } : {}),
         }
         : {}),
       platform: 'instagram',
