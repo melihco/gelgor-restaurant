@@ -286,7 +286,7 @@ export function buildTypeFitPromptBlock(fit: DesignSpecCopyFitResult): string {
       `SUBTITLE metrics: font≈${sub.fit.fontSize}px · zone ${sub.zonePx.width}×${sub.zonePx.height}px`,
     );
   } else {
-    lines.push('NO SUBTITLE — leave subtitle slot empty.');
+    lines.push('NO SUBTITLE — render no support line and no panel, bar, or plate where one would go.');
   }
   lines.push(
     'If copy looks long: use the fitted line breaks above — do NOT invent a bigger panel or bottom ticker.',

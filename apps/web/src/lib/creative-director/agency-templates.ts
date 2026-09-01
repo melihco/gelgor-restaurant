@@ -142,7 +142,7 @@ export const AGENCY_TEMPLATE_CATALOG: readonly AgencyTemplateContract[] = [
     imageRules: [
       'Type never overlaps glassware, faces, or hero subject',
       'Prefer dusk/night grade for nightlife; golden hour for sunset — still editorial, not flyer',
-      'Logo zone empty — post-composite only',
+      'Logo corner calm, background continues — no painted plate, post-composite only',
     ],
     matchKeywords: /story|dj|night|event|party|gece|kampanya|campaign|luxury|sunset|gün bat/i,
     preferredCampaignIds: ['signature_cocktails', 'sunset_dining', 'weekend_brunch', 'nightlife_event'],

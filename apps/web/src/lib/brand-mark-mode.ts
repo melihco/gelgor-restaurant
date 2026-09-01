@@ -65,7 +65,7 @@ export function resolveBrandMarkMode(input: ResolveBrandMarkModeInput): Resolved
       typeWordmark: false,
       xorDirective:
         'BRAND MARK XOR (mandatory): Official logo is composited after generation. '
-        + 'Leave the reserved logo zone empty. FORBIDDEN: typing, spelling, abbreviating, '
+        + 'Keep that corner calm, with the background continuing as-is. FORBIDDEN: typing, spelling, abbreviating, '
         + 'or painting the brand name / wordmark / monogram anywhere on canvas — logo OR name, never both.',
     };
   }

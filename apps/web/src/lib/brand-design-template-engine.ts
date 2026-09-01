@@ -1076,8 +1076,8 @@ async function generateOne(
       ? [
           'FORBIDDEN LOGO PAINT: never paint, type, or illustrate the brand mark — official logo is composited post-generation in the reserved quiet zone. Do not also type the brand name.',
           logoPlacementDirective
-            ? `RESERVED LOGO ZONE (design-fit): ${logoPlacementDirective} Leave that corner empty — no type, icons, or busy texture.`
-            : 'RESERVED LOGO ZONE: leave one quiet craft/margin corner empty for the official mark — never over the headline/subline block.',
+            ? `LOGO CLEARANCE (design-fit): ${logoPlacementDirective} Keep that corner calm — no type, icons, busy texture, or painted placeholder.`
+            : 'LOGO CLEARANCE: keep one quiet craft/margin corner calm for the official mark, background continuing as-is — never over the headline/subline block, and paint no plate there.',
         ].filter(Boolean).join(' ')
       : brandMark.mode === 'text_wordmark'
         ? `BRAND WORDMARK: type "${input.brandName}" once as a small corner mark — do not invent a logo icon.`

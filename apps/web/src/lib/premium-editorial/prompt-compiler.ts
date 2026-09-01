@@ -107,7 +107,7 @@ export function compileEditorialImagePrompt(opts: {
       formatZone('Headline zone', layout.headlineZone),
       formatZone('Body / subheadline zone', layout.bodyZone),
       formatZone('CTA zone', layout.ctaZone),
-      formatZone('Logo zone (leave empty for real logo composite)', layout.logoZone),
+      formatZone('Logo clearance (keep calm, background continues; real logo composited later)', layout.logoZone),
       `Safe area: top=${layout.safeArea.top} right=${layout.safeArea.right} bottom=${layout.safeArea.bottom} left=${layout.safeArea.left}`,
       `Target negative space ~${Math.round(layout.negativeSpaceRatio * 100)}% for calm reading.`,
       'Asymmetric editorial social composition — agency portfolio bar, not Canva template.',
@@ -140,7 +140,7 @@ export function compileEditorialImagePrompt(opts: {
       `One high-resolution Instagram ${brief.outputFormat} frame.`,
       `Aspect ratio: ${layout.canvas.aspectRatio}`,
       'No border. No device mockup. No Instagram interface chrome.',
-      'Leave the logo zone empty — the real logo file is composited after generation.',
+      'Keep the logo corner calm with the background continuing as-is — the real logo file is composited after generation, so paint no plate or placeholder there.',
     ].join('\n'),
   };
 

@@ -1994,11 +1994,11 @@ export function buildFalLogoPlacementContract(input: {
 
   const fallbackPlacement: Record<FalLogoCanvasChannel, string> = {
     feed_post:
-      'Reserve a clean quiet corner (top-right OR bottom-right) — no text, icons, or busy texture. Never over faces, hands, food, cutlery, glassware, or the headline block.',
+      'Keep one corner calm — top-right OR bottom-right — free of text, icons, and busy texture. Keep it clear of faces, hands, food, cutlery, glassware, and the headline block.',
     reel:
-      'Reserve top-right (below the top 12% Instagram UI safe zone) OR bottom-right (above the bottom 15% safe zone). Keep away from the photo hero subject and headline panel.',
+      'Keep top-right (below the top 12% Instagram UI safe zone) OR bottom-right (above the bottom 15% safe zone) calm. Keep it clear of the photo hero subject and the headline panel.',
     story:
-      'Reserve top-right (below safe zone) OR bottom-left. Never center over the main subject or headline stack.',
+      'Keep top-right (below safe zone) OR bottom-left calm. Keep it clear of the main subject and the headline stack.',
   };
 
   const placementLine = input.placement
@@ -2014,14 +2014,18 @@ export function buildFalLogoPlacementContract(input: {
     'The official logo is supplied as a separate asset and will be composited in post-production — pixel-perfect, unchanged.',
     'DO NOT draw, generate, illustrate, paint, emboss, or type any logo, emblem, monogram, mascot, sun icon, location pin, map marker, or brand mark anywhere in this image.',
     'LOGO INTEGRITY (non-negotiable): The AI must never redraw, reimagine, simplify, cartoonify, recolor, warp, stretch, crop, or replace the official mark.',
-    'FORBIDDEN SUBSTITUTES: no fake wordmarks, no stylized spelling of the brand name, no pin icons, no sun badges — the reserved zone must stay visually empty.',
-    'ALLOWED in the reserved zone only: leave empty quiet space (photo, soft gradient, or uncluttered margin) — NEVER paint a white/cream square, card, pill, or sticker plate for the logo.',
-    `RESERVED LOGO ZONE: ${placementLine}${brandNote}`,
+    'FORBIDDEN SUBSTITUTES: no fake wordmarks, no stylized spelling of the brand name, no pin icons, no sun badges.',
+    // Image models render the nouns they are given. Naming a "reserved logo
+    // zone" and sizing it made them paint one: live frames shipped with a blank
+    // plate at exactly the width and edge padding this block used to specify.
+    // So the corner is described as untouched photography and the prohibition
+    // is phrased as verbs, never as an object that could be drawn. Sizing is
+    // owned by the compositor (`sizePct` in logo-compositor), not the prompt.
+    `LOGO CLEARANCE: ${placementLine}${brandNote}`,
+    'In that corner the photograph or background simply continues as-is. Do not add, outline, tint, lighten, darken, or frame anything there, and do not mark where the logo will go.',
     input.hasPhotoHero !== false
-      ? 'Photo hero rule: reserved logo zone must sit in a margin/corner — never over the dish, hands, knife/fork action, or primary photo subject.'
+      ? 'Photo hero rule: that corner must fall in a margin — never over the dish, hands, knife/fork action, or primary photo subject.'
       : '',
-    'Reserved zone size: ~8–12% of frame width, with at least 3% padding from frame edges and from headline/subtitle blocks.',
-    'FORBIDDEN: white logo plate, opaque badge card behind the mark, invented icon, stylized lettering, fake watermark, or spelling the brand name instead of leaving the reserved zone empty.',
   ].filter(Boolean).join(' ');
 }
 

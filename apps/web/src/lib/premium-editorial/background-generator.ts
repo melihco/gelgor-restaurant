@@ -128,7 +128,7 @@ export async function generateEditorialBackground(opts: {
     '',
     '═══ ABSOLUTE TEXT FIDELITY ═══',
     'If an ON-CANVAS TEXT CONTRACT is present, render ONLY those strings.',
-    'Leave the logo zone empty for the real logo file composite.',
+    'Keep that corner calm — the background continues as-is; paint no plate or placeholder for the logo composite.',
   ].join('\n').slice(0, limit);
 
   const refs = (opts.referenceUrls ?? [])

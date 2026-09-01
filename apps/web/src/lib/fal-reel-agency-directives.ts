@@ -209,7 +209,7 @@ export function buildFalReelAgencyPack(input: FalReelAgencyDirectiveInput): FalR
     caption ? `CAPTION CONTEXT (design energy only — do not invent new slogans): ${caption}.` : '',
     reelArtDirection ? `REEL ART DIRECTION: ${reelArtDirection}.` : '',
     supporting ? `SUPPORTING SUBJECTS (imply via photo zone / parallax readiness): ${supporting}.` : '',
-    'REEL COVER CONTRACT: First-frame scroll-stopper on 9:16. Frozen typography for I2V. Official logo composited later — leave quiet logo zone empty. Never paint platform labels (REEL, INSTAGRAM).',
+    'REEL COVER CONTRACT: First-frame scroll-stopper on 9:16. Frozen typography for I2V. Official logo composited later — keep one quiet corner calm with the footage continuing as-is, no painted plate. Never paint platform labels (REEL, INSTAGRAM).',
   ].filter(Boolean);
 
   const motionCue = [

@@ -154,7 +154,7 @@ export function buildAgencyCreativeDirectorPrompt(input: {
     '── BRAND KIT ──',
     `Brand: ${brand.brandName} · Primary ${brand.primary} · Accent ${brand.accent}`,
     `Personality: ${brand.personality.join(', ') || 'premium, mediterranean, hospitality'}`,
-    brand.logoUrl ? 'Logo zone empty — composited after bake.' : '',
+    brand.logoUrl ? 'Logo corner stays calm, background continuing as-is — no painted plate; composited after bake.' : '',
     '',
     '── PASS BAR ──',
     'Turunç / Wallpaper-level vibey editorial — designed, not caption-on-photo.',

@@ -661,7 +661,7 @@ describe('buildFalOnCanvasTextContract', () => {
 });
 
 describe('buildFalLogoPlacementContract', () => {
-  it('requires reserved logo zone and forbids AI-drawn marks', () => {
+  it('demands logo clearance and forbids AI-drawn marks', () => {
     const contract = buildFalLogoPlacementContract({
       logoProvided: true,
       brandName: 'Sarnıç Beach',
@@ -670,10 +670,27 @@ describe('buildFalLogoPlacementContract', () => {
     expect(contract).toContain('BRAND LOGO CONTRACT');
     expect(contract).toContain('DO NOT draw, generate');
     expect(contract).toContain('abbreviate the brand name');
-    expect(contract).toContain('RESERVED LOGO ZONE');
+    expect(contract).toContain('LOGO CLEARANCE');
     expect(contract).toContain('Photo hero rule');
     expect(contract).toContain('never over the dish');
-    expect(contract).toMatch(/white.*square|white logo plate/i);
+    expect(contract).toContain('continues as-is');
+  });
+
+  it('never describes the logo corner as a drawable object', () => {
+    // Live frames shipped with a painted blank plate because the prompt named a
+    // sized "reserved zone"; image models render the nouns they are handed.
+    for (const channel of ['feed_post', 'reel', 'story'] as const) {
+      const contract = buildFalLogoPlacementContract({
+        logoProvided: true,
+        brandName: 'Karaman Datça',
+        channel,
+      });
+      expect(contract).not.toMatch(/reserved (logo )?zone/i);
+      expect(contract).not.toMatch(/zone (must )?stay (visually )?empty/i);
+      expect(contract).not.toMatch(/leave .{0,24}empty/i);
+      // The compositor owns logo sizing — a size spec here gets drawn.
+      expect(contract).not.toMatch(/\d+\s*[–-]\s*\d+%\s*of frame width/i);
+    }
   });
 
   it('returns empty string when no logo', () => {

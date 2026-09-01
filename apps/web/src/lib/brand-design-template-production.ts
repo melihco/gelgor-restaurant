@@ -171,7 +171,7 @@ export function buildTemplateLayoutDirectives(
     const channel = formatChannelFromTemplateFormat(matched.format);
     out.push(
       `LOGO SEAT (design-fit, post-composite): ${formatFalLogoPlacementDirective(matched.logoPlacement, channel)} ` +
-        'Leave that quiet corner empty — official mark is composited after generation; never over the type zone.',
+        'Keep that corner calm with the background continuing as-is — official mark is composited after generation; paint no plate there and never overlap the type zone.',
     );
   } else if (!matched.prominentLogo) {
     out.push('LOGO OFF: this template has includeLogo=false — no brand mark on canvas.');

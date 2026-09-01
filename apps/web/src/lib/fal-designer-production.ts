@@ -1079,7 +1079,7 @@ function buildDesignedDesignCardPrompt(
     placement: input.logoPlacement ?? null,
   });
   const logoRefNote = logoProvided
-    ? 'LOGO ASSET: Official logo is composited after generation — leave the reserved logo zone empty; do not paint any brand mark or type the brand name in this image.'
+    ? 'LOGO ASSET: Official logo is composited after generation — do not paint any brand mark, plate, badge or placeholder, and do not type the brand name in this image.'
     : '';
 
   const onCanvasTextContract = buildFalOnCanvasTextContract({
@@ -1398,7 +1398,7 @@ export function buildHarmonizedPhotoFirstTypographyBlock(input: {
   }
   if (input.logoProvided) {
     lines.push(
-      'BRAND MARK XOR: official logo composited later — leave a quiet corner empty; do NOT type or invent a brand wordmark.',
+      'BRAND MARK XOR: official logo composited later — keep one corner calm with the photograph continuing as-is; do NOT type or invent a brand wordmark.',
     );
   } else if (input.brandName?.trim()) {
     const mark = resolveBrandMarkLockup(input.brandName);

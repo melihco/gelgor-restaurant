@@ -445,8 +445,12 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('BRAND LOGO CONTRACT');
     expect(prompt).toContain('DO NOT draw, generate');
     expect(prompt).toContain('LOGO ASSET');
-    expect(prompt).toContain('RESERVED');
+    expect(prompt).toContain('LOGO CLEARANCE');
     expect(prompt).not.toContain('BRAND MARK (small corner wordmark');
+    // The clearance corner must never be described as something paintable —
+    // that phrasing is what made live frames ship with a blank plate.
+    expect(prompt).not.toMatch(/leave .{0,24}empty/i);
+    expect(prompt).not.toMatch(/reserved logo zone/i);
   });
 
   it('photo_first story prompt forbids top bands and uses photo-first typography', () => {
