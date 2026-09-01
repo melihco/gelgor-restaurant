@@ -120,6 +120,66 @@ describe('resolveCalendarDesignLayout', () => {
   });
 });
 
+describe('slot-catalog announcement vocabulary', () => {
+  // Live production sent the slot catalog's own wording into a matrix that knew
+  // six keys, so 203 of 217 calendar frames defaulted. Two sectors per case.
+  const cases: Array<{
+    incoming: string;
+    channel: 'story' | 'post';
+    sector: string;
+    expected: string;
+  }> = [
+    { incoming: 'campaign_announcement', channel: 'post', sector: 'beach_club', expected: 'campaign_hero_block' },
+    { incoming: 'seasonal_promo', channel: 'story', sector: 'beach_club', expected: 'diagonal_brand_split' },
+    { incoming: 'menu_highlight', channel: 'post', sector: 'restaurant_cafe', expected: 'split_feature_panel' },
+    { incoming: 'menu_highlight', channel: 'post', sector: 'local_products_shop', expected: 'graphic_shape_stack' },
+    { incoming: 'event_special', channel: 'story', sector: 'restaurant_cafe', expected: 'editorial_date_masthead' },
+    { incoming: 'event_special', channel: 'story', sector: 'beach_club', expected: 'neon_night_promo' },
+    { incoming: 'customer_review', channel: 'post', sector: 'local_products_shop', expected: 'location_pin_card' },
+    { incoming: 'kitchen_bts', channel: 'story', sector: 'restaurant_cafe', expected: 'polaroid_memory' },
+  ];
+
+  for (const c of cases) {
+    it(`${c.incoming} (${c.channel}, ${c.sector}) reaches the matrix instead of defaulting`, () => {
+      const layout = resolveCalendarDesignLayout({
+        announcementType: c.incoming,
+        channel: c.channel,
+        sector: c.sector,
+      });
+      expect(layout.canvaArchetypeId).toBe(c.expected);
+      expect(layout.source).not.toBe('default_split_feature_panel');
+      expect(layout.isFallback).toBe(false);
+    });
+  }
+
+  it('leaves label-only announcement types unresolved so rotation can pick', () => {
+    // These carry no layout intent among the six keys; mapping them onto one
+    // would rebuild the collapse the synonym map exists to undo.
+    for (const labelOnly of ['announcement_formal', 'daily_story', 'weekend_hours', 'job_posting']) {
+      for (const sector of ['restaurant_cafe', 'local_products_shop']) {
+        const layout = resolveCalendarDesignLayout({
+          announcementType: labelOnly,
+          channel: 'post',
+          sector,
+        });
+        expect(layout.source).toBe('default_split_feature_panel');
+        expect(layout.isFallback).toBe(true);
+      }
+    }
+  });
+
+  it('marks real matrix and explicit hits as non-fallback', () => {
+    for (const sector of ['beach_club', 'local_products_shop']) {
+      expect(resolveCalendarDesignLayout({
+        announcementType: 'social_proof', channel: 'post', sector,
+      }).isFallback).toBe(false);
+      expect(resolveCalendarDesignLayout({
+        announcementType: '', channel: 'post', sector, explicitLayoutFamily: 'noir_editorial',
+      }).isFallback).toBe(false);
+    }
+  });
+});
+
 describe('isKnownCalendarDesignLayoutFamily', () => {
   it('validates catalog archetype ids', () => {
     expect(isKnownCalendarDesignLayoutFamily('event_ticket_stub')).toBe(true);

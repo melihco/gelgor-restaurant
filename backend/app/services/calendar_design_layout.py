@@ -86,8 +86,54 @@ SECTOR_CALENDAR_LAYOUT_OVERRIDES: dict[str, dict[str, dict[str, str]]] = {
 }
 
 
+# Slot-catalog vocabulary -> matrix announcement key. TS parity: see the same map
+# in calendar-design-layout.ts for why the two vocabularies drifted apart and why
+# label-only types (announcement_formal, daily_story, hiring, booking) are absent.
+ANNOUNCEMENT_KEY_SYNONYMS: dict[str, str] = {
+    "campaign_announcement": "offer_campaign",
+    "campaign_offer": "offer_campaign",
+    "seasonal_promo": "offer_campaign",
+    "promo": "offer_campaign",
+    "promotion": "offer_campaign",
+    "offer": "offer_campaign",
+    "special_offer": "offer_campaign",
+    "sale": "offer_campaign",
+    "discount": "offer_campaign",
+    "menu_highlight": "product_reveal",
+    "new_menu": "product_reveal",
+    "product_showcase": "product_reveal",
+    "product_highlight": "product_reveal",
+    "product_hero": "product_reveal",
+    "product_detail": "product_reveal",
+    "product_range": "product_reveal",
+    "signature_dish": "product_reveal",
+    "new_arrival": "product_reveal",
+    "event_special": "event_teaser",
+    "event_announcement": "event_teaser",
+    "events_calendar": "event_teaser",
+    "event": "event_teaser",
+    "ambiance": "venue_showcase",
+    "dining_ambiance": "venue_showcase",
+    "facility": "venue_showcase",
+    "interior": "venue_showcase",
+    "venue": "venue_showcase",
+    "testimonial": "social_proof",
+    "customer_review": "social_proof",
+    "review": "social_proof",
+    "customer_favorite": "social_proof",
+    "bts": "behind_the_scenes",
+    "kitchen_bts": "behind_the_scenes",
+    "production_bts": "behind_the_scenes",
+    "craft_process": "behind_the_scenes",
+    "farm_visit": "behind_the_scenes",
+    "maker": "behind_the_scenes",
+    "meet_the_maker": "behind_the_scenes",
+}
+
+
 def _normalize_announcement_key(raw: str) -> str:
-    return raw.strip().lower().replace(" ", "_")
+    key = raw.strip().lower().replace(" ", "_")
+    return ANNOUNCEMENT_KEY_SYNONYMS.get(key, key)
 
 
 def _normalize_sector(sector: str | None) -> str:

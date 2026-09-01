@@ -84,8 +84,69 @@ export const CANVA_TO_REMOTION_LAYOUT: Partial<Record<CanvaArchetypeId, StoryLay
   gallery_carousel_tease: 'gallery_series',
 };
 
+/**
+ * Slot-catalog vocabulary → matrix announcement key.
+ *
+ * The matrix speaks six announcement keys, but the value that reaches it comes
+ * from `template_use_case` / slot `design_template_type`, which use the catalog's
+ * own wording. The two vocabularies overlap by two words, so live production sent
+ * `campaign_announcement`, `menu_highlight`, `event_special` and `seasonal_promo`
+ * into a table that knows none of them and defaulted every one of them.
+ *
+ * Announcement types with no layout intent among the six — `announcement_formal`,
+ * `daily_story`, hiring, booking — are deliberately absent: forcing them onto a
+ * key would recreate the very collapse this map exists to undo. They stay
+ * unresolved so archetype rotation picks for them.
+ */
+const ANNOUNCEMENT_KEY_SYNONYMS: Record<string, string> = {
+  campaign_announcement: 'offer_campaign',
+  campaign_offer: 'offer_campaign',
+  seasonal_promo: 'offer_campaign',
+  promo: 'offer_campaign',
+  promotion: 'offer_campaign',
+  offer: 'offer_campaign',
+  special_offer: 'offer_campaign',
+  sale: 'offer_campaign',
+  discount: 'offer_campaign',
+
+  menu_highlight: 'product_reveal',
+  new_menu: 'product_reveal',
+  product_showcase: 'product_reveal',
+  product_highlight: 'product_reveal',
+  product_hero: 'product_reveal',
+  product_detail: 'product_reveal',
+  product_range: 'product_reveal',
+  signature_dish: 'product_reveal',
+  new_arrival: 'product_reveal',
+
+  event_special: 'event_teaser',
+  event_announcement: 'event_teaser',
+  events_calendar: 'event_teaser',
+  event: 'event_teaser',
+
+  ambiance: 'venue_showcase',
+  dining_ambiance: 'venue_showcase',
+  facility: 'venue_showcase',
+  interior: 'venue_showcase',
+  venue: 'venue_showcase',
+
+  testimonial: 'social_proof',
+  customer_review: 'social_proof',
+  review: 'social_proof',
+  customer_favorite: 'social_proof',
+
+  bts: 'behind_the_scenes',
+  kitchen_bts: 'behind_the_scenes',
+  production_bts: 'behind_the_scenes',
+  craft_process: 'behind_the_scenes',
+  farm_visit: 'behind_the_scenes',
+  maker: 'behind_the_scenes',
+  meet_the_maker: 'behind_the_scenes',
+};
+
 function normalizeAnnouncementKey(raw: string): string {
-  return raw.trim().toLowerCase().replace(/\s+/g, '_');
+  const key = raw.trim().toLowerCase().replace(/\s+/g, '_');
+  return ANNOUNCEMENT_KEY_SYNONYMS[key] ?? key;
 }
 
 function normalizeLayoutChannel(channel: CalendarLayoutChannel): CalendarLayoutChannel {
@@ -157,6 +218,13 @@ export function resolveCalendarDesignLayout(input: {
   canvaArchetypeId: CanvaArchetypeId;
   layoutFamilyHint: StoryLayoutFamily;
   source: string;
+  /**
+   * True when nothing in the input actually chose this layout. Callers must not
+   * hand a fallback to the archetype resolver as an explicit pick: an explicit id
+   * there is absolute and switches off both sector rotation and the repeat
+   * penalty, which is how one default ended up forced onto 233 live frames.
+   */
+  isFallback: boolean;
 } {
   const channel = normalizeLayoutChannel(input.channel);
   const explicit = String(input.explicitLayoutFamily ?? '').trim();
@@ -166,6 +234,7 @@ export function resolveCalendarDesignLayout(input: {
       canvaArchetypeId: archetype,
       layoutFamilyHint: storyLayoutHintForCanvaArchetype(archetype),
       source: 'calendar:design_layout_family',
+      isFallback: false,
     };
   }
 
@@ -180,6 +249,7 @@ export function resolveCalendarDesignLayout(input: {
       source: sectorSpecific
         ? `sector_matrix:${sectorKey}:${key}`
         : `announcement_matrix:${key}`,
+      isFallback: false,
     };
   }
 
@@ -188,6 +258,7 @@ export function resolveCalendarDesignLayout(input: {
     canvaArchetypeId: fallback,
     layoutFamilyHint: storyLayoutHintForCanvaArchetype(fallback),
     source: 'default_split_feature_panel',
+    isFallback: true,
   };
 }
 

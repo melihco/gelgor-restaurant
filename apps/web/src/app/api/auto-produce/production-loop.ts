@@ -3964,8 +3964,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           format: falBriefFormat,
           slotRole: assignment.slot_role,
           sceneHint: falSceneHint,
-          layoutFamilyHint: calendarDesignLayout?.layoutFamilyHint ?? assignment.layout_family_hint,
-          explicitCanvaArchetypeId: calendarDesignLayout?.canvaArchetypeId,
+          // A defaulted matrix result is not a choice. Fed in as an explicit id it
+          // becomes absolute and switches off sector rotation plus the repeat
+          // penalty; fed in as a hint it still scores +120. Either way the default
+          // wins, which is how one archetype ended up on 233 live frames — so a
+          // fallback yields to the assignment's own hint and to rotation.
+          layoutFamilyHint: (calendarDesignLayout && !calendarDesignLayout.isFallback
+            ? calendarDesignLayout.layoutFamilyHint
+            : undefined) ?? assignment.layout_family_hint,
+          explicitCanvaArchetypeId: calendarDesignLayout && !calendarDesignLayout.isFallback
+            ? calendarDesignLayout.canvaArchetypeId
+            : undefined,
           falDesignHint: assignment.fal_design_hint,
           reelArtDirection: assignment.reel_art_direction,
           reelSupportingSubjects: assignment.reel_supporting_subjects,
@@ -5462,6 +5471,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           design_layout_family: calendarDesignLayout.canvaArchetypeId,
           design_layout_source: calendarDesignLayout.source,
         }
+        : {}),
+      // The archetype the prompt was actually built from. Without it, output
+      // variety can only be read off the calendar matrix stamp, which covers a
+      // fifth of the feed and mostly records its own default.
+      ...(falDesignCtx?.brief.canvaArchetypeId
+        ? { canva_archetype: falDesignCtx.brief.canvaArchetypeId }
         : {}),
       ...(slotFalGridSurface ? { fal_grid_surface: slotFalGridSurface } : {}),
       ...(slotFalRequests.length ? {

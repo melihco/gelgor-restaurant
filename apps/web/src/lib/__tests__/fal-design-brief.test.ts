@@ -56,6 +56,29 @@ describe('fal-design-brief', () => {
     expect(brief.canvaArchetypeId).toBe('diagonal_brand_split');
   });
 
+  it('rotates archetypes across a mission when no explicit pick is supplied', () => {
+    // Production used to hand the calendar matrix's default in as an explicit id.
+    // An explicit id is absolute and also disables the repeat penalty and the
+    // rotation boost, so one archetype was forced onto every slot in a mission.
+    for (const sector of ['restaurant_cafe', 'local_products_shop']) {
+      const used: string[] = [];
+      for (let ordinal = 0; ordinal < 4; ordinal += 1) {
+        const { brief } = resolveFalDesignPromptContext({
+          caption: 'Bugün bahçemizde sizi bekliyoruz.',
+          headline: 'Bugün Bahçede',
+          format: 'post',
+          templateUseCase: 'daily_story',
+          sector,
+          referencePhotoUrl: 'https://cdn.example.com/venue.jpg',
+          usedArchetypeIds: used,
+          falSlotOrdinal: ordinal,
+        });
+        used.push(brief.canvaArchetypeId);
+      }
+      expect(new Set(used).size).toBeGreaterThan(1);
+    }
+  });
+
   it('merges agent fal_design_brief over synthesized defaults', () => {
     const brief = resolveFalDesignBrief({
       caption: 'Mutlu müşterilerimiz',
