@@ -29,6 +29,7 @@ import httpx
 import structlog
 
 from app.crew.context import BrandInfo
+from app.services.brand_gap_completion_service import is_corrupted_description
 
 logger = structlog.get_logger()
 
@@ -149,15 +150,21 @@ async def build_brand_dna(brand: BrandInfo, openai_api_key: str = "") -> dict[st
         except Exception:
             pass
 
-    # Skip synthesis if we have very little data. Review signals and the brand's
-    # own description count: a shop with 500 Google reviews and no crawled
-    # website still has plenty for a strategist to work from.
+    # Only evidence observed about *this* brand may open the synthesis gate.
+    # Review signals count — a shop with 500 Google reviews and no crawled
+    # website still has plenty for a strategist to work from. The seeded
+    # description ("X — local service business sektöründe hizmet vermektedir.")
+    # and the weekly trend brief do not: both exist for every workspace, so
+    # letting them qualify makes the model invent a brand out of sector clichés.
+    own_description = bool(
+        signals["description"] and not is_corrupted_description(signals["description"])
+    )
     has_meaningful_data = bool(
         signals["website_summary"] or signals["instagram_bio"] or
         signals["competitor_brief"] or signals["learning_context"] or
         signals["visual_dna"] or signals["gallery_scene_catalog"] or
         signals["google_review_signals"] or signals["google_rating"] or
-        signals["description"] or signals["trend_brief"]
+        own_description
     )
 
     if not has_meaningful_data:

@@ -13,9 +13,12 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
+import pytest
+
 from app.crew.context import BrandInfo
 from app.services.brand_dna_service import (
     brand_dna_quality_rank,
+    build_brand_dna,
     build_brand_dna_prompt,
     is_fallback_brand_dna,
     resolve_brand_dna_for_persist,
@@ -103,6 +106,81 @@ class TestFallbackStopsFabricating:
 
         assert "audience_intelligence" not in dna
         assert "brand_voice_guide" not in dna
+
+
+class TestSynthesisGate:
+    """
+    Only evidence about *this* brand may open the gate. Seven live workspaces
+    held nothing but a seeded description and the weekly trend brief, and the
+    synthesiser happily invented "owns the territory of trust and local
+    expertise" for each of them.
+    """
+
+    @pytest.mark.parametrize(
+        "business_type,name",
+        [("local_service_business", "Brand"), ("beach_club", "İsimsiz")],
+    )
+    async def test_seeded_description_and_trend_brief_do_not_open_the_gate(
+        self, business_type, name
+    ):
+        brand = BrandInfo(
+            business_name=name,
+            business_type=business_type,
+            description=f"{name} — {business_type.replace('_', ' ')} sektöründe hizmet vermektedir.",
+            trend_brief="## 🔥 Bu Haftanın Trendleri\n- Yerel hizmetlere talep artıyor.",
+            target_audience="mevcut müşteriler, potansiyel müşteriler, yerel takipçiler",
+            brand_tone="profesyonel, samimi, güvenilir",
+        )
+
+        dna = await build_brand_dna(brand, openai_api_key="sk-would-not-be-used")
+
+        assert dna["synthesis_status"] == "fallback"
+        assert dna["fallback_reason"] == "no_signals"
+        assert "competitive_position" not in dna
+
+    async def test_google_reviews_alone_open_the_gate(self, monkeypatch):
+        """A shop with reviews and no website is a real brand, not an empty row."""
+        seen: dict[str, str] = {}
+
+        async def fake_synthesise(prompt: str, _key: str) -> str:
+            seen["prompt"] = prompt
+            return json.dumps({"brand_essence": "gerçek", "data_richness": "moderate"})
+
+        monkeypatch.setattr(
+            "app.services.brand_dna_service._gpt_synthesise", fake_synthesise
+        )
+        brand = BrandInfo(
+            business_name="Karaman Datça",
+            business_type="local_products_shop",
+            google_rating=4.8,
+            google_review_count=312,
+            google_review_signals=["zeytinyağı harika", "badem ezmesi taze"],
+        )
+
+        dna = await build_brand_dna(brand, openai_api_key="sk-test")
+
+        assert dna["synthesis_status"] == "synthesised"
+        assert "zeytinyağı harika" in seen["prompt"]
+
+    async def test_a_real_description_opens_the_gate(self, monkeypatch):
+        async def fake_synthesise(prompt: str, _key: str) -> str:
+            return json.dumps({"brand_essence": "gerçek", "data_richness": "moderate"})
+
+        monkeypatch.setattr(
+            "app.services.brand_dna_service._gpt_synthesise", fake_synthesise
+        )
+        brand = BrandInfo(
+            business_name="Gel Gör Restaurant",
+            business_type="restaurant_cafe",
+            description=(
+                "Datça'da narenciye bahçesi içinde, serpme köy kahvaltısı ve "
+                "yerel Ege yemekleri sunan aile işletmesi."
+            ),
+        )
+
+        dna = await build_brand_dna(brand, openai_api_key="sk-test")
+
+        assert dna["synthesis_status"] == "synthesised"
 
 
 class TestFallbackDetection:
