@@ -4016,6 +4016,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     let falGrafikerScore: number | null = null;
     let falGrafikerPass = true;
+    let falGrafikerObservedScore: number | null = null;
+    let falGrafikerReviewed = false;
     let falDesignEngine: string | null = null;
     let brandDesignTemplateId: string | null = null;
     let brandDesignTemplateType: string | null = null;
@@ -4359,6 +4361,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
       falGrafikerScore = slotCtx.state.falGrafikerScore;
       falGrafikerPass = slotCtx.state.falGrafikerPass;
+      falGrafikerObservedScore = slotCtx.state.falGrafikerObservedScore ?? null;
+      falGrafikerReviewed = slotCtx.state.falGrafikerReviewed === true;
       falDesignEngine = slotCtx.state.falDesignEngine;
       brandDesignTemplateId = slotCtx.state.brandDesignTemplateId ?? null;
       brandDesignTemplateType = slotCtx.state.brandDesignTemplateType ?? null;
@@ -5307,6 +5311,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_designer_produced: true,
             fal_design_engine: falDesignEngine,
             ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            // Without a template lock the Grafiker design review is skipped, so
+            // record whether anything actually judged the composition and what it
+            // said. Text validation still runs and is what typography_text_valid
+            // reflects; it checks the painted line against the requested one, not
+            // the layout around it.
+            grafiker_reviewed: falGrafikerReviewed,
+            ...(falGrafikerObservedScore != null
+              ? { grafiker_observed_score: falGrafikerObservedScore }
+              : {}),
             // A designed post that came back without painted copy is a failed
             // design, and an unverified render is not a passing one either — only
             // claim valid typography when the canvas actually carries the line.

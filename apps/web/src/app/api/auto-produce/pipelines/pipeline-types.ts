@@ -30,6 +30,13 @@ export interface SlotProductionState {
   videoUrl: string | null;
   falGrafikerScore: number | null;
   falGrafikerPass: boolean;
+  /**
+   * Vision score for a render that shipped without the Grafiker gate (no template
+   * lock). Recorded for measurement only — no publish gate reads it.
+   */
+  falGrafikerObservedScore?: number | null;
+  /** Whether a vision review actually looked at the shipped render. */
+  falGrafikerReviewed?: boolean;
   falDesignEngine: string | null;
   videoProduceMeta: VideoProduceMeta | null;
   /** Locked brand design template applied this slot (onboarding fal set). */

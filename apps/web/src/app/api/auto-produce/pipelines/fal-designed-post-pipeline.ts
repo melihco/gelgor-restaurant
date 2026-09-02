@@ -125,23 +125,40 @@ export interface FalDesignedPostResult {
   falGrafikerScore: number | null;
   falGrafikerPass: boolean;
   falDesignEngine: string | null;
+  /**
+   * Vision score for renders that ship without a template lock, where the
+   * Grafiker gate does not run. Recorded for measurement only — no gate reads it,
+   * so a scorer whose accuracy is still unproven cannot withhold a slot.
+   */
+  falGrafikerObservedScore?: number | null;
+  /** Whether a vision review actually looked at the shipped render. */
+  falGrafikerReviewed?: boolean;
   /** Added to the running cost estimate. */
   costDelta: number;
   failureReason?: string;
+}
+
+/** Raw vision read of a rendered poster — no pass policy applied. */
+async function scoreDesignedPostRender(
+  imageUrl: string,
+  headline: string,
+): Promise<{ score: number | null; pass: boolean } | null> {
+  const buf = await fetchExternalImageBuffer(imageUrl, 25_000);
+  if (!buf || buf.length < 100) return null;
+  const review = await runGrafikerVisionReview(buf, headline.slice(0, 60), 'poster');
+  if (!review) return null;
+  return { score: review.score ?? null, pass: review.pass };
 }
 
 async function reviewDesignedPostOutput(
   imageUrl: string,
   headline: string,
 ): Promise<{ score: number | null; pass: boolean }> {
-  const buf = await fetchExternalImageBuffer(imageUrl, 25_000);
-  if (!buf || buf.length < 100) return { score: null, pass: true };
-  const review = await runGrafikerVisionReview(buf, headline.slice(0, 60), 'poster');
+  const review = await scoreDesignedPostRender(imageUrl, headline);
   if (!review) return { score: null, pass: true };
-  const score = review.score ?? null;
   return {
-    score,
-    pass: templateLockUsesGrafikerPass(score, review.pass),
+    score: review.score,
+    pass: templateLockUsesGrafikerPass(review.score, review.pass),
   };
 }
 
@@ -159,6 +176,8 @@ export async function produceFalDesignedPost(
   let imageUrl: string | null = input.existingImageUrl;
   let falGrafikerScore: number | null = null;
   let falGrafikerPass = true;
+  let falGrafikerObservedScore: number | null = null;
+  let falGrafikerReviewed = false;
   let falDesignEngine: string | null = null;
   let costDelta = 0;
 
@@ -383,6 +402,8 @@ export async function produceFalDesignedPost(
           const grafiker = await reviewDesignedPostOutput(designedUrl, input.headline);
           falGrafikerScore = grafiker.score;
           falGrafikerPass = grafiker.pass;
+          falGrafikerObservedScore = grafiker.score;
+          falGrafikerReviewed = grafiker.score != null;
           lastTextValidUrl = designedUrl;
           lastTextValidScore = grafiker.score;
           if (grafiker.pass) {
@@ -395,6 +416,20 @@ export async function produceFalDesignedPost(
             `[auto-produce] [fal-design] template lock grafiker ${grafiker.score ?? '—'}/10 — retry ${attempt + 2}/${maxGptAttempts}`,
           );
           continue;
+        }
+        // No template lock, so the Grafiker gate above is skipped and this render
+        // ships on text validation alone — which is how a headline clipped to a
+        // grammatical fragment and a reserved-but-empty logo band reached the feed.
+        // Review it for the record; promoting this to a gate needs the scorer's
+        // accuracy proven against the pixel defect detectors first.
+        const observed = await scoreDesignedPostRender(designedUrl, input.headline);
+        falGrafikerObservedScore = observed?.score ?? null;
+        falGrafikerReviewed = observed?.score != null;
+        if (observed?.score != null) {
+          console.log(
+            `[auto-produce] [fal-design] observed grafiker ${observed.score}/10 `
+            + `(no template lock — record only) "${input.headline.slice(0, 40)}"`,
+          );
         }
         imageUrl = designedUrl;
         falDesignEngine = 'gpt_image_designed';
@@ -569,7 +604,15 @@ export async function produceFalDesignedPost(
     };
   }
 
-  return { imageUrl, falGrafikerScore, falGrafikerPass, falDesignEngine, costDelta };
+  return {
+    imageUrl,
+    falGrafikerScore,
+    falGrafikerPass,
+    falGrafikerObservedScore,
+    falGrafikerReviewed,
+    falDesignEngine,
+    costDelta,
+  };
 }
 
 /**
@@ -803,6 +846,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
       if (designed.imageUrl != null) state.imageUrl = designed.imageUrl;
       state.falGrafikerScore = designed.falGrafikerScore;
       state.falGrafikerPass = designed.falGrafikerPass;
+      state.falGrafikerObservedScore = designed.falGrafikerObservedScore ?? null;
+      state.falGrafikerReviewed = designed.falGrafikerReviewed === true;
       state.falDesignEngine = designed.falDesignEngine;
       state.costDelta += designed.costDelta;
       if (designed.failureReason && !designed.imageUrl) {

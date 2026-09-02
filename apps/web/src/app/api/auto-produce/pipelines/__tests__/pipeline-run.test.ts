@@ -35,6 +35,8 @@ const h = vi.hoisted(() => ({
   isUsableGalleryPhotoUrl: vi.fn(() => true),
   generateDesignedPostImage: vi.fn(),
   generateProductShowcaseImage: vi.fn(),
+  fetchExternalImageBuffer: vi.fn(async () => Buffer.alloc(4096, 1)),
+  runGrafikerVisionReview: vi.fn(async () => null as { score: number | null; pass: boolean } | null),
   matchDesignTemplateToSlot: vi.fn(async () => null),
   recordDesignTemplateUsage: vi.fn(async () => undefined),
   bindBrandTemplateForFalProduction: vi.fn(async (input: {
@@ -163,6 +165,12 @@ vi.mock('@/lib/typography-text-validation', () => ({
     detectedHeadline: null,
     detectedSubtitle: null,
   }),
+}));
+vi.mock('@/lib/external-image-fetch', () => ({
+  fetchExternalImageBuffer: h.fetchExternalImageBuffer,
+}));
+vi.mock('@/lib/grafiker-review-service', () => ({
+  runGrafikerVisionReview: h.runGrafikerVisionReview,
 }));
 
 import { falVideoHandler } from '../fal-video-pipeline';
@@ -472,6 +480,38 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.falDesignEngine).toBe('gpt_image_designed');
     expect(ctx.state.falGrafikerScore).toBeNull();
     expect(ctx.state.costDelta).toBeCloseTo(0.04);
+  });
+
+  it('records an observed grafiker score without gating the untemplated render', async () => {
+    // No template lock, so the Grafiker gate stays off; a low score must be
+    // measurable without withholding the slot.
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue('designed-url');
+    h.runGrafikerVisionReview.mockResolvedValue({ score: 4, pass: false });
+
+    const ctx = makeCtx({ isFalDesignPost: true });
+    await falDesignHandler.run(ctx);
+
+    expect(h.runGrafikerVisionReview).toHaveBeenCalled();
+    expect(ctx.state.imageUrl).toBe('designed-url');
+    expect(ctx.state.falGrafikerObservedScore).toBe(4);
+    expect(ctx.state.falGrafikerReviewed).toBe(true);
+    // The blocking fields stay untouched — no publish gate reads the observation.
+    expect(ctx.state.falGrafikerScore).toBeNull();
+    expect(ctx.state.falGrafikerPass).toBe(true);
+  });
+
+  it('reports no review when the vision service is unavailable', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue('designed-url');
+    h.runGrafikerVisionReview.mockResolvedValue(null);
+
+    const ctx = makeCtx({ isFalDesignPost: true });
+    await falDesignHandler.run(ctx);
+
+    expect(ctx.state.falGrafikerObservedScore).toBeNull();
+    expect(ctx.state.falGrafikerReviewed).toBe(false);
+    expect(ctx.state.imageUrl).toBe('designed-url');
   });
 
   it('falls back to the fal Ideogram still when the gallery photo is not usable', async () => {
