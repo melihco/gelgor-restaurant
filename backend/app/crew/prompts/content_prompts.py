@@ -197,9 +197,11 @@ Every concept must be genuinely different from ALL past output for this brand.
 5. The anti-repeat list in Tenant Learning Intelligence must be respected strictly.
 6. You MUST return EXACTLY {count} distinct concepts — never fewer. If one angle feels thin,
    broaden the dimension instead of dropping a concept: a different sub-product / ingredient /
-   menu item, a different season or daypart, a different customer segment, a different content
+   menu item, a different daypart, a different customer segment, a different content
    angle (behind-the-scenes → ingredient origin → recipe/usage → customer story → educational →
-   social proof → seasonal → process/craft). Every real brand has ≥{count} facets — find them.
+   social proof → process/craft). Every real brand has ≥{count} facets — find them.
+   Season is NOT one of those dimensions — the whole batch is published in one week, so every
+   concept stays in the season named in the date block above.
 7. headline, concept_title, and caption_draft hook MUST be unique across the batch — never
    repeat the same marketing angle with only content_type/format changed. Each slot is a different
    story, product, moment, or customer insight.

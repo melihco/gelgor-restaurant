@@ -39,9 +39,22 @@ def _date_context_block() -> str:
     month     = TR_MONTHS[now.month - 1]
     date_str  = f"{now.day} {month} {now.year}, {day_name}"
 
+    # Season was only ever implied by the month name, so a September brief that
+    # said "yazın son döneminde" still produced "Güzel Bahar Sofraları".
+    from app.services.context_signal_service import resolve_season_window
+    window = resolve_season_window(now.date())
+    allowed = " veya ".join(window["allowed_labels"])
+    forbidden = ", ".join(window["forbidden_labels"])
+
     return f"""## 📅 BUGÜNÜN TARİHİ — KESİN REFERANS
 **Bugün**: {date_str} (ISO: {now.strftime('%Y-%m-%d')})
 **Saat dilimi**: UTC
+**Sezon**: {allowed}
+
+⚠️ SEZON KURALI (ASLA İHLAL ETME):
+- Bu haftanın tüm içeriği {allowed} içinde geçer.
+- Şu sezonlara ATIF YAPMA — ne başlıkta, ne açıklamada, ne görsel yönlendirmede: {forbidden}.
+- Sezon çeşitlilik boyutu DEĞİLDİR. Bir hafta tek sezonun içindedir; farklı bir sezon yazmak çeşitlilik değil hatadır.
 
 ⚠️ TARİH KURALI (ASLA İHLAL ETME):
 - Bugünden ÖNCE kalan özel günler veya etkinlikler için içerik ÜRETİLMEZ.

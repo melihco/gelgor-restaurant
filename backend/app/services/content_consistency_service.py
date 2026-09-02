@@ -291,6 +291,36 @@ def check_weekly_content(
                 ),
             ))
 
+    # ── Check 7: Season the calendar cannot support ──────────────────────
+    # A weekly package sits inside one season, so a spring headline in September
+    # is a factual error rather than a variety choice.
+    from app.services.context_signal_service import find_out_of_season_words
+
+    out_of_season: list[str] = []
+    for c in concepts:
+        copy_blob = " ".join(
+            str(c.get(k) or "")
+            for k in ("headline", "concept_title", "caption_draft", "caption",
+                      "visual_direction", "hook")
+        )
+        for word in find_out_of_season_words(copy_blob):
+            title = str(c.get("headline") or c.get("concept_title") or "?")[:60]
+            out_of_season.append(f"{title} → “{word}”")
+
+    if out_of_season:
+        issues.append(ConsistencyIssue(
+            severity="error",
+            check="out_of_season",
+            description=(
+                f"{len(out_of_season)} piece(s) name a season this week cannot be in: "
+                + "; ".join(out_of_season[:4])
+            ),
+            suggestion=(
+                "Rewrite in the current season. Season is not a variety dimension — "
+                "vary sub-product, daypart, customer segment, or content angle instead."
+            ),
+        ))
+
     errors = [i for i in issues if i.severity == "error"]
     warnings = [i for i in issues if i.severity == "warning"]
     passed = len(errors) == 0

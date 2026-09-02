@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone, date, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from app.crew.context import BrandInfo
@@ -119,6 +119,91 @@ def _get_current_season(today: date, location: str = "", language: str = "tr") -
     }
     tr, en = labels[key]
     return en if language == "en" else tr
+
+
+_SEASON_ORDER = ("winter", "spring", "summer", "autumn")
+_SEASON_MONTHS = {
+    "winter": (12, 1, 2),
+    "spring": (3, 4, 5),
+    "summer": (6, 7, 8),
+    "autumn": (9, 10, 11),
+}
+_SEASON_LABELS_TR = {
+    "winter": "Kış",
+    "spring": "İlkbahar",
+    "summer": "Yaz",
+    "autumn": "Sonbahar",
+}
+
+# Season words as they appear in Turkish copy, with the case suffixes a headline
+# actually uses. `sonbahar` and `ilkbahar` both contain `bahar`, so spring is
+# matched only after the compound forms have been ruled out.
+_SEASON_WORD_RX: dict[str, re.Pattern[str]] = {
+    "autumn": re.compile(r"\b(?:sonbahar|güz)\w*", re.I),
+    "spring": re.compile(r"\b(?:ilkbahar|bahar)\w*", re.I),
+    "summer": re.compile(r"\byaz(?:ın|ı|a|da|dan|dır|lık|ları|larda)?\b", re.I),
+    "winter": re.compile(r"\bkış\w*", re.I),
+}
+
+
+def _season_key(month: int) -> str:
+    for key, months in _SEASON_MONTHS.items():
+        if month in months:
+            return key
+    return "summer"
+
+
+def resolve_season_window(today: date) -> dict[str, Any]:
+    """
+    The seasons a given date may legitimately talk about.
+
+    A week of content sits inside one season, so naming a different one is an
+    error rather than variety. Meteorological boundaries are too sharp to use
+    alone: on 2 September the calendar says autumn while a coastal venue is
+    still living high summer. The neighbouring season therefore stays allowed
+    while the date is inside the first or last stretch of the block, which keeps
+    "yaz sonu" legal in early September and "bahar" illegal all the same.
+    """
+    current = _season_key(today.month)
+    idx = _SEASON_ORDER.index(current)
+    months = _SEASON_MONTHS[current]
+
+    allowed = {current}
+    # Position inside the three-month block, 0-based.
+    position = months.index(today.month)
+    if position == 0 and today.day <= 21:
+        allowed.add(_SEASON_ORDER[(idx - 1) % 4])
+    if position == 2 and today.day >= 10:
+        allowed.add(_SEASON_ORDER[(idx + 1) % 4])
+
+    forbidden = [k for k in _SEASON_ORDER if k not in allowed]
+    # Chronological, not enum order: in late November the pair reads
+    # "Sonbahar veya Kış" rather than "Kış veya Sonbahar".
+    ordered = [current] + [k for k in _SEASON_ORDER if k in allowed and k != current]
+    if len(ordered) == 2 and ordered[1] == _SEASON_ORDER[(idx - 1) % 4]:
+        ordered.reverse()
+
+    return {
+        "current": current,
+        "current_label": _SEASON_LABELS_TR[current],
+        "allowed": sorted(allowed),
+        "allowed_labels": [_SEASON_LABELS_TR[k] for k in ordered],
+        "forbidden": forbidden,
+        "forbidden_labels": [_SEASON_LABELS_TR[k] for k in forbidden],
+    }
+
+
+def find_out_of_season_words(text: str, today: date | None = None) -> list[str]:
+    """Season words in `text` that the date cannot support."""
+    if not text or not text.strip():
+        return []
+    window = resolve_season_window(today or date.today())
+    hits: list[str] = []
+    for key in window["forbidden"]:
+        match = _SEASON_WORD_RX[key].search(text)
+        if match:
+            hits.append(match.group(0))
+    return hits
 
 
 _BREAKFAST_RX = re.compile(

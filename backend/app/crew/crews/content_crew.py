@@ -850,7 +850,8 @@ def _topup_ideation(
         f"GENERATE {total_gap} ADDITIONAL, COMPLETELY NEW content concepts to finish this "
         f"week's plan. Required new formats: {mix_str}. "
         f"These angles ALREADY EXIST — every new concept MUST be clearly different from all of "
-        f"them (different sub-product, ingredient, season, customer segment, or content angle): "
+        f"them (different sub-product, ingredient, daypart, customer segment, or content angle — "
+        f"never a different season, the whole package ships in one week): "
         f"{avoid}."
     )
     try:
