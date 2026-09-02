@@ -696,6 +696,29 @@ def _norm_title(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def _open_catalog_slots(
+    existing: list,
+    catalog_slot_plan: list[dict[str, str]] | None,
+) -> list[dict[str, str]]:
+    """Planned slots no idea has claimed yet, in plan order."""
+    rows = [
+        s for s in (catalog_slot_plan or [])
+        if isinstance(s, dict) and str(s.get("slot_key") or "").strip()
+    ]
+    if not rows:
+        return []
+
+    taken: set[str] = set()
+    for idea in existing:
+        if not isinstance(idea, dict):
+            continue
+        key = str(idea.get("catalog_slot_key") or idea.get("catalogSlotKey") or "").strip()
+        if key:
+            taken.add(key)
+
+    return [s for s in rows if str(s["slot_key"]).strip() not in taken]
+
+
 def _missing_format_breakdown(
     concepts: list,
     count: int,
@@ -774,6 +797,7 @@ def _ensure_distinct_ideation_batch(
     *,
     max_topups: int | None = None,
     format_targets: dict[str, int] | None = None,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> tuple[list, int]:
     """
     Dedupe near-duplicate headlines, then LLM top-up until `count` unique ideas
@@ -783,6 +807,9 @@ def _ensure_distinct_ideation_batch(
     package one-sided: a 16-slot week shipped as 8 or 9 deliverables. Keep asking
     while each pass still contributes, and stop as soon as one adds nothing —
     a stuck model will not become unstuck on the next identical request.
+
+    `catalog_slot_plan` is forwarded so the top-up fills the deliverables that are
+    still open rather than a bare format count.
     """
     from app.services.package_weekly_geometry import CONTENT_IDEATION_MAX_TOPUPS
 
@@ -799,6 +826,7 @@ def _ensure_distinct_ideation_batch(
             brand, batch, count, time_period,
             content_pillars, autonomy_mode, llm, mission_id,
             format_targets=format_targets,
+            catalog_slot_plan=catalog_slot_plan,
         )
         tokens += topup_tokens
         batch = dedupe_ideation_by_headline(batch)
@@ -829,13 +857,24 @@ def _topup_ideation(
     llm: Any,
     mission_id: str | None,
     format_targets: dict[str, int] | None = None,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> tuple[list, int]:
     """
     Generate genuinely NEW distinct concepts when the first ideation pass
     under-delivered (LLM returned < count). Far better than cloning donors,
     which produces duplicate-looking ideas. Only runs on a shortfall.
+
+    The top-up used to be told a format count and nothing else. A 16-slot Gel Gör
+    week came back with the first eleven slots written correctly and the tail
+    filled by re-using four slot keys while four planned slots went uncovered,
+    because "2 more posts, 1 more story" says nothing about which deliverables
+    are still open. Asking for the open slots by name is what makes the tail
+    specific instead of "Müşterilerimiz Değerlendiriyor!" on the ambiance slot.
     """
+    open_slots = _open_catalog_slots(existing, catalog_slot_plan)
     missing, total_gap = _missing_format_breakdown(existing, count, format_targets)
+    if open_slots:
+        total_gap = min(len(open_slots), max(total_gap, len(open_slots)))
     if total_gap <= 0:
         return existing, 0
 
@@ -844,11 +883,21 @@ def _topup_ideation(
         for c in existing
         if isinstance(c, dict)
     ]
-    mix_str = ", ".join(f"{n} {f}" for f, n in missing.items() if n > 0) or f"{total_gap} post"
     avoid = "; ".join(t for t in existing_titles if t)[:1500]
+    if open_slots:
+        ask = (
+            f"GENERATE {total_gap} ADDITIONAL concepts for the deliverables still open in "
+            f"this week's plan. The slot list in this brief contains ONLY those open slots — "
+            f"write one concept per slot, in order. Do not re-use a slot already covered."
+        )
+    else:
+        mix_str = ", ".join(f"{n} {f}" for f, n in missing.items() if n > 0) or f"{total_gap} post"
+        ask = (
+            f"GENERATE {total_gap} ADDITIONAL, COMPLETELY NEW content concepts to finish this "
+            f"week's plan. Required new formats: {mix_str}."
+        )
     topup_brief = (
-        f"GENERATE {total_gap} ADDITIONAL, COMPLETELY NEW content concepts to finish this "
-        f"week's plan. Required new formats: {mix_str}. "
+        f"{ask} "
         f"These angles ALREADY EXIST — every new concept MUST be clearly different from all of "
         f"them (different sub-product, ingredient, daypart, customer segment, or content angle — "
         f"never a different season, the whole package ships in one week): "
@@ -859,6 +908,7 @@ def _topup_ideation(
             brand, total_gap, time_period, topup_brief,
             content_pillars, autonomy_mode, llm, mission_id=mission_id,
             format_targets=missing or format_targets,
+            catalog_slot_plan=open_slots[:total_gap] or None,
         )
     except Exception as exc:  # noqa: BLE001 — top-up is best-effort
         logger.warning("ideation_topup_failed: error=%s", str(exc)[:200])
@@ -974,6 +1024,7 @@ def run_content_ideation(
                 brand, concepts, count, time_period,
                 content_pillars, autonomy_mode, llm, mission_id,
                 format_targets=format_targets,
+                catalog_slot_plan=catalog_slot_plan,
             )
             total_tokens += topup_tokens
             # `raw_output` is what the mission persists, and everything below is
@@ -1051,6 +1102,7 @@ def run_content_ideation(
                             brand, revised_concepts, count, time_period,
                             content_pillars, autonomy_mode, llm, mission_id,
                             max_topups=1, format_targets=format_targets,
+                            catalog_slot_plan=catalog_slot_plan,
                         )
                         total_tokens += revision_topup_tokens
                         revised_concepts = _enforce_idea_completeness(revised_concepts, brand)
