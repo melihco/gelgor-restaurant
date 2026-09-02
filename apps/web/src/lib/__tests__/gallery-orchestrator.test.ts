@@ -281,4 +281,72 @@ describe('pickVenueEscalationFallbackPhoto', () => {
       hasRealBrandPhotos: true,
     })).toBeNull();
   });
+
+  // Escalation runs once per slot in its own worker invocation. Returning the
+  // first usable candidate handed every escalated slot the same photo.
+  it('skips photos this mission already shipped (restaurant_cafe)', () => {
+    const worn = 'https://cdn.example.com/gallery/terrace-hero.jpg';
+    const fresh = 'https://cdn.example.com/gallery/terrace-evening.jpg';
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: null,
+      galleryPhotos: [worn, fresh],
+      sector: 'restaurant_cafe',
+      hasRealBrandPhotos: true,
+      missionUsedUrls: [worn],
+    })).toBe(fresh);
+  });
+
+  it('rotates off the most-published photo when no vision tags exist (beach_club)', () => {
+    const worn = 'https://cdn.example.com/gallery/sunset-a.jpg';
+    const rare = 'https://cdn.example.com/gallery/sunset-b.jpg';
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: null,
+      galleryPhotos: [worn, rare],
+      sector: 'beach_club',
+      hasRealBrandPhotos: true,
+      globalUsageCounts: new Map([[worn, 192], [rare, 2]]),
+    })).toBe(rare);
+  });
+
+  it('still returns a real venue photo when the mission used every candidate', () => {
+    const only = 'https://cdn.example.com/gallery/only.jpg';
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: null,
+      galleryPhotos: [only],
+      sector: 'restaurant_cafe',
+      hasRealBrandPhotos: true,
+      missionUsedUrls: [only],
+    })).toBe(only);
+  });
+
+  it('prefers the caption-aligned photo over a merely less-used one', () => {
+    const foodPhoto = 'https://cdn.example.com/gallery/plated-pasta.jpg';
+    const gymPhoto = 'https://cdn.example.com/gallery/gym-weights.jpg';
+    const analysis: Record<string, GalleryPhotoMeta> = {
+      [foodPhoto]: {
+        primarySubject: 'food',
+        contentTags: ['food', 'pasta', 'plate', 'dish'],
+        description: 'Plated gourmet pasta dish on a restaurant table.',
+      },
+      [gymPhoto]: {
+        primarySubject: 'gym',
+        contentTags: ['gym', 'weights', 'fitness'],
+        description: 'Dumbbells racked in a gym.',
+      },
+    };
+    expect(pickVenueEscalationFallbackPhoto({
+      currentReferenceUrl: null,
+      galleryPhotos: [foodPhoto, gymPhoto],
+      sector: 'restaurant_cafe',
+      hasRealBrandPhotos: true,
+      galleryAnalysis: analysis,
+      matchInput: {
+        caption: 'Bugünün özel makarnası sofranızda — el yapımı taze pasta',
+        headline: 'El yapımı makarna',
+        businessType: 'restaurant_cafe',
+        contentType: 'feed',
+      },
+      globalUsageCounts: new Map([[foodPhoto, 40], [gymPhoto, 0]]),
+    })).toBe(foodPhoto);
+  });
 });

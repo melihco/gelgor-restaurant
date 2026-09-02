@@ -3,6 +3,7 @@ import { serverConfig } from '@/lib/server-config';
 import {
   type PostTypeBucket,
   type UsedGalleryUsage,
+  getGlobalGalleryUsageCount,
   getMissionWideExcludeUrls,
   isGalleryUrlUsedInBatch,
   isGalleryUrlUsedInMission,
@@ -12,6 +13,7 @@ import {
 import {
   isHardGalleryThemeMismatch,
   matchPhotoToContent,
+  pickLeastUsedRotationPhoto,
   pickMissionDiverseFallbackPhoto,
   preferSubjectAlignedCandidates,
   resolveBestGalleryUrl,
@@ -520,6 +522,37 @@ export function repickGalleryIfDuplicateForType(input: {
       `[auto-produce] duplicate mission gallery photo — diversity fallback for "${input.headline.slice(0, 48)}"`,
     );
     return diverse.url;
+  }
+
+  // Small gallery + long publish history saturates the exclude set (every photo
+  // is "used"), which left both pickers empty and re-elected the incumbent — one
+  // Gel Gör photo shipped in 10 of 13 slots. With nothing unused left, rotate on
+  // publish count instead of keeping the most-worn hero.
+  const rotated = pickLeastUsedRotationPhoto({
+    candidateUrls: input.candidateUrls,
+    galleryAnalysis: input.galleryAnalysis,
+    globalUsageCounts: input.globalUsageCounts,
+    hardExcludeUrls: input.batchUsedMission ?? [],
+    matchInput: {
+      caption: input.caption,
+      headline: input.headline,
+      mood: input.mood,
+      contentType: input.postType,
+      businessType: input.businessType,
+      ...(input.subjectKey ? { subjectKey: input.subjectKey } : {}),
+    },
+  });
+  if (
+    rotated
+    && normalizeGalleryUrl(rotated.url) !== normalizeGalleryUrl(referenceUrl)
+    && rotated.usageCount < getGlobalGalleryUsageCount(input.globalUsageCounts, referenceUrl)
+  ) {
+    console.warn(
+      `[auto-produce] gallery pool saturated — rotating off over-used photo `
+      + `(${getGlobalGalleryUsageCount(input.globalUsageCounts, referenceUrl)} → ${rotated.usageCount} uses) `
+      + `for "${input.headline.slice(0, 48)}"`,
+    );
+    return rotated.url;
   }
 
   // Prefer leaving a duplicate over shipping a semantically wrong photo.

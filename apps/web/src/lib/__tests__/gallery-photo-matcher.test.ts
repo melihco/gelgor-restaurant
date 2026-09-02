@@ -20,6 +20,7 @@ import {
   preferSubjectAlignedCandidates,
   canonicalSubjectRelation,
   canonicalSubjectFromText,
+  pickLeastUsedRotationPhoto,
   resolveGalleryMatchSubjectKey,
   isJamFamilySubject,
   MIN_ACCEPT_SCORE,
@@ -343,6 +344,77 @@ describe('assignPhotosToContents — 1:1 within a post-type bucket', () => {
 
     // Score delta, not the reason string: `reason` keeps only the top 3 reasons.
     expect(rank(counts)).toBe((rank() ?? 0) + GALLERY_UNUSED_PHOTO_BOOST);
+  });
+
+  // A 12-photo gallery with 600+ published artifacts marks every photo "used",
+  // so unused-only pickers return nothing and the incumbent hero wins forever.
+  describe('pickLeastUsedRotationPhoto — saturated pool rotation', () => {
+    // Two equally-suitable photos: only publish history should separate them.
+    const TERRACE_WORN = 'https://cdn.example.com/gallery/terrace-worn.jpg';
+    const TERRACE_RARE = 'https://cdn.example.com/gallery/terrace-rare.jpg';
+    const venueTwins: Record<string, GalleryPhotoMeta> = {
+      [TERRACE_WORN]: {
+        contentTags: ['interior', 'terrace', 'ambiance', 'cozy'],
+        description: 'A cozy restaurant interior with a terrace and warm ambient lighting.',
+        bestFor: ['venue_photo', 'feed_post'],
+        suggestedAssetType: 'venue_photo',
+      },
+      [TERRACE_RARE]: {
+        contentTags: ['interior', 'terrace', 'ambiance', 'cozy'],
+        description: 'A cozy terrace corner with warm ambient lighting and set tables.',
+        bestFor: ['venue_photo', 'feed_post'],
+        suggestedAssetType: 'venue_photo',
+      },
+    };
+
+    it('picks the least-published photo among equal fits (restaurant_cafe)', () => {
+      const picked = pickLeastUsedRotationPhoto({
+        candidateUrls: [TERRACE_WORN, TERRACE_RARE],
+        galleryAnalysis: venueTwins,
+        globalUsageCounts: new Map([[TERRACE_WORN, 192], [TERRACE_RARE, 4]]),
+        matchInput: {
+          caption: 'cozy interior terrace ambiance at our restaurant',
+          businessType: 'restaurant_cafe',
+        },
+      });
+      expect(picked?.url).toBe(TERRACE_RARE);
+      expect(picked?.usageCount).toBe(4);
+    });
+
+    it('never returns a photo the mission already shipped (beach_club)', () => {
+      const picked = pickLeastUsedRotationPhoto({
+        candidateUrls: [TERRACE_WORN, TERRACE_RARE],
+        galleryAnalysis: venueTwins,
+        // The unused one is blocked, so the worn sibling must still ship.
+        globalUsageCounts: new Map([[TERRACE_WORN, 192], [TERRACE_RARE, 1]]),
+        hardExcludeUrls: [TERRACE_RARE],
+        matchInput: {
+          caption: 'cozy interior terrace ambiance at our beach club',
+          businessType: 'beach_club',
+        },
+      });
+      expect(picked?.url).toBe(TERRACE_WORN);
+    });
+
+    it('returns null when the caption hard-vetoes every candidate', () => {
+      expect(pickLeastUsedRotationPhoto({
+        candidateUrls: [GYM_PHOTO],
+        galleryAnalysis: restaurantGallery(),
+        globalUsageCounts: new Map([[GYM_PHOTO, 0]]),
+        matchInput: {
+          caption: 'Tabakta el yapımı makarna ve zeytinyağı — yemek servisi',
+          businessType: 'restaurant_cafe',
+        },
+      })).toBeNull();
+    });
+
+    it('returns null when every candidate is hard-excluded', () => {
+      expect(pickLeastUsedRotationPhoto({
+        candidateUrls: [FOOD_PHOTO],
+        galleryAnalysis: restaurantGallery(),
+        hardExcludeUrls: [FOOD_PHOTO],
+      })).toBeNull();
+    });
   });
 
   it('does not assign the same photo across post-type buckets (mission-wide)', () => {

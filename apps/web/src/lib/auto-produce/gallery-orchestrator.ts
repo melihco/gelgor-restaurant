@@ -8,7 +8,10 @@
 
 import {
   assignPhotosToContents,
+  buildGalleryLookup,
   canonicalSubjectRelationForMeta,
+  isHardGalleryThemeMismatch,
+  rankPhotosForContent,
   resolveGalleryMatchSubjectKey,
   resolveGalleryPhotoMeta,
   type CanonicalSubjectRelation,
@@ -31,6 +34,7 @@ import { buildSlotGalleryMatchInput, assignmentPostType } from '@/lib/gallery-fi
 import type { UsedGalleryUsage } from '@/lib/gallery-usage-tracker';
 import {
   buildGlobalGalleryUsageCounts,
+  getGlobalGalleryUsageCount,
   getMissionWideExcludeUrls,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
@@ -114,6 +118,12 @@ function falLastResortPipelineForPostType(
  * Venue / high-reliability gallery brands must keep a real photo when gallery
  * match fails — fal_only without a venue image falls through to Ideogram T2I
  * and invents a fake location.
+ *
+ * Escalation runs per slot in its own worker invocation, so taking the first
+ * usable candidate handed every escalated slot the same photo (one Gel Gör
+ * photo shipped in 10 of 13 slots). Rank by caption fit and usage history, and
+ * hard-block photos this mission already used, before falling back to "any real
+ * venue photo" — that last resort is the reason this helper exists.
  */
 export function pickVenueEscalationFallbackPhoto(input: {
   currentReferenceUrl?: string | null;
@@ -123,6 +133,14 @@ export function pickVenueEscalationFallbackPhoto(input: {
   hasRealBrandPhotos?: boolean;
   /** Judge/hard-veto rejected URL — prefer a different gallery photo first. */
   excludeUrls?: string[];
+  /** Vision tags per photo — enables caption-aligned ranking. */
+  galleryAnalysis?: Record<string, GalleryPhotoMeta>;
+  /** Caption / headline / subject for ranking. */
+  matchInput?: MatchPhotoInput;
+  /** Publish counts per photo — drives rotation away from over-used heroes. */
+  globalUsageCounts?: ReadonlyMap<string, number>;
+  /** Photos already shipped by sibling slots of this mission — never repeat. */
+  missionUsedUrls?: Iterable<string>;
 }): string | null {
   const profile = getSectorProfile(input.sector);
   const venueGrounded = Boolean(
@@ -137,22 +155,63 @@ export function pickVenueEscalationFallbackPhoto(input: {
       .map((u) => normalizeGalleryUrl(String(u ?? '').trim()))
       .filter(Boolean),
   );
+  const missionUsed = new Set(
+    [...(input.missionUsedUrls ?? [])]
+      .map((u) => normalizeGalleryUrl(String(u ?? '').trim()))
+      .filter(Boolean),
+  );
 
-  // Prefer alternate gallery photos over the rejected pick.
   // Never reattach a hard-veto / judge-rejected URL — wrong photo ships are worse
   // than fal_only without a venue still (0% mismatch ship target).
-  const candidates = [
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const raw of [
     ...(input.galleryPhotos ?? []),
     ...(input.brandReferenceImageUrls ?? []),
-  ];
-  for (const raw of candidates) {
+  ]) {
     const url = String(raw ?? '').trim();
     if (!url || !isUsableGalleryPhotoUrl(url) || isStockGalleryPhotoUrl(url)) continue;
-    if (excluded.has(normalizeGalleryUrl(url))) continue;
-    // Also skip currentReferenceUrl when it was the rejected pick (in excludeUrls).
-    return url;
+    const base = normalizeGalleryUrl(url);
+    if (excluded.has(base) || seen.has(base)) continue;
+    seen.add(base);
+    candidates.push(url);
   }
-  return null;
+  if (!candidates.length) return null;
+
+  const analysis = input.galleryAnalysis;
+  const usageOf = (url: string) => getGlobalGalleryUsageCount(input.globalUsageCounts, url);
+
+  if (analysis && input.matchInput) {
+    const fresh = candidates.filter((u) => !missionUsed.has(normalizeGalleryUrl(u)));
+    const pool = fresh.length ? fresh : candidates;
+    // Rank on caption fit alone. Feeding usage counts into the score lets the
+    // -18/use penalty outweigh semantics, so an unused wrong photo beats a
+    // well-matched one; usage may only order photos that already fit.
+    const lookup = buildGalleryLookup(analysis, pool);
+    const ranked = rankPhotosForContent(input.matchInput, pool, lookup, new Set(), analysis);
+    const acceptable = ranked.filter((r) => r.score >= MIN_ACCEPT_SCORE);
+    if (acceptable.length) {
+      // Stable sort — caption-fit order breaks ties inside a usage group.
+      return [...acceptable].sort((a, b) => usageOf(a.url) - usageOf(b.url))[0]!.url;
+    }
+    if (ranked.length) return ranked[0]!.url;
+  }
+
+  // No vision tags (or every candidate hard-vetoed): rotate on publish history so
+  // the same hero cannot win every escalated slot.
+  const rotationPool = candidates.filter((u) => !missionUsed.has(normalizeGalleryUrl(u)));
+  const pool = rotationPool.length ? rotationPool : candidates;
+  const themeSafe = analysis && input.matchInput
+    ? pool.filter((u) => !isHardGalleryThemeMismatch(
+        input.matchInput!,
+        resolveGalleryPhotoMeta(u, analysis, candidates),
+        u,
+      ))
+    : pool;
+  const finalPool = themeSafe.length ? themeSafe : pool;
+  return [...finalPool].sort(
+    (a, b) => usageOf(a) - usageOf(b) || a.localeCompare(b),
+  )[0] ?? null;
 }
 
 /** Runtime gallery gate failure → reroute to fal_only instead of permanent withhold. */

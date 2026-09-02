@@ -1862,6 +1862,69 @@ function galleryTagOverlap(
 }
 
 /**
+ * Last-resort rotation for saturated pools: every photo already counts as used,
+ * so "pick an unused one" returns nothing and the incumbent — usually the most
+ * over-published hero — wins by default. Order by publish count instead, using
+ * caption fit only to break ties within an equally-worn group.
+ *
+ * Returns null when the caption hard-vetoes every candidate; shipping a
+ * duplicate beats shipping a semantically wrong photo.
+ */
+export function pickLeastUsedRotationPhoto(input: {
+  candidateUrls: string[];
+  galleryAnalysis: Record<string, GalleryPhotoMeta>;
+  globalUsageCounts?: ReadonlyMap<string, number>;
+  /** Never return these — e.g. photos this mission already shipped. */
+  hardExcludeUrls?: Iterable<string>;
+  matchInput?: MatchPhotoInput;
+}): { url: string; usageCount: number } | null {
+  const blocked = new Set(
+    [...(input.hardExcludeUrls ?? [])]
+      .map((u) => normalizeGalleryUrl(String(u ?? '').trim()))
+      .filter(Boolean),
+  );
+
+  const seen = new Set<string>();
+  const pool: string[] = [];
+  for (const raw of input.candidateUrls) {
+    const url = String(raw ?? '').trim();
+    if (!url || !isUsableGalleryPhotoUrl(url)) continue;
+    const base = normalizeGalleryUrl(url);
+    if (blocked.has(base) || seen.has(base)) continue;
+    seen.add(base);
+    pool.push(url);
+  }
+  if (!pool.length) return null;
+
+  const usageOf = (url: string) =>
+    getGlobalGalleryUsageCount(input.globalUsageCounts, url);
+
+  let ordered = pool;
+  const caption = input.matchInput ? matchCaptionBlob(input.matchInput) : '';
+  if (input.matchInput && caption.trim()) {
+    // Rank on caption fit only — the -18/use penalty inside rankPhotosForContent
+    // would otherwise let an unused wrong photo outrank a well-matched one.
+    // Rotation is applied afterwards, and only among photos that already fit.
+    const lookup = buildGalleryLookup(input.galleryAnalysis, pool);
+    const ranked = rankPhotosForContent(
+      input.matchInput,
+      pool,
+      lookup,
+      new Set(),
+      input.galleryAnalysis,
+    );
+    const acceptable = ranked.filter((r) => r.score >= MIN_ACCEPT_SCORE);
+    // Nothing fits the caption — a duplicate beats a semantically wrong photo.
+    if (!acceptable.length) return null;
+    ordered = acceptable.map((r) => r.url);
+  }
+
+  // Stable sort keeps the caption-fit order inside each usage-count group.
+  const best = [...ordered].sort((a, b) => usageOf(a) - usageOf(b))[0];
+  return best ? { url: best, usageCount: usageOf(best) } : null;
+}
+
+/**
  * When semantic scores fail, pick any unused photo that differs most from already-assigned
  * mission photos (small catalogs / identical opportunity captions).
  *

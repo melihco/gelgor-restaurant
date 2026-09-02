@@ -1082,8 +1082,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     seedBatchUsedByTypeFromUsage(galleryUsage, batchUsedByType);
   }
   const syncUsedTemplateIds: string[] = [...gctx.recentTemplateIds];
-  /** Strategist — avoid same venue photo across slots in one mission run. */
-  const batchUsedGalleryMission = new Set<string>();
+  /**
+   * Strategist — avoid same venue photo across slots in one mission run.
+   * The durable factory drains one slot per invocation, so this set must be
+   * seeded from the mission's already-shipped artifacts or every slot restarts
+   * with no memory of what its siblings used.
+   */
+  const batchUsedGalleryMission = new Set<string>(
+    gctx.missionSiblingUrls.map(normalizeGalleryUrl),
+  );
   const globalGalleryUsageCounts = buildGlobalGalleryUsageCounts(galleryUsage);
   /** Closed over by pickMissionGallery — set per-slot from ideation subject_key. */
   let activeGallerySubjectKey: string | undefined;
@@ -2961,6 +2968,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ) && rejectedRef
           ? [rejectedRef]
           : undefined,
+        galleryAnalysis: galleryMeta,
+        matchInput: {
+          caption: ideationCaption,
+          headline: galleryMatchHeadline,
+          mood,
+          contentType: postType,
+          businessType: brandBusinessType,
+          subjectKey: ideationSubjectKey,
+          ...activeGalleryMatchExtras,
+        },
+        globalUsageCounts: globalGalleryUsageCounts,
+        missionUsedUrls: batchUsedGalleryMission,
       });
       const escalated = tryGalleryFailureEscalation({
         assignment,
@@ -4749,6 +4768,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
           sector: brandBusinessType,
           hasRealBrandPhotos,
+          galleryAnalysis: galleryMeta,
+          matchInput: {
+            caption: ideationCaption,
+            headline: galleryMatchHeadline,
+            mood,
+            contentType: postType,
+            businessType: brandBusinessType,
+            subjectKey: ideationSubjectKey,
+          },
+          globalUsageCounts: globalGalleryUsageCounts,
+          missionUsedUrls: batchUsedGalleryMission,
         }) ?? referenceUrl ?? undefined;
         const designedFallback = await produceFalOnlySlot({
           pipeline: 'fal_only_post',
