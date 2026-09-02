@@ -906,7 +906,12 @@ const INCOMPLETE_TR_LOCATIVE_ADJECTIVE_RX =
 export function sanitizeFalOverlayText(raw: string | undefined | null): string {
   if (!raw) return '';
   let text = raw
-    .replace(/[\u201C\u201D\u2018\u2019"'`«»]/g, '')
+    // Turkish attaches case suffixes to proper nouns with an apostrophe, so a
+    // blanket strip misspells the brand's own name on canvas ("Gel Gör'de" →
+    // "Gel Görde"). Keep an apostrophe that sits inside a word; decorative
+    // quoting always has a boundary on at least one side.
+    .replace(/(?<![\p{L}\p{N}])['\u2018\u2019]|['\u2018\u2019](?![\p{L}\p{N}])/gu, '')
+    .replace(/[\u201C\u201D"`«»]/g, '')
     .replace(INSTRUCTION_FRAGMENT_RX, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -1203,6 +1208,12 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (INCOMPLETE_TR_GENITIVE_MODIFIER_RX.test(clean)) return true;
   if (INCOMPLETE_TR_QUANTIFIER_TAIL_RX.test(clean)) return true;
   if (isInternalStrategyBriefing(clean)) return true;
+  // A bare oblique pronoun or genitive-marked word at the end means the words that
+  // governed it were cut: "…keyifli anlar sizi bekliyor!" clamped to a 40-char zone
+  // shipped as "…keyifli anlar sizi", losing the verb. The suffix regexes above only
+  // catch case endings on nouns, so the pronoun slipped through and the truncation
+  // loop in truncateAtWordBoundary accepted it.
+  if (endsOnStrandedTurkishDependent(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
   if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
   if (words.length === 1 && clean.length >= 7 && INCOMPLETE_TR_BARE_GENITIVE_RX.test(words[0]!)) {

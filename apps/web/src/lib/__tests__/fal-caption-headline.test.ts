@@ -251,6 +251,22 @@ describe('sanitizeFalOverlayText', () => {
     expect(isMeaningfulFalOverlayText('Yaz Lezzetleri')).toBe(true);
   });
 
+  it('keeps the Turkish suffix apostrophe on proper nouns', () => {
+    // Stripping it misspelled the brand's own name on canvas.
+    expect(sanitizeFalOverlayText("Gel Gör'de lezzetli gözleme zamanı!"))
+      .toBe("Gel Gör'de lezzetli gözleme zamanı!");
+    expect(sanitizeFalOverlayText("Türkiye'nin en taze lezzetleri"))
+      .toBe("Türkiye'nin en taze lezzetleri");
+    expect(sanitizeFalOverlayText("Sarnıç'ta gün batımı"))
+      .toBe("Sarnıç'ta gün batımı");
+  });
+
+  it('still strips decorative quoting around the line', () => {
+    expect(sanitizeFalOverlayText('"Sarnıç\'ta gün batımı"')).toBe("Sarnıç'ta gün batımı");
+    expect(sanitizeFalOverlayText("'Tek başına alıntı'")).toBe('Tek başına alıntı');
+    expect(sanitizeFalOverlayText('\u201CYaz Lezzetleri\u201D')).toBe('Yaz Lezzetleri');
+  });
+
   it('prompt directive avoids the word EXACTLY', () => {
     const line = formatFalOnImageHeadlineDirective('Yaz Lezzetleri', 'bold serif');
     expect(line.toLowerCase()).not.toMatch(/\bexactly\b/);
@@ -273,6 +289,21 @@ describe('truncateAtWordBoundary', () => {
 
   it('strips dangling modifiers', () => {
     expect(truncateAtWordBoundary('This weekend just got better', 18)).toBe('This weekend');
+  });
+
+  it('does not strand an oblique pronoun when the verb is cut', () => {
+    // Live defect: a 40-char zone shipped "…keyifli anlar sizi" without "bekliyor".
+    const raw = 'Sıcak bir atmosferde keyifli anlar sizi bekliyor!';
+    expect(truncateAtWordBoundary(raw, 40)).toBe('Sıcak bir atmosferde keyifli anlar');
+    expect(isIncompleteOverlayPhrase('Sıcak bir atmosferde keyifli anlar sizi')).toBe(true);
+    // The complete line and its unrelated peers stay valid.
+    expect(isIncompleteOverlayPhrase(raw)).toBe(false);
+    expect(isIncompleteOverlayPhrase('Lezzet dolu bir gün sizi bekliyor!')).toBe(false);
+  });
+
+  it('drops a stranded genitive possessor tail (local_products_shop)', () => {
+    expect(isIncompleteOverlayPhrase('Bu hafta zeytinyağının')).toBe(true);
+    expect(isIncompleteOverlayPhrase('Zeytinyağının tazeliği sofranızda')).toBe(false);
   });
 });
 
