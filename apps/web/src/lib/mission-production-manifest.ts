@@ -118,9 +118,10 @@ export interface ProductionAssignment {
    * Provenance of `catalog_slot_key`. `feed_director` means the Feed Art Director
    * deliberately matched this idea to this slot, so heuristic rematching must not
    * silently reassign it (that shipped breakfast copy under a "private dining"
-   * design). Absent/`heuristic` keys stay soft hints.
+   * design). `ideation_plan` is stronger still: ideation was briefed with this slot
+   * and wrote the copy for it. Absent/`heuristic` keys stay soft hints.
    */
-  catalog_slot_source?: 'feed_director' | 'heuristic';
+  catalog_slot_source?: 'feed_director' | 'heuristic' | 'ideation_plan';
   /** Brand-facing catalog label (label_tr) — set by catalog-first Feed Director. */
   catalog_slot_label?: string;
   /**

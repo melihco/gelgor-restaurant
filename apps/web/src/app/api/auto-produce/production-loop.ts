@@ -5452,6 +5452,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(typeof ideaRecord.catalog_slot_label === 'string' && ideaRecord.catalog_slot_label
         ? { catalog_slot_label: ideaRecord.catalog_slot_label }
         : {}),
+      // Whether this shell is the one ideation wrote the copy for, or a
+      // downstream heuristic pick. Without it a headline/slot mismatch is
+      // indistinguishable from an intended rotation when auditing a mission.
+      ...(assignment.catalog_slot_source
+        ? { catalog_slot_source: assignment.catalog_slot_source }
+        : {}),
       ...(typeof ideaRecord.catalog_slot_picker === 'string' && ideaRecord.catalog_slot_picker
         ? {
           catalog_slot_picker: ideaRecord.catalog_slot_picker,

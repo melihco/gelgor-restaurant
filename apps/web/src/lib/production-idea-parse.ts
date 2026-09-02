@@ -341,6 +341,9 @@ export function productionIdeaFromRecord(
     calendarPlanIndex: typeof rec.calendar_plan_index === 'number'
       ? rec.calendar_plan_index
       : undefined,
+    catalogSlotKey: firstStr(rec, 'catalog_slot_key', 'catalogSlotKey') || undefined,
+    catalogSlotLabel: firstStr(rec, 'catalog_slot_label', 'catalogSlotLabel') || undefined,
+    catalogSlotSource: firstStr(rec, 'catalog_slot_source', 'catalogSlotSource') || undefined,
   };
 }
 
@@ -381,6 +384,12 @@ export function productionIdeaToRecord(idea: ProductionIdea): Record<string, unk
     ...(idea.calendarPlanIndex != null
       ? { calendar_plan_index: idea.calendarPlanIndex }
       : {}),
+    // The slot binding ideation wrote this copy for. Dropping it here let the
+    // downstream matcher re-pick a slot heuristically, so a "limited batch"
+    // headline shipped on a gift-bundle shell.
+    ...(idea.catalogSlotKey ? { catalog_slot_key: idea.catalogSlotKey } : {}),
+    ...(idea.catalogSlotLabel ? { catalog_slot_label: idea.catalogSlotLabel } : {}),
+    ...(idea.catalogSlotSource ? { catalog_slot_source: idea.catalogSlotSource } : {}),
     ...(idea.attachedPhotoUrls?.length
       ? {
           attached_photo_urls: idea.attachedPhotoUrls,

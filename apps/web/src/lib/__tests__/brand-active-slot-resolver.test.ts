@@ -1024,6 +1024,101 @@ describe('enrichProductionQueueWithBrandSlots', () => {
     expect(queue[0]!.assignment.catalog_slot_source).toBe('heuristic');
   });
 
+  it('reports ideation_plan provenance on the assignment the plan pinned', () => {
+    // The marker has to reach the assignment, not just the idea: it is what the
+    // artifact metadata records, and without it a headline/slot mismatch cannot be
+    // told apart from an intended variety rotation when auditing a mission.
+    const planned = mockSlot('local_products_shop_limited_batch_post', 'post', {
+      design_template_type: 'product_highlight',
+      slot_role: 'fal_designed_post',
+      match_signals: { keywords: ['sınırlı', 'parti', 'limited'] },
+    });
+    const peer = mockSlot('local_products_shop_gift_bundle_post', 'post', {
+      design_template_type: 'product_highlight',
+      slot_role: 'fal_designed_post',
+      match_signals: { keywords: ['hediye', 'gift', 'bundle'] },
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-plan-pin',
+      sector: 'local_products_shop',
+      sectorSlots: [planned, peer],
+      tenantAssignments: [
+        mockAssignment(planned.slot_key, true, planned),
+        mockAssignment(peer.slot_key, true, peer),
+      ],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Dikkat! Sınırlı Parti Bal!',
+          caption_draft: 'Bu partiden sadece 40 kavanoz var.',
+          content_type: 'instagram_post',
+          catalog_slot_key: planned.slot_key,
+          catalog_slot_source: 'ideation_plan',
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'fal_designed_post',
+          pipeline: 'fal_design',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+        },
+      }],
+      activeSet,
+      // Recency would rotate a soft stamp away; a plan pin has to hold.
+      { recentCatalogSlotKeys: [planned.slot_key] },
+    );
+
+    expect(queue[0]!.assignment.catalog_slot_key).toBe(planned.slot_key);
+    expect(queue[0]!.assignment.catalog_slot_source).toBe('ideation_plan');
+    expect(queue[0]!.idea.catalog_slot_source).toBe('ideation_plan');
+  });
+
+  it('drops the plan marker when the pinned slot is not the one shipped', () => {
+    // Only the planned slot earns the pin's immunity. If the key drifts, the new
+    // key must not inherit it on the next enrich pass.
+    const planned = mockSlot('local_products_shop_limited_batch_reel', 'reel', {
+      design_template_type: 'product_highlight',
+      slot_role: 'organic_reel',
+      match_signals: { keywords: ['sınırlı', 'parti'] },
+    });
+    const activeSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-plan-drift',
+      sector: 'local_products_shop',
+      sectorSlots: [planned],
+      tenantAssignments: [mockAssignment(planned.slot_key, true, planned)],
+    });
+
+    const queue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Sınırlı parti bal',
+          content_type: 'instagram_reel',
+          // Plan named a slot this brand has not enabled, so the match must fall
+          // elsewhere and the marker must not follow.
+          catalog_slot_key: 'local_products_shop_market_day_reel',
+          catalog_slot_source: 'ideation_plan',
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'organic_reel',
+          pipeline: 'fal_reel',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+        },
+      }],
+      activeSet,
+    );
+
+    expect(queue[0]!.assignment.catalog_slot_key).toBe(planned.slot_key);
+    expect(queue[0]!.assignment.catalog_slot_source).toBe('heuristic');
+  });
+
   it('dedupes repeated preferred catalog keys across designed posts (restaurant_cafe)', () => {
     const activeSet = resolveBrandActiveSlotKeys({
       workspaceId: 'ws-gelgor',

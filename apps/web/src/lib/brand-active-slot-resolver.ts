@@ -1041,10 +1041,14 @@ export function stampIdeasWithBrandCatalogSlots(
     if (!matched) return idea;
     usage.set(matched.slotKey, (usage.get(matched.slotKey) ?? 0) + 1);
     const withVisuals = applyCatalogSlotVisualDefaults(idea, matched.promptPack);
+    // Keep the plan marker only while the key it vouched for is still the one we
+    // ship; a rotated key would otherwise inherit the pin's immunity downstream.
+    const planHeld = isIdeationPlanCatalogPin(idea, matched.slotKey);
     return {
       ...withVisuals,
       catalog_slot_key: matched.slotKey,
       catalog_slot_label: matched.labelTr,
+      catalog_slot_source: planHeld ? 'ideation_plan' : 'heuristic',
     };
   });
 }
@@ -1061,19 +1065,27 @@ export function stampIdeasWithBrandCatalogSlots(
 export function applyCatalogSlotToAssignment(
   assignment: ProductionAssignment,
   matched: BrandActiveSlot,
+  opts?: {
+    /** The slot key ideation was briefed with, when it wrote this copy for one. */
+    ideationPlanKey?: string | null;
+  },
 ): ProductionAssignment {
   const slotRole = (matched.slotRole || assignment.slot_role) as ProductionSlotRole;
   const pipeline = (matched.pipeline || assignment.pipeline) as ProductionPipeline;
+  // Provenance must not survive a rematch, or the heuristic key inherits the
+  // stronger source's immunity on the next enrich pass.
+  const keptSource: ProductionAssignment['catalog_slot_source'] =
+    opts?.ideationPlanKey && opts.ideationPlanKey === matched.slotKey
+      ? 'ideation_plan'
+      : assignment.catalog_slot_source === 'feed_director'
+        && assignment.catalog_slot_key === matched.slotKey
+        ? 'feed_director'
+        : 'heuristic';
   return alignAssignmentToCatalogSlotKey(
     {
       ...assignment,
       catalog_slot_key: matched.slotKey,
-      // Provenance must not survive a rematch, or the heuristic key inherits the
-      // Feed Director's immunity on the next enrich pass.
-      catalog_slot_source: assignment.catalog_slot_source === 'feed_director'
-        && assignment.catalog_slot_key === matched.slotKey
-        ? 'feed_director'
-        : 'heuristic',
+      catalog_slot_source: keptSource,
       catalog_slot_label: matched.labelTr,
       library_slot_key: matched.librarySlotKey ?? assignment.library_slot_key ?? undefined,
       slot_role: slotRole,
@@ -1295,7 +1307,12 @@ export function enrichProductionQueueWithBrandSlots(
       continue;
     }
     usage.set(matched.slotKey, (usage.get(matched.slotKey) ?? 0) + 1);
-    const assignment = applyCatalogSlotToAssignment(item.assignment, matched);
+    const ideationPlanKey = isIdeationPlanCatalogPin(item.idea as Record<string, unknown>)
+      ? String((item.idea as Record<string, unknown>).catalog_slot_key ?? '') || null
+      : null;
+    const assignment = applyCatalogSlotToAssignment(item.assignment, matched, {
+      ideationPlanKey,
+    });
     const ideaWithVisualDefaults = applyCatalogSlotVisualDefaults(
       item.idea as Record<string, unknown>,
       matched.promptPack,
@@ -1306,6 +1323,8 @@ export function enrichProductionQueueWithBrandSlots(
         ...ideaWithVisualDefaults,
         catalog_slot_key: matched.slotKey,
         catalog_slot_label: matched.labelTr,
+        // A drifted key must not keep the plan's immunity on the next pass.
+        catalog_slot_source: assignment.catalog_slot_source,
         // Keep idea format fields in sync so rematch / detectIdeaPackageFormat
         // do not re-drift toward the old carousel/story label.
         format: matched.format,

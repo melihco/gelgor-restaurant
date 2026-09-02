@@ -312,4 +312,32 @@ describe('launch-calendar joins and overlay provenance', () => {
     expect(resolveIdeationOverlayHeadline(record))
       .toBe('Doğanın en saf lezzeti şimdi sizlerle!');
   });
+
+  it('carries the ideation slot binding through the production-idea round trip', () => {
+    // Live regression (Karaman, local_products_shop): ideation is briefed with the
+    // ordered slot plan and the binding is stamped server-side, but the round-trip
+    // dropped it, so the downstream matcher re-picked slots heuristically and a
+    // "limited batch" headline shipped on a gift-bundle shell.
+    const record = productionIdeaToRecord(productionIdeaFromRecord({
+      headline: 'Dikkat! Sınırlı Parti Bal!',
+      caption_draft: 'Bu partiden sadece 40 kavanoz var.',
+      catalog_slot_key: 'local_products_shop_limited_batch_post',
+      catalog_slot_label: 'Sınırlı Parti',
+      catalog_slot_source: 'ideation_plan',
+    }, 0));
+
+    expect(record.catalog_slot_key).toBe('local_products_shop_limited_batch_post');
+    expect(record.catalog_slot_label).toBe('Sınırlı Parti');
+    expect(record.catalog_slot_source).toBe('ideation_plan');
+  });
+
+  it('leaves the slot binding absent when ideation had no plan', () => {
+    const record = productionIdeaToRecord(productionIdeaFromRecord({
+      headline: 'Serbest fikir',
+      caption_draft: 'Plansız üretim.',
+    }, 0));
+
+    expect(record.catalog_slot_key).toBeUndefined();
+    expect(record.catalog_slot_source).toBeUndefined();
+  });
 });

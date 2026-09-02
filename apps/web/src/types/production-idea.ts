@@ -123,6 +123,17 @@ export interface ProductionIdea {
   sourceTrack?: string;
   /** Index of the originating calendar entry. */
   calendarPlanIndex?: number;
+
+  // ── Catalog slot binding (must survive ICS round-trip) ───────────────────────
+  /**
+   * Catalog slot this copy was written for. Ideation is briefed with the mission's
+   * ordered slot plan, so for `catalogSlotSource === 'ideation_plan'` this is a
+   * contract, not a guess read off finished copy.
+   */
+  catalogSlotKey?: string;
+  catalogSlotLabel?: string;
+  /** Where the binding came from — `ideation_plan` makes it a durable pin. */
+  catalogSlotSource?: string;
 }
 
 /** Fields that must be present and non-empty for an idea to count as ICS-complete. */
