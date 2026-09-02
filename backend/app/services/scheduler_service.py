@@ -303,7 +303,10 @@ async def _weekly_brand_dna_synthesis_job() -> None:
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.brand_context_service import build_brand_info
-    from app.services.brand_dna_service import build_brand_dna
+    from app.services.brand_dna_service import (
+        build_brand_dna,
+        resolve_brand_dna_for_persist,
+    )
     from app.config import get_settings
     from sqlalchemy import select
     import asyncio as _asyncio
@@ -334,7 +337,20 @@ async def _weekly_brand_dna_synthesis_job() -> None:
                     row = await db.get(BrandContext, ctx.id)
                     if not row:
                         continue
-                    row.brand_dna = json.dumps(dna, ensure_ascii=False)
+
+                    # A weekly refresh that could not reach the synthesiser must
+                    # not strip the intelligence it failed to rebuild.
+                    to_persist = resolve_brand_dna_for_persist(row.brand_dna, dna)
+                    if to_persist is None:
+                        logger.warning(
+                            "brand_dna_refresh_skipped_to_preserve_existing",
+                            workspace_id=str(ctx.workspace_id),
+                            fallback_reason=dna.get("fallback_reason", ""),
+                        )
+                        await _asyncio.sleep(5)
+                        continue
+
+                    row.brand_dna = json.dumps(to_persist, ensure_ascii=False)
                     row.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
                     db.add(row)
                     await db.commit()
@@ -342,8 +358,8 @@ async def _weekly_brand_dna_synthesis_job() -> None:
                     logger.info(
                         "brand_dna_synthesised",
                         workspace_id=str(ctx.workspace_id),
-                        richness=dna.get("data_richness", ""),
-                        priority=dna.get("current_strategic_priority", "")[:60],
+                        richness=to_persist.get("data_richness", ""),
+                        priority=str(to_persist.get("current_strategic_priority", ""))[:60],
                     )
 
                 await _asyncio.sleep(5)

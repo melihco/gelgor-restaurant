@@ -64,7 +64,10 @@ async def _synthesize_brand_dna_workspace_async(workspace_id: str) -> dict:
     from app.database import async_session_factory
     from app.models.brand_context import BrandContext
     from app.services.brand_context_service import build_brand_info
-    from app.services.brand_dna_service import build_brand_dna
+    from app.services.brand_dna_service import (
+        build_brand_dna,
+        resolve_brand_dna_for_persist,
+    )
     from app.services.execution_locks import content_agent_lock
 
     settings = get_settings()
@@ -85,7 +88,16 @@ async def _synthesize_brand_dna_workspace_async(workspace_id: str) -> dict:
                 return {"workspace_id": workspace_id, "skipped": "no_brand"}
 
             dna = await build_brand_dna(brand, openai_api_key=settings.openai_api_key or "")
-            ctx.brand_dna = json.dumps(dna, ensure_ascii=False)
+            to_persist = resolve_brand_dna_for_persist(ctx.brand_dna, dna)
+            if to_persist is None:
+                logger.warning(
+                    "celery.brand_dna_refresh_skipped_to_preserve_existing",
+                    workspace_id=workspace_id,
+                    fallback_reason=dna.get("fallback_reason", ""),
+                )
+                return {"workspace_id": workspace_id, "skipped": "would_degrade_existing"}
+
+            ctx.brand_dna = json.dumps(to_persist, ensure_ascii=False)
             ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
             db.add(ctx)
             await db.commit()

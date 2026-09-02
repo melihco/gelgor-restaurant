@@ -149,15 +149,21 @@ async def build_brand_dna(brand: BrandInfo, openai_api_key: str = "") -> dict[st
         except Exception:
             pass
 
-    # Skip synthesis if we have very little data
+    # Skip synthesis if we have very little data. Review signals and the brand's
+    # own description count: a shop with 500 Google reviews and no crawled
+    # website still has plenty for a strategist to work from.
     has_meaningful_data = bool(
         signals["website_summary"] or signals["instagram_bio"] or
         signals["competitor_brief"] or signals["learning_context"] or
-        signals["visual_dna"] or signals["gallery_scene_catalog"]
+        signals["visual_dna"] or signals["gallery_scene_catalog"] or
+        signals["google_review_signals"] or signals["google_rating"] or
+        signals["description"] or signals["trend_brief"]
     )
 
-    if not has_meaningful_data or not openai_api_key:
-        return _minimal_dna(brand, now)
+    if not has_meaningful_data:
+        return _minimal_dna(brand, now, reason="no_signals")
+    if not openai_api_key:
+        return _minimal_dna(brand, now, reason="no_api_key")
 
     # ── Build synthesis prompt ─────────────────────────────────────────────
     signals_text = json.dumps(signals, ensure_ascii=False, indent=2)
@@ -249,17 +255,18 @@ Be SPECIFIC. Use actual data from the signals. If data is missing for a field, m
 
     raw = await _gpt_synthesise(prompt, openai_api_key)
     if not raw:
-        return _minimal_dna(brand, now)
+        return _minimal_dna(brand, now, reason="synthesis_unavailable")
 
     try:
         json_match = re.search(r"\{[\s\S]*\}", raw)
         dna = json.loads(json_match.group() if json_match else raw)
         dna["synthesised_at"] = now.isoformat()
         dna["data_richness"] = _score_data_richness(signals)
+        dna["synthesis_status"] = "synthesised"
         return dna
     except Exception as exc:
         logger.warning("brand_dna_parse_failed", error=str(exc))
-        return _minimal_dna(brand, now)
+        return _minimal_dna(brand, now, reason="parse_failed")
 
 
 def _score_data_richness(signals: dict) -> str:
@@ -279,27 +286,127 @@ def _score_data_richness(signals: dict) -> str:
     return "sparse"
 
 
-def _minimal_dna(brand: BrandInfo, now: datetime) -> dict[str, Any]:
-    return {
+# Placeholder values that earlier fallback builds wrote into the DNA. They read
+# like brand intelligence but carry none, and the DNA prompt block presents them
+# to agents as mandatory. Recognising them lets us both stop writing them and
+# detect the rows already persisted in the database.
+_FALLBACK_PLACEHOLDERS: frozenset[str] = frozenset({
+    "local competitor",
+    "quality",
+    "quality experience",
+    "social proof and visual appeal",
+    "consistent brand presence",
+    "build awareness and drive conversions",
+    "run brand analysis first to get tailored recommendations",
+    "authentic venue photography",
+    "local audience focus",
+    "use real venue photos",
+    "include clear cta",
+    "generic stock imagery",
+    "local customers",
+    "professional",
+})
+
+
+def _is_placeholder(value: Any) -> bool:
+    return isinstance(value, str) and value.strip().lower() in _FALLBACK_PLACEHOLDERS
+
+
+def _drop_placeholders(value: Any) -> Any:
+    """Strip placeholder strings out of a scalar / list / dict, recursively."""
+    if isinstance(value, str):
+        return None if _is_placeholder(value) else value
+    if isinstance(value, list):
+        kept = [v for v in (_drop_placeholders(x) for x in value) if v not in (None, "", {}, [])]
+        return kept
+    if isinstance(value, dict):
+        kept_map = {}
+        for k, v in value.items():
+            cleaned = _drop_placeholders(v)
+            if cleaned not in (None, "", {}, []):
+                kept_map[k] = cleaned
+        return kept_map
+    return value
+
+
+def _minimal_dna(brand: BrandInfo, now: datetime, reason: str = "unknown") -> dict[str, Any]:
+    """
+    DNA for when synthesis could not run.
+
+    This must only carry what the brand record actually states. Filling the
+    strategic fields with plausible-sounding constants is worse than leaving them
+    out: the prompt block renders them as authoritative brand intelligence, so
+    every agent is told to obey text that describes no brand in particular.
+    """
+    dna: dict[str, Any] = {
         "brand_essence": f"{brand.business_name} — {brand.business_type} in {brand.location or 'Turkey'}",
-        "proven_content_patterns": ["Authentic venue photography", "Local audience focus"],
-        "audience_intelligence": {
-            "primary": brand.target_audience or "Local customers",
-            "what_they_want": "Quality experience",
-            "what_triggers_them": "Social proof and visual appeal",
-        },
-        "competitive_position": "Local competitor",
-        "content_do_list": ["Use real venue photos", "Include clear CTA"],
-        "content_dont_list": ["Generic stock imagery"],
-        "brand_voice_guide": {"tone": brand.brand_tone or "professional"},
-        "current_strategic_priority": "Consistent brand presence",
-        "high_value_content_opportunities": [],
-        "customer_intelligence": {"what_they_love": "Quality", "pain_points_to_address": ""},
-        "sales_strategy_context": "Build awareness and drive conversions",
-        "agency_recommendation": "Run brand analysis first to get tailored recommendations",
         "synthesised_at": now.isoformat(),
         "data_richness": "sparse",
+        "synthesis_status": "fallback",
+        "fallback_reason": reason,
     }
+    # A sector default like "professional" is not a recorded brand voice; leaving
+    # it out is what tells the agent to look at the real fields instead.
+    if brand.target_audience and not _is_placeholder(brand.target_audience):
+        dna["audience_intelligence"] = {"primary": brand.target_audience}
+    if brand.brand_tone and not _is_placeholder(brand.brand_tone):
+        dna["brand_voice_guide"] = {"tone": brand.brand_tone}
+    return dna
+
+
+def is_fallback_brand_dna(dna: Any) -> bool:
+    """
+    True when a DNA document carries no synthesised intelligence.
+
+    Handles both the current marker and the rows already persisted before it
+    existed, which are identifiable by their placeholder strings.
+    """
+    if not isinstance(dna, dict) or not dna:
+        return True
+    status = str(dna.get("synthesis_status") or "").strip().lower()
+    if status == "fallback":
+        return True
+    if status == "synthesised":
+        return False
+    return _is_placeholder(dna.get("competitive_position")) or _is_placeholder(
+        dna.get("agency_recommendation")
+    )
+
+
+_RICHNESS_RANK = {"sparse": 1, "moderate": 2, "rich": 3}
+
+
+def brand_dna_quality_rank(dna: Any) -> int:
+    """0 for a fallback/empty document, 1–3 for a synthesised one by richness."""
+    if is_fallback_brand_dna(dna):
+        return 0
+    if not isinstance(dna, dict):
+        return 0
+    return _RICHNESS_RANK.get(str(dna.get("data_richness") or "").strip().lower(), 1)
+
+
+def resolve_brand_dna_for_persist(
+    existing_raw: Any,
+    new_dna: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    Decide what a refresh should actually write, and return None to skip the write.
+
+    A refresh that could not reach the synthesiser (quota, outage, missing key)
+    used to overwrite a rich DNA with the fallback document, so one failed
+    Sunday job could strip every tenant's brand intelligence at once. Never let
+    a lower-quality document replace a higher-quality one.
+    """
+    if not isinstance(new_dna, dict) or not new_dna:
+        return None
+
+    existing = existing_raw
+    if isinstance(existing, str):
+        existing = _safe_json(existing)
+
+    if brand_dna_quality_rank(new_dna) < brand_dna_quality_rank(existing):
+        return None
+    return new_dna
 
 
 def build_brand_dna_prompt(dna: dict[str, Any]) -> str:
@@ -310,13 +417,37 @@ def build_brand_dna_prompt(dna: dict[str, Any]) -> str:
     if not dna:
         return ""
 
+    # Classify before cleaning: stripping the placeholders is exactly what would
+    # make a legacy fallback row look synthesised.
+    is_fallback = is_fallback_brand_dna(dna)
+
+    # Legacy rows persisted placeholder strings into the strategic fields. Drop
+    # them here too, so an un-refreshed tenant stops instructing agents to obey
+    # text that describes no brand in particular.
+    dna = {k: v for k, v in ((k, _drop_placeholders(v)) for k, v in dna.items())
+           if v not in (None, "", {}, [])}
+    if not dna:
+        return ""
+
     richness = dna.get("data_richness", "sparse")
     synthesised_at = dna.get("synthesised_at", "")
 
-    lines = [
-        "## 🧬 Brand DNA (synthesised intelligence — read this first)",
-        f"*Richness: {richness} | Updated: {synthesised_at[:10] if synthesised_at else 'unknown'}*\n",
-    ]
+    if is_fallback:
+        # Say plainly that there is no synthesised intelligence. Agents must fall
+        # through to the concrete brand fields rather than treat this as a brief.
+        lines = [
+            "## 🧬 Brand DNA — NOT AVAILABLE",
+            "Bu marka için sentezlenmiş marka zekası yok. Aşağıdaki tek satır ham kayıttan geliyor.",
+            "Bu bloğu brief gibi kullanma; markaya dair her iddiayı somut marka alanlarından "
+            "(açıklama, hizmet profili, galeri analizi, yorum sinyalleri) kur. "
+            "Bilmediğin bir olguyu uydurma.",
+            "",
+        ]
+    else:
+        lines = [
+            "## 🧬 Brand DNA (synthesised intelligence — read this first)",
+            f"*Richness: {richness} | Updated: {synthesised_at[:10] if synthesised_at else 'unknown'}*\n",
+        ]
 
     if dna.get("brand_essence"):
         lines += [f"**Brand Essence**: {dna['brand_essence']}", ""]
@@ -413,9 +544,10 @@ def build_brand_dna_prompt(dna: dict[str, Any]) -> str:
         lines.append(f"**Competitive position**: {dna['competitive_position']}")
         lines.append("")
 
-    lines.append(
-        "⚠️ **MANDATORY**: Every output must reflect this Brand DNA. "
-        "Generic content that ignores brand essence, audience intelligence, or strategic priority is unacceptable."
-    )
+    if not is_fallback:
+        lines.append(
+            "⚠️ **MANDATORY**: Every output must reflect this Brand DNA. "
+            "Generic content that ignores brand essence, audience intelligence, or strategic priority is unacceptable."
+        )
 
     return "\n".join(lines)

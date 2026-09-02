@@ -599,15 +599,26 @@ async def complete_brand_gaps(
         richness = _brand_dna_richness(ctx)
         if not richness or richness == "sparse":
             try:
-                from app.services.brand_dna_service import build_brand_dna
+                from app.services.brand_dna_service import (
+                    build_brand_dna,
+                    resolve_brand_dna_for_persist,
+                )
 
                 brand = await brand_context_service.build_brand_info(db, workspace_id, skip_cache=True)
                 if brand:
                     dna = await build_brand_dna(brand, openai_api_key=openai_api_key)
-                    ctx.brand_dna = json.dumps(dna, ensure_ascii=False)
-                    ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
-                    await db.flush()
-                    await _step("brand_dna", True, str(dna.get("data_richness") or "ok"))
+                    to_persist = resolve_brand_dna_for_persist(ctx.brand_dna, dna)
+                    if to_persist is None:
+                        await _step(
+                            "brand_dna",
+                            False,
+                            f"skipped — synthesis unavailable ({dna.get('fallback_reason', '')})",
+                        )
+                    else:
+                        ctx.brand_dna = json.dumps(to_persist, ensure_ascii=False)
+                        ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
+                        await db.flush()
+                        await _step("brand_dna", True, str(to_persist.get("data_richness") or "ok"))
                 else:
                     await _step("brand_dna", False, "brand_info unavailable")
             except Exception as exc:

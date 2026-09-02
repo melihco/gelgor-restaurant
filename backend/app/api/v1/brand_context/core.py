@@ -96,7 +96,10 @@ async def confirm_brand_constitution(
         import json as _json
 
         from app.services.brand_context_service import build_brand_info
-        from app.services.brand_dna_service import build_brand_dna
+        from app.services.brand_dna_service import (
+            build_brand_dna,
+            resolve_brand_dna_for_persist,
+        )
 
         settings = get_settings()
         if settings.openai_api_key:
@@ -104,13 +107,21 @@ async def confirm_brand_constitution(
             if brand:
                 try:
                     dna = await build_brand_dna(brand, openai_api_key=settings.openai_api_key)
-                    ctx.brand_dna = _json.dumps(dna, ensure_ascii=False)
-                    ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
-                    logger.info(
-                        "brand_dna_synthesised_on_confirm",
-                        workspace_id=str(workspace_id),
-                        richness=dna.get("data_richness"),
-                    )
+                    to_persist = resolve_brand_dna_for_persist(ctx.brand_dna, dna)
+                    if to_persist is None:
+                        logger.warning(
+                            "brand_dna_on_confirm_skipped_to_preserve_existing",
+                            workspace_id=str(workspace_id),
+                            fallback_reason=dna.get("fallback_reason"),
+                        )
+                    else:
+                        ctx.brand_dna = _json.dumps(to_persist, ensure_ascii=False)
+                        ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
+                        logger.info(
+                            "brand_dna_synthesised_on_confirm",
+                            workspace_id=str(workspace_id),
+                            richness=to_persist.get("data_richness"),
+                        )
                 except Exception as exc:
                     logger.warning(
                         "brand_dna_on_confirm_failed",
@@ -1058,7 +1069,10 @@ async def synthesise_brand_dna(
     from datetime import datetime, timezone
 
     from app.services.brand_context_service import build_brand_info
-    from app.services.brand_dna_service import build_brand_dna
+    from app.services.brand_dna_service import (
+        build_brand_dna,
+        resolve_brand_dna_for_persist,
+    )
 
     settings = get_settings()
     brand = await build_brand_info(db, workspace_id)
@@ -1071,6 +1085,17 @@ async def synthesise_brand_dna(
     if not ctx:
         raise HTTPException(status_code=404, detail="Brand context not found")
 
+    to_persist = resolve_brand_dna_for_persist(ctx.brand_dna, dna)
+    if to_persist is None:
+        # Refusing the write is the point: an on-demand refresh that could not
+        # reach the synthesiser should report why, not blank the existing DNA.
+        return {
+            "success": False,
+            "skipped": "would_degrade_existing",
+            "fallback_reason": dna.get("fallback_reason"),
+        }
+
+    dna = to_persist
     ctx.brand_dna = _json.dumps(dna, ensure_ascii=False)
     ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
     db.add(ctx)

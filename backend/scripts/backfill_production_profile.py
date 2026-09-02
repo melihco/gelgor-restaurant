@@ -26,7 +26,10 @@ from typing import Any
 from app.config import get_settings
 from app.database import async_session_factory
 from app.services import brand_context_service
-from app.services.brand_dna_service import build_brand_dna
+from app.services.brand_dna_service import (
+    build_brand_dna,
+    resolve_brand_dna_for_persist,
+)
 from app.services.production_design_profile_service import (
     apply_production_design_profile,
     derive_production_design_profile,
@@ -111,10 +114,20 @@ async def backfill_workspace(
             brand = await brand_context_service.build_brand_info(db, workspace_id, skip_cache=True)
             if brand is not None:
                 dna = await build_brand_dna(brand, openai_api_key=settings.openai_api_key or "")
-                ctx.brand_dna = json.dumps(dna, ensure_ascii=False)
-                ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
-                await db.commit()
-                result["steps"]["brand_dna"] = {"synthesized": True, "essence": (dna.get("essence") or "")[:120]}
+                to_persist = resolve_brand_dna_for_persist(ctx.brand_dna, dna)
+                if to_persist is None:
+                    result["steps"]["brand_dna"] = {
+                        "synthesized": False,
+                        "reason": f"would_degrade_existing ({dna.get('fallback_reason', '')})",
+                    }
+                else:
+                    ctx.brand_dna = json.dumps(to_persist, ensure_ascii=False)
+                    ctx.brand_dna_updated_at = datetime.now(timezone.utc).isoformat()
+                    await db.commit()
+                    result["steps"]["brand_dna"] = {
+                        "synthesized": True,
+                        "essence": (to_persist.get("essence") or "")[:120],
+                    }
             else:
                 result["steps"]["brand_dna"] = {"synthesized": False, "reason": "brand_info_unavailable"}
 
