@@ -741,6 +741,54 @@ def _norm_title(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def _release_colliding_slot_claims(
+    batch: list,
+    catalog_slot_plan: list[dict[str, str]] | None,
+) -> list:
+    """
+    Drop the surplus ideas that claim a slot another idea already claimed.
+
+    A full-length batch never reached the top-up, because there was no shortfall
+    to notice: a live Karaman package delivered sixteen ideas that between them
+    covered only thirteen slots — `customer_favorite_post`, `farm_visit_story`
+    and `new_arrival_story` twice each — while `gift_bundle`, `maker_story`,
+    `premium_editorial` and `seasonal_harvest` went uncovered, all sixteen
+    stamped `catalog_slot_source: ideation_plan`. Releasing the second claim
+    turns the collision into the shortfall it really is, so the slot-aware
+    top-up writes copy for the slots still waiting.
+    """
+    planned = {
+        str(s.get("slot_key") or "").strip()
+        for s in (catalog_slot_plan or [])
+        if isinstance(s, dict) and str(s.get("slot_key") or "").strip()
+    }
+    if not planned:
+        return batch
+
+    kept: list = []
+    claimed: set[str] = set()
+    released = 0
+    for idea in batch:
+        key = (
+            str(idea.get("catalog_slot_key") or idea.get("catalogSlotKey") or "").strip()
+            if isinstance(idea, dict)
+            else ""
+        )
+        if key and key in claimed:
+            released += 1
+            continue
+        if key:
+            claimed.add(key)
+        kept.append(idea)
+
+    if released:
+        logger.info(
+            "ideation_slot_collisions_released: released=%d covered=%d planned=%d",
+            released, len(claimed), len(planned),
+        )
+    return kept
+
+
 def _open_catalog_slots(
     existing: list,
     catalog_slot_plan: list[dict[str, str]] | None,
@@ -862,6 +910,7 @@ def _ensure_distinct_ideation_batch(
     passes = CONTENT_IDEATION_MAX_TOPUPS if max_topups is None else max_topups
     tokens = 0
     batch = dedupe_ideation_by_headline([c for c in concepts if isinstance(c, dict)])
+    batch = _release_colliding_slot_claims(batch, catalog_slot_plan)
 
     for attempt in range(passes):
         if len(batch) >= count or count < 3:

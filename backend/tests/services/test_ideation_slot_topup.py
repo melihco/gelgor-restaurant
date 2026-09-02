@@ -9,7 +9,10 @@ dining-ambiance slot and repeated `farm_to_table_story` twice.
 """
 from __future__ import annotations
 
-from app.crew.crews.content_crew import _open_catalog_slots
+from app.crew.crews.content_crew import (
+    _open_catalog_slots,
+    _release_colliding_slot_claims,
+)
 from app.services.mission_ideation_merge import (
     dedupe_ideation_by_headline,
     headlines_match,
@@ -93,6 +96,93 @@ class TestOpenCatalogSlots:
         plan = [*SHOP_PLAN, {"label_tr": "anahtarsız"}, "metin", None]
 
         assert len(_open_catalog_slots([], plan)) == len(SHOP_PLAN)
+
+
+class TestReleaseCollidingSlotClaims:
+    """
+    A full-length batch hides an uncovered slot. A live Karaman package delivered
+    sixteen ideas covering thirteen slots — three claimed twice — so there was no
+    shortfall for the top-up to notice and four planned slots shipped empty.
+    """
+
+    def test_releases_the_second_claim_on_a_shop_slot(self):
+        batch = [
+            {"headline": "Doğanın Mucizesi Bir Kavanozda!",
+             "catalog_slot_key": "local_products_shop_customer_favorite_post"},
+            {"headline": "Ballı Badem Ezmesi Raflarda",
+             "catalog_slot_key": "local_products_shop_gift_bundle_post"},
+            {"headline": "Datça'nın En İyi Zeytinyağı Burada!",
+             "catalog_slot_key": "local_products_shop_customer_favorite_post"},
+        ]
+        plan = [
+            {"slot_key": "local_products_shop_customer_favorite_post", "format": "post"},
+            {"slot_key": "local_products_shop_gift_bundle_post", "format": "post"},
+            {"slot_key": "local_products_shop_maker_story_post", "format": "post"},
+        ]
+
+        kept = _release_colliding_slot_claims(batch, plan)
+
+        assert [i["headline"] for i in kept] == [
+            "Doğanın Mucizesi Bir Kavanozda!",
+            "Ballı Badem Ezmesi Raflarda",
+        ]
+        # The released claim is what makes the uncovered slot visible.
+        assert [s["slot_key"] for s in _open_catalog_slots(kept, plan)] == [
+            "local_products_shop_maker_story_post",
+        ]
+
+    def test_releases_the_second_claim_on_a_restaurant_slot(self):
+        batch = [
+            {"headline": "Mutfakta Sabah Hazırlığı",
+             "catalog_slot_key": "restaurant_cafe_kitchen_bts_story"},
+            {"headline": "Yemeklerimiz Nasıl Hazırlanıyor?",
+             "catalog_slot_key": "restaurant_cafe_kitchen_bts_story"},
+        ]
+
+        kept = _release_colliding_slot_claims(batch, RESTAURANT_PLAN)
+
+        assert len(kept) == 1
+        assert kept[0]["headline"] == "Mutfakta Sabah Hazırlığı"
+
+    def test_a_clean_batch_is_returned_unchanged(self):
+        batch = [{"catalog_slot_key": s["slot_key"]} for s in RESTAURANT_PLAN]
+
+        assert _release_colliding_slot_claims(batch, RESTAURANT_PLAN) == batch
+
+    def test_ideas_without_a_slot_claim_are_all_kept(self):
+        batch = [{"headline": "bir"}, {"headline": "iki"}, {"headline": "üç"}]
+
+        assert _release_colliding_slot_claims(batch, SHOP_PLAN) == batch
+
+    def test_nothing_is_released_without_a_plan(self):
+        """No plan means no contract to violate — never shrink the package."""
+        batch = [
+            {"catalog_slot_key": "restaurant_cafe_kitchen_bts_story"},
+            {"catalog_slot_key": "restaurant_cafe_kitchen_bts_story"},
+        ]
+
+        assert _release_colliding_slot_claims(batch, None) == batch
+        assert _release_colliding_slot_claims(batch, []) == batch
+
+    def test_camel_case_claims_collide_with_snake_case_ones(self):
+        batch = [
+            {"catalog_slot_key": "local_products_shop_gift_bundle_post"},
+            {"catalogSlotKey": "local_products_shop_gift_bundle_post"},
+        ]
+
+        assert len(_release_colliding_slot_claims(batch, SHOP_PLAN)) == 1
+
+    def test_the_live_karaman_shape_frees_four_slots(self):
+        plan = [{"slot_key": f"slot_{i}", "format": "post"} for i in range(16)]
+        # Thirteen distinct slots across sixteen ideas, three claimed twice.
+        keys = [f"slot_{i}" for i in range(13)] + ["slot_0", "slot_4", "slot_8"]
+        batch = [{"headline": f"fikir {n}", "catalog_slot_key": k}
+                 for n, k in enumerate(keys)]
+
+        kept = _release_colliding_slot_claims(batch, plan)
+
+        assert len(kept) == 13
+        assert len(_open_catalog_slots(kept, plan)) == 3
 
 
 class TestNearDuplicateHeadlines:
