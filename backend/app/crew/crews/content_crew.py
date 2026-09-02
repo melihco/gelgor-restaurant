@@ -175,6 +175,47 @@ _CANVA_HEADLINE_MAX = 47
 _CANVA_CTA_MAX = 23
 _CANVA_SUBTITLE_MAX = 89
 
+# Turkish words that cannot end a phrase: interrogative and auxiliary particles,
+# plus the conjunctions that leave the reader waiting for the other half.
+_TR_DANGLING_TAIL = frozenset({
+    "mı", "mi", "mu", "mü", "ve", "ile", "ya", "da", "de", "ki", "ama", "fakat",
+    "için", "gibi", "kadar", "daha", "çok", "bir", "bu", "şu", "o", "en",
+    "hem", "veya", "yada", "ya da", "ise", "olan", "olarak",
+})
+
+
+def _clip_on_word(text: str, limit: int) -> str:
+    """
+    Cut to `limit` without slicing through a word.
+
+    A raw slice put "Mağazamızda doğal lezzetleri keşfetmeye hazır m" on a live
+    Karaman story: the caption-derived headline was 52 characters and the 47-char
+    cap landed inside "mısınız". Dropping the partial word, then any particle
+    left dangling by that drop, is what keeps the line readable.
+    """
+    clean = " ".join((text or "").split())
+    if len(clean) <= limit:
+        return clean
+
+    kept: list[str] = []
+    used = 0
+    for word in clean.split():
+        cost = len(word) + (1 if kept else 0)
+        if used + cost > limit:
+            break
+        kept.append(word)
+        used += cost
+
+    if not kept:
+        # One word longer than the whole cap; a hard cut is all that is left.
+        return clean[:limit]
+
+    # Only a tail the cut created gets dropped — copy that already fitted is
+    # the author's, however it ends.
+    while kept and kept[-1].strip(".,!?:;…").lower() in _TR_DANGLING_TAIL:
+        kept.pop()
+    return " ".join(kept).rstrip(" ,;:-–—")
+
 
 def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
     """
@@ -435,12 +476,16 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
             # Never put internal strategic_purpose on the canvas as subtitle.
             subtitle = str(item.get("subline") or item.get("tagline") or "").strip().strip('"“”\'«»')
             synthesised: dict[str, str] = {}
-            if headline:
-                synthesised["headline"] = headline[:_CANVA_HEADLINE_MAX]
-            if cta:
-                synthesised["cta"] = cta[:_CANVA_CTA_MAX]
+            clipped_headline = _clip_on_word(headline, _CANVA_HEADLINE_MAX)
+            if clipped_headline:
+                synthesised["headline"] = clipped_headline
+            clipped_cta = _clip_on_word(cta, _CANVA_CTA_MAX) if cta else ""
+            if clipped_cta:
+                synthesised["cta"] = clipped_cta
             if subtitle and subtitle.lower() != headline.lower():
-                synthesised["subtitle"] = subtitle[:_CANVA_SUBTITLE_MAX]
+                clipped_subtitle = _clip_on_word(subtitle, _CANVA_SUBTITLE_MAX)
+                if clipped_subtitle:
+                    synthesised["subtitle"] = clipped_subtitle
             if synthesised:
                 item["canva_field_copy"] = synthesised
 
