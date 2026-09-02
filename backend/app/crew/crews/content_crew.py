@@ -651,6 +651,7 @@ def _run_single_ideation(
     llm: Any,
     mission_id: str | None = None,
     format_targets: dict[str, int] | None = None,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> tuple[str, int]:
     """Single ideation run — returns (raw_output, tokens_used)."""
     from app.services.package_weekly_geometry import resolve_content_ideation_agent_timeout_seconds
@@ -666,6 +667,7 @@ def _run_single_ideation(
         content_agent, brand, count, time_period,
         brief=brief, content_pillars=content_pillars, autonomy_mode=autonomy_mode,
         mission_id=mission_id, format_targets=format_targets,
+        catalog_slot_plan=catalog_slot_plan,
     )
     crew = Crew(
         agents=[content_agent], tasks=[ideation_task],
@@ -923,6 +925,7 @@ def run_content_ideation(
     iterations: int = 1,
     mission_id: str | None = None,
     format_targets: dict[str, int] | None = None,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """
     Generate content concepts for a brand.
@@ -933,12 +936,17 @@ def run_content_ideation(
     `format_targets` is the per-format split the brand can actually publish;
     ideas in a format with no enabled slot are dropped before production, so the
     ask has to be shaped by it rather than by the raw package geometry.
+
+    `catalog_slot_plan` is the ordered list of deliverables this mission will
+    publish. Passing it makes each concept get written for a named slot instead of
+    having slot identity guessed from the finished copy downstream.
     """
     settings = get_settings()
 
     raw_output_a, tokens_a = _run_single_ideation(
         brand, count, time_period, brief, content_pillars, autonomy_mode, llm,
         mission_id=mission_id, format_targets=format_targets,
+        catalog_slot_plan=catalog_slot_plan,
     )
     total_tokens = tokens_a
 
@@ -946,6 +954,7 @@ def run_content_ideation(
         raw_output_b, tokens_b = _run_single_ideation(
             brand, count, time_period, brief, content_pillars, autonomy_mode, llm,
             mission_id=mission_id, format_targets=format_targets,
+            catalog_slot_plan=catalog_slot_plan,
         )
         total_tokens += tokens_b
         raw_output = _pick_better_output(raw_output_a, raw_output_b, brand)
@@ -1071,6 +1080,23 @@ def run_content_ideation(
                             raw_output = revised_output
                             report = revised_report
                             revision_used = True
+
+            # Bind the slot plan last: the passes above reorder and drop ideas, so
+            # an earlier stamp would survive on the wrong concept.
+            if catalog_slot_plan:
+                from app.services.feed_director_slot_catalog import (
+                    bind_catalog_slot_plan_to_ideas,
+                )
+
+                bound = bind_catalog_slot_plan_to_ideas(concepts, catalog_slot_plan)
+                raw_output = json.dumps(concepts, ensure_ascii=False)
+                logger.info(
+                    "ideation_catalog_slots_bound: bound=%d ideas=%d plan=%d tenant=%s",
+                    bound,
+                    len(concepts),
+                    len(catalog_slot_plan),
+                    getattr(brand, "tenant_id", "unknown"),
+                )
 
             # Per-piece quality scores
             quality_scores = score_batch(concepts, brand.default_ctas)

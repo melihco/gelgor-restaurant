@@ -221,7 +221,17 @@ def _normalize_weekly_catalog_first(
             ),
             "rationale": str(donor.get("rationale") or f"idea_{idea_i}_{fmt}"),
         }
-        if donor.get("catalog_slot_key"):
+        # The ideation slot plan wins over FD's own pick: the headline and caption
+        # were written for that slot, so re-deciding it here would only re-create
+        # the copy↔slot mismatch.
+        planned_key = (
+            str(idea.get("catalog_slot_key") or "").strip()
+            if isinstance(idea, dict)
+            else ""
+        )
+        if planned_key:
+            entry["catalog_slot_key"] = planned_key
+        elif donor.get("catalog_slot_key"):
             entry["catalog_slot_key"] = donor.get("catalog_slot_key")
         for hint_key in (
             "visual_subject_hint",
@@ -238,6 +248,7 @@ def _normalize_weekly_catalog_first(
             catalog_slots,
             used_catalog_keys,
             idea=idea if isinstance(idea, dict) else None,
+            pinned=bool(planned_key),
         )
         entry.pop("library_slot_key", None)
         final_assignments.append(entry)

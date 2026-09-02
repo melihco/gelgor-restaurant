@@ -49,11 +49,25 @@ def build_weekly_catalog_assignment_plan(
     catalog_slots: list[dict[str, str]],
     production_profile: str | None = None,
     total: int = WEEKLY_MISSION_SLOT_TOTAL,
+    format_targets: dict[str, int] | None = None,
 ) -> list[dict[str, str]]:
-    """Ordered catalog rows for a weekly mission — format mix capped by enabled slots."""
+    """Ordered catalog rows for a weekly mission — format mix capped by enabled slots.
+
+    `format_targets` overrides the catalog-derived mix. Ideation needs a plan whose
+    length equals the idea count, so an explicit mix is honoured as-is: a format
+    with fewer distinct slots than requested repeats rows instead of shrinking the
+    plan and leaving trailing ideas unbound.
+    """
     if not catalog_slots:
         return []
-    targets = weekly_format_targets_from_catalog(catalog_slots, production_profile)
+    explicit = {
+        fmt: int(n)
+        for fmt, n in (format_targets or {}).items()
+        if fmt in ("post", "story", "carousel", "reel") and int(n) > 0
+    }
+    targets = explicit or weekly_format_targets_from_catalog(
+        catalog_slots, production_profile,
+    )
     by_format: dict[str, list[dict[str, str]]] = {}
     for slot in catalog_slots:
         fmt = str(slot.get("format") or "post")
@@ -95,6 +109,67 @@ def build_weekly_catalog_assignment_plan(
         else:
             plan.append(catalog_slots[len(plan) % len(catalog_slots)])
     return plan[:total]
+
+
+def _plan_idea_format(idea: dict[str, Any]) -> str:
+    blob = " ".join(
+        str(idea.get(k) or "") for k in ("content_type", "format", "content_kind")
+    ).lower()
+    if "reel" in blob:
+        return "reel"
+    if "carousel" in blob:
+        return "carousel"
+    if "story" in blob or "canvas" in blob:
+        return "story"
+    return "post"
+
+
+def bind_catalog_slot_plan_to_ideas(
+    ideas: list[dict[str, Any]],
+    plan: list[dict[str, str]],
+) -> int:
+    """Stamp the pre-built slot plan onto ideas so copy and slot cannot drift apart.
+
+    Ideation is briefed with this plan, but the batch that survives dedupe /
+    diversity / top-up passes is not guaranteed to keep the LLM's ordering, and an
+    echoed `catalog_slot_key` can be hallucinated. Binding server-side by format
+    keeps the guarantee that a story idea lands in a story slot.
+
+    Returns the number of ideas bound.
+    """
+    if not ideas or not plan:
+        return 0
+
+    by_format: dict[str, list[dict[str, str]]] = {}
+    for slot in plan:
+        by_format.setdefault(str(slot.get("format") or "post"), []).append(slot)
+
+    cursor: dict[str, int] = {}
+    bound = 0
+    for idea in ideas:
+        if not isinstance(idea, dict):
+            continue
+        fmt = _plan_idea_format(idea)
+        pool = by_format.get(fmt) or []
+        if not pool:
+            continue
+        # The plan is sized to the ideation count, so a wrap only happens when a
+        # later pass changed the format mix. Reusing a slot beats leaving the idea
+        # unbound and falling back to blind matching.
+        slot = pool[cursor.get(fmt, 0) % len(pool)]
+        cursor[fmt] = cursor.get(fmt, 0) + 1
+        key = str(slot.get("slot_key") or "").strip()
+        if not key:
+            continue
+        idea["catalog_slot_key"] = key
+        # Marks the key as a plan contract for the downstream matchers, which are
+        # otherwise free to rotate a merely "stamped" key away for slot variety.
+        idea["catalog_slot_source"] = "ideation_plan"
+        label = str(slot.get("label_tr") or "").strip()
+        if label:
+            idea["catalog_slot_label"] = label
+        bound += 1
+    return bound
 
 
 def slot_definition_to_fd_dict(slot: Any) -> dict[str, str]:
@@ -350,12 +425,22 @@ def resolve_catalog_slot_key(
     used_keys: set[str],
     idea: dict[str, Any] | None = None,
     recent_keys: list[str] | None = None,
+    pinned: bool = False,
 ) -> str | None:
     if not catalog_slots:
         return None
     role = str(entry.get("slot_role") or "")
     pipeline = str(entry.get("pipeline") or "")
     existing = str(entry.get("catalog_slot_key") or "").strip()
+    # A pinned key came from the ideation slot plan, so the copy was written for it.
+    # Rotating off it for variety would re-open the mismatch this plan exists to
+    # prevent; only an invalid key (wrong format for the role) may be rematched.
+    if (
+        pinned
+        and existing
+        and catalog_slot_key_valid(existing, role, pipeline, catalog_slots)
+    ):
+        return existing
     # Keep FD's pick only when unique in this mission — duplicates force a rematch
     # so three posts don't hard-pin the same onboarding template.
     # Soft variety: if the FD pick is already in recent mission history, rematch.
@@ -377,9 +462,11 @@ def apply_catalog_slot_to_entry(
     used_keys: set[str],
     idea: dict[str, Any] | None = None,
     recent_keys: list[str] | None = None,
+    pinned: bool = False,
 ) -> None:
     key = resolve_catalog_slot_key(
         entry, catalog_slots, used_keys, idea=idea, recent_keys=recent_keys,
+        pinned=pinned,
     )
     if key:
         entry["catalog_slot_key"] = key

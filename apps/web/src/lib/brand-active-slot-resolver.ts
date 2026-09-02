@@ -821,6 +821,23 @@ export interface CatalogSlotMatchInput {
 }
 
 /**
+ * True when the idea carries the slot key that ideation wrote its copy for.
+ *
+ * Ideation is briefed with the mission's ordered slot plan and the binding is
+ * stamped server-side, so this key is a contract rather than a guess made from
+ * finished copy — the variety rotation must not move it.
+ */
+export function isIdeationPlanCatalogPin(
+  idea: Record<string, unknown>,
+  preferredKey?: string | null,
+): boolean {
+  const key = String(idea.catalog_slot_key ?? '').trim();
+  if (!key) return false;
+  if (String(idea.catalog_slot_source ?? '') !== 'ideation_plan') return false;
+  return !preferredKey || preferredKey === key;
+}
+
+/**
  * Map a production idea to the best enabled catalog slot.
  * Falls back within the same format when the preferred/disabled slot is unavailable.
  * Never cross-format (reel key must not stamp a carousel idea unless preferred
@@ -844,7 +861,10 @@ export function matchIdeaToBrandCatalogSlot(
   // pick is a deliberate idea↔slot match too, so it also resists rotation churn,
   // but FD assigns by pipeline ordinal ("second reel") and can therefore pin a
   // contradicting shell; that case still has to rematch.
-  const planPinIsDurable = Boolean(input.preferredIsDurable);
+  const planPinIsDurable = Boolean(input.preferredIsDurable)
+    // Ideation wrote this copy for this exact slot, so rotating the slot away for
+    // variety would ship a headline that no longer describes the deliverable.
+    || isIdeationPlanCatalogPin(idea, preferred);
   const fdPinIsDurable = assignment?.catalog_slot_source === 'feed_director'
     && Boolean(assignment.catalog_slot_key)
     && preferred === assignment.catalog_slot_key;
@@ -993,7 +1013,12 @@ export function stampIdeasWithBrandCatalogSlots(
   return ideas.map((idea) => {
     const usedKeys = new Set(usage.keys());
     const existingKey = String(idea.catalog_slot_key ?? '').trim() || null;
-    const pinExisting = Boolean(lockExisting && existingKey);
+    // An ideation-planned key stays pinned even when a sibling idea already used
+    // it: a catalog shallower than the idea count makes repeats legitimate, and
+    // dropping the pin would re-open the copy↔slot mismatch.
+    const pinExisting = Boolean(
+      existingKey && (lockExisting || isIdeationPlanCatalogPin(idea, existingKey)),
+    );
     let matched = matchIdeaToBrandCatalogSlot({
       idea,
       activeSlots,
@@ -1226,7 +1251,10 @@ export function enrichProductionQueueWithBrandSlots(
     // matchIdeaToBrandCatalogSlot still gets to rematch it, since FD assigns by
     // pipeline ordinal and can pin a contradicting slot.
     const isPlanDurablePin = isDurableCatalogQueuePin(item, durablePreferredKeys)
-      || Boolean(opts?.lockExistingCatalogPins && preferredKey);
+      || Boolean(opts?.lockExistingCatalogPins && preferredKey)
+      // Plan-time drain has no factory bindings yet, so an ideation-planned key
+      // has to carry its own contract or the recency rematch below drops it.
+      || isIdeationPlanCatalogPin(item.idea as Record<string, unknown>, preferredKey);
     const pinResistsRecency = isPlanDurablePin || isFeedDirectorPin;
     // Soft stamp that already ran recently → clear preferred for variety.
     const rematchRecent = Boolean(

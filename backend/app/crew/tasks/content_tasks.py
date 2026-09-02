@@ -539,6 +539,61 @@ def _format_mix_rule(count: int, format_targets: dict[str, int] | None) -> str:
     return line
 
 
+def _catalog_slot_plan_block(
+    plan: list[dict[str, str]] | None,
+    output_language: str,
+) -> str:
+    """Per-idea slot brief — the deliverable each concept has to be written for.
+
+    Ideation used to see only a format mix ("5 post, 8 story, …") and slot identity
+    was glued on afterwards by index plus keyword scoring. Copy was therefore written
+    blind to the deliverable, so a "calm garden" concept could land in the brand's
+    "new menu story" slot and a farm-to-table concept in the reservation CTA slot.
+    """
+    rows = [s for s in (plan or []) if str(s.get("slot_key") or "").strip()]
+    if not rows:
+        return ""
+
+    turkish = output_language == "Turkish"
+    lines: list[str] = []
+    for i, slot in enumerate(rows):
+        label = str(slot.get("label_tr") or "").strip()
+        key = str(slot.get("slot_key") or "").strip()
+        fmt = str(slot.get("format") or "post").strip()
+        name = f"{label} " if label else ""
+        lines.append(f"{i + 1}. [{fmt}] {name}({key})")
+
+    header = (
+        "=== BU HAFTANIN YAYIN SLOTLARI (HER FİKİR BİR SLOT İÇİN YAZILIR) ==="
+        if turkish
+        else "=== THIS WEEK'S PUBLISHING SLOTS (EACH IDEA IS WRITTEN FOR ONE SLOT) ==="
+    )
+    rules = (
+        [
+            "→ Dizideki N. fikir, yukarıdaki N. slot için yazılmalı: aynı sıra, aynı format.",
+            "→ headline ve caption_draft o slotun İŞİNİ anlatmalı. Slot \"yeni menü\" ise "
+            "menüden söz et; \"rezervasyon CTA\" ise rezervasyona çağır; \"mutfak kulis\" ise "
+            "mutfaktaki işi göster. Slotun konusuna değmeyen genel \"keyifli anlar\" cümleleri "
+            "kabul edilmez.",
+            "→ Slot adını başlığa yazma; slotun konusunu markanın diliyle, yayına hazır bir "
+            "cümle olarak söyle.",
+            "→ Her fikre `catalog_slot_key` alanını yazdığın slotun anahtarıyla ekle.",
+        ]
+        if turkish
+        else [
+            "→ The Nth idea in the array is written for the Nth slot above: same order, same format.",
+            "→ headline and caption_draft must speak to that slot's JOB. A \"new menu\" slot talks "
+            "about the menu; a \"reservation CTA\" slot asks for the booking; a \"kitchen BTS\" slot "
+            "shows the work in the kitchen. Generic \"lovely moments\" copy that never touches the "
+            "slot's subject is rejected.",
+            "→ Never print the slot name in the headline; say the slot's subject in the brand's "
+            "voice as a publish-ready sentence.",
+            "→ Add `catalog_slot_key` to every idea, set to the key of the slot you wrote it for.",
+        ]
+    )
+    return "\n".join([header, *lines, "", *rules])
+
+
 def create_content_ideation_task(
     agent: Agent,
     brand: BrandInfo,
@@ -549,6 +604,7 @@ def create_content_ideation_task(
     autonomy_mode: bool = False,
     mission_id: str | None = None,
     format_targets: dict[str, int] | None = None,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> Task:
     gallery_scene_block = _build_gallery_scene_block(brand)
     recent_titles_block = _build_recent_titles_block(brand)
@@ -608,6 +664,11 @@ def create_content_ideation_task(
     if brand_theme_block:
         description = brand_theme_block + "\n\n---\n\n" + description
 
+    # Top of the prompt — the slot brief decides what every concept is about.
+    slot_plan_block = _catalog_slot_plan_block(catalog_slot_plan, output_language)
+    if slot_plan_block:
+        description = slot_plan_block + "\n\n---\n\n" + description
+
     return Task(
         name="Haftalık içerik fikirleri",
         description=description,
@@ -625,6 +686,11 @@ def create_content_ideation_task(
             "the caption language; use \"none\" for brand/atmosphere ideas with no concrete subject. "
             "This drives caption↔gallery-photo matching, so it MUST name the same product the caption sells),\n"
             "asset_recommendation, production_notes, brand_confidence, missing_questions,\n"
+            + (
+                "catalog_slot_key (the key of the publishing slot this idea was written for),\n"
+                if catalog_slot_plan
+                else ""
+            ) +
             "visual_production_spec (with treatment, selected_gallery_url, image_edit_prompt, text_layers, reel_motion_spec,\n"
             "  and premium_composition object for at least 3 premium ideas).\n"
             "Output ONLY the JSON array — no markdown, no explanation."

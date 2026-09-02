@@ -703,6 +703,47 @@ async def _execute_node_body(
         effective_input["format_targets"] = {
             f: weekly_geo[f] for f in ("post", "story", "carousel", "reel")
         }
+        # Slot-aware ideation: brief each concept with the deliverable it will fill.
+        # Without this the agent only sees a format mix and slot identity is guessed
+        # from finished copy, which shipped menu slots carrying garden-atmosphere
+        # captions and a reservation CTA landing in the chef-special slot.
+        try:
+            from app.services.feed_director_slot_catalog import (
+                build_weekly_catalog_assignment_plan,
+                load_feed_director_catalog_slots,
+            )
+
+            async with factory() as _cat_db:
+                _catalog_slots = await load_feed_director_catalog_slots(
+                    _cat_db, workspace_id,
+                )
+            slot_plan = build_weekly_catalog_assignment_plan(
+                _catalog_slots,
+                total=weekly_geo["total"],
+                format_targets=effective_input["format_targets"],
+            )
+            if slot_plan:
+                effective_input["catalog_slot_plan"] = [
+                    {
+                        "slot_key": str(s.get("slot_key") or ""),
+                        "label_tr": str(s.get("label_tr") or ""),
+                        "format": str(s.get("format") or "post"),
+                    }
+                    for s in slot_plan
+                ]
+                logger.info(
+                    "content_ideation_slot_plan_injected",
+                    node_key=node_key,
+                    slots=len(slot_plan),
+                    catalog=len(_catalog_slots),
+                )
+        except Exception as exc:  # noqa: BLE001 — never block ideation on a catalog read
+            logger.warning(
+                "content_ideation_slot_plan_failed",
+                node_key=node_key,
+                error=str(exc)[:200],
+            )
+
         if "iterations" not in effective_input:
             effective_input["iterations"] = resolve_content_ideation_iterations(
                 resolved_subscription_plan_slug,

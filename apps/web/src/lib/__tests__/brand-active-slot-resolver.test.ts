@@ -777,6 +777,55 @@ describe('enrichProductionQueueWithBrandSlots', () => {
         { recentCatalogSlotKeys: [sticky] },
       );
       expect(soft[0]!.assignment.catalog_slot_key).toBe(peer);
+
+      // Ideation wrote the copy for `sticky`, so the key holds on the plan path
+      // too — without `lockExistingCatalogPins` and without factory bindings.
+      const planned = enrichProductionQueueWithBrandSlots(
+        [{
+          queueIndex: 0,
+          ideaIndex: 0,
+          idea: {
+            headline: 'Plan stamp',
+            calendar_announcement_type: announcement,
+            content_type: 'instagram_post',
+            catalog_slot_key: sticky,
+            catalog_slot_source: 'ideation_plan',
+          },
+          assignment: {
+            idea_index: 0,
+            slot_role: 'fal_designed_post',
+            pipeline: 'fal_design',
+            copy_bundle_id: 'week',
+            publish_channel: 'instagram_organic',
+            catalog_slot_key: sticky,
+          },
+        }],
+        activeSet,
+        { recentCatalogSlotKeys: [sticky] },
+      );
+      expect(planned[0]!.assignment.catalog_slot_key).toBe(sticky);
+
+      // A shallow catalog makes two ideas share a planned slot; the second must
+      // keep its pin instead of being rotated onto an unrelated peer.
+      const repeated = stampIdeasWithBrandCatalogSlots(
+        [
+          {
+            headline: 'Planned one',
+            content_type: 'instagram_post',
+            catalog_slot_key: sticky,
+            catalog_slot_source: 'ideation_plan',
+          },
+          {
+            headline: 'Planned two',
+            content_type: 'instagram_post',
+            catalog_slot_key: sticky,
+            catalog_slot_source: 'ideation_plan',
+          },
+        ],
+        activeSet,
+        { recentCatalogSlotKeys: [sticky] },
+      );
+      expect(repeated.map((i) => i.catalog_slot_key)).toEqual([sticky, sticky]);
     }
   });
 

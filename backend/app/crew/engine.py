@@ -334,6 +334,11 @@ def _adapt_content_ideation(brand, data, llm):
         iterations=iterations,
         mission_id=data.get("mission_id"),
         format_targets=data.get("format_targets") if isinstance(data.get("format_targets"), dict) else None,
+        catalog_slot_plan=(
+            data.get("catalog_slot_plan")
+            if isinstance(data.get("catalog_slot_plan"), list)
+            else None
+        ),
     )
 
 
