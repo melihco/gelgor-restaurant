@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   isKnownCalendarDesignLayoutFamily,
   resolveCalendarDesignLayout,
+  sectorMatrixArchetypes,
   SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS,
   storyLayoutHintForCanvaArchetype,
 } from '@/lib/calendar-design-layout';
+import { pickSectorArchetypePool } from '@/lib/canva-archetype-catalog';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
 
 describe('sector layout override table', () => {
@@ -13,6 +15,20 @@ describe('sector layout override table', () => {
     // would silently drop one vertical's playbook.
     const canonical = SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS.map((s) => normalizeSectorId(s));
     expect(new Set(canonical).size).toBe(canonical.length);
+  });
+
+  it('rotation pool contains every archetype the sector matrix can assign', () => {
+    // Otherwise the matrix sends a slot to a layout rotation cannot reach, and the
+    // pool stays shallow enough to empty mid-mission and cycle the same few.
+    for (const sector of SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS) {
+      const fromMatrix = sectorMatrixArchetypes(sector);
+      const pool = new Set([
+        ...pickSectorArchetypePool(sector, 'post'),
+        ...pickSectorArchetypePool(sector, 'story'),
+      ]);
+      const missing = fromMatrix.filter((id) => !pool.has(id));
+      expect(missing, `${sector} pool is missing ${missing.join(', ')}`).toEqual([]);
+    }
   });
 
   it('resolves overrides for aliased sectors, not just literal ones', () => {

@@ -182,6 +182,24 @@ export const SECTOR_CALENDAR_LAYOUT_OVERRIDE_SECTORS = Object.keys(
   SECTOR_CALENDAR_LAYOUT_OVERRIDES,
 );
 
+/**
+ * Archetypes this sector's matrix can assign. The rotation pool in
+ * canva-archetype-catalog must contain all of them, otherwise the matrix routes a
+ * slot to a layout that rotation is not allowed to reach — which is how the pool
+ * stayed four deep while the matrix used eight.
+ */
+export function sectorMatrixArchetypes(sector: string): CanvaArchetypeId[] {
+  const table = SECTOR_LAYOUT_OVERRIDES_BY_CANONICAL_ID.get(normalizeSectorId(sector));
+  if (!table) return [];
+  const ids = new Set<CanvaArchetypeId>();
+  for (const byChannel of Object.values(table)) {
+    for (const id of Object.values(byChannel ?? {})) {
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids];
+}
+
 function sectorLayoutOverride(
   sector: string | undefined,
   announcementKey: string,

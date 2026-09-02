@@ -310,14 +310,24 @@ Sector quick picks (canonical sector slug — NOT venue name):
 MULTI-TENANT: Pick archetype from the tenant's sector category + caption intent. Never hardcode a venue or brand name.
 `.trim();
 
+/**
+ * Rotation pool per sector.
+ *
+ * A pool must be deeper than four for a sixteen-slot mission, otherwise it empties
+ * and the same few archetypes cycle. Each sector's own calendar layout matrix
+ * already routes to archetypes beyond its pool — local_products_shop was assigned
+ * polaroid_memory, before_after_diptych and location_pin_card by the matrix while
+ * none were rotation candidates. A test asserts every archetype a sector's matrix
+ * routes to is present here, so the two tables cannot drift apart again.
+ */
 export const CANVA_SECTOR_ARCHETYPE_HINTS: Record<string, CanvaArchetypeId[]> = {
   /** Canonical sector slugs — see sector-production-profile / normalizeSectorId */
-  beach_club: ['diagonal_brand_split', 'cinematic_full_bleed', 'split_feature_panel', 'social_proof_banner'],
+  beach_club: ['diagonal_brand_split', 'cinematic_full_bleed', 'split_feature_panel', 'social_proof_banner', 'neon_night_promo', 'product_hero_card', 'campaign_hero_block'],
   nightclub: ['neon_night_promo', 'event_ticket_stub', 'diagonal_brand_split', 'campaign_hero_block'],
-  restaurant_cafe: ['magazine_cover_drop', 'product_hero_card', 'split_feature_panel', 'polaroid_memory'],
+  restaurant_cafe: ['magazine_cover_drop', 'product_hero_card', 'split_feature_panel', 'polaroid_memory', 'cinematic_full_bleed', 'frosted_quote_card', 'social_proof_banner'],
   fine_dining: ['noir_editorial', 'magazine_cover_drop', 'product_hero_card', 'editorial_date_masthead'],
   coffee_shop: ['polaroid_memory', 'product_hero_card', 'split_feature_panel', 'frosted_quote_card'],
-  hospitality: ['noir_editorial', 'cinematic_full_bleed', 'split_feature_panel', 'magazine_cover_drop'],
+  hospitality: ['noir_editorial', 'cinematic_full_bleed', 'split_feature_panel', 'magazine_cover_drop', 'editorial_date_masthead', 'event_ticket_stub', 'campaign_hero_block', 'promo_price_stack'],
   beauty_wellness: ['before_after_diptych', 'frosted_quote_card', 'polaroid_memory', 'split_feature_panel'],
   barber_salon: ['before_after_diptych', 'polaroid_memory', 'graphic_shape_stack', 'split_feature_panel'],
   fitness_gym: ['graphic_shape_stack', 'campaign_hero_block', 'split_feature_panel', 'product_hero_card'],
@@ -328,7 +338,7 @@ export const CANVA_SECTOR_ARCHETYPE_HINTS: Record<string, CanvaArchetypeId[]> = 
   jewelry_accessories: ['noir_editorial', 'product_hero_card', 'split_feature_panel', 'editorial_date_masthead'],
   moving_logistics: ['location_pin_card', 'split_feature_panel', 'graphic_shape_stack', 'campaign_hero_block'],
   healthcare_clinic: ['frosted_quote_card', 'split_feature_panel', 'location_pin_card', 'graphic_shape_stack'],
-  local_products_shop: ['product_hero_card', 'promo_price_stack', 'graphic_shape_stack', 'split_feature_panel'],
+  local_products_shop: ['product_hero_card', 'promo_price_stack', 'graphic_shape_stack', 'split_feature_panel', 'polaroid_memory', 'before_after_diptych', 'frosted_quote_card', 'location_pin_card'],
   saas: ['graphic_shape_stack', 'split_feature_panel', 'magazine_cover_drop', 'frosted_quote_card'],
   general_business: ['split_feature_panel', 'graphic_shape_stack', 'magazine_cover_drop', 'frosted_quote_card'],
   default: ['split_feature_panel', 'graphic_shape_stack', 'magazine_cover_drop', 'diagonal_brand_split'],
@@ -420,10 +430,24 @@ export function resolveCanvaArchetype(input: {
     }
   }
 
-  const used = new Set(input.usedArchetypeIds ?? []);
+  const allUsed = new Set(input.usedArchetypeIds ?? []);
   const tenantPool = pickSectorArchetypePool(input.sector, input.format, input.tenantPreferredArchetypes);
   const restrictToTenantPool = Boolean(input.tenantPreferredArchetypes?.length);
   const allowedIds = new Set(tenantPool);
+  /**
+   * Rotate through the sector pool, then start it over.
+   *
+   * A sector pool holds four archetypes but a mission runs sixteen-plus slots, so
+   * the pool empties partway through. With the repeat penalty still applied to
+   * every member, the whole pool scores below archetypes from other verticals and
+   * the resolver walks out of the sector — a Datça olive-oil shop was handed
+   * neon_night_promo, a nightclub layout. Once the pool is exhausted its members
+   * become eligible again; only archetypes from outside stay penalised.
+   */
+  const poolExhausted = tenantPool.length > 0 && tenantPool.every((id) => allUsed.has(id));
+  const used = poolExhausted
+    ? new Set([...allUsed].filter((id) => !allowedIds.has(id)))
+    : allUsed;
   const rotationBoostId = input.slotOrdinal != null && tenantPool.length > 0
     ? tenantPool[input.slotOrdinal % tenantPool.length]
     : undefined;
