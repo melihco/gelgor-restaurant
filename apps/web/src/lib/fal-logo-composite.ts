@@ -15,6 +15,7 @@ import {
 import {
   compositeLogoOnPhoto,
   imageUrlToBuffer,
+  pickQuietLogoPlacement,
   prepareLogoForComposite,
   resolveMediaFetchUrl,
   type LogoPlacement,
@@ -81,7 +82,7 @@ export async function compositeOfficialLogoOnFrameUrl(input: {
   workspaceId?: string;
   sizePct?: number;
   opacity?: number;
-}): Promise<{ imageUrl: string; logoApplied: boolean }> {
+}): Promise<{ imageUrl: string; logoApplied: boolean; placement?: LogoPlacement }> {
   const logoUrl = input.logoUrl.trim();
   const frameUrl = input.frameUrl.trim();
   if (!logoUrl || !frameUrl) {
@@ -89,7 +90,7 @@ export async function compositeOfficialLogoOnFrameUrl(input: {
   }
 
   const channel = input.channel ?? 'feed_post';
-  const compositorPlacement = resolveCompositorPlacement(input.placement, channel);
+  const requestedPlacement = resolveCompositorPlacement(input.placement, channel);
 
   const frameBuffer = await imageUrlToBuffer(frameUrl);
   if (!frameBuffer) {
@@ -100,13 +101,25 @@ export async function compositeOfficialLogoOnFrameUrl(input: {
   const sharp = (await import('sharp')).default;
   const meta = await sharp(frameBuffer).metadata();
   const baseH = meta.height ?? 1080;
+  const sizePct = input.sizePct ?? 10;
+
+  // The requested anchor comes from layout metadata, but the headline's real
+  // position is whatever the image model painted, so check the frame before
+  // trusting it. Templates without a `type_zone_anchor` have no metadata to
+  // reconcile at all and used to drop the mark straight onto the punchline.
+  const quiet = await pickQuietLogoPlacement(frameBuffer, {
+    preferred: requestedPlacement,
+    sizePct,
+    padding: edgePaddingForChannel(channel, requestedPlacement, baseH),
+  });
+  const compositorPlacement = quiet.placement;
   const padding = edgePaddingForChannel(channel, compositorPlacement, baseH);
 
   const result = await compositeLogoOnPhoto({
     baseImageBuffer: frameBuffer,
     logoUrl,
     placement: compositorPlacement,
-    sizePct: input.sizePct ?? 10,
+    sizePct,
     opacity: input.opacity ?? 0.92,
     padding,
   });
@@ -121,9 +134,10 @@ export async function compositeOfficialLogoOnFrameUrl(input: {
   const imageUrl = persisted[0] ?? dataUrl;
 
   console.log(
-    `[fal-logo-composite] Official logo composited (${compositorPlacement}, channel=${channel})`,
+    `[fal-logo-composite] Official logo composited (${compositorPlacement}, channel=${channel}`
+    + `${quiet.movedFromPreferred ? `, moved off ${requestedPlacement} — corner was occupied` : ''})`,
   );
-  return { imageUrl, logoApplied: true };
+  return { imageUrl, logoApplied: true, placement: compositorPlacement };
 }
 
 function resolveFfmpegBin(): string {

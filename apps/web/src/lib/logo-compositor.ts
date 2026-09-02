@@ -192,6 +192,136 @@ export async function prepareLogoForComposite(
     );
 }
 
+/** Anchors a mark may occupy, in the order we fall back through. */
+const LOGO_ANCHOR_CANDIDATES: readonly Exclude<LogoPlacement, 'none'>[] = [
+  'top_right', 'top_left', 'bottom_right', 'bottom_left', 'top_center', 'bottom_center',
+];
+
+/** Keep the art-directed anchor unless another corner is clearly calmer. */
+const QUIET_ANCHOR_TOLERANCE = 1.4;
+
+function anchorBox(
+  placement: Exclude<LogoPlacement, 'none'>,
+  frameW: number,
+  frameH: number,
+  boxW: number,
+  boxH: number,
+  padding: number,
+): { left: number; top: number } {
+  const right = Math.max(0, frameW - boxW - padding);
+  const bottom = Math.max(0, frameH - boxH - padding);
+  const centerX = Math.max(0, Math.round((frameW - boxW) / 2));
+  switch (placement) {
+    case 'top_left': return { left: padding, top: padding };
+    case 'top_center': return { left: centerX, top: padding };
+    case 'top_right': return { left: right, top: padding };
+    case 'bottom_left': return { left: padding, top: bottom };
+    case 'bottom_center': return { left: centerX, top: bottom };
+    case 'bottom_right': default: return { left: right, top: bottom };
+  }
+}
+
+/**
+ * How busy is this region? Mean neighbour gradient over a grayscale raster.
+ *
+ * Painted typography and hard graphic edges produce far higher gradients than
+ * foliage, sky, or a tablecloth, so this separates "quiet photo" from "occupied
+ * by the headline" without needing to know what the text says.
+ */
+function regionBusyness(
+  gray: Buffer,
+  rasterW: number,
+  rasterH: number,
+  box: { left: number; top: number; width: number; height: number },
+): number {
+  const x0 = Math.max(0, Math.min(rasterW - 2, Math.floor(box.left)));
+  const y0 = Math.max(0, Math.min(rasterH - 2, Math.floor(box.top)));
+  const x1 = Math.max(x0 + 1, Math.min(rasterW - 1, Math.ceil(box.left + box.width)));
+  const y1 = Math.max(y0 + 1, Math.min(rasterH - 1, Math.ceil(box.top + box.height)));
+  let total = 0;
+  let n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = y * rasterW + x;
+      const dx = Math.abs(gray[i]! - gray[i + 1]!);
+      const dy = Math.abs(gray[i]! - gray[i + rasterW]!);
+      total += dx + dy;
+      n += 1;
+    }
+  }
+  return n > 0 ? total / n : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Choose the anchor where the mark will actually be readable.
+ *
+ * Placement is otherwise decided from layout metadata while the headline position
+ * is decided by the image model at paint time, so the two drift apart — and when
+ * a template carries no `type_zone_anchor` there is no metadata to reconcile at
+ * all. Live frames shipped with the official mark composited straight across the
+ * punchline. Measuring the rendered frame is the only signal that always exists.
+ */
+export async function pickQuietLogoPlacement(
+  baseImageBuffer: Buffer,
+  opts: {
+    preferred?: LogoPlacement | null;
+    sizePct?: number;
+    padding?: number;
+    candidates?: readonly Exclude<LogoPlacement, 'none'>[];
+  } = {},
+): Promise<{ placement: Exclude<LogoPlacement, 'none'>; movedFromPreferred: boolean }> {
+  const candidates = opts.candidates ?? LOGO_ANCHOR_CANDIDATES;
+  const preferred = opts.preferred && opts.preferred !== 'none' ? opts.preferred : null;
+  const fallback = preferred ?? candidates[0] ?? 'bottom_right';
+  try {
+    const RASTER_W = 180;
+    const meta = await sharp(baseImageBuffer).metadata();
+    const frameW = meta.width ?? 1080;
+    const frameH = meta.height ?? 1080;
+    const rasterH = Math.max(8, Math.round((RASTER_W * frameH) / frameW));
+    const { data } = await sharp(baseImageBuffer)
+      .removeAlpha()
+      .grayscale()
+      .resize(RASTER_W, rasterH, { fit: 'fill' })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    // The mark plus a breathing margin, in raster units.
+    const boxW = Math.max(4, Math.round((RASTER_W * (opts.sizePct ?? 12)) / 100 * 1.25));
+    const boxH = boxW;
+    const padding = Math.max(1, Math.round(((opts.padding ?? 20) / frameW) * RASTER_W));
+
+    const scored = candidates.map((placement) => {
+      const { left, top } = anchorBox(placement, RASTER_W, rasterH, boxW, boxH, padding);
+      return {
+        placement,
+        busyness: regionBusyness(data, RASTER_W, rasterH, { left, top, width: boxW, height: boxH }),
+      };
+    }).sort((a, b) => a.busyness - b.busyness);
+
+    const quietest = scored[0];
+    if (!quietest || !Number.isFinite(quietest.busyness)) {
+      return { placement: fallback, movedFromPreferred: false };
+    }
+    if (preferred) {
+      const preferredScore = scored.find((s) => s.placement === preferred);
+      // Art direction wins unless the corner it chose is measurably crowded.
+      if (
+        preferredScore
+        && preferredScore.busyness <= quietest.busyness * QUIET_ANCHOR_TOLERANCE
+      ) {
+        return { placement: preferred as Exclude<LogoPlacement, 'none'>, movedFromPreferred: false };
+      }
+    }
+    return {
+      placement: quietest.placement,
+      movedFromPreferred: Boolean(preferred && preferred !== quietest.placement),
+    };
+  } catch {
+    return { placement: fallback, movedFromPreferred: false };
+  }
+}
+
 /**
  * Detect the most likely logo URL from a list of brand reference image URLs.
  * Prioritizes: URLs containing 'logo', 'brand', 'icon', 'mark', or SVG/PNG extensions.

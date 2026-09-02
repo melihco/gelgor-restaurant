@@ -116,3 +116,40 @@ describe('resolveFalDesignBrief logoPlacement', () => {
     expect(brief.logoZone).toContain('pink diagonal panel');
   });
 });
+
+describe('type zone never shares a band with the logo', () => {
+  it('keeps the mark off a bottom type zone on poster-style stories', () => {
+    // "campaign_hero"/"poster" layout vocabulary used to force the mark
+    // bottom-right regardless, painting it across the punchline.
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'campaign_hero_block',
+      layoutPattern: 'campaign_hero_block — dominant headline block',
+      typeZoneAnchor: 'bottom_band',
+      channel: 'story',
+    });
+
+    expect(placement.position?.startsWith('bottom')).toBe(false);
+  });
+
+  it('still drops the mark to the bottom when the type zone is up top', () => {
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'magazine_cover_drop',
+      layoutPattern: 'magazine_cover — asymmetric masthead',
+      typeZoneAnchor: 'top_band',
+      channel: 'story',
+    });
+
+    expect(placement.position?.startsWith('top')).toBe(false);
+  });
+
+  it('leaves feed posts with a bottom type zone alone', () => {
+    const placement = resolveFalLogoPlacement({
+      canvaArchetypeId: 'split_feature_panel',
+      layoutPattern: 'split_feature_panel — 45/55 vertical split',
+      typeZoneAnchor: 'bottom_right',
+      channel: 'feed_post',
+    });
+
+    expect(placement.position).not.toBe('bottom_right');
+  });
+});

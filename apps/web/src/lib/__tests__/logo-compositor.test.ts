@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import sharp from '@/lib/sharp-runtime';
 import {
   LOGO_WHITE_BACKING_THRESHOLD,
+  pickQuietLogoPlacement,
   prepareLogoForComposite,
 } from '@/lib/logo-compositor';
 
@@ -104,5 +105,64 @@ describe('prepareLogoForComposite', () => {
       if (data[i + 3]! > 200 && data[i]! > 150) opaqueRed += 1;
     }
     expect(opaqueRed).toBeGreaterThan(50);
+  });
+});
+
+/** Flat frame with a high-frequency "headline" block in one corner. */
+async function makeFrameWithBusyCorner(
+  corner: 'bottom' | 'top',
+  width = 540,
+  height = 960,
+): Promise<Buffer> {
+  const raw = Buffer.alloc(width * height * 4, 190);
+  for (let i = 0; i < width * height; i += 1) raw[i * 4 + 3] = 255;
+  const bandTop = corner === 'bottom' ? Math.round(height * 0.78) : Math.round(height * 0.04);
+  const bandBottom = corner === 'bottom' ? Math.round(height * 0.96) : Math.round(height * 0.22);
+  // Alternating stripes stand in for painted typography: high local gradient.
+  for (let y = bandTop; y < bandBottom; y += 1) {
+    for (let x = Math.round(width * 0.05); x < Math.round(width * 0.95); x += 1) {
+      const on = Math.floor(x / 3) % 2 === 0;
+      const i = (y * width + x) * 4;
+      raw[i] = on ? 255 : 10;
+      raw[i + 1] = on ? 255 : 10;
+      raw[i + 2] = on ? 255 : 10;
+    }
+  }
+  return sharp(raw, { raw: { width, height, channels: 4 } }).jpeg({ quality: 95 }).toBuffer();
+}
+
+describe('pickQuietLogoPlacement', () => {
+  it('moves the mark off a corner occupied by painted type', async () => {
+    const frame = await makeFrameWithBusyCorner('bottom');
+    const picked = await pickQuietLogoPlacement(frame, {
+      preferred: 'bottom_right',
+      sizePct: 10,
+      padding: 40,
+    });
+
+    expect(picked.placement.startsWith('bottom')).toBe(false);
+    expect(picked.movedFromPreferred).toBe(true);
+  });
+
+  it('keeps the art-directed corner when it is quiet', async () => {
+    // Type occupies the top band, so the requested bottom corner is legitimate.
+    const frame = await makeFrameWithBusyCorner('top');
+    const picked = await pickQuietLogoPlacement(frame, {
+      preferred: 'bottom_right',
+      sizePct: 10,
+      padding: 40,
+    });
+
+    expect(picked.placement).toBe('bottom_right');
+    expect(picked.movedFromPreferred).toBe(false);
+  });
+
+  it('falls back to the requested corner on an unreadable frame', async () => {
+    const picked = await pickQuietLogoPlacement(Buffer.from('not-an-image'), {
+      preferred: 'top_left',
+    });
+
+    expect(picked.placement).toBe('top_left');
+    expect(picked.movedFromPreferred).toBe(false);
   });
 });

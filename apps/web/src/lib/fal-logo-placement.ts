@@ -168,6 +168,15 @@ function adjustLogoPlacementForHeadlineZone(input: {
     layoutText,
   );
   if (!upperHeadline || !next.position) return next;
+  // The rule below assumes the headline sits high, but it infers that from layout
+  // vocabulary ("poster", "campaign_hero") that says nothing about where the type
+  // actually lands. When the slot names a bottom type zone we have direct evidence,
+  // and pushing the mark bottom-right anyway drops it onto the headline — live story
+  // frames shipped with the logo painted across the punchline.
+  const typeInBottomBand = input.typeZoneAnchor
+    ? /bottom_|lower_|lower.?third/.test(input.typeZoneAnchor.toLowerCase().replace(/-/g, '_'))
+    : false;
+  if (typeInBottomBand) return next;
 
   const topAnchors: FalLogoPosition[] = ['top_center', 'top_left', 'top_right'];
   if (!topAnchors.includes(next.position)) return next;
