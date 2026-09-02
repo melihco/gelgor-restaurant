@@ -9,6 +9,10 @@ class CalendarLayoutResult(TypedDict):
     canva_archetype_id: str
     layout_family_hint: str
     source: str
+    # True when nothing in the input chose this layout. TS parity: a fallback must
+    # not be stamped onto the row, because the archetype resolver downstream
+    # weights the hint high enough to keep re-picking it over sector rotation.
+    is_fallback: bool
 
 
 KNOWN_ARCHETYPES = frozenset({
@@ -178,6 +182,7 @@ def resolve_calendar_design_layout(
         "canva_archetype_id": archetype,
         "layout_family_hint": CANVA_TO_REMOTION_LAYOUT.get(archetype, "split_panel"),
         "source": source,
+        "is_fallback": source == "default_split_feature_panel",
     }
 
 
@@ -186,6 +191,9 @@ def apply_calendar_design_layout_to_row(
     layout: CalendarLayoutResult,
 ) -> dict[str, Any]:
     vps = dict(row.get("visual_production_spec") or {}) if isinstance(row.get("visual_production_spec"), dict) else {}
+    if layout.get("is_fallback"):
+        # Record only where it came from; leave the layout unset so rotation picks.
+        return {**row, "design_layout_source": layout["source"], "design_layout_locked": False}
     return {
         **row,
         "design_layout_family": layout["canva_archetype_id"],
@@ -223,6 +231,8 @@ def normalize_calendar_plan_design_layout(
         channel=channel,
         sector=sector,
     )
+    if layout.get("is_fallback"):
+        return {**plan, "design_layout_source": layout["source"]}
     return {
         **plan,
         "design_layout_family": layout["canva_archetype_id"],

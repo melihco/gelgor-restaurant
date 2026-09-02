@@ -189,7 +189,18 @@ export function resolveCalendarSlotAssignment(
   const pkgFmt = detectIdeaPackageFormat(idea);
   const librarySlotKey = librarySlotForAnnouncement(announcement);
   const sceneHint = buildCalendarFalSceneHint(idea);
-  const layoutHint = `${sceneHint} | layout:${layout.canvaArchetypeId}`;
+  /**
+   * A fallback layout must not be written into the assignment. Downstream the
+   * archetype resolver scores `layout_family_hint` at +120 and picks the word
+   * "split/panel" out of the design hint text too, both of which outweigh the
+   * rotation boost and the repeat penalty — so a stamped fallback quietly forces
+   * itself back in through a side door. Leaving these unset lets sector rotation
+   * choose, which is the whole point of having a pool.
+   */
+  const layoutHintForSlot = layout.isFallback ? undefined : layout.layoutFamilyHint;
+  const layoutHint = layout.isFallback
+    ? sceneHint
+    : `${sceneHint} | layout:${layout.canvaArchetypeId}`;
 
   if (pkgFmt === 'story') {
     const base: ProductionAssignment = {
@@ -199,7 +210,7 @@ export function resolveCalendarSlotAssignment(
       copy_bundle_id: `calendar:${planIndex}`,
       publish_channel: 'instagram_organic',
       library_slot_key: librarySlotKey ?? 'event_story',
-      layout_family_hint: layout.layoutFamilyHint,
+      layout_family_hint: layoutHintForSlot,
       fal_design_hint: layoutHint,
       rationale: `calendar_fal_story_${announcement || 'announcement'}`,
     };
@@ -214,7 +225,7 @@ export function resolveCalendarSlotAssignment(
       copy_bundle_id: `calendar:${planIndex}`,
       publish_channel: 'instagram_organic',
       library_slot_key: librarySlotKey,
-      layout_family_hint: layout.layoutFamilyHint,
+      layout_family_hint: layoutHintForSlot,
       fal_design_hint: layoutHint,
       rationale: `calendar_fal_reel_${announcement || 'announcement'}`,
     };
@@ -228,7 +239,7 @@ export function resolveCalendarSlotAssignment(
       copy_bundle_id: `calendar:${planIndex}`,
       publish_channel: 'instagram_organic',
       library_slot_key: librarySlotKey,
-      layout_family_hint: layout.layoutFamilyHint,
+      layout_family_hint: layoutHintForSlot,
       fal_design_hint: sceneHint,
       rationale: `calendar_carousel_${announcement || 'announcement'}`,
     };
@@ -242,7 +253,7 @@ export function resolveCalendarSlotAssignment(
     copy_bundle_id: `calendar:${planIndex}`,
     publish_channel: 'instagram_organic',
     library_slot_key: librarySlotKey,
-    layout_family_hint: layout.layoutFamilyHint,
+    layout_family_hint: layoutHintForSlot,
     fal_design_hint: layoutHint,
     rationale: `calendar_gallery_designed_${announcement || 'announcement'}_${channel}`,
   };

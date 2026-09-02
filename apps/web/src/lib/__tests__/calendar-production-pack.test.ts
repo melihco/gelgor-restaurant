@@ -127,6 +127,37 @@ describe('calendar-production-pack', () => {
     expect(assignment.pipeline).toBe('fal_story');
     expect(assignment.library_slot_key).toBe('event_story');
   });
+  it('leaves layout unset on the assignment when the matrix fell back', () => {
+    // The archetype resolver scores layout_family_hint at +120 and reads the word
+    // "split/panel" out of the design hint text, both above the rotation boost.
+    // A stamped fallback therefore reinstates itself; live output showed 20 of 22
+    // fallback slots landing back on split_feature_panel through that door.
+    for (const format of ['story', 'post'] as const) {
+      const idea = normalizeCalendarPlanToProductionIdea({
+        event_name: 'Hafta sonu saatleri',
+        tagline: 'Cumartesi 09:00 - 19:00 açıkız',
+        format,
+        announcement_type: 'announcement_formal',
+      }, 0);
+      const assignment = resolveCalendarSlotAssignment(idea, 0);
+      expect(assignment.layout_family_hint).toBeUndefined();
+      expect(assignment.fal_design_hint ?? '').not.toContain('layout:');
+      expect(idea.design_layout_family).toBeUndefined();
+    }
+  });
+
+  it('still stamps layout on the assignment when the matrix resolved', () => {
+    const idea = normalizeCalendarPlanToProductionIdea({
+      event_name: 'Yeni hasat',
+      tagline: 'Bu haftanın hasadı rafta',
+      format: 'post',
+      announcement_type: 'product_reveal',
+    }, 0);
+    const assignment = resolveCalendarSlotAssignment(idea, 0);
+    expect(assignment.layout_family_hint).toBeTruthy();
+    expect(assignment.fal_design_hint ?? '').toContain('layout:');
+  });
+
   it('builds gallery match caption from tagline + mood — never content_brief', () => {
     const idea = normalizeCalendarPlanToProductionIdea(meetTheMakerPlan, 0);
     const matchCaption = calendarGalleryMatchCaption(idea);

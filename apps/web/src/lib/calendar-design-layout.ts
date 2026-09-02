@@ -296,6 +296,12 @@ export function applyCalendarDesignLayoutToIdea(
   const existingVps = typeof idea.visual_production_spec === 'object' && idea.visual_production_spec
     ? { ...(idea.visual_production_spec as Record<string, unknown>) }
     : {};
+  // A fallback records only where it came from. Writing its archetype and hint
+  // onto the idea would hand production a layout nothing actually chose, and the
+  // archetype resolver weights both heavily enough to keep re-picking it.
+  if (layout.isFallback) {
+    return { ...idea, design_layout_source: layout.source, design_layout_locked: false };
+  }
   return {
     ...idea,
     design_layout_family: layout.canvaArchetypeId,

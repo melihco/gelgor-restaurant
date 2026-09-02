@@ -5462,13 +5462,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ).slice(0, 160),
         visual_design_card_prompt_used: missionVisualDesignRendered,
       } : {}),
-      layout_family_hint: calendarDesignLayout?.layoutFamilyHint
+      // Record the hint production actually ran on. Stamping the fallback here
+      // made the telemetry claim a split_panel hint on slots that never received
+      // one, which is why the leak took a second pass to find.
+      layout_family_hint: (calendarDesignLayout && !calendarDesignLayout.isFallback
+        ? calendarDesignLayout.layoutFamilyHint
+        : undefined)
         ?? assignment.layout_family_hint
         ?? layoutFamilyHint
         ?? null,
       ...(calendarDesignLayout
         ? {
-          design_layout_family: calendarDesignLayout.canvaArchetypeId,
+          ...(calendarDesignLayout.isFallback
+            ? {}
+            : { design_layout_family: calendarDesignLayout.canvaArchetypeId }),
           design_layout_source: calendarDesignLayout.source,
         }
         : {}),
