@@ -12,6 +12,7 @@ import {
   type BrandLayoutComposeMode,
   type BrandLayoutLanguagePackId,
 } from '@/lib/brand-layout-language';
+import { parseHouseMoodboardRefs, resolveHouseLayoutFamily } from '@/lib/house-layout-family';
 import { readTenantPreferredCanvaArchetypes } from '@/lib/fal-design-brief';
 import { isOnboardingFontConfirmed } from '@/lib/onboarding-brand-identity';
 import { defaultFontsForSector } from '@/lib/premium-font-registry';
@@ -35,6 +36,10 @@ export interface BrandDesignConstitution {
   composeMode: BrandLayoutComposeMode;
   layoutPackId: BrandLayoutLanguagePackId;
   preferredArchetypes: string[];
+  /** 2–3 signature geometries the library rotates — ⊂ sector pool. */
+  signatureArchetypes: string[];
+  /** Existing onboarding/gallery refs (max 3) — not a new scrape. */
+  moodboardRefs: string[];
   antiPatterns: string[];
   signatureOfferings: string[];
   templateNeeds: string[];
@@ -66,6 +71,8 @@ export interface CompileBrandDesignConstitutionInput {
     primary?: string;
     accent?: string;
   };
+  /** brand_context.reference_image_urls — moodboard only, no unused-column fill. */
+  referenceImageUrls?: unknown;
 }
 
 const DESIGN_TEMPLATE_TYPES = new Set<DesignTemplateType>([
@@ -256,6 +263,12 @@ export function compileBrandDesignConstitution(
     String(input.visualDnaTone || input.brandTone || input.visualDna || layout.id),
     72,
   );
+  const signatureArchetypes = resolveHouseLayoutFamily({
+    sector,
+    layoutPackId: layout.id,
+    tenantPreferred: readTenantPreferredCanvaArchetypes(theme),
+  });
+  const moodboardRefs = parseHouseMoodboardRefs(input.referenceImageUrls);
 
   return {
     version: BRAND_DESIGN_CONSTITUTION_VERSION,
@@ -273,7 +286,9 @@ export function compileBrandDesignConstitution(
       || '#c9a96e',
     composeMode: layout.composeMode,
     layoutPackId: layout.id,
-    preferredArchetypes: readTenantPreferredCanvaArchetypes(theme).slice(0, 6),
+    preferredArchetypes: signatureArchetypes,
+    signatureArchetypes,
+    moodboardRefs,
     antiPatterns,
     signatureOfferings: offerings,
     templateNeeds: discovery.templateNeeds,
@@ -309,8 +324,17 @@ export function formatConstitutionHouseRules(constitution: BrandDesignConstituti
   if (constitution.nativeCtas.length) {
     lines.push(`NATIVE CTA LANGUAGE: ${constitution.nativeCtas.join(' | ')}.`);
   }
-  if (constitution.preferredArchetypes.length) {
-    lines.push(`PREFERRED ARCHETYPES: ${constitution.preferredArchetypes.join(', ')}.`);
+  if (constitution.signatureArchetypes.length) {
+    lines.push(
+      `SIGNATURE FAMILY: ${constitution.signatureArchetypes.join(' · ')}. `
+      + 'Rotate these 2–3 grids — same type rhythm, distinct crop. Stay inside this house; do not invent a new Canva pack.',
+    );
+  }
+  if (constitution.moodboardRefs.length) {
+    lines.push(
+      `MOODBOARD: ${constitution.moodboardRefs.length} onboarding refs lock light, material, and crop rhythm. `
+      + 'Obey their look — do not copy their subjects onto this slot.',
+    );
   }
   return lines;
 }
@@ -329,6 +353,8 @@ export function constitutionStamp(constitution: BrandDesignConstitution): Record
       offerings: constitution.signatureOfferings.slice(0, 4),
       antiPatterns: constitution.antiPatterns.slice(0, 4),
       neededTypes: constitution.neededTemplateTypes,
+      signatureArchetypes: constitution.signatureArchetypes,
+      moodboardCount: constitution.moodboardRefs.length,
     },
   };
 }

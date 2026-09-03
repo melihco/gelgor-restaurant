@@ -36,6 +36,7 @@ import {
   readTenantPreferredCanvaArchetypes,
   resolveFalDesignBrief,
 } from '@/lib/fal-design-brief';
+import { rotateHouseFamilyArchetype } from '@/lib/house-layout-family';
 import type { FalDesignChannel } from '@/lib/fal-design-intensity';
 import {
   clampDesignIntensityForArchetype,
@@ -101,7 +102,7 @@ import {
   preferCoverCanvaForReelArchetype,
   resolveReelArchetypeForProduction,
 } from '@/lib/reel-canva-archetypes';
-import { getCanvaArchetype } from '@/lib/canva-archetype-catalog';
+import { getCanvaArchetype, type CanvaArchetypeId } from '@/lib/canva-archetype-catalog';
 import {
   buildSlotCopyFitDirective,
   fitSlotPunchline,
@@ -781,6 +782,7 @@ async function generateOne(
   usedUrls: Set<string>,
   special?: EngineSpecialDay,
   defaultHeroPhoto?: { url: string; score: number } | null,
+  familyIndex = 0,
 ): Promise<GeneratedDesignTemplate> {
   const { headline, subtitle, sceneHint, occasion } = resolveCopy(preset, input, special);
   const theme = applyFalProductionOverridesToTheme(
@@ -847,6 +849,17 @@ async function generateOne(
     : calendarLayout.canvaArchetypeId;
 
   const falUseCase = resolveFalUseCaseForDesignTemplate(preset.templateType, preset.intent);
+  const houseFamily = input.constitution?.signatureArchetypes?.length
+    ? input.constitution.signatureArchetypes
+    : readTenantPreferredCanvaArchetypes(theme);
+  const rotatedHouse = rotateHouseFamilyArchetype(houseFamily, familyIndex);
+  const houseExplicit = houseFamily.length >= 2
+    ? (
+      preferredReelCoverCanva && houseFamily.includes(preferredReelCoverCanva)
+        ? preferredReelCoverCanva
+        : rotatedHouse
+    )
+    : undefined;
   const layoutBrief = resolveFalDesignBrief({
     caption: subtitle ?? headline ?? preset.name,
     headline: headline || input.brandName,
@@ -855,9 +868,12 @@ async function generateOne(
     sceneHint,
     sector: input.sector,
     referencePhotoUrl: picked?.url,
-    tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(theme),
+    tenantPreferredArchetypes: (houseFamily.length
+      ? houseFamily
+      : readTenantPreferredCanvaArchetypes(theme)
+    ).filter((id): id is CanvaArchetypeId => Boolean(getCanvaArchetype(id))),
     layoutFamilyHint: preset.catalogSlotKey ?? calendarLayout.canvaArchetypeId,
-    explicitCanvaArchetypeId: explicitCoverCanva,
+    explicitCanvaArchetypeId: houseExplicit ?? explicitCoverCanva,
   });
   // Slot proposes energy; Brand Hub fal_* intensity is the only ceiling.
   // DNA/vibe layout language shapes craft allowlist + compose — not intensity.
@@ -1202,7 +1218,10 @@ async function generateOne(
         ),
         aspectRatio: aspect,
         referencePhotoUrl: picked?.url,
-        brandReferenceImageUrls: picked?.url ? [picked.url] : undefined,
+        brandReferenceImageUrls: [
+          picked?.url,
+          ...(input.constitution?.moodboardRefs ?? []),
+        ].filter((url): url is string => Boolean(url)),
         sceneHint: falSceneHint,
         visualDnaTone: input.visualDnaTone,
         designIntensityLevel,
@@ -1437,7 +1456,14 @@ export async function generateBrandDesignTemplates(
   for (let i = 0; i < jobs.length; i += concurrency) {
     const batch = jobs.slice(i, i + concurrency);
     const results = await Promise.all(
-      batch.map((job) => generateOne(job.preset, input, usedUrls, job.special, defaultHeroPhoto)),
+      batch.map((job, j) => generateOne(
+        job.preset,
+        input,
+        usedUrls,
+        job.special,
+        defaultHeroPhoto,
+        i + j,
+      )),
     );
     templates.push(...results);
   }

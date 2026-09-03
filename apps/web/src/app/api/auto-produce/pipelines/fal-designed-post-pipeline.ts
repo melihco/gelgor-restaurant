@@ -364,6 +364,7 @@ export async function produceFalDesignedPost(
           primary: input.brandColors.primary,
           accent: input.brandColors.accent,
         },
+        referenceImageUrls: input.brandReferenceImageUrls,
       });
       const houseFidelity = scoreHouseStyleFidelity({
         expected: expectedFromConstitution(houseConstitution, {

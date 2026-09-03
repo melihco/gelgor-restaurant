@@ -251,7 +251,8 @@ import {
   applyBrandTokensToRenderProps,
   resolveBrandProductionTokens,
 } from '@/lib/brand-production-tokens';
-import { resolveFalDesignPromptContext, readAgentFalDesignBrief, readBrandLogoPosition, readTenantPreferredCanvaArchetypes } from '@/lib/fal-design-brief';
+import { resolveFalDesignPromptContext, readAgentFalDesignBrief, readBrandLogoPosition } from '@/lib/fal-design-brief';
+import { resolveTenantHouseArchetypes } from '@/lib/house-layout-family';
 import { resolveSlotRenderTypography } from '@/lib/brand-template-slot-typography';
 import {
   type PremiumCompositionMeta,
@@ -4047,7 +4048,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           sector: brandBusinessType,
           usedArchetypeIds: missionFalArchetypesUsed,
           falSlotOrdinal: missionFalArchetypesUsed.length,
-          tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(brandTheme),
+          tenantPreferredArchetypes: resolveTenantHouseArchetypes({
+            sector: brandBusinessType,
+            brandTheme,
+            visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+            brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+            vibeProfile: brandCtx.brand_vibe_profile && typeof brandCtx.brand_vibe_profile === 'object'
+              ? brandCtx.brand_vibe_profile as Record<string, unknown>
+              : undefined,
+          }),
           recentTenantArchetypeIds: tenantDesignMemory.recentArchetypeIds,
           brandLogoPosition: readBrandLogoPosition(brandTheme),
         })

@@ -84,6 +84,8 @@ describe('compileBrandDesignConstitution', () => {
     expect(house).toContain('TYPE LOCK');
     expect(house).toContain('Syne');
     expect(house).toContain('source=onboarding');
+    expect(house).toContain('SIGNATURE FAMILY');
+    expect(c.signatureArchetypes).toHaveLength(3);
     expect(house).not.toMatch(/sun-washed Aegean photography, no neon flyer energy.{40}/);
   });
 

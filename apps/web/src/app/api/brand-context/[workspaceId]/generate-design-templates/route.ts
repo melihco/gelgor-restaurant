@@ -22,6 +22,10 @@ import {
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { resolveOnboardingDesignPresetsFromCatalog } from '@/lib/catalog-design-template-presets';
 import { compileBrandDesignConstitution } from '@/lib/brand-design-constitution';
+import {
+  mergeHouseFamilyIntoTheme,
+  themeNeedsHouseFamilySeal,
+} from '@/lib/house-layout-family';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
 import {
   buildUserConfirmedTypographyPatch,
@@ -274,7 +278,15 @@ export async function runGenerateDesignTemplates(
       primary: tokens.primaryColor,
       accent: tokens.accentColor,
     },
+    referenceImageUrls: brandCtx.reference_image_urls ?? brandCtx.referenceImageUrls,
   });
+  const shouldSealHouseFamily = themeNeedsHouseFamilySeal(
+    brandTheme,
+    constitution.signatureArchetypes,
+  );
+  if (shouldSealHouseFamily) {
+    brandTheme = mergeHouseFamilyIntoTheme(brandTheme, constitution.signatureArchetypes);
+  }
 
   // ── Slot catalog bootstrap + catalog-driven presets (Faz 3) ─────────────────
   const productionSettings = resolveFalTemplateProductionSettings(brandTheme);
@@ -387,8 +399,9 @@ export async function runGenerateDesignTemplates(
   } else {
     const { invalidateDesignTemplateCache } = await import('@/lib/brand-design-template-matcher');
     invalidateDesignTemplateCache(workspaceId);
-    // Seal the vibe used for generation so PPR doesn't stay at "Typography vibe not confirmed".
-    if (!typographyConfirmed) {
+    // Seal vibe + empty house family so missions inherit the 2–3 geometries.
+    // preferred_canva_archetypes is not an identity fingerprint — no library regen.
+    if (!typographyConfirmed || shouldSealHouseFamily) {
       const typo = (brandTheme?.typography_design ?? brandTheme?.typographyDesign) as
         | Parameters<typeof resolvePostDesignDefaultsForTypography>[0]
         | undefined;
@@ -409,10 +422,10 @@ export async function runGenerateDesignTemplates(
             },
           },
         );
-        typographyUsedForGenerate = sealRes.ok;
+        typographyUsedForGenerate = sealRes.ok || typographyConfirmed;
         if (!sealRes.ok) {
           console.warn(
-            `[generate-design-templates] typography seal failed for ${workspaceId}:`,
+            `[generate-design-templates] typography/house-family seal failed for ${workspaceId}:`,
             sealRes.error,
           );
         }
