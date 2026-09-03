@@ -116,6 +116,94 @@ describe('buildMissionPlanningDisplayIdeas', () => {
       'Üretim Sürecimizi Keşfedin!',
     ]);
   });
+
+  // A mission graph may carry several ideation nodes, each briefed with the whole
+  // slot plan, so each answers with a full weekly package in its own words. One
+  // live Karaman week had three and enqueued 44 jobs across 17 slots.
+  it('keeps one idea per catalog slot when several nodes answer the same plan', () => {
+    const node = (key: string, ideas: Array<Record<string, unknown>>) => ({
+      node_key: key,
+      task_type: 'content_ideation',
+      status: 'completed',
+      output_summary: JSON.stringify(ideas),
+    });
+    const nodes = [
+      node('in_store_promotion', [
+        {
+          headline: 'Erken hasat zeytinyağı rafta',
+          caption_draft: 'Bu yılın ilk sıkımı geldi.',
+          content_type: 'instagram_story',
+          catalog_slot_key: 'local_products_shop_new_arrival_story',
+        },
+      ]),
+      node('social_media_campaign', [
+        {
+          headline: 'Taze ürünler tezgâhta',
+          caption_draft: 'Yeni gelenleri kaçırmayın.',
+          content_type: 'instagram_story',
+          catalog_slot_key: 'local_products_shop_new_arrival_story',
+        },
+        {
+          headline: 'Bu sabah çiftlikteydik',
+          caption_draft: 'Üreticimizin bahçesinden.',
+          content_type: 'instagram_story',
+          catalog_slot_key: 'local_products_shop_farm_visit_story',
+        },
+      ]),
+    ];
+
+    const unique = collectUniqueMissionIdeationIdeas(nodes);
+
+    expect(unique.map((i) => i.catalog_slot_key)).toEqual([
+      'local_products_shop_new_arrival_story',
+      'local_products_shop_farm_visit_story',
+    ]);
+    expect(unique[0]?.headline).toBe('Erken hasat zeytinyağı rafta');
+  });
+
+  it('leaves a restaurant plan with one idea per slot untouched', () => {
+    const nodes = [{
+      node_key: 'content_ideation',
+      task_type: 'content_ideation',
+      status: 'completed',
+      output_summary: JSON.stringify([
+        {
+          headline: 'Masanız hazır, buyurun',
+          caption_draft: 'Akşam için yeriniz ayrıldı.',
+          content_type: 'instagram_story',
+          catalog_slot_key: 'restaurant_cafe_table_ready_story',
+        },
+        {
+          headline: 'Sonbahar menüsü başladı',
+          caption_draft: 'Mevsimin tabakları listede.',
+          content_type: 'instagram_story',
+          catalog_slot_key: 'restaurant_cafe_new_menu_story',
+        },
+        {
+          headline: 'Misafirimiz ne demiş',
+          caption_draft: 'Bu haftanın yorumu.',
+          content_type: 'instagram_post',
+          catalog_slot_key: 'restaurant_cafe_customer_review_post',
+        },
+      ]),
+    }];
+
+    expect(collectUniqueMissionIdeationIdeas(nodes)).toHaveLength(3);
+  });
+
+  it('keeps ideas that claim no catalog slot', () => {
+    const nodes = [{
+      node_key: 'content_ideation',
+      task_type: 'content_ideation',
+      status: 'completed',
+      output_summary: JSON.stringify([
+        { headline: 'Serbest fikir bir', caption_draft: 'Katalogla eşleşmeyen.', content_type: 'instagram_post' },
+        { headline: 'Serbest fikir iki', caption_draft: 'Bu da eşleşmiyor.', content_type: 'instagram_post' },
+      ]),
+    }];
+
+    expect(collectUniqueMissionIdeationIdeas(nodes)).toHaveLength(2);
+  });
 });
 
 describe('countPlanningNodeResults — content_strategy', () => {

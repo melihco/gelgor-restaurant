@@ -244,6 +244,37 @@ def dedupe_ideation_by_headline(ideas: list[dict[str, Any]]) -> list[dict[str, A
     return selected
 
 
+def dedupe_ideation_by_catalog_slot(ideas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one idea per claimed catalog slot; the earliest node wins it.
+
+    A mission graph may carry several ideation nodes — one Karaman week had
+    `product_selection`, `in_store_promotion` and `social_media_campaign` — and
+    each is briefed with the whole slot plan, so each answers with a full
+    weekly package. Headline dedupe cannot collapse those, because three nodes
+    write three different lines for the same slot: that mission enqueued 44
+    jobs across 17 slots and produced `farm_visit_story` seven times.
+
+    A catalog slot is one deliverable, so a second claim on it is a duplicate
+    whatever it says. Ideas that claim no slot are left alone — they are still
+    subject to headline dedupe, and dropping them here would silently shrink
+    packages that never bound to the catalog.
+    """
+    selected: list[dict[str, Any]] = []
+    claimed: set[str] = set()
+    for idea in ideas:
+        if not isinstance(idea, dict):
+            continue
+        slot = str(
+            idea.get("catalog_slot_key") or idea.get("catalogSlotKey") or ""
+        ).strip()
+        if slot:
+            if slot in claimed:
+                continue
+            claimed.add(slot)
+        selected.append(idea)
+    return selected
+
+
 #: Similarity above which two headlines are the same angle rather than two ideas.
 #: Calibrated on 479 headlines from 40 live packages: 0.75 rejects
 #: "Serpme Kahvaltının Keyfini Çıkar!" against "…Tadını Çıkar!" (0.89) and
@@ -867,7 +898,7 @@ def collect_unique_ideation_from_nodes(
             or parse_ideation_ideas_from_summary(str(node.get("output_summary") or ""))
         )
         all_ideas.extend(items)
-    return dedupe_ideation_by_headline(all_ideas)
+    return dedupe_ideation_by_catalog_slot(dedupe_ideation_by_headline(all_ideas))
 
 
 def resolve_mission_production_target(

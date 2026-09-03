@@ -43,6 +43,19 @@ function ideaDedupeKey(idea: Record<string, unknown>): string {
   return JSON.stringify(idea).slice(0, 200);
 }
 
+/**
+ * The catalog slot an idea claims, or `''` when it claims none.
+ *
+ * A mission graph may carry several ideation nodes, and each is briefed with
+ * the whole slot plan, so each answers with a full weekly package. The headline
+ * key above cannot collapse those — three nodes write three different lines for
+ * the same slot. A slot is one deliverable, so the first node to claim it keeps
+ * it; an idea with no claim is governed by the headline key alone.
+ */
+function catalogSlotClaim(idea: Record<string, unknown>): string {
+  return String(idea.catalog_slot_key ?? idea.catalogSlotKey ?? '').trim();
+}
+
 /** Merge multiple content_ideation nodes → weekly package (plan-aware format mix). */
 export function mergeMissionIdeationRecords(
   nodes: Array<{
@@ -75,13 +88,17 @@ export function mergeMissionIdeationRecords(
     reel: [],
   };
   const seen = new Set<string>();
+  const claimedSlots = new Set<string>();
 
   for (const node of completed) {
     const records = ideationRecordsFromNode(node, missionId);
     for (const idea of records) {
       const key = ideaDedupeKey(idea);
       if (seen.has(key)) continue;
+      const slot = catalogSlotClaim(idea);
+      if (slot && claimedSlots.has(slot)) continue;
       seen.add(key);
+      if (slot) claimedSlots.add(slot);
       const fmt = ideaFormatFromRecord(idea);
       buckets[fmt].push(idea);
     }
@@ -135,6 +152,7 @@ export function collectUniqueMissionIdeationIdeas(
     });
 
   const seen = new Set<string>();
+  const claimedSlots = new Set<string>();
   const unique: Record<string, unknown>[] = [];
 
   for (const node of completed) {
@@ -142,7 +160,10 @@ export function collectUniqueMissionIdeationIdeas(
     for (const idea of records) {
       const key = ideaDedupeKey(idea);
       if (seen.has(key)) continue;
+      const slot = catalogSlotClaim(idea);
+      if (slot && claimedSlots.has(slot)) continue;
       seen.add(key);
+      if (slot) claimedSlots.add(slot);
       unique.push(idea);
     }
   }
