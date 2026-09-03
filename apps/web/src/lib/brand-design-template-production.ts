@@ -34,6 +34,11 @@ import {
   buildPhotoSpatialPromptLock,
   type GalleryPhotoSpatial,
 } from '@/lib/gallery-photo-spatial';
+import {
+  buildRecipeReplicaPrompt,
+  formatTemplateRecipeLock,
+  type TemplateFillRecipe,
+} from '@/lib/template-fill-recipe';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -151,6 +156,9 @@ export function buildTemplateLayoutDirectives(
 
   if (layoutRecipe.length > 0) {
     out.push(`Layout system: ${layoutRecipe.join(' | ')}`);
+  }
+  if (matched.recipe) {
+    out.push(...formatTemplateRecipeLock(matched.recipe));
   }
 
   if (missionHeadline) {
@@ -387,6 +395,7 @@ export interface TemplateReplicaSpec {
   typeBudget?: TemplateTypeBudget | null;
   forbiddenTexts: string[];
   format?: 'story' | 'post' | 'reel';
+  recipe?: TemplateFillRecipe | null;
 }
 
 /**
@@ -525,7 +534,9 @@ export function templateReplicaSpecFromBinding(
 ): TemplateReplicaSpec | null {
   const matched = binding?.matched ?? null;
   if (!isRenderableDesignTemplateMatch(matched)) return null;
-  const prompt = matched.designSpecPrompt?.trim();
+  const stored = matched.designSpecPrompt?.trim();
+  const recipe = matched.recipe ?? null;
+  const prompt = stored || (recipe ? buildRecipeReplicaPrompt(recipe) : '');
   if (!prompt) return null;
   const format = matched.format === 'story' || matched.format === 'post' || matched.format === 'reel'
     ? matched.format
@@ -535,9 +546,10 @@ export function templateReplicaSpecFromBinding(
     sampleHeadline: matched.sampleHeadline ?? null,
     sampleSubtitle: matched.sampleSubtitle ?? null,
     showSubline: matched.showSubline !== false,
-    typeBudget: matched.typeBudget ?? null,
+    typeBudget: matched.typeBudget ?? recipe?.typeBudget ?? null,
     forbiddenTexts: collectTemplatePlaceholderTexts(matched),
     format,
+    recipe,
   };
 }
 
@@ -615,6 +627,7 @@ export function buildTemplateReplicaPrompt(
     spec.forbiddenTexts.length
       ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`
       : '',
+    ...(spec.recipe ? formatTemplateRecipeLock(spec.recipe) : []),
     'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change. Copy must fit the reserved type zone without overflow/clipping.',
     opts?.photoSpatial ? buildPhotoSpatialPromptLock(opts.photoSpatial) : '',
   ].filter(Boolean).join('\n');

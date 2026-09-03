@@ -261,16 +261,59 @@ describe('template replica prompt', () => {
     expect(spec.prompt).not.toContain('scroll-stopping feed post');
   });
 
-  it('returns null for format fallback or missing stored prompt', () => {
+  it('returns null for format fallback or missing stored prompt and recipe', () => {
     expect(templateReplicaSpecFromBinding({
       ...binding,
       matched: { ...matched, matchQuality: 'format_fallback' },
     })).toBeNull();
     expect(templateReplicaSpecFromBinding({
       ...binding,
-      matched: { ...matched, designSpecPrompt: null },
+      matched: { ...matched, designSpecPrompt: null, recipe: null },
     })).toBeNull();
     expect(templateReplicaSpecFromBinding(null)).toBeNull();
+  });
+
+  it('replicas from fillable recipe when stored prompt is missing (beach + shop)', () => {
+    const beachSpec = templateReplicaSpecFromBinding({
+      ...binding,
+      matched: {
+        ...matched,
+        designSpecPrompt: null,
+        recipe: {
+          version: 1,
+          headingFont: 'Syne',
+          composeMode: 'craft_window',
+          layoutPackId: 'coastal_editorial',
+          canvaArchetypeId: 'cinematic_sky_band',
+        },
+      },
+    });
+    expect(beachSpec).not.toBeNull();
+    expect(beachSpec!.prompt).toContain('FILLABLE RECIPE');
+    expect(beachSpec!.prompt).toContain('Syne');
+    expect(beachSpec!.recipe?.layoutPackId).toBe('coastal_editorial');
+
+    const shopSpec = templateReplicaSpecFromBinding({
+      ...binding,
+      matched: {
+        ...matched,
+        templateType: 'menu_highlight',
+        format: 'post',
+        designSpecPrompt: null,
+        recipe: {
+          version: 1,
+          headingFont: 'Fraunces',
+          composeMode: 'photo_first',
+          layoutPackId: 'artisan_organic',
+          offerings: ['Badem ezmesi'],
+        },
+      },
+    });
+    expect(shopSpec!.prompt).toContain('Fraunces');
+    expect(shopSpec!.prompt).toContain('Badem ezmesi');
+    const filled = buildTemplateReplicaPrompt(shopSpec!, { headline: 'Yeni hasat' });
+    expect(filled).toContain('TYPE: Fraunces');
+    expect(filled).toContain('Yeni hasat');
   });
 
   it('swaps sample copy with mission copy inside the stored prompt', () => {

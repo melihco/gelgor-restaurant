@@ -19,6 +19,12 @@ export type SlotCreativeSeedContext = {
   location?: string;
   visualDna?: string;
   brandTone?: string;
+  antiPatterns?: string[];
+  signatureOfferings?: string[];
+  composeMode?: string;
+  headingFont?: string;
+  typeEnergy?: string;
+  layoutPackId?: string;
 };
 
 /** Map catalog_slot_key → raw customization for engine input. */
@@ -87,6 +93,12 @@ export function buildEmptySlotCreativeUpserts(
           ? String(slot.prompt_pack.use_case)
           : null,
       seedSource: 'auto_onboarding',
+      antiPatterns: seedCtx.antiPatterns,
+      signatureOfferings: seedCtx.signatureOfferings,
+      composeMode: seedCtx.composeMode,
+      headingFont: seedCtx.headingFont,
+      typeEnergy: seedCtx.typeEnergy,
+      layoutPackId: seedCtx.layoutPackId,
     });
 
     upserts.push({

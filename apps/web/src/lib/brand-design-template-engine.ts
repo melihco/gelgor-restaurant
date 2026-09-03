@@ -117,6 +117,12 @@ import {
   seedGeneratedTypeBudget,
   type TemplateTypeBudget,
 } from '@/lib/template-type-budget';
+import {
+  constitutionStamp,
+  formatConstitutionHouseRules,
+  type BrandDesignConstitution,
+} from '@/lib/brand-design-constitution';
+import { buildTemplateFillRecipe } from '@/lib/template-fill-recipe';
 
 /** A special day (DB-resolved) the brand should get a dedicated event template for. */
 export interface EngineSpecialDay {
@@ -216,6 +222,8 @@ export interface DesignTemplateEngineInput {
   slotCreativeByKey?: Record<string, unknown>;
   /** When true, reseed auto briefs even if one already exists (never overwrites operator). */
   forceReseedSlotCreative?: boolean;
+  /** Compiled house-style contract — typed rules beat DNA prose. */
+  constitution?: BrandDesignConstitution | null;
 }
 
 /** Shape matching the backend DesignTemplateCreate payload. */
@@ -545,6 +553,17 @@ export function buildBrandIntelligenceDirectives(
   level: FalDesignIntensityLevel,
 ): string[] {
   const intel = input.brandIntelligence;
+  const house = input.constitution
+    ? formatConstitutionHouseRules(input.constitution)
+    : [];
+  if (house.length) {
+    return [
+      house.join(' '),
+      `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from ${input.constitution!.headingFont} + ${input.constitution!.primary}/${input.constitution!.accent} + the gallery photo — never a stock ${input.sector} Canva pack.`,
+      `Template channel/intensity: ${channel} uses ${level}. Build a DISTINCT LAYOUT RECIPE for THIS slot role while the house style stays locked. Never generic identical Canva header strips across every template.`,
+      'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers. Keep text exact and legible; never invent or misspell Turkish words.',
+    ];
+  }
   if (!intel) return [];
 
   const pillars = compactList(intel.contentPillars, 5);
@@ -1013,6 +1032,12 @@ async function generateOne(
       format: preset.format,
       falUseCase,
       seedSource: 'auto_template_gen',
+      antiPatterns: input.constitution?.antiPatterns ?? input.antiPatterns,
+      signatureOfferings: input.constitution?.signatureOfferings,
+      composeMode: input.constitution?.composeMode,
+      headingFont: input.constitution?.headingFont,
+      typeEnergy: input.constitution?.typeEnergy,
+      layoutPackId: input.constitution?.layoutPackId,
     },
   });
 
@@ -1293,6 +1318,35 @@ async function generateOne(
         : {}),
       generatedAt: new Date().toISOString(),
       generator,
+      ...(input.constitution ? constitutionStamp(input.constitution) : {}),
+      ...(() => {
+        const typeBudget = (() => {
+          const preserved = input.preserveOperatorTypeBudget;
+          if (preserved?.source === 'operator') return preserved;
+          const resolvedShowSubline = input.forceShowSubline === false
+            ? false
+            : input.forceShowSubline === true
+              ? true
+              : showSublineFromSampleCopy(subtitle);
+          return seedGeneratedTypeBudget({
+            sampleHeadline: headline,
+            sampleSubtitle: subtitle,
+            showSubline: resolvedShowSubline,
+          });
+        })();
+        const recipe = buildTemplateFillRecipe({
+          constitution: input.constitution,
+          headingFont: themeTypography?.headingFont ?? input.constitution?.headingFont,
+          bodyFont: themeTypography?.bodyFont ?? input.constitution?.bodyFont,
+          canvaArchetypeId: layoutBrief.canvaArchetypeId ?? null,
+          canvaArchetypeName: layoutBrief.canvaArchetypeName ?? null,
+          layoutPattern: layoutBrief.layoutPattern ?? null,
+          typographyMode: layoutBrief.typographyMode ?? null,
+          typeBudget,
+          logoPlacement,
+        });
+        return recipe ? { recipe } : {};
+      })(),
     },
   };
 }

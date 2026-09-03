@@ -38,7 +38,55 @@ export type SeedSlotCreativeInput = {
   format: string;
   falUseCase?: string | null;
   seedSource?: SlotCreativeSeedSource;
+  /** House anti-patterns from Brand Design Constitution. */
+  antiPatterns?: string[];
+  /** Real signature offerings — product slots must show these, never invent SKUs. */
+  signatureOfferings?: string[];
+  composeMode?: string;
+  headingFont?: string;
+  typeEnergy?: string;
+  layoutPackId?: string;
 };
+
+export type SlotCreativeJob =
+  | 'golden_hour'
+  | 'event'
+  | 'product'
+  | 'social_proof'
+  | 'offer'
+  | 'reel'
+  | 'story'
+  | 'general';
+
+/** Thin slot-role map — job only, not brand voice. House style supplies voice. */
+export function resolveSlotCreativeJob(input: {
+  templateType?: string | null;
+  falUseCase?: string | null;
+  slotKey?: string | null;
+  slotName?: string | null;
+  format?: string | null;
+}): SlotCreativeJob {
+  const signals = [
+    input.templateType,
+    input.falUseCase,
+    input.slotKey,
+    input.slotName,
+    input.format,
+  ].map((s) => String(s ?? '').toLowerCase()).join(' ');
+
+  if (/sunset|golden|gün batım|gun batim/.test(signals)) return 'golden_hour';
+  if (/dj|night|gece|party|cuba|event_announcement|event_special|etkinlik/.test(signals)) {
+    return 'event';
+  }
+  if (/cocktail|kokteyl|bar|drink|menu_highlight|product|imza|signature|dish|harvest|sku/.test(signals)) {
+    return 'product';
+  }
+  if (/social_proof|guest|yorum|misafir|testimonial/.test(signals)) return 'social_proof';
+  if (/day.?pass|booking|rezerv|offer|teklif|daybed/.test(signals)) return 'offer';
+  if (String(input.format ?? '').includes('reel') || /reel/.test(signals)) return 'reel';
+  if (String(input.format ?? '').includes('story') || /story/.test(signals)) return 'story';
+  return 'general';
+}
 
 function trimStr(value: unknown, max: number): string {
   return String(value ?? '').trim().slice(0, max);
@@ -112,21 +160,18 @@ export function shouldKeepExistingSlotCreative(
 }
 
 /**
- * Deterministic brand×slot creative brief for template-library generation.
- * Uses label + template type + light DNA cues — not a long free-form prompt.
+ * Deterministic brand×slot creative brief.
+ * Slot job = role. Voice = house constitution (font / compose / offerings).
  */
 export function seedSlotCreativeBrief(input: SeedSlotCreativeInput): SlotCreativeCustomization {
   const place = trimStr(input.location, 48) || 'venue';
   const slot = trimStr(input.slotName, 80) || 'slot';
-  const type = trimStr(input.templateType, 48).toLowerCase();
-  const useCase = trimStr(input.falUseCase, 48).toLowerCase();
-  const format = trimStr(input.format, 24).toLowerCase();
-  const key = trimStr(input.slotKey, 128).toLowerCase();
-  const dna = trimStr(input.visualDna, 120);
   const tone = trimStr(input.brandTone, 60);
   const brand = trimStr(input.brandName, 80) || 'Brand';
-
-  const signals = `${type} ${useCase} ${key} ${slot}`.toLowerCase();
+  const houseCue = trimStr(input.typeEnergy, 48)
+    || trimStr(input.composeMode, 32)
+    || trimStr(input.headingFont, 32);
+  const job = resolveSlotCreativeJob(input);
 
   let creative_intent_tr = `${brand} için ${slot}: markaya özel, tekrar etmeyen tasarım shell'i.`;
   let daypart: string | undefined;
@@ -138,63 +183,90 @@ export function seedSlotCreativeBrief(input: SeedSlotCreativeInput): SlotCreativ
     'aynı rail kardeş slotlarla',
   ];
 
-  if (/sunset|golden|gün batım|gun batim/.test(signals)) {
+  if (job === 'golden_hour') {
     creative_intent_tr =
-      `${brand} ${place} — gün batımı / golden hour anı: sıcak ışık bandı, sakin punchline, teras atmosferi.`;
+      `${brand} ${place} — gün batımı / golden hour anı: ${houseCue || 'sıcak ışık bandı'}, sakin punchline, teras atmosferi.`;
     daypart = 'golden_hour';
     mood = 'warm, calm, elevated';
     must_show.push('sıcak ışık bandı', 'kısa punchline', 'alt güvenli tipografi');
     must_avoid.push('gece neon flash', 'agresif event bar');
-  } else if (/dj|night|gece|party|cuba|event_announcement|event_special|etkinlik/.test(signals)) {
+  } else if (job === 'event') {
     creative_intent_tr =
-      `${brand} — gece / etkinlik duyurusu: yüksek kontrast, thumb-stop punchline, event afişi enerjisi.`;
+      `${brand} — gece / etkinlik duyurusu: ${houseCue || 'yüksek kontrast'}, thumb-stop punchline, event afişi enerjisi.`;
     daypart = 'night';
     mood = 'energetic, bold, nightlife';
     must_show.push('yüksek kontrast bar', 'tek kelime hook', 'event CTA katmanı');
     must_avoid.push('soft sunset dil', 'menü kartı look');
-  } else if (/cocktail|kokteyl|bar|drink|menu_highlight|product|imza|signature|dish/.test(signals)) {
+  } else if (job === 'product') {
     creative_intent_tr =
-      `${brand} — ürün / imza teklif vurgusu: hero ürün odaklı tipografi, temiz editorial hierarchy.`;
+      `${brand} — ürün / imza teklif vurgusu: ${houseCue || 'hero ürün'} odaklı tipografi, temiz editorial hierarchy.`;
     mood = tone || 'appetizing, boutique';
     must_show.push('ürün-öncelikli tip zonası', 'marka accent dolgu');
     must_avoid.push('turizm broşürü', 'kalabalık text stack');
-  } else if (/social_proof|guest|yorum|misafir|testimonial/.test(signals)) {
+  } else if (job === 'social_proof') {
     creative_intent_tr =
-      `${brand} — misafir / sosyal kanıt: alıntı tipi hierarchy, güven veren sakin layout.`;
+      `${brand} — misafir / sosyal kanıt: ${houseCue || 'alıntı tipi'} hierarchy, güven veren sakin layout.`;
     mood = 'trust, warm, human';
     must_show.push('alıntı tipografi', 'sakin margin');
     must_avoid.push('satış afişi agresyonu', 'event neon');
-  } else if (/day.?pass|booking|rezerv|offer|teklif|daybed/.test(signals)) {
+  } else if (job === 'offer') {
     creative_intent_tr =
-      `${brand} — teklif / rezervasyon: net fayda headline, CTA katmanı, satış-klaritesi.`;
+      `${brand} — teklif / rezervasyon: ${houseCue || 'net fayda'} headline, CTA katmanı, satış-klaritesi.`;
     mood = 'clear, inviting, commercial';
     must_show.push('fayda headline', 'net CTA bandı');
     must_avoid.push('belirsiz lifestyle poster', 'gece club look');
-  } else if (format.includes('reel') || /reel/.test(signals)) {
+  } else if (job === 'reel') {
     creative_intent_tr =
-      `${brand} — reel kapak: thumb-stop siluet, az kelime, dikey tip güvenli bölge.`;
+      `${brand} — reel kapak: ${houseCue || 'thumb-stop siluet'}, az kelime, dikey tip güvenli bölge.`;
     mood = 'kinetic, bold';
     must_show.push('thumb-stop siluet', 'az kelime display');
     must_avoid.push('uzun paragraf', 'feed 4:5 dil');
-  } else if (format.includes('story')) {
+  } else if (job === 'story') {
     creative_intent_tr =
-      `${brand} — story poster: dikey full-bleed tipografi, day-part netliği, marka accent.`;
+      `${brand} — story poster: ${houseCue || 'dikey full-bleed'} tipografi, day-part netliği, marka accent.`;
     mood = tone || 'vertical, editorial';
     must_show.push('dikey tip güvenli bölge', 'tek odak headline');
     must_avoid.push('feed crop dili', 'yoğun text block');
   } else {
     creative_intent_tr =
-      `${brand} — ${slot}: bu slotun işini bir bakışta okutan markaya özel tip+yüzey dili.`;
+      `${brand} — ${slot}: ${houseCue || 'bu slotun işini'} bir bakışta okutan markaya özel tip+yüzey dili.`;
     mood = tone || 'on-brand, intentional';
     must_show.push('net tip hierarchy', 'marka primary/accent yüzey');
   }
 
+  const dna = trimStr(input.visualDna, 120);
   if (dna) {
-    // Keep DNA as mood cue only — avoid pasting the same long DNA into every slot intent.
     const dnaCue = dna.split(/[,;]/)[0]?.trim();
     if (dnaCue && mood && !mood.toLowerCase().includes(dnaCue.toLowerCase().slice(0, 12))) {
       mood = `${mood}; ${dnaCue.slice(0, 40)}`;
     }
+  }
+
+  const offerings = uniqShort(input.signatureOfferings ?? [], 3, 40);
+  if (job === 'product' && offerings[0]) {
+    must_show.push(offerings[0]);
+    must_avoid.push('uydurma SKU', 'jenerik ürün kartı');
+  }
+  const houseAnti = uniqShort(input.antiPatterns ?? [], 3, 48);
+  if (houseAnti.length) {
+    const genericAvoid = new Set([
+      'krem köşe sticker',
+      'generic Canva flyer',
+      'aynı rail kardeş slotlarla',
+    ]);
+    must_avoid.splice(
+      0,
+      must_avoid.length,
+      ...houseAnti,
+      ...must_avoid.filter((item) => !genericAvoid.has(item)),
+    );
+  }
+  const houseMood = [input.composeMode, input.layoutPackId, input.headingFont]
+    .map((s) => trimStr(s, 24))
+    .filter(Boolean);
+  if (houseMood.length && mood) {
+    const extra = houseMood.find((s) => !mood!.toLowerCase().includes(s.toLowerCase()));
+    if (extra) mood = `${mood}; ${extra}`;
   }
 
   return {
@@ -203,7 +275,7 @@ export function seedSlotCreativeBrief(input: SeedSlotCreativeInput): SlotCreativ
     must_show: uniqShort(must_show, 5, 48),
     must_avoid: uniqShort(must_avoid, 5, 48),
     ...(daypart ? { daypart } : {}),
-    ...(mood ? { mood: trimStr(mood, 60) } : {}),
+    ...(mood ? { mood: trimStr(mood, 72) } : {}),
     seeded_at: new Date().toISOString(),
     seed_source: input.seedSource ?? 'auto_template_gen',
   };

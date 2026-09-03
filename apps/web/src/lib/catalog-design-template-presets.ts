@@ -3,6 +3,11 @@
  */
 
 import {
+  applyConstitutionToPreset,
+  rankSlotsByTemplateNeeds,
+  type BrandDesignConstitution,
+} from '@/lib/brand-design-constitution';
+import {
   DESIGN_TEMPLATE_INTENT_BY_TYPE,
   type DesignTemplateFormat,
   type DesignTemplatePreset,
@@ -81,6 +86,7 @@ function sampleCopyForSlot(slot: ProductionSlotDefinition): {
 
 export function buildDesignPresetFromCatalogSlot(
   slot: ProductionSlotDefinition,
+  constitution?: BrandDesignConstitution | null,
 ): DesignTemplatePreset {
   const templateType = slot.design_template_type as DesignTemplateType;
   const copy = sampleCopyForSlot(slot);
@@ -93,7 +99,7 @@ export function buildDesignPresetFromCatalogSlot(
     slot.slot_key.replace(/_/g, ' '),
   ].filter(Boolean).join(' ');
 
-  return {
+  const preset: DesignTemplatePreset = {
     templateType,
     name: slot.label_tr,
     format: slotFormatToDesignFormat(slot.format),
@@ -105,6 +111,7 @@ export function buildDesignPresetFromCatalogSlot(
     prominentLogo: LOGO_FORWARD_TYPES.has(templateType),
     catalogSlotKey: slot.slot_key,
   };
+  return constitution ? applyConstitutionToPreset(preset, constitution) : preset;
 }
 
 /**
@@ -147,7 +154,12 @@ export function attachCatalogKeysToLegacyPresets(
 export function selectCatalogSlotsForOnboarding(
   slots: ProductionSlotDefinition[],
   cap = ONBOARDING_CATALOG_TEMPLATE_CAP,
+  options?: { templateNeeds?: string[] },
 ): ProductionSlotDefinition[] {
+  const needs = options?.templateNeeds ?? [];
+  if (needs.length) {
+    return rankSlotsByTemplateNeeds(slots, needs, cap);
+  }
   if (slots.length <= cap) return slots;
 
   const seenTypes = new Set<string>();
@@ -186,6 +198,8 @@ export async function resolveOnboardingDesignPresetsFromCatalog(
     cap?: number;
     limit?: number;
     slotFacilities?: Record<string, unknown> | null;
+    constitution?: BrandDesignConstitution | null;
+    templateNeeds?: string[];
   },
 ): Promise<ResolveCatalogPresetsResult> {
   let bootstrapped = false;
@@ -231,7 +245,9 @@ export async function resolveOnboardingDesignPresetsFromCatalog(
     );
     const limited = typeof options?.limit === 'number' ? legacy.slice(0, options.limit) : legacy;
     return {
-      presets: limited,
+      presets: limited.map((p) => (
+        options?.constitution ? applyConstitutionToPreset(p, options.constitution) : p
+      )),
       sectorId,
       source: 'legacy_fallback',
       enabledSlotCount: 0,
@@ -243,8 +259,11 @@ export async function resolveOnboardingDesignPresetsFromCatalog(
   const cap = typeof options?.limit === 'number'
     ? options.limit
     : (options?.cap ?? ONBOARDING_CATALOG_TEMPLATE_CAP);
-  const selected = selectCatalogSlotsForOnboarding(enabledSlots, cap);
-  const presets = selected.map(buildDesignPresetFromCatalogSlot);
+  const templateNeeds = options?.templateNeeds
+    ?? options?.constitution?.templateNeeds
+    ?? [];
+  const selected = selectCatalogSlotsForOnboarding(enabledSlots, cap, { templateNeeds });
+  const presets = selected.map((slot) => buildDesignPresetFromCatalogSlot(slot, options?.constitution));
 
   return {
     presets,

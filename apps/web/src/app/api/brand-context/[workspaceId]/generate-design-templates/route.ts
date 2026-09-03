@@ -21,6 +21,7 @@ import {
 } from '@/lib/brand-design-template-engine';
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { resolveOnboardingDesignPresetsFromCatalog } from '@/lib/catalog-design-template-presets';
+import { compileBrandDesignConstitution } from '@/lib/brand-design-constitution';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
 import {
   buildUserConfirmedTypographyPatch,
@@ -243,12 +244,48 @@ async function runGenerateDesignTemplates(
     throw new Error('no_gallery_photos');
   }
 
+  const serviceProfile = parseMaybeJsonRecord(
+    brandCtx.brand_service_profile
+    ?? brandCtx.service_profile
+    ?? brandTheme?.service_profile
+    ?? brandTheme?.serviceProfile,
+  );
+  const constitution = compileBrandDesignConstitution({
+    brandName,
+    sector,
+    location: typeof brandCtx.location === 'string' ? brandCtx.location : undefined,
+    brandTheme,
+    visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
+    visualDnaTone: distillBrandSoul({
+      visualDna: brandCtx.visual_dna as string | undefined,
+      brandTone: brandCtx.brand_tone as string | undefined,
+      brandDescription: brandCtx.description as string | undefined,
+    }),
+    brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+    vibeProfile: parseMaybeJsonRecord(brandCtx.brand_vibe_profile),
+    serviceProfile,
+    discoveryOutputs: brandCtx.discovery_outputs ?? brandCtx.discoveryOutputs,
+    contentPillars: parseMaybeStringArray(brandCtx.content_pillars),
+    defaultCtas: parseMaybeStringArray(brandCtx.default_ctas),
+    antiPatterns,
+    tokens: {
+      headingFont: tokens.headingFont,
+      bodyFont: tokens.bodyFont,
+      primary: tokens.primaryColor,
+      accent: tokens.accentColor,
+    },
+  });
+
   // ── Slot catalog bootstrap + catalog-driven presets (Faz 3) ─────────────────
   const productionSettings = resolveFalTemplateProductionSettings(brandTheme);
   const catalogPresets = await resolveOnboardingDesignPresetsFromCatalog(
     workspaceId,
     sector,
-    { limit: body.limit ?? productionSettings.preview_cap },
+    {
+      limit: body.limit ?? productionSettings.preview_cap,
+      constitution,
+      templateNeeds: constitution.templateNeeds,
+    },
   );
   console.log(
     `[generate-design-templates] catalog presets source=${catalogPresets.source} `
@@ -267,6 +304,12 @@ async function runGenerateDesignTemplates(
     location: typeof brandCtx.location === 'string' ? brandCtx.location : undefined,
     visualDna: typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : undefined,
     brandTone: typeof brandCtx.brand_tone === 'string' ? brandCtx.brand_tone : undefined,
+    antiPatterns: constitution.antiPatterns,
+    signatureOfferings: constitution.signatureOfferings,
+    composeMode: constitution.composeMode,
+    headingFont: constitution.headingFont,
+    typeEnergy: constitution.typeEnergy,
+    layoutPackId: constitution.layoutPackId,
   });
   if (slotCreativesSeeded > 0) {
     console.log(
@@ -300,14 +343,11 @@ async function runGenerateDesignTemplates(
       contentPillars: parseMaybeStringArray(brandCtx.content_pillars),
       defaultCtas: parseMaybeStringArray(brandCtx.default_ctas),
       vibeProfile: parseMaybeJsonRecord(brandCtx.brand_vibe_profile),
-      serviceProfile: parseMaybeJsonRecord(
-        brandCtx.service_profile
-        ?? brandTheme?.service_profile
-        ?? brandTheme?.serviceProfile,
-      ),
+      serviceProfile,
     },
     brandTheme,
     antiPatterns,
+    constitution,
     galleryPhotoUrls: gctx.photos,
     galleryAnalysis: gctx.meta,
     concurrency: body.concurrency ?? productionSettings.concurrency,

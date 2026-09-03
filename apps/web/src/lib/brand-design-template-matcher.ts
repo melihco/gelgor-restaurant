@@ -24,6 +24,10 @@ import {
   parseTemplateTypeBudget,
   type TemplateTypeBudget,
 } from '@/lib/template-type-budget';
+import {
+  parseTemplateFillRecipe,
+  type TemplateFillRecipe,
+} from '@/lib/template-fill-recipe';
 import type { TypographyVibe } from '@/types/brand-theme';
 
 export interface BrandDesignTemplateRecord {
@@ -93,6 +97,8 @@ export interface MatchedDesignTemplate {
   canvaArchetypeName?: string | null;
   /** Persisted fal_reel policy from design_spec.reel_recipe (reel_cover). */
   reelRecipe?: Record<string, unknown> | null;
+  /** Fillable house/layout recipe — mission fills copy/photo, does not reinvent. */
+  recipe?: TemplateFillRecipe | null;
   /**
    * How the template was bound to the slot:
    * - `hard`   — exact `catalog_slot_key` match with compatible format (1A pin)
@@ -781,6 +787,9 @@ export async function matchDesignTemplateToSlot(
         ? (raw as Record<string, unknown>)
         : null;
     })(),
+    recipe: parseTemplateFillRecipe(sd.recipe)
+      ?? parseTemplateFillRecipe(sd.house_style)
+      ?? parseTemplateFillRecipe(sd.houseStyle),
     matchQuality,
   };
 }
