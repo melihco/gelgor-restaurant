@@ -133,6 +133,10 @@ ADDITIVE_DDL: tuple[str, ...] = (
         ADD COLUMN IF NOT EXISTS brand_theme JSONB
     """,
     """
+    ALTER TABLE brand_contexts
+        ADD COLUMN IF NOT EXISTS discovery_outputs JSONB
+    """,
+    """
     ALTER TABLE brand_design_templates
         ADD COLUMN IF NOT EXISTS catalog_slot_key VARCHAR(128)
     """,

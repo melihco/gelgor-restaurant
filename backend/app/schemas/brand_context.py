@@ -81,6 +81,7 @@ class BrandContextUpdate(BaseModel):
     brand_primary_color: str | None = None
     brand_accent_color: str | None = None
     brand_font_family: str | None = None
+    discovery_outputs: dict[str, Any] | None = None
     # Manual sector / SP corrections from Marka UI (merged with existing JSON).
     brand_service_profile: dict[str, Any] | None = None
 
@@ -150,6 +151,7 @@ class BrandContextRead(OrmBase):
     chatbot_profile_updated_at: datetime | None = None
     brand_service_profile: dict | None = None
     brand_service_profile_updated_at: datetime | None = None
+    discovery_outputs: dict | None = None
 
 
 class BrandAssetRead(OrmBase):

@@ -29,6 +29,39 @@ logger = structlog.get_logger()
 _BRAND_CTX_TTL = 300  # 5 minutes
 
 
+def extract_discovery_outputs(analysis_result: dict) -> dict:
+    """Keep onboarding extras that used to be dropped after analyze_brand()."""
+    report = analysis_result.get("report") or {}
+    if not isinstance(report, dict):
+        report = {}
+
+    def _slist(raw: object, limit: int = 24) -> list[str]:
+        if not isinstance(raw, list):
+            return []
+        out: list[str] = []
+        for item in raw:
+            t = str(item).strip()
+            if t and t not in out:
+                out.append(t)
+            if len(out) >= limit:
+                break
+        return out
+
+    profiles = report.get("competitor_instagram_profiles")
+    if not isinstance(profiles, list):
+        profiles = analysis_result.get("competitor_instagram_profiles")
+    if not isinstance(profiles, list):
+        profiles = []
+    clean_profiles = [p for p in profiles if isinstance(p, dict)][:12]
+
+    return {
+        "template_needs": _slist(report.get("template_needs")),
+        "asset_recommendations": _slist(report.get("asset_recommendations")),
+        "missing_questions": _slist(report.get("missing_questions"), limit=12),
+        "competitor_instagram_profiles": clean_profiles,
+    }
+
+
 def _reconcile_logo_with_website(logo_url: str, website_url: str) -> str:
     """Rewrite scraped logo host to match the canonical website_url (e.g. Vercel deploy)."""
     logo = (logo_url or "").strip()
@@ -1727,6 +1760,10 @@ async def persist_discovery_result(
 
     ctx.discovery_confidence = confidence
     ctx.last_brand_analysis_at = datetime.now(timezone.utc)
+
+    discovery_outputs = extract_discovery_outputs(analysis_result)
+    if any(discovery_outputs.values()):
+        ctx.discovery_outputs = discovery_outputs
 
     # Website typography / colors → Marka Detayı + brand_theme
     wi_kit = website.get("brand_kit") if isinstance(website.get("brand_kit"), dict) else {}

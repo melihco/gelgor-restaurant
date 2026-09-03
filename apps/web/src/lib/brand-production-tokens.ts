@@ -9,6 +9,7 @@ import {
 import { resolveTextOverlayPrefs } from '@/lib/brand-text-overlay-prefs';
 import { resolveSectorColorPreset } from '@/lib/sector-color-presets';
 import { resolveProductionStoryFonts } from '@/lib/premium-font-registry';
+import { isOnboardingFontConfirmed } from '@/lib/onboarding-brand-identity';
 import type { FontPersonality } from '@/lib/story-template-types';
 import { resolveTemplateColorProps } from '@/lib/template-color-policy';
 
@@ -265,19 +266,26 @@ export function resolveBrandProductionTokens(input: {
   }
   if (accentIsSameAsPrimary) sources.push('accent.derived');
 
+  const fontConfirmed = isOnboardingFontConfirmed(theme);
+  const confirmedHeading = fontConfirmed
+    ? String(themeTypo?.heading ?? ctxFont ?? '').trim()
+    : '';
   const headingRaw =
-    postDesignTypo.heading
+    (confirmedHeading || undefined)
+    ?? postDesignTypo.heading
     ?? themeTypo?.heading
     ?? vibeTypo?.heading
     ?? ctxFont
     ?? undefined;
   const bodyRaw =
-    postDesignTypo.body
+    (fontConfirmed && themeTypo?.body ? String(themeTypo.body) : undefined)
+    ?? postDesignTypo.body
     ?? themeTypo?.body
     ?? vibeTypo?.body
     ?? undefined;
 
-  if (postDesignTypo.source) sources.push(postDesignTypo.source);
+  if (fontConfirmed && confirmedHeading) sources.push('onboarding.heading_font');
+  else if (postDesignTypo.source) sources.push(postDesignTypo.source);
   else if (themeTypo?.heading) sources.push('theme.typography.heading');
   else if (vibeTypo?.heading) sources.push('vibe.typography.heading');
   else if (ctxFont) sources.push('brand_context.brand_font_family');
@@ -288,8 +296,9 @@ export function resolveBrandProductionTokens(input: {
     kitBody: input.kitBody,
     brandHeading: headingRaw,
     brandBody: bodyRaw,
-    brandFontFamily: ctxFont || undefined,
+    brandFontFamily: (fontConfirmed ? (confirmedHeading || ctxFont) : ctxFont) || undefined,
     fontPersonality: input.fontPersonality ?? 'brand',
+    fontConfirmed,
   });
 
   // Text color: pure white gives maximum contrast for poster/story headlines.

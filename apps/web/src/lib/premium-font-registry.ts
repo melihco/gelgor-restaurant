@@ -326,6 +326,8 @@ export function resolveProductionStoryFonts(input: {
   /** Marka Detayı → Ana Font (brand_context.brand_font_family) */
   brandFontFamily?: string;
   fontPersonality?: FontPersonality | string;
+  /** Operator confirmed this family on the onboarding identity step. */
+  fontConfirmed?: boolean;
 }): { heading: string; body: string } {
   const sectorDefaults = defaultFontsForSector(input.sector ?? '');
   const personality = input.fontPersonality ?? 'brand';
@@ -335,10 +337,13 @@ export function resolveProductionStoryFonts(input: {
   const brandBody = cleanFontName(input.brandBody);
   const kitHeading = cleanFontName(input.kitHeading);
   const kitBody = cleanFontName(input.kitBody);
+  const ctxFontHonored = Boolean(
+    ctxFont && (input.fontConfirmed === true || !GENERIC_FONTS.has(ctxFont)),
+  );
 
-  // Marka Detayı → Ana Font: always wins over template/sector defaults.
+  // Confirmed / non-generic Marka Detayı font beats template/sector defaults.
   const headingSeed =
-    ctxFont
+    (ctxFontHonored ? ctxFont : undefined)
     ?? (isPremiumFont(brandHeading) ? brandHeading : undefined)
     ?? (isPremiumFont(kitHeading) ? kitHeading : undefined)
     ?? sectorDefaults.heading;
@@ -348,7 +353,9 @@ export function resolveProductionStoryFonts(input: {
     ?? (isPremiumFont(kitBody) ? kitBody : undefined)
     ?? sectorDefaults.body;
 
-  const honorExplicitBrand = Boolean(ctxFont || (isPremiumFont(brandHeading) && brandHeading));
+  const honorExplicitBrand = Boolean(
+    ctxFontHonored || (isPremiumFont(brandHeading) && brandHeading),
+  );
   const stack = resolveFontStack(personality, headingSeed, bodySeed, { honorExplicitBrand });
   return {
     heading: honorExplicitBrand ? headingSeed! : firstFamilyFromStack(stack.hero),

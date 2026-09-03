@@ -41,6 +41,15 @@ import {
 } from '@/lib/sync-company-profile-from-python';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
 import { serviceProfileCategoryForSector } from '@/lib/canonical-sector';
+import {
+  ONBOARDING_HEADING_FONTS,
+  ONBOARDING_MAX_REFERENCE_PHOTOS,
+  buildOnboardingIdentityContextPatch,
+  buildOnboardingIdentityThemePatch,
+  referencePhotoAskCopy,
+  resolveOnboardingHeadingOption,
+  parseOnboardingRefUrls,
+} from '@/lib/onboarding-brand-identity';
 
 // ─── Types ────────────────────────────────────────────────────────────
 type Step =
@@ -1951,7 +1960,12 @@ function TypographyConfirmStep({
   const [accent, setAccent] = useState('#4f8ef7');
   const [neutral, setNeutral] = useState('#f5f5f5');
   const [shadow, setShadow] = useState('#111111');
+  const [headingFont, setHeadingFont] = useState(ONBOARDING_HEADING_FONTS[0]!.id);
+  const [bodyFont, setBodyFont] = useState(ONBOARDING_HEADING_FONTS[0]!.body);
+  const [refUrls, setRefUrls] = useState<string[]>([]);
+  const [uploadingRefs, setUploadingRefs] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const refsInputRef = useRef<HTMLInputElement>(null);
   const themeRef = useRef<Record<string, unknown>>({});
 
   useEffect(() => {
@@ -1978,12 +1992,21 @@ function TypographyConfirmStep({
         const nextAccent = extractHexColor(ctx?.brand_accent_color || palette.accent || profile?.accentColors, '#4f8ef7');
         const nextNeutral = extractHexColor(palette.neutral, '#f5f5f5');
         const nextShadow = extractHexColor(palette.shadow, '#111111');
+        const typo = (theme.typography && typeof theme.typography === 'object'
+          ? theme.typography
+          : {}) as Record<string, unknown>;
+        const savedHeading = String(typo.heading_font ?? ctx?.brand_font_family ?? '').trim();
+        const fontOpt = resolveOnboardingHeadingOption(savedHeading, sector);
+        const existingRefs = parseOnboardingRefUrls(ctx?.reference_image_urls);
         if (!cancelled) {
           setLogoUrl(nextLogo);
           setPrimary(nextPrimary);
           setAccent(nextAccent);
           setNeutral(nextNeutral);
           setShadow(nextShadow);
+          setHeadingFont(fontOpt.id);
+          setBodyFont(fontOpt.body);
+          setRefUrls(existingRefs.slice(0, ONBOARDING_MAX_REFERENCE_PHOTOS));
           setConfig(resolveSuggestedTypographyConfig(theme, sector, visualDna));
           setLoading(false);
         }
@@ -2026,6 +2049,45 @@ function TypographyConfirmStep({
     }
   }
 
+  async function handleRefUpload(files: FileList | null) {
+    if (!files?.length || uploadingRefs) return;
+    const room = ONBOARDING_MAX_REFERENCE_PHOTOS - refUrls.length;
+    const batch = Array.from(files).slice(0, Math.max(0, room));
+    if (batch.length === 0) return;
+    setUploadingRefs(true);
+    setError(null);
+    try {
+      const images: Array<{ dataUrl: string; mimeType: string; fileName: string }> = [];
+      for (const file of batch) {
+        const dataUrl = await new Promise<string>((res, rej) => {
+          const reader = new FileReader();
+          reader.onload = () => res(String(reader.result));
+          reader.onerror = () => rej(new Error('Dosya okunamadı'));
+          reader.readAsDataURL(file);
+        });
+        images.push({
+          dataUrl,
+          mimeType: file.type || 'image/jpeg',
+          fileName: file.name || 'referans.jpg',
+        });
+      }
+      const uploadRes = await fetch(`/api/brand-context/${tenantId}/gallery-upload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getRequestContextHeaders() },
+        body: JSON.stringify({ images }),
+      });
+      if (!uploadRes.ok) throw new Error('Referans fotoğraf yüklenemedi');
+      const payload = (await uploadRes.json()) as { urls?: string[] };
+      const added = (payload.urls ?? []).filter(Boolean);
+      setRefUrls((prev) => [...prev, ...added].slice(0, ONBOARDING_MAX_REFERENCE_PHOTOS));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Referans fotoğraf yüklenemedi');
+    } finally {
+      setUploadingRefs(false);
+      if (refsInputRef.current) refsInputRef.current.value = '';
+    }
+  }
+
   async function handleConfirm() {
     if (!config || submitting) return;
     setSubmitting(true);
@@ -2049,11 +2111,11 @@ function TypographyConfirmStep({
         method: 'PUT',
         headers,
         body: JSON.stringify({
-          theme: {
-            ...currentTheme,
-            typography_design: confirmed,
+          theme: buildOnboardingIdentityThemePatch({
+            currentTheme,
+            headingFont,
+            bodyFont,
             typographyDesign: confirmed,
-            post_design_defaults: postDefaults,
             postDesignDefaults: postDefaults,
             palette: {
               ...prevPalette,
@@ -2062,8 +2124,7 @@ function TypographyConfirmStep({
               neutral,
               shadow,
             },
-            creative_identity_confirmed_at: new Date().toISOString(),
-          },
+          }),
         }),
         signal: AbortSignal.timeout(30_000),
       });
@@ -2072,11 +2133,12 @@ function TypographyConfirmStep({
       await fetch(`/api/brand-context-data/${tenantId}`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({
-          ...(logoUrl ? { logo_url: logoUrl } : {}),
-          brand_primary_color: primary,
-          brand_accent_color: accent,
-        }),
+        body: JSON.stringify(buildOnboardingIdentityContextPatch({
+          logoUrl,
+          headingFont,
+          primary,
+          accent,
+        })),
         signal: AbortSignal.timeout(20_000),
       }).catch(() => null);
 
@@ -2140,7 +2202,7 @@ function TypographyConfirmStep({
         <header className="confirm-top">
           <h1 className="confirm-hero-title">Görsel kimliğini onayla</h1>
           <p className="confirm-hero-lead">
-            Logo, palet ve tipografi vibe — üretim dili buradan kilitlenir.
+            Logo, font, palet ve 3–5 referans foto — üretim dili buradan kilitlenir.
           </p>
         </header>
 
@@ -2205,9 +2267,72 @@ function TypographyConfirmStep({
               >
                 {uploadingLogo ? 'Yükleniyor…' : logoUrl ? 'Logoyu değiştir' : 'Logo yükle'}
               </button>
-              <p className="visual-logo-row__hint">PNG / SVG · şeffaf arka plan tercih</p>
+              <p className="visual-logo-row__hint">
+                {logoUrl
+                  ? 'PNG / SVG · şeffaf arka plan tercih'
+                  : 'Logo yoksa üretimde marka işareti basılmaz — yüklemeni öneririz.'}
+              </p>
             </div>
           </div>
+        </div>
+
+        <div className="confirm-section">
+          <span className="confirm-section-label">Başlık fontu</span>
+          <div className="visual-font-grid" role="listbox" aria-label="Başlık fontu">
+            {ONBOARDING_HEADING_FONTS.map((opt) => {
+              const active = headingFont === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="option"
+                  aria-selected={active}
+                  className={`visual-font-chip${active ? ' is-on' : ''}`}
+                  onClick={() => {
+                    setHeadingFont(opt.id);
+                    setBodyFont(opt.body);
+                  }}
+                >
+                  <span className="visual-font-chip__aa" style={{ fontFamily: `'${opt.id}', serif` }}>Aa</span>
+                  <span className="visual-font-chip__meta">
+                    <span className="visual-font-chip__title">{opt.label}</span>
+                    <span className="visual-font-chip__desc">{opt.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="confirm-section">
+          <span className="confirm-section-label">Referans fotoğraflar</span>
+          <p className="visual-logo-row__hint">{referencePhotoAskCopy(refUrls.length)}</p>
+          <div className="visual-ref-row">
+            {refUrls.map((url) => (
+              <div key={url} className="visual-ref-thumb">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={url} alt="" />
+              </div>
+            ))}
+            {refUrls.length < ONBOARDING_MAX_REFERENCE_PHOTOS && (
+              <button
+                type="button"
+                className="visual-ref-add"
+                disabled={uploadingRefs}
+                onClick={() => refsInputRef.current?.click()}
+              >
+                {uploadingRefs ? '…' : '+'}
+              </button>
+            )}
+          </div>
+          <input
+            ref={refsInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            multiple
+            hidden
+            onChange={(e) => void handleRefUpload(e.target.files)}
+          />
         </div>
 
         <div className="confirm-section">
@@ -2283,7 +2408,7 @@ function TypographyConfirmStep({
         <button
           type="button"
           className="onboarding-cta"
-          disabled={submitting || uploadingLogo}
+          disabled={submitting || uploadingLogo || uploadingRefs}
           onClick={() => void handleConfirm()}
         >
           {submitting ? 'Kaydediliyor…' : 'Kimliği onayla ve devam et'}

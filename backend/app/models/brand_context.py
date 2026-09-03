@@ -186,6 +186,9 @@ class BrandContext(BaseModel):
     # Official brand logo URL (from website or Instagram profile)
     logo_url: Mapped[str | None] = mapped_column(String(512))
 
+    # Onboarding extras that analyze_brand() used to throw away.
+    discovery_outputs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
     # Creatomate brand template config — per-tenant video pack styling
     brand_primary_color: Mapped[str | None] = mapped_column(String(16))
     brand_accent_color: Mapped[str | None] = mapped_column(String(16))
