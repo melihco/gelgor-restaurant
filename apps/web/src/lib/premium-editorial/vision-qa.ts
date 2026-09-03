@@ -4,7 +4,7 @@
  */
 
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
 import { resolveMediaFetchUrl } from '@/lib/logo-compositor';
 import {
   PREMIUM_EDITORIAL_PROMPT_VERSION,
@@ -61,6 +61,7 @@ function emptyAssessment(stage: 'background' | 'final'): VisualQualityAssessment
     failureReasonCodes: ['qa_unavailable'],
     stage,
     promptArchitectureVersion: PREMIUM_EDITORIAL_PROMPT_VERSION,
+    visionReviewed: false,
   };
 }
 
@@ -72,9 +73,9 @@ async function loadImageBuffer(url: string): Promise<Buffer | null> {
   }
   try {
     const fetchUrl = await resolveMediaFetchUrl(url);
+    const viaReviewable = await fetchReviewableFrameBuffer(fetchUrl, 25_000);
+    if (viaReviewable && viaReviewable.length >= 200) return viaReviewable;
     if (fetchUrl.startsWith('http')) {
-      const viaProxy = await fetchExternalImageBuffer(fetchUrl, 25_000);
-      if (viaProxy) return viaProxy;
       const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(25_000) });
       if (res.ok) {
         const buf = Buffer.from(await res.arrayBuffer());
@@ -135,6 +136,7 @@ export async function assessVisualQuality(opts: {
     soft.logoIntegrityScore = opts.logoApplied === false ? 100 : (opts.stage === 'final' ? 100 : 100);
     soft.failureReasonCodes = [];
     soft.detectedArtifacts = ['vision_qa_skipped_no_key'];
+    soft.visionReviewed = false;
     return soft;
   }
 
@@ -250,6 +252,7 @@ export async function assessVisualQuality(opts: {
     failureReasonCodes,
     stage: opts.stage,
     promptArchitectureVersion: PREMIUM_EDITORIAL_PROMPT_VERSION,
+    visionReviewed: true,
   };
 }
 

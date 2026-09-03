@@ -73,8 +73,12 @@ export async function fetchReviewableFrameBuffer(
   if (!trimmed) return null;
   if (trimmed.startsWith('http')) return fetchExternalImageBuffer(trimmed, timeoutMs);
 
-  const { resolveExternallyAccessibleUrl } = await import('./media-url');
-  const resolved = (await resolveExternallyAccessibleUrl(trimmed)) || '';
-  if (!resolved.startsWith('http')) return null;
-  return fetchExternalImageBuffer(resolved, timeoutMs);
+  try {
+    const { resolveExternallyAccessibleUrl } = await import('./media-url');
+    const resolved = (await resolveExternallyAccessibleUrl(trimmed)) || '';
+    if (!resolved.startsWith('http')) return null;
+    return fetchExternalImageBuffer(resolved, timeoutMs);
+  } catch {
+    return null;
+  }
 }

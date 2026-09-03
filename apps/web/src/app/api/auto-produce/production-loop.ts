@@ -121,7 +121,7 @@ import {
   isGalleryOnlyVisualPolicy,
   storyGalleryPhotoTarget,
 } from '@/lib/visual-overlay-policy';
-import { GRAFIKER_PASS_THRESHOLD, resolveGrafikerMaxRetries } from '@/lib/grafiker-quality';
+import { GRAFIKER_PASS_THRESHOLD, observeRenderedFrame, resolveGrafikerMaxRetries } from '@/lib/grafiker-quality';
 import {
   fetchGisScoreForWorkspace,
   isFeedDirectorFallback,
@@ -4943,6 +4943,31 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     const vpsRaw = (idea.visual_production_spec as Record<string, unknown> | undefined);
     const treatment = String(vpsRaw?.treatment || idea.treatment || '').toLowerCase();
+    const designedFrameUrl = imageUrl && imageUrl !== referenceUrl
+      ? imageUrl
+      : designedPosterSyncUrl;
+    const designedRouteNeedsReview = Boolean(
+      designedFrameUrl
+      && (usesFalDesignerTrack || productionProfile.requireDesignedVisuals || designedPosterSyncUrl),
+    );
+    if (designedRouteNeedsReview && !falGrafikerReviewed) {
+      const observed = await observeRenderedFrame(
+        designedFrameUrl!,
+        headline,
+        falBriefFormat === 'story' || pkgFmt === 'story' ? 'story' : 'poster',
+      );
+      falGrafikerReviewed = observed.reviewed;
+      falGrafikerObservedScore = observed.score;
+      if (observed.score != null && falGrafikerScore == null) {
+        falGrafikerScore = observed.score;
+      }
+      if (observed.reviewed) {
+        console.log(
+          `[auto-produce] grafiker observe ${ideaIndex}:${assignment.slot_role} `
+          + `score=${observed.score ?? '—'}`,
+        );
+      }
+    }
     const designedPosterReady = Boolean(designedPosterSyncUrl);
     const markyBranded = !productionProfile.requireDesignedVisuals
       && Boolean(referenceUrl && imageUrl && imageUrl !== referenceUrl)
@@ -5224,6 +5249,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     const slotFalRequests = getCapturedFalRequests();
+    const grafikerStamp: Record<string, unknown> = {
+      grafiker_reviewed: falGrafikerReviewed,
+      ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+      ...(falGrafikerObservedScore != null
+        ? { grafiker_observed_score: falGrafikerObservedScore }
+        : {}),
+    };
     const metadata: Record<string, unknown> = {
       ...(brandDesignTemplateId
         ? {
@@ -5332,7 +5364,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           production_track: 'fal_ai',
           marky_disabled: true,
           ...(falDesignEngine ? { fal_design_engine: falDesignEngine } : {}),
-          ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+          ...grafikerStamp,
           typography_text_valid: falGrafikerPass !== false,
         }
         : (isFalOnlyPost || isFalOnlyVideo) && (imageUrl || videoUrl)
@@ -5342,7 +5374,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_only: true,
             marky_disabled: true,
             fal_design_engine: falDesignEngine ?? 'fal_ideogram_only',
-            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            ...grafikerStamp,
             typography_text_valid: falGrafikerPass !== false,
           }
         : isFalDesignPost && imageUrl && falDesignEngine
@@ -5352,16 +5384,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             marky_disabled: true,
             fal_designer_produced: true,
             fal_design_engine: falDesignEngine,
-            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
-            // Without a template lock the Grafiker design review is skipped, so
-            // record whether anything actually judged the composition and what it
-            // said. Text validation still runs and is what typography_text_valid
-            // reflects; it checks the painted line against the requested one, not
-            // the layout around it.
-            grafiker_reviewed: falGrafikerReviewed,
-            ...(falGrafikerObservedScore != null
-              ? { grafiker_observed_score: falGrafikerObservedScore }
-              : {}),
+            ...grafikerStamp,
             // A designed post that came back without painted copy is a failed
             // design. Beyond that, only the text validator can license this claim:
             // reading it off falGrafikerPass meant a branch where nothing checked
@@ -5382,11 +5405,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_designer_produced: true,
             fal_design_engine: falDesignEngine,
             premium_composition: true,
-            ...(falGrafikerScore != null ? { grafiker_score: falGrafikerScore, grafiker_pass: falGrafikerPass } : {}),
+            ...grafikerStamp,
             typography_text_valid: falGrafikerPass !== false,
           }
         : productionProfile.requireDesignedVisuals
-          ? { production_route: 'designed_grafiker', marky_disabled: true }
+          ? { production_route: 'designed_grafiker', marky_disabled: true, ...grafikerStamp }
           : {}),
       flux_used: false,
       agency_defaults_forced: agencyProductionForced,

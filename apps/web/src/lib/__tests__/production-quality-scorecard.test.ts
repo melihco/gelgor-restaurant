@@ -18,6 +18,14 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     expect(card.hardBlockReason).toContain('eşleşmiyor');
   });
 
+  it('hard blocks an observed score at the floor when grafiker_score is absent', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      grafiker_observed_score: 3,
+    });
+    expect(card.hardBlock).toBe(true);
+    expect(card.grafikerScore).toBe(3);
+  });
+
   it('hard blocks a score at or below the hard floor', () => {
     const card = buildProductionQualityScorecard(stubArtifact({}), {
       grafiker_score: 4,

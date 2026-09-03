@@ -52,7 +52,13 @@ export function buildProductionQualityScorecard(
 ): ProductionQualityScorecard {
   const matchScore = resolveArtifactMatchScore(meta);
   const matchCls = matchScore != null ? classifyMatch(matchScore) : null;
-  const grafikerScore = readNumber(meta, 'grafiker_score', 'grafikerScore');
+  const grafikerScore = readNumber(
+    meta,
+    'grafiker_score',
+    'grafikerScore',
+    'grafiker_observed_score',
+    'grafikerObservedScore',
+  );
   const grafikerPassRaw = meta.grafiker_pass ?? meta.grafikerPass;
   const grafikerPass = typeof grafikerPassRaw === 'boolean' ? grafikerPassRaw : null;
   const bundleStatus = getProductionBundleStatus(artifact);

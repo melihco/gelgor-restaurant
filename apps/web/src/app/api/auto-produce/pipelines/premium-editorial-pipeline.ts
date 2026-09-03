@@ -87,10 +87,17 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
 
     state.imageUrl = result.finalImageUrl ?? result.backgroundImageUrl;
     state.falDesignEngine = result.modelName ?? 'premium_editorial_v1';
-    state.falGrafikerPass = result.qualityAssessment?.isApproved ?? false;
-    state.falGrafikerScore = result.qualityAssessment
+    const visionReviewed = result.qualityAssessment?.visionReviewed === true;
+    state.falGrafikerReviewed = visionReviewed;
+    state.falGrafikerPass = visionReviewed
+      ? (result.qualityAssessment?.isApproved ?? false)
+      : true;
+    state.falGrafikerScore = visionReviewed && result.qualityAssessment
       ? Math.round((result.qualityAssessment.overallScore / 100) * 10)
       : null;
+    if (visionReviewed && state.falGrafikerScore != null) {
+      state.falGrafikerObservedScore = state.falGrafikerScore;
+    }
     state.costDelta += result.costEstimateUsd ?? 0.08;
     state.artifactMetaPatch = {
       ...premiumEditorialArtifactMetadata(result),

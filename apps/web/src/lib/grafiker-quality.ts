@@ -280,6 +280,30 @@ export function grafikerMeetsBar(review: GrafikerReviewResult): boolean {
     && !review.text_overlap;
 }
 
+/**
+ * Observe a persisted designed frame. Relative `/api/media` paths are
+ * resolved first — the same fetch hole that left 269 frames unreviewed.
+ * Returns `reviewed: false` when the buffer cannot be fetched or the
+ * scorer is unavailable; callers must not invent a pass from that.
+ */
+export async function observeRenderedFrame(
+  imageUrl: string,
+  label: string,
+  mode: 'story' | 'poster' = 'poster',
+): Promise<{ score: number | null; reviewed: boolean }> {
+  try {
+    const { fetchReviewableFrameBuffer } = await import('./external-image-fetch');
+    const buf = await fetchReviewableFrameBuffer(imageUrl);
+    if (!buf || buf.length < 100) return { score: null, reviewed: false };
+    const { runGrafikerVisionReview } = await import('./grafiker-review-service');
+    const review = await runGrafikerVisionReview(buf, label.slice(0, 60), mode);
+    if (!review || review.score == null) return { score: null, reviewed: false };
+    return { score: review.score, reviewed: true };
+  } catch {
+    return { score: null, reviewed: false };
+  }
+}
+
 /** Vision QA on a rendered PNG/JPEG still (feed posts, agency posters). */
 export async function runGrafikerReviewOnImageBuffer(
   imageBuffer: Buffer,

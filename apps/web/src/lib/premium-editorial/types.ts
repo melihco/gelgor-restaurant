@@ -224,6 +224,8 @@ export interface VisualQualityAssessment {
   failureReasonCodes: string[];
   stage: 'background' | 'final';
   promptArchitectureVersion: typeof PREMIUM_EDITORIAL_PROMPT_VERSION;
+  /** True only when Grafiker actually judged the frame — skipped QA must not look reviewed. */
+  visionReviewed?: boolean;
 }
 
 export interface GenerationAttemptRecord {
