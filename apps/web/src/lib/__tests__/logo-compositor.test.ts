@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import sharp from '@/lib/sharp-runtime';
 import {
+  LOGO_MIN_LONG_SIDE_PX,
   LOGO_WHITE_BACKING_THRESHOLD,
+  normalizeBrandLogoAsset,
+  pickLogoVariantForRegion,
   pickQuietLogoPlacement,
   prepareLogoForComposite,
 } from '@/lib/logo-compositor';
@@ -164,5 +167,56 @@ describe('pickQuietLogoPlacement', () => {
 
     expect(picked.placement).toBe('top_left');
     expect(picked.movedFromPreferred).toBe(false);
+  });
+});
+
+describe('normalizeBrandLogoAsset', () => {
+  it('restaurant_cafe: white JPEG plate becomes a ≥512 transparent PNG', async () => {
+    const kit = await normalizeBrandLogoAsset(await makeWhiteSquareLogo());
+    expect(Math.max(kit.width, kit.height)).toBeGreaterThanOrEqual(LOGO_MIN_LONG_SIDE_PX);
+    expect(kit.polarity).toBe('color');
+    const { data } = await sharp(kit.transparentPng).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let transparent = 0;
+    for (let i = 3; i < data.length; i += 4) {
+      if (data[i]! < 16) transparent += 1;
+    }
+    expect(transparent).toBeGreaterThan(40);
+  });
+
+  it('beach_club: white wordmark on a black square knocks out the plate and offers a dark twin', async () => {
+    const raw = Buffer.alloc(80 * 80 * 4, 0);
+    for (let i = 3; i < raw.length; i += 4) raw[i] = 255;
+    for (let y = 28; y < 52; y++) {
+      for (let x = 18; x < 62; x++) {
+        const i = (y * 80 + x) * 4;
+        raw[i] = 250;
+        raw[i + 1] = 250;
+        raw[i + 2] = 250;
+        raw[i + 3] = 255;
+      }
+    }
+    const jpeg = await sharp(raw, { raw: { width: 80, height: 80, channels: 4 } }).jpeg({ quality: 95 }).toBuffer();
+    const kit = await normalizeBrandLogoAsset(jpeg);
+    expect(kit.polarity).toBe('light');
+    expect(Math.max(kit.width, kit.height)).toBeGreaterThanOrEqual(LOGO_MIN_LONG_SIDE_PX);
+
+    const light = await sharp(kit.onLight).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const dark = await sharp(kit.onDark).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    let darkInk = 0;
+    let lightInk = 0;
+    for (let i = 0; i < light.data.length; i += 4) {
+      if (light.data[i + 3]! > 200 && light.data[i]! < 40) darkInk += 1;
+    }
+    for (let i = 0; i < dark.data.length; i += 4) {
+      if (dark.data[i + 3]! > 200 && dark.data[i]! > 200) lightInk += 1;
+    }
+    expect(darkInk).toBeGreaterThan(30);
+    expect(lightInk).toBeGreaterThan(30);
+  });
+
+  it('picks the contrasting variant for the region', () => {
+    expect(pickLogoVariantForRegion('light', 40)).toBe('onDark');
+    expect(pickLogoVariantForRegion('dark', 210)).toBe('onLight');
+    expect(pickLogoVariantForRegion('color', 40)).toBe('onDark');
   });
 });
