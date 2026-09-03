@@ -60,6 +60,7 @@ export async function persistEnrichedGalleryAnalysis(
     ...(meta.subjectAliases?.length ? { subjectAliases: meta.subjectAliases } : {}),
     ...(meta.subjectFamily ? { subjectFamily: meta.subjectFamily } : {}),
     ...(meta.visibleLabelText ? { visibleLabelText: meta.visibleLabelText } : {}),
+    ...(meta.spatial ? { spatial: meta.spatial } : {}),
   }));
 
   const saveRes = await fetch(

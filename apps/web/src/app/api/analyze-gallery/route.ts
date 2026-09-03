@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { computeAnalysisQuality } from '@/lib/gallery-intelligence';
 import {
+  mergePhotoSpatial,
+  measurePhotoSpatial,
+  parseGalleryPhotoSpatial,
+  type GalleryPhotoSpatial,
+} from '@/lib/gallery-photo-spatial';
+import {
   probeGalleryPhotoAccessible,
   resolveVisionImageUrl,
 } from '@/lib/gallery-upload';
@@ -51,6 +57,8 @@ export interface GalleryPhotoAnalysis {
   /** Source of the analysis; metadata_fallback means no vision model was available. */
   analysisSource?: 'vision' | 'metadata_fallback';
   fallbackReason?: string;
+  /** Subject seat + quiet cells + dominant color — design prompt consumes this. */
+  spatial?: GalleryPhotoSpatial;
 }
 
 /** Analysis tier. `hero` uses gpt-4o + detail:high for the most important photos. */
@@ -90,6 +98,12 @@ SUBJECT ALIASES & FAMILY (multilingual matching): Besides primary_subject, list 
 
 VISIBLE LABEL TEXT: If the packaging shows product name text, copy it verbatim into visible_label_text exactly as written (any language, e.g. "KURU NANE", " zeytinyağı"). Empty string when no readable label.
 
+SPATIAL (layout, not matching): Where the hero subject sits and where type can land without covering it.
+- subject_anchor: one of top_left|top_center|top_right|mid_left|center|mid_right|bottom_left|bottom_center|bottom_right
+- quiet_anchors: 1–3 calmer cells for headline (never the subject cell)
+- subject_box: {x,y,w,h} normalized 0–1 around the hero
+- dominant_hex: #rrggbb overall photo color
+
 Respond ONLY with JSON (no markdown):
 {
   "description": "2–3 sentences. Describe EXACTLY what you see: specific objects, people, setting, activity, atmosphere.",
@@ -108,7 +122,11 @@ Respond ONLY with JSON (no markdown):
   "suggestedAssetType": "venue_reference|hero_image|product_image|service_photo|event_photo|food_drink_photo|brand_background|logo|team_photo|before_after|equipment_photo",
   "usageContext": "Specific caption/content types this photo pairs best with — be specific to what the photo shows",
   "captionHooks": ["short TR caption hook 1", "short EN hook 2", "..."],
-  "pairingKeywords": ["bilingual", "tokens", "for", "matcher"]
+  "pairingKeywords": ["bilingual", "tokens", "for", "matcher"],
+  "subject_anchor": "mid_right",
+  "quiet_anchors": ["top_left", "mid_left"],
+  "subject_box": {"x": 0.45, "y": 0.2, "w": 0.5, "h": 0.7},
+  "dominant_hex": "#3a2a1c"
 }
 
 captionHooks: 3–6 short phrases (Turkish + English) that would appear in an Instagram caption when THIS exact photo is shown.
@@ -288,6 +306,22 @@ async function analyzePhoto(
     analyzedAt: new Date().toISOString(),
     analysisSource: 'vision',
   };
+  const visionSpatial = parseGalleryPhotoSpatial({
+    subject_anchor: parsed.subject_anchor ?? parsed.subjectAnchor,
+    quiet_anchors: parsed.quiet_anchors ?? parsed.quietAnchors,
+    subject_box: parsed.subject_box ?? parsed.subjectBox,
+    dominant_hex: parsed.dominant_hex ?? parsed.dominantHex,
+    source: 'vision',
+  });
+  try {
+    const { fetchReviewableFrameBuffer } = await import('@/lib/external-image-fetch');
+    const buf = await fetchReviewableFrameBuffer(visionUrl);
+    const pixelSpatial = buf ? await measurePhotoSpatial(buf) : null;
+    const spatial = mergePhotoSpatial(pixelSpatial, visionSpatial);
+    if (spatial) analysis.spatial = spatial;
+  } catch {
+    if (visionSpatial) analysis.spatial = visionSpatial;
+  }
   analysis.qualityScore = computeAnalysisQuality(analysis);
   return analysis;
 }
@@ -365,6 +399,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ...(hit.subjectAliases ? { subjectAliases: normalizeSubjectAliases(hit.subjectAliases) } : {}),
           ...(hit.subjectFamily ? { subjectFamily: normalizeSubjectToken(hit.subjectFamily) } : {}),
           ...(hit.visibleLabelText ? { visibleLabelText: normalizeVisibleLabel(hit.visibleLabelText) } : {}),
+          ...(hit.spatial ? { spatial: parseGalleryPhotoSpatial(hit.spatial) ?? hit.spatial } : {}),
         });
         continue;
       }

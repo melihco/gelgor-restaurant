@@ -30,6 +30,10 @@ import {
   formatTypeBudgetPromptLines,
   type TemplateTypeBudget,
 } from '@/lib/template-type-budget';
+import {
+  buildPhotoSpatialPromptLock,
+  type GalleryPhotoSpatial,
+} from '@/lib/gallery-photo-spatial';
 
 export interface BrandTemplateFalBinding {
   matched: MatchedDesignTemplate | null;
@@ -543,10 +547,20 @@ export function templateReplicaSpecFromBinding(
  * text (the photo swap happens via the edit reference image). Sample copy is
  * replaced in place; a compact override header wins if any residue survives.
  */
+export function appendPhotoSpatialToReplicaPrompt(
+  prompt: string,
+  spatial: GalleryPhotoSpatial | null | undefined,
+): string {
+  if (!spatial) return prompt;
+  const lock = buildPhotoSpatialPromptLock(spatial);
+  if (prompt.includes('PHOTO SPATIAL (MANDATORY)')) return prompt;
+  return `${lock}\n\n${prompt}`;
+}
+
 export function buildTemplateReplicaPrompt(
   spec: TemplateReplicaSpec,
   mission: { headline: string; subtitle?: string | null },
-  opts?: { showSubline?: boolean | null },
+  opts?: { showSubline?: boolean | null; photoSpatial?: GalleryPhotoSpatial | null },
 ): string {
   let prompt = spec.prompt.trim();
   const missionSubtitle = resolveSlotSublineForRender(mission.subtitle, {
@@ -602,6 +616,7 @@ export function buildTemplateReplicaPrompt(
       ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`
       : '',
     'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change. Copy must fit the reserved type zone without overflow/clipping.',
+    opts?.photoSpatial ? buildPhotoSpatialPromptLock(opts.photoSpatial) : '',
   ].filter(Boolean).join('\n');
 
   return `${header}\n\n${prompt}`;

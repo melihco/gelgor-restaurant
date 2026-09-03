@@ -161,6 +161,56 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).not.toContain('GRAPHIC SYSTEM (REQUIRED)');
   });
 
+  it('restaurant_cafe: PHOTO SPATIAL lock replaces guessed type placement', () => {
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'editorial_serif',
+      headline: 'İmza Tabak',
+      brandColors: { primary: '#7a1f1f', accent: '#d4a017' },
+      brandName: 'Garden Kitchen',
+      sector: 'restaurant_cafe',
+      aspectRatio: '4:5',
+      photoSpatial: {
+        subjectAnchor: 'mid_right',
+        quietAnchors: ['top_left', 'mid_left'],
+        typeSeat: 'top_left',
+        typeBand: 'left',
+        dominantHex: '#3a2a1c',
+        typeSeatLuma: 176,
+        subjectLuma: 48,
+        source: 'pixel',
+      },
+    });
+    expect(prompt).toContain('PHOTO SPATIAL (MANDATORY)');
+    expect(prompt).toContain('mid-right');
+    expect(prompt).toContain('upper-left');
+    expect(prompt).not.toContain('SUBJECT CLEARANCE (MANDATORY)');
+  });
+
+  it('beach_club: PHOTO SPATIAL lock seats type in the quiet sky band', () => {
+    const prompt = buildDesignedStoryDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Sunset Deck',
+      brandColors: { primary: '#0b3d4a', accent: '#e8c36a' },
+      brandName: 'Coast Club',
+      sector: 'beach_club',
+      aspectRatio: '9:16',
+      photoSpatial: {
+        subjectAnchor: 'bottom_center',
+        quietAnchors: ['top_left', 'top_center', 'top_right'],
+        typeSeat: 'top_left',
+        typeBand: 'top',
+        dominantHex: '#7eb6d4',
+        typeSeatLuma: 188,
+        subjectLuma: 62,
+        source: 'pixel',
+      },
+    });
+    expect(prompt).toContain('PHOTO SPATIAL (MANDATORY)');
+    expect(prompt).toContain('lower-center');
+    expect(prompt).toContain('upper-left');
+    expect(prompt).toContain('top band');
+  });
+
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {
     expect(
       resolveIdeogramBackgroundStyle(undefined, 'https://cdn.example.com/venue.jpg'),

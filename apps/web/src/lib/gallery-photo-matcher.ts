@@ -28,6 +28,7 @@ import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { resolveAssetRolePreferences } from '@/lib/sector-premium-presets';
 import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
 import { textContainsToken, tokenCoversWord } from '@/lib/turkish-morphology';
+import type { GalleryPhotoSpatial } from '@/lib/gallery-photo-spatial';
 
 export interface GalleryPhotoMeta {
   contentTags?: string[];
@@ -61,6 +62,11 @@ export interface GalleryPhotoMeta {
   subjectFamily?: string;
   /** Any product label text literally visible on the packaging (as seen, any language). */
   visibleLabelText?: string;
+  /**
+   * Layout layer: subject seat, quiet cells, dominant color.
+   * Matching ignores this; design prompts consume it so type does not guess.
+   */
+  spatial?: GalleryPhotoSpatial;
 }
 
 export interface MatchPhotoInput {
@@ -1233,6 +1239,8 @@ export function enrichGalleryAnalysis(
       ?? (typeof raw.subject_family === 'string' ? raw.subject_family : undefined);
     const visibleLabelText = meta.visibleLabelText
       ?? (typeof raw.visible_label_text === 'string' ? raw.visible_label_text : undefined);
+    const spatial = meta.spatial
+      ?? (raw as { spatial?: GalleryPhotoSpatial }).spatial;
     const normalized: GalleryPhotoMeta = {
       ...meta,
       ...(primarySubject ? { primarySubject } : {}),
@@ -1240,6 +1248,7 @@ export function enrichGalleryAnalysis(
       ...(subjectAliases?.length ? { subjectAliases } : {}),
       ...(subjectFamily ? { subjectFamily } : {}),
       ...(visibleLabelText ? { visibleLabelText } : {}),
+      ...(spatial ? { spatial } : {}),
     };
     const patch = enrichTagsFromDescription(normalized);
     enriched[url] = Object.keys(patch).length > 0 ? { ...normalized, ...patch } : normalized;

@@ -361,6 +361,9 @@ function GalleryAnalysisPanel({
           isLogo: Boolean(raw.is_logo ?? raw.isLogo),
           suggestedAssetType: String(raw.suggested_asset_type ?? raw.suggestedAssetType ?? 'venue_reference'),
           usageContext: String(raw.usage_context ?? raw.usageContext ?? ''),
+          ...(raw.spatial && typeof raw.spatial === 'object'
+            ? { spatial: raw.spatial as GalleryPhotoAnalysis['spatial'] }
+            : {}),
         });
 
         const cached = urls
@@ -418,6 +421,7 @@ function GalleryAnalysisPanel({
               is_logo: r.isLogo,
               suggested_asset_type: r.suggestedAssetType,
               usage_context: r.usageContext,
+              ...(r.spatial ? { spatial: r.spatial } : {}),
             })),
           }),
         }).catch(() => {});

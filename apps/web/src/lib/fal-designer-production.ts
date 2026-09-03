@@ -17,6 +17,11 @@ import {
 import { validateFalCanvasText, validateTypographyText } from '@/lib/typography-text-validation';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
+import {
+  buildPhotoSpatialPromptLock,
+  resolvePhotoSpatialForDesign,
+  type GalleryPhotoSpatial,
+} from '@/lib/gallery-photo-spatial';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { getSectorProfile } from '@/lib/sector-production-profile';
 import {
@@ -201,6 +206,8 @@ export interface FalDesignerInput {
    * in — "Yeniden üret" semantics instead of a freshly built prompt.
    */
   templateReplica?: import('@/lib/brand-design-template-production').TemplateReplicaSpec | null;
+  /** Measured gallery photo layout — type seat / subject clearance. */
+  photoSpatial?: GalleryPhotoSpatial | null;
   /** economy/agency/starter — VIDEO_TIER_SCOPE caps reel I2V retries. */
   productionTier?: string | null;
   /**
@@ -589,6 +596,8 @@ type DesignCardPromptInput = {
   bodyFont?: string;
   /** When true, derive overlay from caption hook instead of ideation headline. */
   captionAwareHeadline?: boolean;
+  /** Measured gallery photo layout — type seat / subject clearance. */
+  photoSpatial?: GalleryPhotoSpatial | null;
 };
 
 /**
@@ -1215,12 +1224,16 @@ function buildDesignedDesignCardPrompt(
     intensityDirectives.foundSurfaceAnchor,
   ].filter(Boolean).join(' ');
 
+  const photoSpatialLock = input.photoSpatial
+    ? buildPhotoSpatialPromptLock(input.photoSpatial)
+    : '';
+
   const hardContracts = [
     '═══ HARD CONTRACTS ═══',
     onCanvasTextContract,
     copyFitLock,
     vibeFontLock,
-    FAL_SUBJECT_CLEARANCE_DIRECTIVE,
+    photoSpatialLock || FAL_SUBJECT_CLEARANCE_DIRECTIVE,
     captionMessageLock,
     designHarmonyLock,
     logoBlock,
@@ -1660,6 +1673,14 @@ export async function produceFalDesignerStill(
         }, { showSubline: input.templateReplica.showSubline });
       }
       const replicaSublineOff = input.templateReplica?.showSubline === false;
+      const photoSpatial = await resolvePhotoSpatialForDesign({
+        spatial: input.photoSpatial,
+        photoUrl: input.referencePhotoUrl,
+      });
+      if (replicaPrompt && photoSpatial) {
+        const { appendPhotoSpatialToReplicaPrompt } = await import('@/lib/brand-design-template-production');
+        replicaPrompt = appendPhotoSpatialToReplicaPrompt(replicaPrompt, photoSpatial);
+      }
       const groundedPrompt = replicaPrompt ?? buildPrompt({
         vibe: input.vibe,
         headline: displayHeadline,
@@ -1679,6 +1700,7 @@ export async function produceFalDesignerStill(
         designIntensityLevel: input.designIntensityLevel,
         occasion: input.occasion,
         logoPlacement: input.logoPlacement,
+        photoSpatial,
       });
       console.log(
         `[fal-designer] grounded edit start: headline="${displayHeadline.slice(0, 40)}" ` +

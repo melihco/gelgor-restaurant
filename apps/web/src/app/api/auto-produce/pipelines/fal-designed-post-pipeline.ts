@@ -44,6 +44,7 @@ import {
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant } from '@/lib/fal-caption-headline';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
+import { resolvePhotoSpatialForDesign } from '@/lib/gallery-photo-spatial';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
@@ -245,6 +246,10 @@ export async function produceFalDesignedPost(
     const groundedGalleryRef = Boolean(
       referenceUrl && isUsableGalleryPhotoUrl(referenceUrl),
     );
+    const photoSpatial = await resolvePhotoSpatialForDesign({
+      meta: input.galleryPhotoMeta,
+      photoUrl: referenceUrl,
+    });
     assertTemplateStyleReference(binding, referenceImageUrls);
 
     // Primary engine — GPT-image design grounded on the real gallery photo.
@@ -316,7 +321,7 @@ export async function produceFalDesignedPost(
         ? buildTemplateReplicaPrompt(replicaSpec, {
             headline: canvasHeadline,
             subtitle: dedupedSubtitle,
-          })
+          }, { photoSpatial })
         : (aspectRatio === '9:16'
         ? buildDesignedStoryDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
@@ -339,6 +344,7 @@ export async function produceFalDesignedPost(
         briefMood: input.mood,
         logoUrl,
         logoPlacement,
+        photoSpatial,
       });
       if (replicaSpec) {
         console.log(
@@ -537,6 +543,7 @@ export async function produceFalDesignedPost(
         caption: input.caption,
         brandName: input.brandName,
         brandColors,
+        photoSpatial,
         vibe: designVibe,
         backgroundStyle: resolveIdeogramBackgroundStyle(
           input.backgroundStyle,

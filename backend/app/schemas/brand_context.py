@@ -271,6 +271,8 @@ class GalleryPhotoAnalysisEntry(BaseModel):
     subject_aliases: list[str] | None = Field(default=None, alias="subjectAliases")
     subject_family: str | None = Field(default=None, alias="subjectFamily")
     visible_label_text: str | None = Field(default=None, alias="visibleLabelText")
+    # Subject seat / quiet cells / dominant color — consumed by design prompts.
+    spatial: dict[str, Any] | None = None
 
 
 class GalleryAnalysisSaveRequest(BaseModel):
