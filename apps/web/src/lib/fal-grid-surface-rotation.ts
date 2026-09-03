@@ -7,8 +7,20 @@
  */
 
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
+import { getCanvaArchetype, type CanvaArchetypeId } from './canva-archetype-catalog';
 import type { FalDesignChannel, FalDesignIntensityLevel } from './fal-design-intensity';
 import { FAL_DESIGN_INTENSITY_LEVELS } from './fal-design-intensity';
+
+/** Cross-mission layout + color-surface memory for one tenant. */
+export type TenantDesignMemory = {
+  recentSurfaceKinds: FalGridSurfaceKind[];
+  recentArchetypeIds: CanvaArchetypeId[];
+};
+
+export const EMPTY_TENANT_DESIGN_MEMORY: TenantDesignMemory = {
+  recentSurfaceKinds: [],
+  recentArchetypeIds: [],
+};
 
 /** Visual signature visible in the 3-column profile grid. */
 export type FalGridSurfaceKind =
@@ -129,6 +141,58 @@ export function collectRecentFalGridSurfaces(
   }
 
   return out;
+}
+
+function readArchetypeId(meta: Record<string, unknown>): CanvaArchetypeId | null {
+  const raw = String(
+    meta.canva_archetype
+    ?? meta.canvaArchetype
+    ?? meta.design_layout_family
+    ?? meta.designLayoutFamily
+    ?? '',
+  ).trim();
+  return getCanvaArchetype(raw) ? (raw as CanvaArchetypeId) : null;
+}
+
+/** Newest-first Canva archetypes from prior missions (same age window as surfaces). */
+export function collectRecentTenantArchetypes(
+  artifacts: Record<string, unknown>[],
+  opts?: { limit?: number; maxAgeDays?: number },
+): CanvaArchetypeId[] {
+  const limit = opts?.limit ?? 6;
+  const maxAgeMs = (opts?.maxAgeDays ?? 60) * 86_400_000;
+  const cutoff = Date.now() - maxAgeMs;
+  const out: CanvaArchetypeId[] = [];
+  const seen = new Set<string>();
+
+  for (const artifact of artifacts) {
+    if (out.length >= limit) break;
+    const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+    if (!isFalDesignedArtifact(meta)) continue;
+
+    const created = String(artifact.createdAt ?? artifact.CreatedAt ?? '');
+    if (created) {
+      const ts = Date.parse(created);
+      if (Number.isFinite(ts) && ts < cutoff) continue;
+    }
+
+    const id = readArchetypeId(meta);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+
+  return out;
+}
+
+export function collectTenantDesignMemory(
+  artifacts: Record<string, unknown>[],
+  opts?: { limit?: number; maxAgeDays?: number },
+): TenantDesignMemory {
+  return {
+    recentSurfaceKinds: collectRecentFalGridSurfaces(artifacts, opts),
+    recentArchetypeIds: collectRecentTenantArchetypes(artifacts, opts),
+  };
 }
 
 function stepIntensityDown(level: FalDesignIntensityLevel): FalDesignIntensityLevel {
@@ -317,26 +381,44 @@ export function rotateFalDesignSurfaceForGrid(input: {
   };
 }
 
-export async function fetchRecentFalGridSurfaces(
+async function fetchRecentTenantArtifacts(
   workspaceId: string,
   nexusApi = (process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:5050').replace(/\/$/, ''),
   internalKey = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key',
-): Promise<FalGridSurfaceKind[]> {
+): Promise<Record<string, unknown>[]> {
+  const res = await fetch(`${nexusApi}/api/artifacts?limit=40`, {
+    headers: {
+      'X-Tenant-Id': workspaceId,
+      'X-Internal-Api-Key': internalKey,
+    },
+    signal: AbortSignal.timeout(12_000),
+  });
+  if (!res.ok) return [];
+  const raw = await res.json();
+  const artifacts: Record<string, unknown>[] = Array.isArray(raw)
+    ? raw
+    : (raw as { items?: unknown[] }).items ?? [];
+  return Array.isArray(artifacts) ? artifacts : [];
+}
+
+export async function fetchTenantDesignMemory(
+  workspaceId: string,
+  nexusApi?: string,
+  internalKey?: string,
+): Promise<TenantDesignMemory> {
   try {
-    const res = await fetch(`${nexusApi}/api/artifacts?limit=40`, {
-      headers: {
-        'X-Tenant-Id': workspaceId,
-        'X-Internal-Api-Key': internalKey,
-      },
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!res.ok) return [];
-    const raw = await res.json();
-    const artifacts: Record<string, unknown>[] = Array.isArray(raw)
-      ? raw
-      : (raw as { items?: unknown[] }).items ?? [];
-    return collectRecentFalGridSurfaces(Array.isArray(artifacts) ? artifacts : []);
+    const artifacts = await fetchRecentTenantArtifacts(workspaceId, nexusApi, internalKey);
+    return collectTenantDesignMemory(artifacts);
   } catch {
-    return [];
+    return { ...EMPTY_TENANT_DESIGN_MEMORY };
   }
+}
+
+export async function fetchRecentFalGridSurfaces(
+  workspaceId: string,
+  nexusApi?: string,
+  internalKey?: string,
+): Promise<FalGridSurfaceKind[]> {
+  const memory = await fetchTenantDesignMemory(workspaceId, nexusApi, internalKey);
+  return memory.recentSurfaceKinds;
 }

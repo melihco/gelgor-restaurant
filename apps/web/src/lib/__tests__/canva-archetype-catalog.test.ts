@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getCanvaArchetype,
+  pickSectorArchetypePool,
   resolveCanvaArchetype,
   CANVA_ARCHETYPE_CATALOG,
 } from '../canva-archetype-catalog';
@@ -71,6 +72,56 @@ describe('canva-archetype-catalog', () => {
       sector: 'restaurant_cafe',
     });
     expect(beach.id).not.toBe(restaurant.id);
+  });
+
+  it('restaurant_cafe: prior-mission archetype is discouraged without leaving the sector pool', () => {
+    const base = {
+      format: 'post' as const,
+      useCase: 'daily_story',
+      caption: 'Bugün bahçemizde sizi bekliyoruz.',
+      headline: 'Bugün Bahçede',
+      sector: 'restaurant_cafe',
+    };
+    const first = resolveCanvaArchetype(base);
+    const next = resolveCanvaArchetype({
+      ...base,
+      recentTenantArchetypeIds: [first.id],
+    });
+    expect(next.id).not.toBe(first.id);
+    const pool = ['magazine_cover_drop', 'product_hero_card', 'split_feature_panel', 'polaroid_memory', 'cinematic_full_bleed', 'frosted_quote_card', 'social_proof_banner'];
+    expect(pool).toContain(next.id);
+  });
+
+  it('local_products_shop: prior-mission archetype is discouraged without leaving the sector pool', () => {
+    const base = {
+      format: 'post' as const,
+      useCase: 'daily_story',
+      caption: 'Yeni hasat raflarda.',
+      headline: 'Yeni Hasat',
+      sector: 'local_products_shop',
+    };
+    const first = resolveCanvaArchetype(base);
+    const next = resolveCanvaArchetype({
+      ...base,
+      recentTenantArchetypeIds: [first.id],
+    });
+    expect(next.id).not.toBe(first.id);
+    const pool = ['product_hero_card', 'promo_price_stack', 'graphic_shape_stack', 'split_feature_panel', 'polaroid_memory', 'before_after_diptych', 'frosted_quote_card', 'location_pin_card'];
+    expect(pool).toContain(next.id);
+  });
+
+  it('does not treat prior-mission memory as pool exhaustion', () => {
+    const pool = pickSectorArchetypePool('local_products_shop', 'post');
+    const a = resolveCanvaArchetype({
+      format: 'post',
+      useCase: 'product_highlight',
+      caption: 'Erken hasat zeytinyağı',
+      sector: 'local_products_shop',
+      usedArchetypeIds: pool,
+      recentTenantArchetypeIds: pool,
+    });
+    expect(pool).toContain(a.id);
+    expect(a.id).not.toBe('neon_night_promo');
   });
 
   it('honors tenant preferred_canva_archetypes override', () => {

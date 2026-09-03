@@ -417,6 +417,12 @@ export function resolveCanvaArchetype(input: {
   slotOrdinal?: number;
   /** Tenant brand theme override — preferred archetype ids for this workspace. */
   tenantPreferredArchetypes?: CanvaArchetypeId[];
+  /**
+   * Archetypes from prior missions (newest first). Mild repeat penalty only —
+   * does NOT count toward sector-pool exhaustion, so a shop cannot be pushed
+   * into a nightclub layout because last week used its four sector shells.
+   */
+  recentTenantArchetypeIds?: CanvaArchetypeId[];
 }): CanvaArchetypeSpec {
   const textBlob = `${input.caption ?? ''} ${input.headline ?? ''} ${input.strategicPurpose ?? ''} ${input.falDesignHint ?? ''}`;
   let explicitId = input.explicitArchetypeId;
@@ -464,6 +470,18 @@ export function resolveCanvaArchetype(input: {
         explicitId,
       });
       if (used.has(archetype.id) && !input.explicitArchetypeId) score -= 55;
+      if (!input.explicitArchetypeId) {
+        const recent = input.recentTenantArchetypeIds ?? [];
+        // If every sector-pool shell is already in prior-mission memory, do
+        // not keep penalising them — that is how a Datça shop was handed
+        // neon_night_promo. Variety yields to staying in-vertical.
+        const recentWouldExhaustPool = tenantPool.length > 0
+          && tenantPool.every((id) => recent.includes(id));
+        if (!recentWouldExhaustPool) {
+          if (recent[0] === archetype.id) score -= 32;
+          else if (recent.slice(1, 4).includes(archetype.id)) score -= 16;
+        }
+      }
       if (rotationBoostId && archetype.id === rotationBoostId && !input.explicitArchetypeId) score += 28;
       return { archetype, score };
     })

@@ -423,10 +423,11 @@ import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production'
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   classifyFalGridSurface,
-  fetchRecentFalGridSurfaces,
+  fetchTenantDesignMemory,
   rotateFalDesignSurfaceForGrid,
   type FalGridSurfaceKind,
 } from '@/lib/fal-grid-surface-rotation';
+import { resolveProductionEngineFamily } from '@/lib/production-engine-family';
 import {
   CAROUSEL_MIN_SLIDES,
   CAROUSEL_TARGET_SLIDES,
@@ -1374,10 +1375,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   const missionSessionCaptions: string[] = [];
   /** Track Canva archetypes used by fal slots in this mission — prevents one layout dominating. */
   const missionFalArchetypesUsed: string[] = [];
+  const tenantDesignMemory = missionId
+    ? await fetchTenantDesignMemory(workspaceId)
+    : { recentSurfaceKinds: [], recentArchetypeIds: [] };
   /** Recent + in-mission fal grid surfaces — prevents identical top color bands back-to-back. */
-  const missionFalGridSurfacesUsed: FalGridSurfaceKind[] = missionId
-    ? await fetchRecentFalGridSurfaces(workspaceId)
-    : [];
+  const missionFalGridSurfacesUsed: FalGridSurfaceKind[] = [
+    ...tenantDesignMemory.recentSurfaceKinds,
+  ];
 
   for (const queueItem of productionLoop) {
     // Mid-run circuit: a prior slot may have tripped fal/OpenAI billing.
@@ -4044,6 +4048,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           usedArchetypeIds: missionFalArchetypesUsed,
           falSlotOrdinal: missionFalArchetypesUsed.length,
           tenantPreferredArchetypes: readTenantPreferredCanvaArchetypes(brandTheme),
+          recentTenantArchetypeIds: tenantDesignMemory.recentArchetypeIds,
           brandLogoPosition: readBrandLogoPosition(brandTheme),
         })
       : null;
@@ -5608,6 +5613,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? { canva_archetype: falDesignCtx.brief.canvaArchetypeId }
         : {}),
       ...(slotFalGridSurface ? { fal_grid_surface: slotFalGridSurface } : {}),
+      production_engine_family: resolveProductionEngineFamily({
+        engine: falDesignEngine,
+        pipeline: assignment.pipeline,
+        slotRole: assignment.slot_role,
+        hasVideo: Boolean(videoUrl),
+      }),
       ...(slotFalRequests.length ? {
         fal_requests: slotFalRequests,
         fal_request_ids: slotFalRequests

@@ -87,6 +87,8 @@ export interface ResolveFalDesignPromptContextInput {
   agentFalDesignBrief?: Record<string, unknown> | null;
   /** Brand Kit post defaults — logo_position fallback. */
   brandLogoPosition?: FalLogoPosition | null;
+  /** Prior-mission archetypes (newest first) — mild variety, not a hard ban. */
+  recentTenantArchetypeIds?: CanvaArchetypeId[];
 }
 
 const FAL_AVOID_DEFAULTS = [
@@ -332,6 +334,7 @@ export function resolveFalDesignBrief(input: ResolveFalDesignPromptContextInput)
     usedArchetypeIds: (input.usedArchetypeIds ?? []).filter(Boolean) as CanvaArchetypeId[],
     slotOrdinal: input.falSlotOrdinal,
     tenantPreferredArchetypes: input.tenantPreferredArchetypes,
+    recentTenantArchetypeIds: (input.recentTenantArchetypeIds ?? []).filter(Boolean) as CanvaArchetypeId[],
   });
 
   const synthesized = synthesizeFalDesignBrief(input, archetype);

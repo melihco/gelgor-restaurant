@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyFalGridSurface,
   collectRecentFalGridSurfaces,
+  collectTenantDesignMemory,
   rotateFalDesignSurfaceForGrid,
 } from '../fal-grid-surface-rotation';
 
@@ -76,5 +77,31 @@ describe('collectRecentFalGridSurfaces', () => {
       },
     ]);
     expect(kinds).toEqual(['top_brand_panel', 'photo_dominant']);
+  });
+});
+
+describe('collectTenantDesignMemory', () => {
+  it('reads archetype + surface from the same artifact window', () => {
+    const memory = collectTenantDesignMemory([
+      {
+        metadata: {
+          fal_grid_surface: 'top_brand_panel',
+          canva_archetype: 'split_feature_panel',
+          fal_designer_produced: true,
+          pipeline: 'fal_design',
+        },
+        createdAt: new Date().toISOString(),
+      },
+      {
+        metadata: {
+          fal_grid_surface: 'photo_dominant',
+          design_layout_family: 'cinematic_full_bleed',
+          production_route: 'fal_ai',
+        },
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    expect(memory.recentSurfaceKinds).toEqual(['top_brand_panel', 'photo_dominant']);
+    expect(memory.recentArchetypeIds).toEqual(['split_feature_panel', 'cinematic_full_bleed']);
   });
 });
