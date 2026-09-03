@@ -83,6 +83,81 @@ def text_references_past_religious_holiday(text: str, today: date | None = None)
     return False
 
 
+# National holidays sit on fixed dates, so "is this week's copy allowed to name
+# it" is answerable without a model. The religious gate above deliberately
+# exempts these names, which left them ungated entirely: a live Gel Gör frame
+# shipped "Zafer Bayramı'nda buluşalım!" on 3 September, four days after the
+# 30 August holiday had passed.
+# Keys mirror _TR_FIXED_HOLIDAYS in context_signal_service.
+_FIXED_NAME_PATTERNS: list[tuple[tuple[int, int], re.Pattern[str]]] = [
+    ((1, 1), re.compile(r"y[ıi]lba[şs][ıi]|yeni\s*y[ıi]l[ıi]?n?\s*(kutlu|ilk)", re.I)),
+    ((4, 23), re.compile(r"23\s*nisan|çocuk\s*bayram|ulusal\s*egemenlik", re.I)),
+    ((5, 1), re.compile(r"1\s*may[ıi]s|emek\s*ve\s*dayan[ıi][şs]ma", re.I)),
+    ((5, 19), re.compile(r"19\s*may[ıi]s|gençlik\s*ve\s*spor", re.I)),
+    ((7, 15), re.compile(r"15\s*temmuz|demokrasi\s*ve\s*mill", re.I)),
+    ((8, 30), re.compile(r"zafer\s*bayram|30\s*a[ğg]ustos", re.I)),
+    ((10, 29), re.compile(r"cumhuriyet\s*bayram|29\s*ekim", re.I)),
+]
+
+_FIXED_LABELS: dict[tuple[int, int], str] = {
+    (1, 1): "Yılbaşı",
+    (4, 23): "23 Nisan",
+    (5, 1): "1 Mayıs",
+    (5, 19): "19 Mayıs",
+    (7, 15): "15 Temmuz",
+    (8, 30): "Zafer Bayramı",
+    (10, 29): "Cumhuriyet Bayramı",
+}
+
+
+def find_out_of_window_holidays(
+    text: str,
+    today: date | None = None,
+    *,
+    lead_days: int = 10,
+    grace_days: int = 1,
+) -> list[str]:
+    """Holiday names the copy invokes while the date is out of reach.
+
+    Covers the fixed national days and the religious bayrams. A holiday is in
+    reach from `lead_days` before its first day until `grace_days` after its
+    last, which is the span a weekly package can honestly promote.
+    """
+    if not text or not text.strip():
+        return []
+    today = today or date.today()
+    hits: list[str] = []
+
+    for (month, day), pattern in _FIXED_NAME_PATTERNS:
+        if not pattern.search(text):
+            continue
+        # Compare against this year's and next year's occurrence so a December
+        # mention of Yılbaşı is in window rather than eleven months stale.
+        in_window = False
+        for year in (today.year - 1, today.year, today.year + 1):
+            try:
+                occurrence = date(year, month, day)
+            except ValueError:
+                continue
+            if (occurrence - timedelta(days=lead_days)) <= today <= (
+                occurrence + timedelta(days=grace_days)
+            ):
+                in_window = True
+                break
+        if not in_window:
+            hits.append(_FIXED_LABELS[(month, day)])
+
+    for key, pattern in _NAME_PATTERNS:
+        if not pattern.search(text):
+            continue
+        if not religious_holiday_is_in_content_window(
+            key, today, lead_days=lead_days, grace_days=grace_days,
+        ):
+            hits.append("Ramazan Bayramı" if key == "ramazan_bayram" else "Kurban Bayramı")
+
+    return hits
+
+
 def filter_urgent_ideas_for_date(
     ideas: list[Any],
     today: date | None = None,

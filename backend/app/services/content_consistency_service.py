@@ -27,6 +27,53 @@ from typing import Any
 from app.crew.cta_localization import detect_text_language, localize_cta, resolve_language_code, resolve_output_language
 
 
+# Words that only exist between us and the studio. The slot brief has to name
+# the deliverable ("Tipografi poster story") for the idea to be written for the
+# right slot, and the model occasionally answers in that vocabulary instead of
+# the brand's. Deliberately narrow: "story", "post" and "reel" are excluded
+# because brands do say them to customers, and "afiş" is legitimate Turkish for
+# an event poster the venue is actually promoting.
+_CRAFT_WORDS: tuple[str, ...] = (
+    "tipografi",
+    "typography",
+    "poster",
+    "şablon",
+    "sablon",
+    "template",
+    "mockup",
+    "placeholder",
+    "lorem ipsum",
+    "carousel",
+    "karusel",
+    "slot",
+    "cta",
+)
+
+# Turkish agglutinates, so the stem has to be allowed to carry suffixes:
+# anchoring on a closing word boundary would catch "Tipografi ile Huzur" and
+# miss "Tipografimiz". None of these stems prefix an unrelated Turkish word.
+_CRAFT_PATTERN = re.compile(
+    r"(?<![\wğüşıöçĞÜŞİÖÇ])(" + "|".join(_CRAFT_WORDS) + r")[\wğüşıöçĞÜŞİÖÇ]*",
+    re.IGNORECASE,
+)
+
+
+def find_production_craft_words(text: str) -> list[str]:
+    """Studio vocabulary that leaked into a line meant for customers.
+
+    Returns the offending stems, so the message stays stable whatever suffix
+    the model attached.
+    """
+    if not text or not text.strip():
+        return []
+    seen: list[str] = []
+    for match in _CRAFT_PATTERN.finditer(text):
+        word = match.group(1).lower()
+        if word not in seen:
+            seen.append(word)
+    return seen
+
+
 @dataclass
 class ConsistencyIssue:
     severity: str        # "warning" | "error"
@@ -318,6 +365,62 @@ def check_weekly_content(
             suggestion=(
                 "Rewrite in the current season. Season is not a variety dimension — "
                 "vary sub-product, daypart, customer segment, or content angle instead."
+            ),
+        ))
+
+    # ── Check 8: Production craft words in publishable copy ──────────────
+    # The slot brief names each deliverable in production language, and the
+    # model sometimes answers with that language instead of the brand's: a live
+    # Gel Gör idea for the "Tipografi poster story" slot carried the headline
+    # "Tipografi ile Huzur!". No customer-facing line calls itself a poster.
+    craft_hits: list[str] = []
+    for c in concepts:
+        line = " ".join(
+            str(c.get(k) or "") for k in ("headline", "concept_title", "subline")
+        )
+        for word in find_production_craft_words(line):
+            title = str(c.get("headline") or c.get("concept_title") or "?")[:60]
+            craft_hits.append(f"{title} → “{word}”")
+
+    if craft_hits:
+        issues.append(ConsistencyIssue(
+            severity="error",
+            check="craft_word_leak",
+            description=(
+                f"{len(craft_hits)} headline(s) print production vocabulary: "
+                + "; ".join(craft_hits[:4])
+            ),
+            suggestion=(
+                "Say the slot's subject in the brand's voice. The slot name "
+                "describes the deliverable to the studio, never to the customer."
+            ),
+        ))
+
+    # ── Check 9: Holiday the calendar cannot reach ───────────────────────
+    from app.services.holiday_date_gate import find_out_of_window_holidays
+
+    stale_holidays: list[str] = []
+    for c in concepts:
+        copy_blob = " ".join(
+            str(c.get(k) or "")
+            for k in ("headline", "concept_title", "subline", "caption_draft",
+                      "caption", "hook")
+        )
+        for name in find_out_of_window_holidays(copy_blob):
+            title = str(c.get("headline") or c.get("concept_title") or "?")[:60]
+            stale_holidays.append(f"{title} → “{name}”")
+
+    if stale_holidays:
+        issues.append(ConsistencyIssue(
+            severity="error",
+            check="holiday_out_of_window",
+            description=(
+                f"{len(stale_holidays)} piece(s) invoke a holiday this week cannot "
+                "reach: " + "; ".join(stale_holidays[:4])
+            ),
+            suggestion=(
+                "Drop the holiday and write to what is actually happening this "
+                "week. Only holidays in the verified upcoming list may be named."
             ),
         ))
 
