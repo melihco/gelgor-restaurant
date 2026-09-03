@@ -36,4 +36,13 @@ describe('isNonRetryableProductionFailure', () => {
       isNonRetryableProductionFailure('Caption–görsel tema çatışması — "Brunch" için uygun galeri fotoğrafı yok'),
     ).toBe(true);
   });
+
+  it('detects gallery volume shortfall by code and by shoot-request copy', () => {
+    expect(isNonRetryableProductionFailure(null, 'gallery_volume_shortfall')).toBe(true);
+    expect(
+      isNonRetryableProductionFailure(
+        'Galeride yeterli farklı marka fotoğrafı yok — bu slot için yeni çekim yükleyin',
+      ),
+    ).toBe(true);
+  });
 });

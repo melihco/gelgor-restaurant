@@ -34,6 +34,7 @@ import {
   missionGallerySlotKey,
   resolveQueueGalleryCapacityReroutes,
 } from '@/lib/auto-produce/gallery-orchestrator';
+import { resolveQueueGalleryVolumeWithholds } from '@/lib/auto-produce/gallery-volume-gate';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { normalizeBrandLanguagesInput } from '@/lib/cta-localization';
 
@@ -295,6 +296,20 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
 
+    const volumeWithholds = resolveQueueGalleryVolumeWithholds({
+      productionLoop: productionQueue,
+      galleryPhotos: gctx.photos,
+      hasRealBrandPhotos: gctx.hasRealPhotos,
+      assignments: missionGalleryAssignments,
+      capacityReroutes,
+    });
+    if (volumeWithholds.size > 0) {
+      console.warn(
+        `[auto-produce/plan] gallery volume withhold: ${volumeWithholds.size} slot(s) `
+        + `— unique photos ${gctx.photos.length} cannot cover gallery demand`,
+      );
+    }
+
     const catalogSlotByKey = new Map(
       (brandActiveSlots?.slots ?? []).map((s) => [s.slotKey, s]),
     );
@@ -303,6 +318,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       const galleryKey = missionGallerySlotKey(item.ideaIndex, String(role));
       const assigned = missionGalleryAssignments.get(galleryKey);
       const reroutedPipeline = capacityReroutes.get(galleryKey);
+      const volumeWithheld = volumeWithholds.has(galleryKey);
       const catalogSlotKey = item.assignment.catalog_slot_key
         ?? (item.idea.catalog_slot_key as string | undefined)
         ?? null;
@@ -320,12 +336,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           ?? null,
         backfillSlotKey: `${item.ideaIndex}:${role}`,
         sourceTrack: 'ideation',
-        payload: assigned?.url && !reroutedPipeline
+        payload: volumeWithheld
           ? {
-            galleryPhotoUrl: assigned.url,
-            galleryMatchScore: assigned.score ?? null,
+            galleryVolumeWithheld: true,
+            withholdReason: 'gallery_volume_shortfall',
           }
-          : null,
+          : assigned?.url && !reroutedPipeline
+            ? {
+              galleryPhotoUrl: assigned.url,
+              galleryMatchScore: assigned.score ?? null,
+            }
+            : null,
       };
     });
 

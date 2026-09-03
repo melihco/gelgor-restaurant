@@ -751,6 +751,8 @@ async def requeue_exhausted(
         permanent_filter += """
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%gallery_volume_shortfall%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%yeni çekim yükleyin%'
         """
     attempts_filter = ""
     if not include_gallery_theme_retry and not include_billing_retry:

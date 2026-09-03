@@ -338,6 +338,11 @@ import {
   tryGalleryFailureEscalation,
 } from '@/lib/auto-produce/gallery-orchestrator';
 import {
+  GALLERY_VOLUME_SHORTFALL_CODE,
+  galleryVolumeShortfallMessage,
+  resolveQueueGalleryVolumeWithholds,
+} from '@/lib/auto-produce/gallery-volume-gate';
+import {
   createDefaultNexusClient,
 } from './nexus-client';
 import {
@@ -1346,6 +1351,26 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     );
   }
 
+  // Unique brand photos < gallery-consuming slots → withhold the overflow.
+  // Rotation would republish the hero; fal_only would invent a visual. The
+  // customer is asked for a shoot instead. Demand ignores capacity-rerouted
+  // slots (those already left the gallery path).
+  const missionVolumeWithholds = missionId
+    ? resolveQueueGalleryVolumeWithholds({
+      productionLoop: fullProductionQueue,
+      galleryPhotos,
+      hasRealBrandPhotos,
+      assignments: missionGalleryAssignments,
+      capacityReroutes: missionCapacityReroutes,
+    })
+    : new Set<string>();
+  if (missionVolumeWithholds.size > 0) {
+    console.warn(
+      `[auto-produce] gallery volume withhold: ${missionVolumeWithholds.size} slot(s) `
+      + `— unique photos cannot cover gallery demand`,
+    );
+  }
+
   const missionSessionCaptions: string[] = [];
   /** Track Canva archetypes used by fal slots in this mission — prevents one layout dominating. */
   const missionFalArchetypesUsed: string[] = [];
@@ -1695,6 +1720,21 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ...assignment,
         pipeline: capacityReroutePipeline as typeof assignment.pipeline,
       };
+    }
+    const volumeSlotKey = missionGallerySlotKey(ideaIndex, String(assignment.slot_role));
+    if (missionVolumeWithholds.has(volumeSlotKey)) {
+      console.warn(
+        `[auto-produce] gallery volume withhold ${ideaIndex}:${assignment.slot_role} `
+        + `— ask the customer for a new shoot`,
+      );
+      results.push({
+        title: headline,
+        imageUrl: '',
+        error: galleryVolumeShortfallMessage(),
+        errorCode: GALLERY_VOLUME_SHORTFALL_CODE,
+        slotKey: `${ideaIndex}:${String(assignment.slot_role)}`,
+      });
+      continue;
     }
     // New Brief: kullanıcı story seçtiyse fal_reel pipeline olsa da feed'de story olarak etiketle.
     const kind = adHocBrief && pkgFmt === 'story'

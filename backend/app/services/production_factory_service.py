@@ -402,11 +402,14 @@ def _slot_error_code_map(produce_data: dict | None) -> dict[str, str]:
 
 
 GALLERY_THEME_MISMATCH_CODE = "gallery_theme_mismatch"
+GALLERY_VOLUME_SHORTFALL_CODE = "gallery_volume_shortfall"
 _NON_RETRYABLE_FAILURE_MARKERS = (
     "caption–görsel tema çatışması",
     "caption-görsel tema çatışması",
     "tema çatışması",
     GALLERY_THEME_MISMATCH_CODE,
+    GALLERY_VOLUME_SHORTFALL_CODE,
+    "yeni çekim yükleyin",
 )
 
 
@@ -427,7 +430,8 @@ def _is_non_retryable_slot_failure(
         if (
             row_error
             and (reason or "").strip() == row_error.strip()
-            and codes.get(slot_key, "").strip().lower() == GALLERY_THEME_MISMATCH_CODE
+            and codes.get(slot_key, "").strip().lower()
+            in {GALLERY_THEME_MISMATCH_CODE, GALLERY_VOLUME_SHORTFALL_CODE}
         ):
             return True
     return False
@@ -464,6 +468,24 @@ def _resolve_slot_failure_reason(
     if withheld > 0 and produced == 0:
         return "withheld_quality_gate"
     return batch_reason or "no_artifact"
+
+
+def _job_payload_dict(job: dict[str, Any]) -> dict[str, Any]:
+    payload = job.get("payload")
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _job_gallery_volume_withheld(job: dict[str, Any]) -> bool:
+    """Plan stamped this slot as overflow — do not spend a produce call on it."""
+    payload = _job_payload_dict(job)
+    if payload.get("galleryVolumeWithheld") is True:
+        return True
+    return str(payload.get("withholdReason") or "").strip() == "gallery_volume_shortfall"
 
 
 def _gallery_assignments_from_batch(batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -560,6 +582,18 @@ async def drain_production_jobs(
         if not batch:
             break
         claimed_total += len(batch)
+        withheld_jobs = [job for job in batch if _job_gallery_volume_withheld(job)]
+        if withheld_jobs:
+            for job in withheld_jobs:
+                await jobs.mark_failed(
+                    job["id"],
+                    "Galeride yeterli farklı marka fotoğrafı yok — bu slot için yeni çekim yükleyin",
+                    retryable=False,
+                )
+                failed_total += 1
+            batch = [job for job in batch if not _job_gallery_volume_withheld(job)]
+            if not batch:
+                continue
         slot_keys = [f"{job['idea_index']}:{job['slot_role']}" for job in batch]
         gallery_slot_assignments = _gallery_assignments_from_batch(batch)
         catalog_slot_bindings = _catalog_bindings_from_batch(batch)

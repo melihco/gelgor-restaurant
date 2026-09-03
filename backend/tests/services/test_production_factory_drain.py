@@ -102,6 +102,29 @@ def test_is_non_retryable_slot_failure_detects_gallery_theme_mismatch() -> None:
     assert pfs._is_non_retryable_slot_failure("Remotion 422: photo unreachable") is False
 
 
+def test_is_non_retryable_slot_failure_detects_gallery_volume_shortfall() -> None:
+    produce = {
+        "results": [
+            {
+                "slotKey": "3:organic_story_still",
+                "error": "Galeride yeterli farklı marka fotoğrafı yok — bu slot için yeni çekim yükleyin",
+                "errorCode": "gallery_volume_shortfall",
+            },
+        ],
+    }
+    assert pfs._is_non_retryable_slot_failure(
+        "Galeride yeterli farklı marka fotoğrafı yok — bu slot için yeni çekim yükleyin",
+        produce_data=produce,
+        slot_key="3:organic_story_still",
+    ) is True
+    assert pfs._job_gallery_volume_withheld({
+        "payload": {"galleryVolumeWithheld": True, "withholdReason": "gallery_volume_shortfall"},
+    }) is True
+    assert pfs._job_gallery_volume_withheld({
+        "payload": {"galleryPhotoUrl": "https://cdn.example.com/p.jpg"},
+    }) is False
+
+
 def test_resolve_bullmq_batch_reason_unreachable_not_in_flight() -> None:
     assert pfs._resolve_bullmq_batch_reason(None, http_status=0) == "auto_produce_unreachable"
     assert pfs._resolve_bullmq_batch_reason(

@@ -1,6 +1,7 @@
 /** Stable error codes emitted by auto-produce for factory retry policy. */
 
 export const GALLERY_THEME_MISMATCH_CODE = 'gallery_theme_mismatch';
+export const GALLERY_VOLUME_SHORTFALL_CODE = 'gallery_volume_shortfall';
 
 const GALLERY_THEME_MISMATCH_MESSAGE_MARKERS = [
   'caption–görsel tema çatışması',
@@ -32,9 +33,14 @@ export function isNonRetryableProductionFailure(
   errorCode?: string | null,
 ): boolean {
   const code = String(errorCode ?? '').trim().toLowerCase();
-  if (code === GALLERY_THEME_MISMATCH_CODE) return true;
+  if (code === GALLERY_THEME_MISMATCH_CODE || code === GALLERY_VOLUME_SHORTFALL_CODE) {
+    return true;
+  }
   const msg = String(error ?? '').trim().toLowerCase();
   if (!msg) return false;
+  if (msg.includes('gallery_volume_shortfall') || msg.includes('yeni çekim yükleyin')) {
+    return true;
+  }
   return GALLERY_THEME_MISMATCH_MESSAGE_MARKERS.some((marker) => msg.includes(marker));
 }
 
@@ -68,6 +74,13 @@ export function humanizeProductionSlotError(error?: string | null): string | nul
   }
   if (lower.includes('brand_gallery_insufficient')) {
     return 'Galeri yetersiz — Marka Galeri’ye kullanılabilir foto ekleyin';
+  }
+  if (
+    lower.includes('gallery_volume_shortfall')
+    || lower.includes('yeni çekim yükleyin')
+    || lower.includes('yeni cekim yukleyin')
+  ) {
+    return 'Galeride yeterli farklı foto yok — yeni çekim yükleyin';
   }
   if (lower.includes('brand_identity_stub') || lower.includes('brand_context_unavailable')) {
     return 'Marka bağlamı eksik — onboarding / mirror senkronunu tamamlayın';
