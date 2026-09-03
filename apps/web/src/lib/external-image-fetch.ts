@@ -54,3 +54,27 @@ export async function fetchExternalImageBuffer(
     return null;
   }
 }
+
+/**
+ * Fetch the bytes of a frame this app just produced, so the server can inspect it.
+ *
+ * Renders are persisted as our own relative `/api/media?key=…` paths, which
+ * `fetchExternalImageBuffer` rejects on its first line because they are not
+ * absolute URLs. Every visual review that fetched a frame that way therefore got
+ * no buffer and scored nothing: of 269 live frames only 8 carried a review flag,
+ * and all 8 said "not reviewed". Text validation never had the problem because it
+ * resolves the path first — this does the same.
+ */
+export async function fetchReviewableFrameBuffer(
+  url: string,
+  timeoutMs = 25_000,
+): Promise<Buffer | null> {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('http')) return fetchExternalImageBuffer(trimmed, timeoutMs);
+
+  const { resolveExternallyAccessibleUrl } = await import('./media-url');
+  const resolved = (await resolveExternallyAccessibleUrl(trimmed)) || '';
+  if (!resolved.startsWith('http')) return null;
+  return fetchExternalImageBuffer(resolved, timeoutMs);
+}

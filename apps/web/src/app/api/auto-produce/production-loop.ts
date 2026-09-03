@@ -4018,6 +4018,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let falGrafikerPass = true;
     let falGrafikerObservedScore: number | null = null;
     let falGrafikerReviewed = false;
+    let falTextValidated = false;
     let falDesignEngine: string | null = null;
     let brandDesignTemplateId: string | null = null;
     let brandDesignTemplateType: string | null = null;
@@ -4363,6 +4364,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       falGrafikerPass = slotCtx.state.falGrafikerPass;
       falGrafikerObservedScore = slotCtx.state.falGrafikerObservedScore ?? null;
       falGrafikerReviewed = slotCtx.state.falGrafikerReviewed === true;
+      falTextValidated = slotCtx.state.falTextValidated === true;
       falDesignEngine = slotCtx.state.falDesignEngine;
       brandDesignTemplateId = slotCtx.state.brandDesignTemplateId ?? null;
       brandDesignTemplateType = slotCtx.state.brandDesignTemplateType ?? null;
@@ -5321,11 +5323,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               ? { grafiker_observed_score: falGrafikerObservedScore }
               : {}),
             // A designed post that came back without painted copy is a failed
-            // design, and an unverified render is not a passing one either — only
-            // claim valid typography when the canvas actually carries the line.
+            // design. Beyond that, only the text validator can license this claim:
+            // reading it off falGrafikerPass meant a branch where nothing checked
+            // anything still reported valid typography, because that flag defaults
+            // to true. Unknown is now recorded as absent, not as a pass.
             ...(overlayWasPainted
-              ? (falGrafikerPass != null ? { typography_text_valid: falGrafikerPass } : {})
+              ? (falTextValidated
+                ? { typography_text_valid: falGrafikerPass !== false }
+                : {})
               : { typography_text_valid: false }),
+            text_validated: falTextValidated,
           }
         : isPremiumEditorial && imageUrl && falDesignEngine
           ? {

@@ -33,7 +33,7 @@ import {
   templateReplicaSpecFromBinding,
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
-import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
@@ -133,6 +133,8 @@ export interface FalDesignedPostResult {
   falGrafikerObservedScore?: number | null;
   /** Whether a vision review actually looked at the shipped render. */
   falGrafikerReviewed?: boolean;
+  /** Set only where validateFalCanvasText actually passed. */
+  falTextValidated?: boolean;
   /** Added to the running cost estimate. */
   costDelta: number;
   failureReason?: string;
@@ -143,7 +145,9 @@ async function scoreDesignedPostRender(
   imageUrl: string,
   headline: string,
 ): Promise<{ score: number | null; pass: boolean } | null> {
-  const buf = await fetchExternalImageBuffer(imageUrl, 25_000);
+  // Renders come back as relative /api/media paths, which the plain external
+  // fetch rejects — that is why the observed score was empty on every frame.
+  const buf = await fetchReviewableFrameBuffer(imageUrl);
   if (!buf || buf.length < 100) return null;
   const review = await runGrafikerVisionReview(buf, headline.slice(0, 60), 'poster');
   if (!review) return null;
@@ -178,6 +182,7 @@ export async function produceFalDesignedPost(
   let falGrafikerPass = true;
   let falGrafikerObservedScore: number | null = null;
   let falGrafikerReviewed = false;
+  let falTextValidated = false;
   let falDesignEngine: string | null = null;
   let costDelta = 0;
 
@@ -398,6 +403,9 @@ export async function produceFalDesignedPost(
           if (binding?.matched) continue;
           break;
         }
+        // Past this point the painted line was read back and matched the request.
+        // That is the only thing that licenses a typography_text_valid claim.
+        falTextValidated = true;
         if (binding?.matched) {
           const grafiker = await reviewDesignedPostOutput(designedUrl, input.headline);
           falGrafikerScore = grafiker.score;
@@ -610,6 +618,7 @@ export async function produceFalDesignedPost(
     falGrafikerPass,
     falGrafikerObservedScore,
     falGrafikerReviewed,
+    falTextValidated,
     falDesignEngine,
     costDelta,
   };
@@ -848,6 +857,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       state.falGrafikerPass = designed.falGrafikerPass;
       state.falGrafikerObservedScore = designed.falGrafikerObservedScore ?? null;
       state.falGrafikerReviewed = designed.falGrafikerReviewed === true;
+      state.falTextValidated = designed.falTextValidated === true;
       state.falDesignEngine = designed.falDesignEngine;
       state.costDelta += designed.costDelta;
       if (designed.failureReason && !designed.imageUrl) {

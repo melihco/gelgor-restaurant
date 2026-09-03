@@ -35,7 +35,7 @@ const h = vi.hoisted(() => ({
   isUsableGalleryPhotoUrl: vi.fn(() => true),
   generateDesignedPostImage: vi.fn(),
   generateProductShowcaseImage: vi.fn(),
-  fetchExternalImageBuffer: vi.fn(async () => Buffer.alloc(4096, 1)),
+  fetchReviewableFrameBuffer: vi.fn(async () => Buffer.alloc(4096, 1)),
   runGrafikerVisionReview: vi.fn(async () => null as { score: number | null; pass: boolean } | null),
   matchDesignTemplateToSlot: vi.fn(async () => null),
   recordDesignTemplateUsage: vi.fn(async () => undefined),
@@ -167,7 +167,7 @@ vi.mock('@/lib/typography-text-validation', () => ({
   }),
 }));
 vi.mock('@/lib/external-image-fetch', () => ({
-  fetchExternalImageBuffer: h.fetchExternalImageBuffer,
+  fetchReviewableFrameBuffer: h.fetchReviewableFrameBuffer,
 }));
 vi.mock('@/lib/grafiker-review-service', () => ({
   runGrafikerVisionReview: h.runGrafikerVisionReview,

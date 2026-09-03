@@ -37,6 +37,13 @@ export interface SlotProductionState {
   falGrafikerObservedScore?: number | null;
   /** Whether a vision review actually looked at the shipped render. */
   falGrafikerReviewed?: boolean;
+  /**
+   * Whether the painted line was actually checked against the requested one.
+   * `typography_text_valid` used to be read off the Grafiker pass flag, which
+   * defaults to true — so a branch where nothing checked anything still claimed
+   * valid typography.
+   */
+  falTextValidated?: boolean;
   falDesignEngine: string | null;
   videoProduceMeta: VideoProduceMeta | null;
   /** Locked brand design template applied this slot (onboarding fal set). */

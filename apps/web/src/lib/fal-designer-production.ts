@@ -16,7 +16,7 @@ import {
 } from '@/lib/fal-story-motion';
 import { validateFalCanvasText, validateTypographyText } from '@/lib/typography-text-validation';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
-import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { getSectorProfile } from '@/lib/sector-production-profile';
 import {
@@ -244,7 +244,10 @@ async function reviewDesignedFrame(
     slotKey?: string | null;
   },
 ): Promise<{ score: number | null; pass: boolean }> {
-  const buf = await fetchExternalImageBuffer(imageUrl, 25_000);
+  // Rendered frames are persisted as our own relative /api/media paths, which
+  // fetchExternalImageBuffer rejects outright — so the review silently never ran
+  // and every frame shipped unjudged.
+  const buf = await fetchReviewableFrameBuffer(imageUrl);
   if (!buf || buf.length < 100) return { score: null, pass: true };
   const review = await runGrafikerVisionReview(
     buf,
