@@ -4,7 +4,7 @@
  */
 import { classifyMatch, type MatchQuality, resolveArtifactMatchScore } from '@/lib/gallery-photo-matcher';
 import { getProductionBundleStatus, type ProductionBundleStatus } from '@/lib/production-bundle';
-import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
+import { GRAFIKER_HARD_FLOOR, GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import type { OutputArtifact } from '@/types';
 
 export type QualitySignalLevel = 'ok' | 'warn' | 'block';
@@ -88,20 +88,42 @@ export function buildProductionQualityScorecard(
     'textValidated',
   );
 
-  if (
-    !hardBlock
-    && (
-      grafikerPass === false
-      || (grafikerScore != null && grafikerScore < GRAFIKER_PASS_THRESHOLD && grafikerPass !== true)
-    )
-  ) {
+  // The vision reviewer could not fetch the frames it was asked to judge until
+  // 943649c, so almost nothing carried a score and this gate was silently off.
+  // With scores flowing, blocking at the pass threshold withheld 61% of output
+  // against 11% before — and the frames it withheld were not broken: a clean
+  // Gel Gör story with legible type and no clipping scored 5 while an equally
+  // clean post scored 9. The scorer cannot yet carry a publish decision at 8.
+  //
+  // So the threshold is a warning and the hard floor is the block: a 5/10 is an
+  // opinion worth surfacing, a score at or below the floor is a broken render.
+  // Raising this back to the pass threshold needs the scorer's agreement with
+  // human review measured first.
+  if (!hardBlock && grafikerScore != null && grafikerScore <= GRAFIKER_HARD_FLOOR) {
     hardBlock = true;
     hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
   }
 
+  if (
+    !hardBlock
+    && grafikerScore != null
+    && grafikerScore < GRAFIKER_PASS_THRESHOLD
+    && grafikerPass !== true
+  ) {
+    softWarnings.push(`Tasarım denetimi ${grafikerScore}/10 — gözden geçirin`);
+  }
+
+  // `typography_text_valid` is only a text verdict where the text validator
+  // actually ran; on the gallery and premium routes it mirrors the Grafiker pass
+  // flag, so blocking on it there would reimpose the same uncalibrated threshold.
+  const textValidatorRan = readBoolean(meta, 'text_validated', 'textValidated') != null;
   if (!hardBlock && typographyTextValid === false) {
-    hardBlock = true;
-    hardBlockReason = 'Görseldeki metin doğrulanamadı veya yarım kaldı';
+    if (textValidatorRan || grafikerScore == null) {
+      hardBlock = true;
+      hardBlockReason = 'Görseldeki metin doğrulanamadı veya yarım kaldı';
+    } else {
+      softWarnings.push('Görseldeki metin doğrulanmadı');
+    }
   }
 
   if (!hardBlock && matchCls?.quality === 'weak' && (matchScore ?? 0) > 5) {
