@@ -45,6 +45,12 @@ import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
 import { areFalOverlayTextsRedundant } from '@/lib/fal-caption-headline';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { resolvePhotoSpatialForDesign } from '@/lib/gallery-photo-spatial';
+import {
+  appendNumericLayoutToPrompt,
+  buildLayoutAwareRegenPromptBlock,
+  resolveFalDesignNumericLayout,
+} from '@/lib/fal-design-numeric-layout';
+import { resolveLogoPlacementFromLayout } from '@/lib/design-spec-copy-fit';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
@@ -115,6 +121,8 @@ export interface FalDesignedPostInput {
   brandTheme?: Record<string, unknown> | null;
   /** Locked gallery photo meta — caption↔photo coherence before paint. */
   galleryPhotoMeta?: GalleryPhotoMeta | null;
+  /** Resolved Canva archetype — seeds numeric composition map. */
+  canvaArchetypeId?: string | null;
   /** economy/agency/premium — cost guards for GPT retry / Ideogram fallthrough. */
   productionTier?: string | null;
   /** production-loop punchline lock — paint must not stem/rewrite. */
@@ -139,30 +147,48 @@ export interface FalDesignedPostResult {
   /** Added to the running cost estimate. */
   costDelta: number;
   failureReason?: string;
+  /** Numeric layout + fitted type — merged into artifact metadata. */
+  artifactMetaPatch?: Record<string, unknown> | null;
 }
+
+type DesignedPostReview = {
+  score: number | null;
+  pass: boolean;
+  issues?: string[];
+  textOverlap?: boolean;
+  textLegibility?: 'clear' | 'partial' | 'poor';
+  hierarchyOk?: boolean;
+};
 
 /** Raw vision read of a rendered poster — no pass policy applied. */
 async function scoreDesignedPostRender(
   imageUrl: string,
   headline: string,
-): Promise<{ score: number | null; pass: boolean } | null> {
+): Promise<DesignedPostReview | null> {
   // Renders come back as relative /api/media paths, which the plain external
   // fetch rejects — that is why the observed score was empty on every frame.
   const buf = await fetchReviewableFrameBuffer(imageUrl);
   if (!buf || buf.length < 100) return null;
   const review = await runGrafikerVisionReview(buf, headline.slice(0, 60), 'poster');
   if (!review) return null;
-  return { score: review.score ?? null, pass: review.pass };
+  return {
+    score: review.score ?? null,
+    pass: review.pass,
+    issues: review.issues,
+    textOverlap: review.text_overlap,
+    textLegibility: review.text_legibility,
+    hierarchyOk: review.hierarchy_ok,
+  };
 }
 
 async function reviewDesignedPostOutput(
   imageUrl: string,
   headline: string,
-): Promise<{ score: number | null; pass: boolean }> {
+): Promise<DesignedPostReview> {
   const review = await scoreDesignedPostRender(imageUrl, headline);
   if (!review) return { score: null, pass: true };
   return {
-    score: review.score,
+    ...review,
     pass: templateLockUsesGrafikerPass(review.score, review.pass),
   };
 }
@@ -186,6 +212,7 @@ export async function produceFalDesignedPost(
   let falTextValidated = false;
   let falDesignEngine: string | null = null;
   let costDelta = 0;
+  let artifactMetaPatch: Record<string, unknown> | null = null;
 
   try {
     const binding = input.brandTemplateBinding;
@@ -220,7 +247,7 @@ export async function produceFalDesignedPost(
       : (binding?.logoUrl ?? input.logoUrl);
     // Template library placement is SSOT when includeLogo — design-fit seat wins
     // over ad-hoc mission falLogoPlacement when both exist.
-    const logoPlacement = logoUrl
+    let logoPlacement = logoUrl
       ? (binding?.logoPlacement ?? binding?.matched?.logoPlacement ?? input.logoPlacement ?? null)
       : null;
     // Mission gallery is SSOT under gallery_only / gallery_enhanced — never prefer
@@ -317,11 +344,35 @@ export async function produceFalDesignedPost(
       // (design_spec.prompt) with mission copy swapped in, instead of rebuilding
       // a fresh prompt that may fight the template layout reference.
       const replicaSpec = templateReplicaSpecFromBinding(binding);
-      const designCardPrompt = replicaSpec
-        ? buildTemplateReplicaPrompt(replicaSpec, {
+      const numericLayout = resolveFalDesignNumericLayout({
+        archetypeId: input.canvaArchetypeId
+          ?? binding?.matched?.canvaArchetypeId
+          ?? null,
+        format: aspectRatio === '9:16' ? 'story' : 'post',
+        aspectRatio,
+        headline: canvasHeadline,
+        subtitle: dedupedSubtitle,
+        photoSpatial,
+      });
+      if (numericLayout) {
+        artifactMetaPatch = numericLayout.artifactMeta;
+        const fromLayout = resolveLogoPlacementFromLayout(numericLayout.layout);
+        if (fromLayout && logoUrl) {
+          logoPlacement = {
+            position: fromLayout.position,
+            zoneHint: fromLayout.zoneHint,
+            source: 'archetype',
+          };
+        }
+      }
+      const baseDesignCardPrompt = replicaSpec
+        ? appendNumericLayoutToPrompt(
+          buildTemplateReplicaPrompt(replicaSpec, {
             headline: canvasHeadline,
             subtitle: dedupedSubtitle,
-          }, { photoSpatial })
+          }, { photoSpatial }),
+          numericLayout,
+        )
         : (aspectRatio === '9:16'
         ? buildDesignedStoryDesignCardPrompt
         : buildDesignedPostDesignCardPrompt)({
@@ -345,6 +396,9 @@ export async function produceFalDesignedPost(
         logoUrl,
         logoPlacement,
         photoSpatial,
+        canvaArchetypeId: input.canvaArchetypeId
+          ?? binding?.matched?.canvaArchetypeId
+          ?? null,
       });
       if (replicaSpec) {
         console.log(
@@ -367,7 +421,11 @@ export async function produceFalDesignedPost(
       );
       let lastTextValidUrl: string | null = null;
       let lastTextValidScore: number | null = null;
+      let lastRegenBlock = '';
       for (let attempt = 0; attempt < maxGptAttempts; attempt += 1) {
+        const designCardPrompt = lastRegenBlock
+          ? `${baseDesignCardPrompt}\n\n${lastRegenBlock}`
+          : baseDesignCardPrompt;
         const designedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
           designCardPrompt,
@@ -425,6 +483,15 @@ export async function produceFalDesignedPost(
             falDesignEngine = 'gpt_image_designed';
             costDelta += 0.04;
             break;
+          }
+          if (numericLayout) {
+            lastRegenBlock = buildLayoutAwareRegenPromptBlock(numericLayout, {
+              issues: grafiker.issues,
+              textOverlap: grafiker.textOverlap,
+              textLegibility: grafiker.textLegibility,
+              hierarchyOk: grafiker.hierarchyOk,
+              score: grafiker.score,
+            });
           }
           console.warn(
             `[auto-produce] [fal-design] template lock grafiker ${grafiker.score ?? '—'}/10 — retry ${attempt + 2}/${maxGptAttempts}`,
@@ -587,6 +654,9 @@ export async function produceFalDesignedPost(
         // Keep replica spec so Ideogram path can use layout-ref fallback in fal-designer.
         templateReplica: templateReplicaSpecFromBinding(binding),
         libraryQualityFalFallback: allowPinnedIdeogram,
+        canvaArchetypeId: input.canvaArchetypeId
+          ?? binding?.matched?.canvaArchetypeId
+          ?? null,
       });
       imageUrl = still.imageUrl;
       falGrafikerScore = still.grafikerScore;
@@ -628,6 +698,7 @@ export async function produceFalDesignedPost(
     falTextValidated,
     falDesignEngine,
     costDelta,
+    artifactMetaPatch,
   };
 }
 
@@ -857,6 +928,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       logoPlacement: templateBinding.logoPlacement ?? inputs.falLogoPlacement,
       productionTier: inputs.productionTier,
       galleryPhotoMeta,
+      canvaArchetypeId: inputs.canvaArchetypeId
+        ?? templateBinding.matched?.canvaArchetypeId
+        ?? null,
     });
     if (designed) {
       if (designed.imageUrl != null) state.imageUrl = designed.imageUrl;
@@ -869,6 +943,12 @@ export const falDesignHandler: ProductionPipelineHandler = {
       state.costDelta += designed.costDelta;
       if (designed.failureReason && !designed.imageUrl) {
         state.pipelineFailureReason = designed.failureReason;
+      }
+      if (designed.artifactMetaPatch) {
+        state.artifactMetaPatch = {
+          ...(state.artifactMetaPatch ?? {}),
+          ...designed.artifactMetaPatch,
+        };
       }
       if (templateBinding.matched) {
         state.brandDesignTemplateId = templateBinding.matched.id;

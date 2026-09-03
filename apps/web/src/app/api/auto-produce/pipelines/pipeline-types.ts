@@ -157,6 +157,8 @@ export interface SlotProductionInputs {
   falBodyFont?: string;
   /** FD/calendar layout family hint — guides Satori panel family + fal prompt. */
   layoutFamilyHint?: string | null;
+  /** Resolved Canva archetype — seeds numeric composition map on fal_design. */
+  canvaArchetypeId?: string | null;
   /** Production profile tier — VIDEO_TIER_SCOPE caps non-premium reel retries. */
   productionTier?: string | null;
 }

@@ -67,6 +67,7 @@ import {
   STORY_CANVAS,
 } from '@/lib/design-canvas-aspect';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
+import { resolveFalDesignNumericLayout } from '@/lib/fal-design-numeric-layout';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
 import { serverConfig } from '@/lib/server-config';
@@ -208,6 +209,8 @@ export interface FalDesignerInput {
   templateReplica?: import('@/lib/brand-design-template-production').TemplateReplicaSpec | null;
   /** Measured gallery photo layout — type seat / subject clearance. */
   photoSpatial?: GalleryPhotoSpatial | null;
+  /** Canva archetype — seeds the numeric composition map on fal_design. */
+  canvaArchetypeId?: string | null;
   /** economy/agency/starter — VIDEO_TIER_SCOPE caps reel I2V retries. */
   productionTier?: string | null;
   /**
@@ -598,6 +601,8 @@ type DesignCardPromptInput = {
   captionAwareHeadline?: boolean;
   /** Measured gallery photo layout — type seat / subject clearance. */
   photoSpatial?: GalleryPhotoSpatial | null;
+  /** Canva archetype — seeds the numeric composition map on fal_design. */
+  canvaArchetypeId?: string | null;
 };
 
 /**
@@ -1067,8 +1072,18 @@ function buildDesignedDesignCardPrompt(
     // Mission/calendar punchlines are authoritative — never rebias to caption stubs.
     preservePlannedHeadline: input.captionAwareHeadline !== true,
   });
-  const safeHeadline = overlayCopy.headline;
-  const safeSubtitle = overlayCopy.subtitle;
+  const numericLayout = resolveFalDesignNumericLayout({
+    archetypeId: input.canvaArchetypeId,
+    format: canvasChannel === 'feed_post' ? 'post' : canvasChannel,
+    aspectRatio: isVertical ? '9:16' : input.aspectRatio,
+    headline: overlayCopy.headline,
+    subtitle: overlayCopy.subtitle,
+    photoSpatial: input.photoSpatial,
+  });
+  const safeHeadline = numericLayout?.textFit.fittedHeadline || overlayCopy.headline;
+  const safeSubtitle = numericLayout
+    ? (numericLayout.textFit.fittedSubtitle ?? undefined)
+    : overlayCopy.subtitle;
 
   const logoChannel: 'feed_post' | 'reel' | 'story' = isStory
     ? 'story'
@@ -1125,6 +1140,7 @@ function buildDesignedDesignCardPrompt(
   // intensity/HARD CONTRACTS (GPT design-card path tolerates longer prompts).
   const promptLimit = (isReel || isStory || input.aspectRatio === '9:16' ? 6200 : 5600)
     + (input.logoUrl ? 900 : 0)
+    + (numericLayout ? 720 : 0)
     + 320
     + 220;
 
@@ -1233,6 +1249,7 @@ function buildDesignedDesignCardPrompt(
     onCanvasTextContract,
     copyFitLock,
     vibeFontLock,
+    numericLayout?.promptBlock ?? '',
     photoSpatialLock || FAL_SUBJECT_CLEARANCE_DIRECTIVE,
     captionMessageLock,
     designHarmonyLock,
@@ -1681,6 +1698,18 @@ export async function produceFalDesignerStill(
         const { appendPhotoSpatialToReplicaPrompt } = await import('@/lib/brand-design-template-production');
         replicaPrompt = appendPhotoSpatialToReplicaPrompt(replicaPrompt, photoSpatial);
       }
+      const replicaNumeric = resolveFalDesignNumericLayout({
+        archetypeId: input.canvaArchetypeId,
+        format: input.aspectRatio === '9:16' ? 'story' : 'post',
+        aspectRatio: input.aspectRatio,
+        headline: displayHeadline,
+        subtitle: replicaSublineOff ? undefined : captionSubtitle,
+        photoSpatial,
+      });
+      if (replicaPrompt && replicaNumeric) {
+        const { appendNumericLayoutToPrompt } = await import('@/lib/fal-design-numeric-layout');
+        replicaPrompt = appendNumericLayoutToPrompt(replicaPrompt, replicaNumeric);
+      }
       const groundedPrompt = replicaPrompt ?? buildPrompt({
         vibe: input.vibe,
         headline: displayHeadline,
@@ -1701,6 +1730,7 @@ export async function produceFalDesignerStill(
         occasion: input.occasion,
         logoPlacement: input.logoPlacement,
         photoSpatial,
+        canvaArchetypeId: input.canvaArchetypeId,
       });
       console.log(
         `[fal-designer] grounded edit start: headline="${displayHeadline.slice(0, 40)}" ` +

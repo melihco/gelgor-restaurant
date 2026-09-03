@@ -4372,6 +4372,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           layoutFamilyHint: calendarDesignLayout?.layoutFamilyHint
             ?? assignment.layout_family_hint
             ?? null,
+          canvaArchetypeId: falDesignCtx?.brief.canvaArchetypeId
+            ?? calendarDesignLayout?.canvaArchetypeId
+            ?? null,
         },
         state: {
           imageUrl,

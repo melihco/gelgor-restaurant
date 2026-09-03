@@ -169,6 +169,7 @@ describe('buildDesignedPostDesignCardPrompt', () => {
       brandName: 'Garden Kitchen',
       sector: 'restaurant_cafe',
       aspectRatio: '4:5',
+      canvaArchetypeId: 'split_feature_panel',
       photoSpatial: {
         subjectAnchor: 'mid_right',
         quietAnchors: ['top_left', 'mid_left'],
@@ -184,6 +185,9 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('mid-right');
     expect(prompt).toContain('upper-left');
     expect(prompt).not.toContain('SUBJECT CLEARANCE (MANDATORY)');
+    expect(prompt).toContain('COMPOSITION MAP (NUMERIC — MANDATORY)');
+    expect(prompt).toContain('EditorialSplit');
+    expect(prompt).toContain('TYPE FIT (MEASURED BEFORE PAINT');
   });
 
   it('beach_club: PHOTO SPATIAL lock seats type in the quiet sky band', () => {
@@ -194,6 +198,7 @@ describe('buildDesignedPostDesignCardPrompt', () => {
       brandName: 'Coast Club',
       sector: 'beach_club',
       aspectRatio: '9:16',
+      canvaArchetypeId: 'cinematic_full_bleed',
       photoSpatial: {
         subjectAnchor: 'bottom_center',
         quietAnchors: ['top_left', 'top_center', 'top_right'],
@@ -209,6 +214,8 @@ describe('buildDesignedPostDesignCardPrompt', () => {
     expect(prompt).toContain('lower-center');
     expect(prompt).toContain('upper-left');
     expect(prompt).toContain('top band');
+    expect(prompt).toContain('COMPOSITION MAP (NUMERIC — MANDATORY)');
+    expect(prompt).toContain('9:16');
   });
 
   it('maps Ideogram photo_overlay to gradient_mesh when a gallery reference exists', () => {
