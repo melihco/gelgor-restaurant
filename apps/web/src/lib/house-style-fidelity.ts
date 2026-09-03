@@ -76,8 +76,9 @@ function normFont(value: string | null | undefined): string {
 function normHex(value: string | null | undefined): string {
   const raw = String(value ?? '').trim();
   const m = raw.match(/^#([0-9a-fA-F]{3,8})$/);
-  if (!m) return '';
-  let h = m[1].toLowerCase();
+  const captured = m?.[1];
+  if (!captured) return '';
+  let h = captured.toLowerCase();
   if (h.length === 3 || h.length === 4) {
     h = h.split('').map((c) => c + c).join('');
   }

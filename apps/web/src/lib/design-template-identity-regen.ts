@@ -89,7 +89,7 @@ export async function runDesignTemplateIdentityRegen(
       generated: 0,
     });
     const { runGenerateDesignTemplates } = await import(
-      '@/app/api/brand-context/[workspaceId]/generate-design-templates/route'
+      '@/lib/run-generate-design-templates'
     );
     const result = await runGenerateDesignTemplates(workspaceId, {
       archiveExisting: true,

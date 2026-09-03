@@ -42,11 +42,9 @@ export function parseTemplateFillRecipe(raw: unknown): TemplateFillRecipe | null
   const offerings = Array.isArray(o.offerings)
     ? o.offerings.map((x) => String(x).trim()).filter(Boolean).slice(0, 4)
     : [];
-  const antiPatterns = Array.isArray(o.antiPatterns ?? o.anti_patterns)
-    ? (o.antiPatterns ?? o.anti_patterns as unknown[])
-      .map((x) => String(x).trim())
-      .filter(Boolean)
-      .slice(0, 4)
+  const rawAnti = o.antiPatterns ?? o.anti_patterns;
+  const antiPatterns = Array.isArray(rawAnti)
+    ? rawAnti.map((x) => String(x).trim()).filter(Boolean).slice(0, 4)
     : [];
   return {
     version: TEMPLATE_FILL_RECIPE_VERSION,

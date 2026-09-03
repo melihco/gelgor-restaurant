@@ -2115,8 +2115,8 @@ function TypographyConfirmStep({
             currentTheme,
             headingFont,
             bodyFont,
-            typographyDesign: confirmed,
-            postDesignDefaults: postDefaults,
+            typographyDesign: confirmed as unknown as Record<string, unknown>,
+            postDesignDefaults: postDefaults as unknown as Record<string, unknown>,
             palette: {
               ...prevPalette,
               primary,
