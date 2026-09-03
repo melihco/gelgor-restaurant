@@ -51,6 +51,14 @@ import {
   resolveFalDesignNumericLayout,
 } from '@/lib/fal-design-numeric-layout';
 import { resolveLogoPlacementFromLayout } from '@/lib/design-spec-copy-fit';
+import { compileBrandDesignConstitution } from '@/lib/brand-design-constitution';
+import {
+  expectedFromConstitution,
+  houseFidelityArtifactMeta,
+  observedFromRecipe,
+  scoreHouseStyleFidelity,
+} from '@/lib/house-style-fidelity';
+import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
@@ -344,6 +352,35 @@ export async function produceFalDesignedPost(
       // (design_spec.prompt) with mission copy swapped in, instead of rebuilding
       // a fresh prompt that may fight the template layout reference.
       const replicaSpec = templateReplicaSpecFromBinding(binding);
+      const houseConstitution = compileBrandDesignConstitution({
+        brandName: input.brandName,
+        sector: input.sector,
+        location: input.location,
+        brandTheme: input.brandTheme,
+        visualDnaTone: input.visualDnaTone,
+        tokens: {
+          headingFont: input.headingFont,
+          bodyFont: input.bodyFont,
+          primary: input.brandColors.primary,
+          accent: input.brandColors.accent,
+        },
+      });
+      const houseFidelity = scoreHouseStyleFidelity({
+        expected: expectedFromConstitution(houseConstitution, {
+          logoTreatment: resolveFalTemplateProductionSettings(input.brandTheme).logo_treatment,
+        }),
+        observed: observedFromRecipe(binding?.matched?.recipe, {
+          prompt: replicaSpec?.prompt ?? null,
+          includeLogo: binding?.matched?.prominentLogo ?? Boolean(logoUrl),
+          canvaArchetypeId: input.canvaArchetypeId
+            ?? binding?.matched?.canvaArchetypeId
+            ?? null,
+        }),
+      });
+      artifactMetaPatch = {
+        ...(artifactMetaPatch ?? {}),
+        ...houseFidelityArtifactMeta(houseFidelity),
+      };
       const numericLayout = resolveFalDesignNumericLayout({
         archetypeId: input.canvaArchetypeId
           ?? binding?.matched?.canvaArchetypeId
@@ -355,7 +392,10 @@ export async function produceFalDesignedPost(
         photoSpatial,
       });
       if (numericLayout) {
-        artifactMetaPatch = numericLayout.artifactMeta;
+        artifactMetaPatch = {
+          ...(artifactMetaPatch ?? {}),
+          ...numericLayout.artifactMeta,
+        };
         const fromLayout = resolveLogoPlacementFromLayout(numericLayout.layout);
         if (fromLayout && logoUrl) {
           logoPlacement = {

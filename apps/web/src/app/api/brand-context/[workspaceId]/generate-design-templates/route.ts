@@ -157,7 +157,7 @@ async function validateGenerationPrereqs(workspaceId: string): Promise<
   return { ok: true };
 }
 
-async function runGenerateDesignTemplates(
+export async function runGenerateDesignTemplates(
   workspaceId: string,
   body: GenerateBody,
 ): Promise<GenerateSuccess> {

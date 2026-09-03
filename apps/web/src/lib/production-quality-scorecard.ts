@@ -136,6 +136,16 @@ export function buildProductionQualityScorecard(
     softWarnings.push('Galeri fotoğrafı konuyla zayıf eşleşiyor');
   }
 
+  const houseFidelity = readNumber(meta, 'house_fidelity_score', 'houseFidelityScore');
+  const houseWarn = readBoolean(meta, 'house_fidelity_warn', 'houseFidelityWarn');
+  if (!hardBlock && (houseWarn === true || (houseFidelity != null && houseFidelity < 7))) {
+    softWarnings.push(
+      houseFidelity != null
+        ? `Ev dili sapması ${houseFidelity}/10 — font / palet / compose`
+        : 'Ev dili sapması — font / palet / compose',
+    );
+  }
+
   if (bundleStatus === 'failed') {
     softWarnings.push('Üretim hatası — yeniden üretmeyi deneyin');
   }

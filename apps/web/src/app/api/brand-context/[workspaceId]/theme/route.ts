@@ -8,9 +8,11 @@
  * NOTE: Python returns snake_case; we normalise to camelCase here so the
  * frontend BrandTheme interface (camelCase) is satisfied transparently.
  */
-import { NextRequest, NextResponse } from 'next/server';
-import { proxyToCrewBackend } from '@/lib/crew-proxy';
+import { NextRequest, NextResponse, after } from 'next/server';
+import { fetchCrewBackendJson, proxyToCrewBackend } from '@/lib/crew-proxy';
 import { brsCache } from '@/lib/server-ttl-cache';
+import { identityShiftFields, readHouseIdentityFromTheme } from '@/lib/house-style-fidelity';
+import { runDesignTemplateIdentityRegen } from '@/lib/design-template-identity-regen';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -68,6 +70,12 @@ export async function PUT(
   const { workspaceId } = await context.params;
   const rawBody = await req.json() as { theme?: Record<string, unknown> };
 
+  const prevThemeRes = await fetchCrewBackendJson<{ theme?: Record<string, unknown> }>(
+    `/api/v1/brand-context/${workspaceId}/theme`,
+    { workspaceId, timeoutMs: 10_000 },
+  );
+  const previousIdentity = readHouseIdentityFromTheme(prevThemeRes.ok ? prevThemeRes.data?.theme ?? null : null);
+
   // Convert camelCase theme keys → snake_case before sending to Python Pydantic schema
   const body = rawBody.theme
     ? { theme: camelToSnake(rawBody.theme) }
@@ -81,6 +89,13 @@ export async function PUT(
     const data = await upstream.json() as { theme: Record<string, unknown> | null; updated_at?: string | null; ok?: boolean };
     if (upstream.ok) {
       brsCache.delete(workspaceId);
+      const nextIdentity = readHouseIdentityFromTheme(rawBody.theme ?? data.theme);
+      const shifted = identityShiftFields(previousIdentity, nextIdentity);
+      if (shifted.length) {
+        after(() => {
+          void runDesignTemplateIdentityRegen(workspaceId, shifted);
+        });
+      }
     }
     const normalised = {
       ok: data.ok ?? true,
