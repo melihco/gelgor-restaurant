@@ -1174,6 +1174,7 @@ def run_content_ideation(
                 content_pillars=pillars_for_batch,
                 brand_ctas=brand.default_ctas,
                 brand_languages=brand.languages,
+                catalog_slot_plan=catalog_slot_plan,
             )
 
             has_errors = any(i.severity == "error" for i in report.issues)
@@ -1212,6 +1213,7 @@ def run_content_ideation(
                             content_pillars=pillars_for_batch,
                             brand_ctas=brand.default_ctas,
                             brand_languages=brand.languages,
+                            catalog_slot_plan=catalog_slot_plan,
                         )
                         if _revision_loses_ideas(concepts, revised_concepts):
                             logger.warning(

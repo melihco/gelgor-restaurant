@@ -23,8 +23,24 @@ import pytest
 from app.services.content_consistency_service import (
     check_weekly_content,
     find_production_craft_words,
+    slot_subject_tokens,
 )
 from app.services.holiday_date_gate import find_out_of_window_holidays
+
+RESTAURANT_PLAN = [
+    {"slot_key": "restaurant_cafe_table_ready_story", "label_tr": "Masa hazır story"},
+    {"slot_key": "restaurant_cafe_new_menu_story", "label_tr": "Yeni menü story"},
+    {"slot_key": "restaurant_cafe_farm_to_table_story",
+     "label_tr": "Çiftlikten sofraya story"},
+    {"slot_key": "restaurant_cafe_typography_poster_story",
+     "label_tr": "Tipografi poster story"},
+]
+
+SHOP_PLAN = [
+    {"slot_key": "local_products_shop_new_arrival_story", "label_tr": "Yeni ürün story"},
+    {"slot_key": "local_products_shop_gift_bundle_post", "label_tr": "Hediye seti"},
+    {"slot_key": "local_products_shop_harvest_story", "label_tr": "Hasat story"},
+]
 
 
 class TestCraftWords:
@@ -110,6 +126,168 @@ class TestHolidayWindow:
 
     def test_empty_text_is_not_an_error(self):
         assert find_out_of_window_holidays("", self.SEP_3) == []
+
+
+class TestSlotSubjectTokens:
+    def test_reads_the_subject_off_the_turkish_label(self):
+        assert slot_subject_tokens(
+            "Çiftlikten sofraya story", "restaurant_cafe_farm_to_table_story"
+        ) == ["ciftlikten", "sofraya"]
+
+    def test_a_treatment_only_slot_has_no_subject(self):
+        """"Tipografi poster story" says how it is made, never what it is about."""
+        assert slot_subject_tokens(
+            "Tipografi poster story", "restaurant_cafe_typography_poster_story"
+        ) == []
+
+    def test_the_sector_prefix_never_becomes_a_subject(self):
+        """Every slot in a plan shares it, so it would match all of them at once."""
+        tokens = slot_subject_tokens("Masa hazır story", "restaurant_cafe_table_ready_story")
+        assert "restaurant" not in tokens
+        assert "cafe" not in tokens
+
+    def test_dotted_capital_i_folds_to_a_plain_letter(self):
+        """Lowercasing İ leaves a combining dot that survives as its own char."""
+        assert slot_subject_tokens("İmza tabak", "x") == ["imza", "tabak"]
+
+    def test_falls_back_to_the_key_when_no_label_exists(self):
+        assert "harvest" in slot_subject_tokens("", "harvest_story")
+
+
+def _slot_concepts(rows: list[tuple[str, str, str]]) -> list[dict]:
+    return [
+        {
+            "catalog_slot_key": key,
+            "headline": headline,
+            "caption_draft": caption,
+            "content_type": "story",
+            "cta": f"Rezervasyon {i}",
+            "template_use_case": f"use_case_{i}",
+        }
+        for i, (key, headline, caption) in enumerate(rows)
+    ]
+
+
+class TestSlotCopySwap:
+    """Copy that misses its own slot and lands on another planned slot's."""
+
+    def test_restaurant_swap_is_an_error(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("restaurant_cafe_table_ready_story",
+                 "Yeni menümüzde neler var?", "Yeni tatlar menümüzde."),
+                ("restaurant_cafe_new_menu_story",
+                 "Yeni menü çıktı", "Menümüz yenilendi."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+            catalog_slot_plan=RESTAURANT_PLAN,
+        )
+
+        issue = next(i for i in report.issues if i.check == "slot_copy_swapped")
+        assert issue.severity == "error"
+        assert "new_menu_story" in issue.description
+        assert report.passed is False
+
+    def test_local_products_swap_is_an_error(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("local_products_shop_gift_bundle_post",
+                 "Hasat başladı", "Bu haftanın hasadı geldi."),
+                ("local_products_shop_harvest_story",
+                 "Hasat zamanı", "Zeytin hasadı sürüyor."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+            catalog_slot_plan=SHOP_PLAN,
+        )
+
+        issue = next(i for i in report.issues if i.check == "slot_copy_swapped")
+        assert "harvest_story" in issue.description
+
+    def test_copy_on_its_own_subject_is_not_flagged(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("restaurant_cafe_table_ready_story",
+                 "Masa hazır!", "Masanız hazır, sizi bekliyoruz."),
+                ("restaurant_cafe_farm_to_table_story",
+                 "Çiftlikten sofraya", "Ürünler çiftlikten geliyor."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+            catalog_slot_plan=RESTAURANT_PLAN,
+        )
+
+        assert [i for i in report.issues if i.check == "slot_copy_swapped"] == []
+        assert [i for i in report.issues if i.check == "slot_copy_off_subject"] == []
+
+    def test_a_treatment_only_slot_is_never_flagged(self, monkeypatch):
+        """It has no subject, so any on-brand line serves it."""
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("restaurant_cafe_typography_poster_story",
+                 "Hafta sonu yerinizi ayırtın", "Rezervasyon için bekliyoruz."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+            catalog_slot_plan=RESTAURANT_PLAN,
+        )
+
+        assert [i for i in report.issues if i.check == "slot_copy_swapped"] == []
+        assert [i for i in report.issues if i.check == "slot_copy_off_subject"] == []
+
+    def test_missing_its_subject_without_a_rival_only_warns(self, monkeypatch):
+        """The label cannot know every synonym, so a bare miss is not an error."""
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("restaurant_cafe_farm_to_table_story",
+                 "Lezzet dolu anlar", "Bahçede güzel bir gün."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+            catalog_slot_plan=RESTAURANT_PLAN,
+        )
+
+        issue = next(i for i in report.issues if i.check == "slot_copy_off_subject")
+        assert issue.severity == "warning"
+        assert [i for i in report.issues if i.check == "slot_copy_swapped"] == []
+
+    def test_without_a_plan_the_check_stays_silent(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.context_signal_service.date",
+            type("D", (date,), {"today": staticmethod(lambda: date(2026, 9, 3))}),
+        )
+        report = check_weekly_content(
+            _slot_concepts([
+                ("restaurant_cafe_table_ready_story",
+                 "Yeni menümüzde neler var?", "Yeni tatlar."),
+            ]),
+            content_pillars=[],
+            brand_ctas=[],
+        )
+
+        assert [i for i in report.issues if i.check == "slot_copy_swapped"] == []
+        assert [i for i in report.issues if i.check == "slot_copy_off_subject"] == []
 
 
 def _concepts(headlines: list[str]) -> list[dict]:

@@ -74,6 +74,76 @@ def find_production_craft_words(text: str) -> list[str]:
     return seen
 
 
+# Format and craft words describe how a slot is made, not what it is about, so
+# they carry no subject. A slot left with nothing else — "Tipografi poster
+# story", "Premium Editorial Campaign" — is defined by treatment and is exempt
+# from any subject test.
+_SLOT_FORMAT_WORDS: frozenset[str] = frozenset({
+    "post", "posts", "story", "stories", "reel", "reels", "carousel", "karusel",
+    "gönderi", "gonderi", "video", "afiş", "afis",
+})
+
+_SLOT_GENERIC_WORDS: frozenset[str] = frozenset({
+    "ve", "ile", "için", "icin", "bir", "öne", "one", "çıkan", "cikan", "günü",
+    "gunu", "premium", "editorial", "campaign", "duyuru",
+})
+
+
+def _fold_tr(text: str) -> str:
+    # Dotted capital İ has to be folded before lowercasing: Python lowercases it
+    # to "i" plus a combining dot, which then survives as its own character.
+    folded = (text or "").replace("İ", "i").replace("I", "ı").lower()
+    for src, dst in (("ı", "i"), ("ş", "s"), ("ğ", "g"),
+                     ("ü", "u"), ("ö", "o"), ("ç", "c")):
+        folded = folded.replace(src, dst)
+    return folded
+
+
+def slot_subject_tokens(label: str, slot_key: str = "") -> list[str]:
+    """The words that say what a slot is about, stripped of how it is built.
+
+    Read off the human label, which is written in the same language as the copy
+    being checked. The key is only a fallback: its sector prefix is shared by
+    every slot in a plan, so tokenising it would give each slot a subject the
+    others also claim, and would keep a treatment-only slot from being exempt.
+    """
+    blob = label.strip() or slot_key
+    raw = re.split(r"[^0-9A-Za-zğüşıöçĞÜŞİÖÇ]+", blob)
+    out: list[str] = []
+    for word in raw:
+        if len(word) < 3:
+            continue
+        folded = _fold_tr(word)
+        if folded in {_fold_tr(w) for w in _SLOT_FORMAT_WORDS}:
+            continue
+        if folded in {_fold_tr(w) for w in _SLOT_GENERIC_WORDS}:
+            continue
+        if folded in {_fold_tr(w) for w in _CRAFT_WORDS}:
+            continue
+        if folded not in out:
+            out.append(folded)
+    return out
+
+
+def _copy_hits_tokens(copy_blob: str, tokens: list[str]) -> list[str]:
+    """Which subject tokens the copy actually says.
+
+    Turkish agglutinates, so a token is matched as a word-initial stem: "menü"
+    has to be found inside "menümüzde". Short tokens are required to stand as
+    whole words, because a three-letter prefix hits too much.
+    """
+    folded = _fold_tr(copy_blob)
+    hits: list[str] = []
+    for token in tokens:
+        if len(token) >= 4:
+            pattern = rf"(?<![0-9a-z])({re.escape(token)})[a-z]*"
+        else:
+            pattern = rf"(?<![0-9a-z])({re.escape(token)})(?![0-9a-z])"
+        if re.search(pattern, folded) and token not in hits:
+            hits.append(token)
+    return hits
+
+
 @dataclass
 class ConsistencyIssue:
     severity: str        # "warning" | "error"
@@ -109,6 +179,7 @@ def check_weekly_content(
     brand_languages: str | None = None,
     min_format_types: int = 2,
     max_cta_repeat: int = 2,
+    catalog_slot_plan: list[dict[str, str]] | None = None,
 ) -> ConsistencyReport:
     """
     Run all consistency checks on a list of content concept dicts produced by
@@ -421,6 +492,85 @@ def check_weekly_content(
             suggestion=(
                 "Drop the holiday and write to what is actually happening this "
                 "week. Only holidays in the verified upcoming list may be named."
+            ),
+        ))
+
+    # ── Check 10: Copy written for the wrong slot ────────────────────────
+    # Ideation now claims a slot per idea and the claims no longer collide, but
+    # nothing checked that the copy belongs to the slot it claimed. One live Gel
+    # Gör batch put "Yeni menümüzde neler var?" in the "Masa hazır" slot and
+    # "Çiftlikten sofraya!" in "Hafta sonu rezervasyon".
+    #
+    # Two signals, deliberately separated by confidence. A swap is unambiguous:
+    # the copy misses its own subject and lands on another planned slot's. A
+    # bare miss is only a warning, because the subject vocabulary comes from
+    # slot labels and cannot know every synonym a brand uses for it.
+    subjects: dict[str, list[str]] = {}
+    for slot in (catalog_slot_plan or []):
+        if not isinstance(slot, dict):
+            continue
+        key = str(slot.get("slot_key") or "").strip()
+        if not key:
+            continue
+        tokens = slot_subject_tokens(
+            str(slot.get("label_tr") or slot.get("label") or ""), key,
+        )
+        if tokens:
+            subjects[key] = tokens
+
+    swaps: list[str] = []
+    misses: list[str] = []
+    for c in concepts:
+        claimed = str(c.get("catalog_slot_key") or c.get("catalogSlotKey") or "").strip()
+        own = subjects.get(claimed)
+        if not own:
+            continue
+        copy_blob = " ".join(
+            str(c.get(k) or "")
+            for k in ("headline", "concept_title", "subline", "caption_draft", "caption")
+        )
+        title = str(c.get("headline") or c.get("concept_title") or "?")[:52]
+        if _copy_hits_tokens(copy_blob, own):
+            continue
+
+        rival, rival_hits = "", 0
+        for other_key, other_tokens in subjects.items():
+            if other_key == claimed:
+                continue
+            hits = len(_copy_hits_tokens(copy_blob, other_tokens))
+            if hits > rival_hits:
+                rival, rival_hits = other_key, hits
+
+        if rival_hits >= 1:
+            swaps.append(f"{title} → {claimed} yerine {rival}")
+        else:
+            misses.append(f"{title} → {claimed}")
+
+    if swaps:
+        issues.append(ConsistencyIssue(
+            severity="error",
+            check="slot_copy_swapped",
+            description=(
+                f"{len(swaps)} piece(s) were written for a different slot than they "
+                "claim: " + "; ".join(swaps[:4])
+            ),
+            suggestion=(
+                "Rewrite each line for the slot it claims, or move it to the slot "
+                "it actually serves. The Nth idea belongs to the Nth slot."
+            ),
+        ))
+
+    if misses:
+        issues.append(ConsistencyIssue(
+            severity="warning",
+            check="slot_copy_off_subject",
+            description=(
+                f"{len(misses)} piece(s) never touch their slot's subject: "
+                + "; ".join(misses[:4])
+            ),
+            suggestion=(
+                "Name the slot's subject in the brand's own words — a review slot "
+                "quotes a guest, a reservation slot asks for the booking."
             ),
         ))
 
