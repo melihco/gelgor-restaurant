@@ -5,7 +5,7 @@ export interface PaytrIframeTokenInput {
   userIp: string;
   merchantOid: string;
   email: string;
-  /** Amount in TRY (e.g. 4992) */
+  /** Amount in TRY (e.g. 5990) */
   amountTry: number;
   /** Basket line label shown in PayTR */
   productName: string;

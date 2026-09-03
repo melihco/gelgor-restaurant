@@ -7,11 +7,11 @@ from __future__ import annotations
 # and the one that stalls on fal quota, so widening the package there would add
 # cost without adding published output.
 STARTER_WEEKLY_GEOMETRY: dict[str, int] = {
-    "post": 5,
-    "story": 8,
+    "post": 4,
+    "story": 6,
     "carousel": 1,
-    "reel": 2,
-    "total": 16,
+    "reel": 1,
+    "total": 12,
 }
 
 AGENCY_WEEKLY_GEOMETRY: dict[str, int] = {

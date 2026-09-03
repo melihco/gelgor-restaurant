@@ -43,8 +43,8 @@ export const PLAN_USD_TRY_RATE = 32;
  * Kept slightly conservative so list prices still target ~200% profit on cost.
  *
  * Per mission (target mix):
- * - 4 post / 8 story / 1 carousel / 2 reel
- * - 1 Meta + 1 Google ad creative derivative
+ * - Starter: 4 post / 6 story / 1 carousel / 1 reel (12)
+ * - Growth: 5 post / 8 story / 1 carousel / 2 reel (16)
  */
 export const PLAN_API_UNIT_COSTS = {
   missionPropose: 0.28,
@@ -57,55 +57,55 @@ export const PACKAGE_PLANS: Record<string, PlanSpec> = {
   starter: {
     slug: 'starter',
     name: 'Starter',
-    monthlyPriceUsd: 156,
-    monthlyPriceTry: 4_992,
+    monthlyPriceUsd: 187,
+    monthlyPriceTry: 5_990,
     quotas: {
-      agentRuns: 14,
-      providerActions: 18,
+      agentRuns: 8,
+      providerActions: 12,
       liveProviderActions: 0,
       llmTokens: 200_000,
       monthlyGrantTokens: 5_000,
     },
     outputs: {
-      // 14 missions × (~15 fikir) — idea_count production
-      missions: 14,
-      socialContent: 210,
+      // 8 missions × 12 slot (4 post · 6 story · 1 carousel · 1 reel)
+      missions: 8,
+      socialContent: 96,
       galleryAnalysis: 40,
-      reels: 14,
-      metaAdCreatives: 14,
-      googleAdCreatives: 14,
+      reels: 8,
+      metaAdCreatives: 4,
+      googleAdCreatives: 4,
     },
     outputHighlights: [
-      '14 misyon / ay',
-      '~210 içerik (misyon başına ~15 fikir: 4 post · 8 story · 2 reel)',
-      '14 Meta + 14 Google reklam kreatifi',
+      '8 misyon / ay (haftada ~2 kampanya paketi)',
+      '~96 içerik (misyon başına 12: 4 post · 6 story · 1 carousel · 1 reel)',
+      '4 Meta + 4 Google reklam kreatifi',
       '5.000 SA Kredi aylık',
     ],
   },
   growth: {
     slug: 'growth',
     name: 'Growth',
-    monthlyPriceUsd: 312,
-    monthlyPriceTry: 9_984,
+    monthlyPriceUsd: 375,
+    monthlyPriceTry: 11_990,
     quotas: {
-      agentRuns: 28,
-      providerActions: 45,
+      agentRuns: 16,
+      providerActions: 30,
       liveProviderActions: 8,
       llmTokens: 500_000,
       monthlyGrantTokens: 15_000,
     },
     outputs: {
-      missions: 28,
-      socialContent: 280,
+      missions: 16,
+      socialContent: 256,
       galleryAnalysis: 120,
-      reels: 28,
-      metaAdCreatives: 28,
-      googleAdCreatives: 28,
+      reels: 16,
+      metaAdCreatives: 16,
+      googleAdCreatives: 16,
     },
     outputHighlights: [
-      '28 misyon / ay',
-      '~280 içerik (misyon başına ~15 fikir: 4 post · 8 story · 2 reel)',
-      '28 Meta + 28 Google reklam kreatifi',
+      '16 misyon / ay (haftada ~4 kampanya paketi)',
+      '~256 içerik (misyon başına 16: 5 post · 8 story · 1 carousel · 2 reel)',
+      '16 Meta + 16 Google reklam kreatifi',
       '15.000 SA Kredi aylık',
     ],
   },

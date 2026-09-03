@@ -372,17 +372,6 @@ export function InstagramProfile() {
             İçerik Planı
           </button>
         </div>
-
-        {/* Purpose caption */}
-        <div style={{
-          marginTop: 14, padding: '9px 12px', borderRadius: 10,
-          background: t.isDark ? 'rgba(138,171,189,0.08)' : 'rgba(77,112,136,0.06)',
-          border: `0.5px solid ${t.isDark ? 'rgba(138,171,189,0.18)' : 'rgba(77,112,136,0.14)'}`,
-          fontSize: 11.5, color: t.textSecondary, lineHeight: 1.45,
-        }}>
-          Bu galeri Smart Agency’de <strong style={{ color: t.textPrimary, fontWeight: 600 }}>üretilen
-          içerikleri</strong> (Akış ile aynı havuz) Instagram profili gibi gösterir — taslak ve onaylılar birlikte.
-        </div>
       </div>
 
       {/* Story highlights */}

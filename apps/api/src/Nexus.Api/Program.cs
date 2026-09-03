@@ -769,16 +769,16 @@ static async Task ApplyDataPatches(NexusDbContext ctx)
 
     var packagePricePatches = new[]
     {
-        new { Slug = "starter", MonthlyPrice = 4992m, YearlyPrice = 49920m },
-        new { Slug = "growth", MonthlyPrice = 9984m, YearlyPrice = 99840m },
+        new { Slug = "starter", MonthlyPrice = 5990m, YearlyPrice = 59900m },
+        new { Slug = "growth", MonthlyPrice = 11990m, YearlyPrice = 119900m },
         new { Slug = "performance", MonthlyPrice = 23008m, YearlyPrice = 230080m },
         new { Slug = "executive", MonthlyPrice = 49984m, YearlyPrice = 499840m }
     };
 
     var packageQuotaPatches = new[]
     {
-        new { Slug = "starter", TaskLimit = 14, Features = "[\"14 misyon/ay\",\"~140 içerik + 14 reel\",\"14 Meta + 14 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
-        new { Slug = "growth", TaskLimit = 28, Features = "[\"28 misyon/ay\",\"~280 içerik + 28 reel\",\"28 Meta + 28 Google reklam\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"Blog + SEO\"]" },
+        new { Slug = "starter", TaskLimit = 8, Features = "[\"8 misyon/ay\",\"~96 içerik + 8 reel\",\"4 Meta + 4 Google reklam\",\"5.000 SA Kredi\",\"40 galeri analizi\",\"Yorum yanıtlama\",\"E-posta destek\"]" },
+        new { Slug = "growth", TaskLimit = 16, Features = "[\"16 misyon/ay\",\"~256 içerik + 16 reel\",\"16 Meta + 16 Google reklam\",\"15.000 SA Kredi\",\"120 galeri analizi\",\"Blog + SEO\"]" },
         new { Slug = "performance", TaskLimit = 65, Features = "[\"65 misyon/ay\",\"~650 içerik + 65 reel\",\"65 Meta + 65 Google reklam\",\"40.000 SA Kredi\",\"250 galeri analizi\",\"Growth Recovery\"]" },
         new { Slug = "executive", TaskLimit = -1, Features = "[\"Sınırsız misyon & içerik\",\"150.000 SA Kredi\",\"Tüm agentlar\",\"AI CEO\",\"Öncelikli destek\"]" },
     };

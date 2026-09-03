@@ -39,25 +39,25 @@ GRANT_BY_PACKAGE: dict[str, int] = {
 
 # Mirrors package-plan-config.ts / PackagePlanCatalog.cs
 OUTPUTS_BY_PACKAGE: dict[str, dict[str, int]] = {
-    # Per mission ≈ 4 post + 8 story + 1 carousel + 2 reel (idea_count production)
+    # Starter: 8 missions × 12 slot (4 post · 6 story · 1 carousel · 1 reel)
     "starter": {
-        "missions": 14,
-        "social_content": 140,
+        "missions": 8,
+        "social_content": 96,
         "gallery_analysis": 40,
-        "reels": 14,
-        "meta_ad_creatives": 14,
-        "google_ad_creatives": 14,
+        "reels": 8,
+        "meta_ad_creatives": 4,
+        "google_ad_creatives": 4,
     },
     "studio": {
-        "missions": 14,
-        "social_content": 140,
+        "missions": 8,
+        "social_content": 96,
         "gallery_analysis": 40,
-        "reels": 14,
-        "meta_ad_creatives": 14,
-        "google_ad_creatives": 14,
+        "reels": 8,
+        "meta_ad_creatives": 4,
+        "google_ad_creatives": 4,
     },
-    "growth": {"missions": 28, "social_content": 280, "gallery_analysis": 120, "reels": 28, "meta_ad_creatives": 28, "google_ad_creatives": 28},
-    "agency": {"missions": 28, "social_content": 280, "gallery_analysis": 120, "reels": 28, "meta_ad_creatives": 28, "google_ad_creatives": 28},
+    "growth": {"missions": 16, "social_content": 256, "gallery_analysis": 120, "reels": 16, "meta_ad_creatives": 16, "google_ad_creatives": 16},
+    "agency": {"missions": 16, "social_content": 256, "gallery_analysis": 120, "reels": 16, "meta_ad_creatives": 16, "google_ad_creatives": 16},
     "performance": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},
     "signature": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},
     "premium": {"missions": 65, "social_content": 650, "gallery_analysis": 250, "reels": 65, "meta_ad_creatives": 65, "google_ad_creatives": 65},

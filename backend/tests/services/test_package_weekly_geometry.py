@@ -8,8 +8,8 @@ from app.services.package_weekly_geometry import (
 
 def test_starter_geometry() -> None:
     geo = resolve_weekly_package_geometry("starter")
-    assert geo["total"] == 16
-    assert geo == {"post": 5, "story": 8, "carousel": 1, "reel": 2, "total": 16}
+    assert geo["total"] == 12
+    assert geo == {"post": 4, "story": 6, "carousel": 1, "reel": 1, "total": 12}
 
 
 def test_agency_geometry_matches_mix() -> None:

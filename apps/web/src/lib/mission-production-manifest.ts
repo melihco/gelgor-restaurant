@@ -430,16 +430,16 @@ const WEEKLY_ORGANIC: MissionProductionSlot[] = [
     intentHint: 'educational_post',
   },
   {
-    role: 'fal_only_post',
-    pipeline: 'fal_only_post',
-    format: 'post',
+    role: 'fal_only_reel',
+    pipeline: 'fal_only_reel',
+    format: 'reel',
     captionSurface: 'feed_card',
     required: true,
-    intentHint: 'campaign_offer',
+    intentHint: 'behind_the_scenes',
   },
 ];
 
-/** Mix — 5 post · 8 story · 1 carousel · 2 reel (16 slots). */
+/** Mix — 4 post · 6 story · 1 carousel · 1 reel (12 slots). */
 const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
   {
     role: 'organic_post',
@@ -448,14 +448,6 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     captionSurface: 'feed_card',
     required: true,
     intentHint: 'daily_story',
-  },
-  {
-    role: 'organic_post',
-    pipeline: 'gallery_photo',
-    format: 'post',
-    captionSurface: 'feed_card',
-    required: false,
-    intentHint: 'social_proof',
   },
   {
     role: 'designed_post',
@@ -538,36 +530,12 @@ const WEEKLY_ORGANIC_STARTER: MissionProductionSlot[] = [
     intentHint: 'product_highlight',
   },
   {
-    role: 'fal_only_story',
-    pipeline: 'fal_only_story',
-    format: 'story',
-    captionSurface: 'visual_only',
-    required: true,
-    intentHint: 'brand_awareness',
-  },
-  {
-    role: 'fal_only_story',
-    pipeline: 'fal_only_story',
-    format: 'story',
-    captionSurface: 'visual_only',
-    required: true,
-    intentHint: 'campaign_offer',
-  },
-  {
     role: 'organic_reel',
     pipeline: 'fal_reel',
     format: 'reel',
     captionSurface: 'feed_card',
     required: true,
     intentHint: 'educational_post',
-  },
-  {
-    role: 'organic_reel',
-    pipeline: 'fal_reel',
-    format: 'reel',
-    captionSurface: 'feed_card',
-    required: true,
-    intentHint: 'behind_the_scenes',
   },
 ];
 

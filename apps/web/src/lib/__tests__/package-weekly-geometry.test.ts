@@ -16,18 +16,16 @@ import {
 } from '@/lib/mission-production-cost-guards';
 
 describe('package-weekly-geometry', () => {
-  it('resolves Starter 5+8+1+2', () => {
+  it('resolves Starter 4+6+1+1', () => {
     expect(resolveWeeklyPackageGeometry('starter')).toEqual(STARTER_WEEKLY_PACKAGE_COUNTS);
     expect(resolveWeeklyPackageGeometry('studio')).toEqual(STARTER_WEEKLY_PACKAGE_COUNTS);
-    expect(STARTER_WEEKLY_PACKAGE_COUNTS.total).toBe(16);
-    expect(STARTER_WEEKLY_PACKAGE_COUNTS.story).toBe(8);
-    expect(STARTER_WEEKLY_PACKAGE_COUNTS.post).toBe(5);
-    // The package widened on posts, not reels — reels are the costliest slot and
-    // the one that stalls on provider quota.
-    expect(STARTER_WEEKLY_PACKAGE_COUNTS.reel).toBe(2);
+    expect(STARTER_WEEKLY_PACKAGE_COUNTS.total).toBe(12);
+    expect(STARTER_WEEKLY_PACKAGE_COUNTS.story).toBe(6);
+    expect(STARTER_WEEKLY_PACKAGE_COUNTS.post).toBe(4);
+    expect(STARTER_WEEKLY_PACKAGE_COUNTS.reel).toBe(1);
   });
 
-  it('resolves Agency to the same 16 mix', () => {
+  it('resolves Growth to the 16-slot mix', () => {
     expect(resolveWeeklyPackageGeometry('growth')).toEqual(AGENCY_WEEKLY_PACKAGE_COUNTS);
     expect(resolveWeeklyPackageGeometry(null)).toEqual(AGENCY_WEEKLY_PACKAGE_COUNTS);
     expect(MISSION_WEEKLY_PACKAGE_COUNTS.total).toBe(16);
@@ -36,8 +34,6 @@ describe('package-weekly-geometry', () => {
   });
 
   it('never lets the production ceiling truncate a full package', () => {
-    // A ceiling below the package total silently drops deliverables that were
-    // already ideated and scheduled — at 12 a 16-slot week shipped 12.
     expect(MISSION_CONTENT_PRODUCTION_IDEA_CAP)
       .toBeGreaterThanOrEqual(AGENCY_WEEKLY_PACKAGE_COUNTS.total);
     expect(MISSION_CONTENT_PRODUCTION_IDEA_CAP)
@@ -53,7 +49,7 @@ describe('package-weekly-geometry', () => {
 });
 
 describe('buildMissionProductionManifest plan geometry', () => {
-  it('builds 16 organic slots for starter without product showcase', () => {
+  it('builds 12 organic slots for starter without product showcase', () => {
     const manifest = buildMissionProductionManifest({
       missionId: 'test',
       packageSlug: 'starter',
@@ -62,11 +58,11 @@ describe('buildMissionProductionManifest plan geometry', () => {
       },
     });
     const organic = manifest.slots.filter((s) => s.role !== 'paid_ad_creative' && s.role !== 'paid_ad_google_creative');
-    expect(organic).toHaveLength(16);
-    expect(organic.filter((s) => s.format === 'post')).toHaveLength(5);
-    expect(organic.filter((s) => s.format === 'story')).toHaveLength(8);
+    expect(organic).toHaveLength(12);
+    expect(organic.filter((s) => s.format === 'post')).toHaveLength(4);
+    expect(organic.filter((s) => s.format === 'story')).toHaveLength(6);
     expect(organic.filter((s) => s.format === 'carousel')).toHaveLength(1);
-    expect(organic.filter((s) => s.format === 'reel')).toHaveLength(2);
+    expect(organic.filter((s) => s.format === 'reel')).toHaveLength(1);
     expect(organic.some((s) => s.role.startsWith('product_showcase'))).toBe(false);
   });
 

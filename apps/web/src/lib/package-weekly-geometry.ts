@@ -6,19 +6,18 @@
 import type { PackageGeometry } from '@/lib/mission-production-manifest';
 
 /**
- * ~16 deliverables: 5 post · 8 story · 1 carousel · 2 reel.
- * The extra deliverable is a post, not a reel: reels cost the most and stall on
- * fal quota, so widening there adds spend without adding published output.
+ * Starter — 12 deliverables: 4 post · 6 story · 1 carousel · 1 reel.
+ * Lighter weekly rhythm for KOBİ; one reel keeps cost predictable.
  */
 export const STARTER_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
-  post: 5,
-  story: 8,
+  post: 4,
+  story: 6,
   carousel: 1,
-  reel: 2,
-  total: 16,
+  reel: 1,
+  total: 12,
 };
 
-/** Growth: same mix (idea_count still wins at produce time). */
+/** Growth — 16 deliverables: 5 post · 8 story · 1 carousel · 2 reel. */
 export const AGENCY_WEEKLY_PACKAGE_COUNTS: PackageGeometry = {
   post: 5,
   story: 8,

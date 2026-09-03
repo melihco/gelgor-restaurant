@@ -27,7 +27,7 @@ def test_resolve_mission_production_target_uses_idea_count() -> None:
     assert resolve_feed_package_total("opportunity") == 3
     assert resolve_feed_package_total(hub_production_package="opportunity") == 3
     assert resolve_feed_package_total("seasonal") == 16
-    assert resolve_feed_package_total("seasonal", subscription_plan_slug="starter") == 16
+    assert resolve_feed_package_total("seasonal", subscription_plan_slug="starter") == 12
 
 
 def test_resolve_format_targets_switches_for_opportunity_and_starter() -> None:
@@ -36,7 +36,7 @@ def test_resolve_format_targets_switches_for_opportunity_and_starter() -> None:
     assert resolve_format_targets("seasonal")["story"] == 8
     assert resolve_format_targets("seasonal")["reel"] == 2
     starter = resolve_format_targets("seasonal", subscription_plan_slug="starter")
-    assert starter == {"story": 8, "post": 5, "carousel": 1, "reel": 2}
+    assert starter == {"story": 6, "post": 4, "carousel": 1, "reel": 1}
 
 
 def test_merge_ideation_ideas_hits_agency_format_targets_and_dedupes() -> None:
@@ -62,14 +62,13 @@ def test_merge_ideation_ideas_hits_agency_format_targets_and_dedupes() -> None:
 
 
 def test_merge_ideation_ideas_hits_starter_format_targets() -> None:
-    stories = [idea(f"Story {i}", "story") for i in range(8)]
-    posts = [idea(f"Post {i}", "post") for i in range(5)]
+    stories = [idea(f"Story {i}", "story") for i in range(6)]
+    posts = [idea(f"Post {i}", "post") for i in range(4)]
     ideas = [
         *stories,
         *posts,
         idea("Carousel", "carousel"),
         idea("Reel A", "reel"),
-        idea("Reel B", "reel"),
     ]
 
     merged = merge_ideation_ideas(
@@ -78,10 +77,10 @@ def test_merge_ideation_ideas_hits_starter_format_targets() -> None:
         subscription_plan_slug="starter",
     )
 
-    assert len(merged) == 16
-    assert sum(1 for x in merged if x["format"] == "post") == 5
-    assert sum(1 for x in merged if x["format"] == "story") == 8
-    assert sum(1 for x in merged if x["format"] == "reel") == 2
+    assert len(merged) == 12
+    assert sum(1 for x in merged if x["format"] == "post") == 4
+    assert sum(1 for x in merged if x["format"] == "story") == 6
+    assert sum(1 for x in merged if x["format"] == "reel") == 1
 
 
 def test_merge_ideation_ideas_prefers_distinct_headlines_over_near_duplicates() -> None:
