@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,8 @@ from app.services.production_cost_service import (
     summarize_mission_production_cost,
     summarize_workspace_production_cost,
 )
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -188,7 +191,21 @@ async def get_workspace_production_cost_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Workspace-level cost rollup for admin dashboard."""
-    return await summarize_workspace_production_cost(db, workspace_id, days=days)
+    try:
+        return await summarize_workspace_production_cost(db, workspace_id, days=days)
+    except Exception:
+        logger.exception("workspace_cost_summary_failed", workspace_id=str(workspace_id))
+        return {
+            "workspace_id": str(workspace_id),
+            "days": days,
+            "period_total_usd": 0,
+            "period_measured_usd": 0,
+            "period_estimated_usd": 0,
+            "by_scope": {},
+            "daily_series": [],
+            "top_missions": [],
+            "degraded": True,
+        }
 
 
 @router.get("/{workspace_id}/missions/{mission_id}/summary")

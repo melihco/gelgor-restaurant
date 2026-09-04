@@ -193,13 +193,53 @@ export function isForeignBrandCustomerSummary(
   return false;
 }
 
-/** Safe summary for UI — drops cross-tenant stubs, falls back to website_summary. */
+const ONBOARDING_SECTOR_RE =
+  /için sektör\s+([a-z0-9_]+)\s+olarak analiz edildi/i;
+
+function parseContentPillars(brandCtx?: Record<string, unknown> | null): string[] {
+  const raw = brandCtx?.content_pillars ?? brandCtx?.contentPillars;
+  if (Array.isArray(raw)) {
+    return raw.map((item) => str(item)).filter(Boolean);
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map((item) => str(item)).filter(Boolean);
+    } catch {
+      return raw.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function rebuildOnboardingSectorSummary(
+  brandName: string,
+  industry: string,
+  brandCtx?: Record<string, unknown> | null,
+): string {
+  const name = cleanBrandName(brandName)
+    || cleanBrandName(str(brandCtx?.business_name ?? brandCtx?.businessName))
+    || brandName.trim();
+  const pillars = parseContentPillars(brandCtx).slice(0, 5);
+  const needs = pillars.length ? pillars.join(', ') : 'daily_story';
+  return `${name} için sektör ${industry} olarak analiz edildi. Önerilen sosyal medya ihtiyaçları: ${needs}.`;
+}
+
+/** Safe summary for UI — drops cross-tenant stubs and stale sector copy. */
 export function resolveCustomerVisibleSummary(
   summary: string | null | undefined,
   brandName: string,
   brandCtx?: Record<string, unknown> | null,
 ): string {
   const raw = str(summary);
+  const industry = str(brandCtx?.business_type ?? brandCtx?.industry);
+  const statedSector = raw.match(ONBOARDING_SECTOR_RE)?.[1] ?? '';
+  const sectorMismatch = Boolean(industry && statedSector && statedSector !== industry);
+
+  if (sectorMismatch && industry) {
+    return rebuildOnboardingSectorSummary(brandName, industry, brandCtx);
+  }
+
   if (raw && !isForeignBrandCustomerSummary(raw, brandName, brandCtx)) return raw;
 
   const fromCtx = str(brandCtx?.website_summary ?? brandCtx?.websiteSummary);

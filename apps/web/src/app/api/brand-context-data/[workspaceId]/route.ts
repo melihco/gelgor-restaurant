@@ -11,21 +11,37 @@ export async function GET(
   { params }: { params: Promise<{ workspaceId: string }> },
 ) {
   const { workspaceId } = await params;
-  const proxied = await proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}`, {
-    timeoutMs: 8_000,
-  });
-  if (proxied.status === 200) {
+  try {
+    const proxied = await proxyToCrewBackend(`/api/v1/brand-context/${workspaceId}`, {
+      timeoutMs: 8_000,
+    });
+    if (proxied.status === 200) {
+      return proxied;
+    }
+    try {
+      const row = await readBrandContextFromDb(workspaceId);
+      if (row) {
+        return NextResponse.json(row, { status: 200 });
+      }
+    } catch {
+      /* Render web image has no local Python venv — continue */
+    }
+    try {
+      const nexusRow = await fetchNexusBrandContextFallback(req, workspaceId);
+      if (nexusRow) {
+        return NextResponse.json(nexusRow, { status: 200 });
+      }
+    } catch {
+      /* Nexus mirror optional */
+    }
     return proxied;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: 'brand_context_unavailable', message },
+      { status: 503 },
+    );
   }
-  const row = await readBrandContextFromDb(workspaceId);
-  if (row) {
-    return NextResponse.json(row, { status: 200 });
-  }
-  const nexusRow = await fetchNexusBrandContextFallback(req, workspaceId);
-  if (nexusRow) {
-    return NextResponse.json(nexusRow, { status: 200 });
-  }
-  return proxied;
 }
 
 export async function PATCH(

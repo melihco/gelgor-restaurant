@@ -74,4 +74,16 @@ describe('brand-identity-coherence', () => {
       sarnicCtx,
     )).toBe(false);
   });
+
+  it('rebuilds onboarding summary when stored sector no longer matches brand_context', () => {
+    const beautyCtx = {
+      business_name: 'AynaAyna',
+      business_type: 'beauty_wellness',
+      content_pillars: ['service_intro', 'before_after', 'new_treatment'],
+    };
+    const stale = 'AynaAyna için sektör restaurant_cafe olarak analiz edildi. Önerilen sosyal medya ihtiyaçları: service_intro, campaign_offer.';
+    expect(resolveCustomerVisibleSummary(stale, 'AynaAyna', beautyCtx)).toBe(
+      'AynaAyna için sektör beauty_wellness olarak analiz edildi. Önerilen sosyal medya ihtiyaçları: service_intro, before_after, new_treatment.',
+    );
+  });
 });

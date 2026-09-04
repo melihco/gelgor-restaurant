@@ -712,12 +712,14 @@ export function AutoProductionFeed({
         const existing = currentProductionSnapshot?.visualContext.referenceImageUrls ?? [];
         await fetch(`/api/brand-context-data/${tenantId}`, {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
           body: JSON.stringify({ reference_image_urls: JSON.stringify([uploaded, ...existing]) }),
         });
         let existingAnalysis: Record<string, unknown> = {};
         try {
-          const cacheRes = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`);
+          const cacheRes = await fetch(`/api/brand-context/${tenantId}/gallery-analysis`, {
+            headers: { 'X-Tenant-Id': tenantId },
+          });
           if (cacheRes.ok) existingAnalysis = await cacheRes.json();
         } catch { /* proceed without cache */ }
         const analysisRes = await fetch('/api/analyze-gallery', {
@@ -731,7 +733,7 @@ export function AutoProductionFeed({
           if (results.length > 0) {
             await fetch(`/api/brand-context/${tenantId}/gallery-analysis`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
               body: JSON.stringify({ results }),
             }).catch(() => { /* non-fatal */ });
           }

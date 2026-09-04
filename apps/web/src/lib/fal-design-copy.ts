@@ -35,6 +35,7 @@ import {
 import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
 import { preferBrandToneHeadline } from '@/lib/brand-tone-headline';
 import { resolveIdeationTagline } from '@/lib/production-idea-parse';
+import { applyCopyDnaHeadline, resolveCopyDna } from '@/lib/copy-dna';
 
 export interface FalDesignCopyIdea {
   headline?: string;
@@ -294,7 +295,13 @@ function finalizeMissionOverlay(input: {
         showSubline: input.showSubline,
         typeBudget: input.typeBudget,
       });
-      return { headline: fittedTone.headline, subtitle: fittedTone.subtitle };
+      return polishOverlayWithCopyDna({
+        headline: fittedTone.headline,
+        subtitle: fittedTone.subtitle,
+        caption: input.caption,
+        brandName: input.brandName,
+        businessType: input.businessType,
+      });
     }
   }
 
@@ -316,7 +323,31 @@ function finalizeMissionOverlay(input: {
     showSubline: input.showSubline,
     typeBudget: input.typeBudget,
   });
-  return { headline: fitted.headline, subtitle: fitted.subtitle };
+  return polishOverlayWithCopyDna({
+    headline: fitted.headline,
+    subtitle: fitted.subtitle,
+    caption: input.caption,
+    brandName: input.brandName,
+    businessType: input.businessType,
+  });
+}
+
+function polishOverlayWithCopyDna(input: {
+  headline: string;
+  subtitle?: string;
+  caption: string;
+  brandName: string;
+  businessType?: string;
+}): { headline: string; subtitle?: string } {
+  const dna = resolveCopyDna({ sector: input.businessType });
+  const next = applyCopyDnaHeadline({
+    headline: input.headline,
+    caption: input.caption,
+    brandName: input.brandName,
+    dna,
+    maxLen: 48,
+  });
+  return { headline: next.headline, subtitle: input.subtitle };
 }
 
 function resolvePlannedOverlayLine(

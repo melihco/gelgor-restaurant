@@ -34,7 +34,7 @@ export function upscaleCdnUrl(url: string): string {
     if (base.includes('wixstatic.com') && base.includes('/v1/fill/')) {
       return base.replace(
         /\/v1\/fill\/[^/]+\//,
-        '/v1/fill/w_1080,h_1920,al_c,q_90,usm_0.66_1.00_0.01,enc_avif,quality_auto/',
+        '/v1/fill/w_1080,h_1920,al_c,q_90,usm_0.66_1.00_0.01,enc_jpg,quality_auto/',
       );
     }
     if (base.includes('cloudinary.com') && base.includes('/upload/')) {

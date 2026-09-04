@@ -75,7 +75,7 @@ export async function syncBrandPaletteToProduction(
       }),
       fetch(`/api/brand-context-data/${tenantId}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
         body: JSON.stringify({
           brand_primary_color: primary,
           brand_accent_color: accent,

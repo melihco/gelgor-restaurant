@@ -177,6 +177,7 @@ describe('cross-mission headline dedupe with theme clusters', () => {
 function emptyHistory() {
   return {
     recentKeys: new Set<string>(),
+    keysLast24h: new Set<string>(),
     freeTrialBurned: false,
     themeClusterCounts: new Map<string, number>(),
     burnedThemeClusters: new Set<string>(),

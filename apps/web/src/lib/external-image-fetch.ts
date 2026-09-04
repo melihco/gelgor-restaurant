@@ -20,12 +20,18 @@ export async function fetchExternalImageBuffer(
   const isInstagram = parsed.hostname.includes('cdninstagram.com')
     || parsed.hostname.includes('fbcdn.net');
   const isWix = parsed.hostname.includes('wixstatic.com');
+  // OpenAI / GPT-image reject AVIF; Wix fill URLs often default to enc_avif.
+  if (isWix) {
+    url = url.replace(/enc_avif/gi, 'enc_jpg');
+  }
 
   const buildFetch = (referer: string | null) => {
     const headers: Record<string, string> = {
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124 Safari/537.36',
-      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      Accept: isWix
+        ? 'image/jpeg,image/png,image/webp,image/*,*/*;q=0.8'
+        : 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
     };
     if (referer !== null) headers.Referer = referer;
     if (isInstagram) {

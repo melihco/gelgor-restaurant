@@ -51,6 +51,8 @@ function hasPublishableIdeationHeadline(idea: Record<string, unknown>): boolean 
 export interface RecentHeadlineHistory {
   /** Normalized headline keys from recent artifacts (14 days). */
   recentKeys: Set<string>;
+  /** Exact overlay keys from the last 24 hours — force a new hook. */
+  keysLast24h: Set<string>;
   /** True when ücretsiz deneme / free trial appeared in the window. */
   freeTrialBurned: boolean;
   /** Semantic theme cluster use counts (dj, seafood, full moon, …). */
@@ -121,7 +123,9 @@ export function buildRecentHeadlineHistory(
 ): RecentHeadlineHistory {
   const days = opts?.days ?? 14;
   const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+  const cutoff24h = Date.now() - 24 * 60 * 60 * 1000;
   const recentKeys = new Set<string>();
+  const keysLast24h = new Set<string>();
   const headlineTexts: string[] = [];
   let freeTrialBurned = false;
 
@@ -142,7 +146,10 @@ export function buildRecentHeadlineHistory(
     if (!headline) continue;
 
     const key = strategistHeadlineKey({ headline });
-    if (key) recentKeys.add(key);
+    if (key) {
+      recentKeys.add(key);
+      if (!created || created.getTime() >= cutoff24h) keysLast24h.add(key);
+    }
     if (containsFreeTrialHook(headline)) freeTrialBurned = true;
     headlineTexts.push(headline);
     const caption = String(
@@ -161,7 +168,7 @@ export function buildRecentHeadlineHistory(
     }
   }
 
-  return { recentKeys, freeTrialBurned, themeClusterCounts, burnedThemeClusters, days };
+  return { recentKeys, keysLast24h, freeTrialBurned, themeClusterCounts, burnedThemeClusters, days };
 }
 
 export async function fetchRecentHeadlineHistory(
@@ -191,6 +198,7 @@ export async function fetchRecentHeadlineHistory(
 function emptyHeadlineHistory(days?: number): RecentHeadlineHistory {
   return {
     recentKeys: new Set(),
+    keysLast24h: new Set(),
     freeTrialBurned: false,
     themeClusterCounts: new Map(),
     burnedThemeClusters: new Set(),

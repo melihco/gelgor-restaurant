@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -496,7 +496,7 @@ async def summarize_workspace_production_cost(
                 CostEvent.usage_date,
                 func.sum(CostEvent.amount_usd).label("total"),
                 func.sum(
-                    func.case(
+                    case(
                         (CostEvent.pricing_basis.in_(list(MEASURED_PRICING_BASES)), CostEvent.amount_usd),
                         else_=0,
                     ),

@@ -115,6 +115,7 @@ import {
   assignmentImpliesStoryFormat,
   assignmentRequiresDesignedStoryVisual,
   type ManifestProductionQueueItem,
+  strategistHeadlineKey,
 } from '@/lib/production-pipeline-router';
 import {
   gallerySequencePhotoTarget,
@@ -153,6 +154,7 @@ import {
   applyCrossMissionHeadlineDedupe,
   fetchRecentHeadlineHistory,
 } from '@/lib/mission-headline-history';
+import { applyCopyDnaHeadline, lockOverlayCta, resolveCopyDna } from '@/lib/copy-dna';
 import type { ProductionIdea } from '@/types/production-idea';
 import {
   auditRendererPayload,
@@ -988,6 +990,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   let slotReelCount = 0;
   let designedPostOrdinal = 0;
   const usedVisualDesignCardIndices = new Set<number>();
+  const usedOverlayHeadlineKeys = new Set<string>();
+  const copyDna = resolveCopyDna({
+    brandTheme: brandTheme as Record<string, unknown> | null,
+    sector: brandBusinessType,
+    language: brandLanguageCode,
+  });
+  const overlayHeadlineHistory = await fetchRecentHeadlineHistory(workspaceId, {
+    days: 14,
+    excludeMissionId: missionId,
+  });
+  for (const key of overlayHeadlineHistory.keysLast24h) usedOverlayHeadlineKeys.add(key);
   const sceneBriefCache = new Map<number, ProductSceneBrief | null>();
   /** One Crew scene-brief per mission run — reused across slots that need it. */
   let missionSceneBrief: ProductSceneBrief | null | undefined = undefined;
@@ -1579,6 +1592,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
     }
+    const copyDnaFix = applyCopyDnaHeadline({
+      headline,
+      caption,
+      brandName: resolvedBrandName,
+      dna: copyDna,
+      recentKeys: usedOverlayHeadlineKeys,
+      maxLen: 48,
+    });
+    if (copyDnaFix.replaced) {
+      console.warn(
+        `[auto-produce] copy DNA (${copyDnaFix.reason}): "${headline.slice(0, 48)}" → "${copyDnaFix.headline}"`,
+      );
+      headline = copyDnaFix.headline;
+      ideationHeadline = headline;
+    }
+    const overlayKey = strategistHeadlineKey({ headline });
+    if (overlayKey) usedOverlayHeadlineKeys.add(overlayKey);
     /** Ideation marketing hook — preserved for feed metadata; never overwritten by gallery vision. */
     const storedIdeationHeadline = (rawOverlayHeadline || rawPlanningHeadline)
       ? enforceDisplayHeadline(rawOverlayHeadline || rawPlanningHeadline, 72)
@@ -1660,6 +1690,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       caption = harmonized.caption || caption;
       cta = harmonized.cta;
     }
+    cta = lockOverlayCta({ headline, cta, caption, dna: copyDna });
 
     // Caption QA — reject truncated ideation fragments ("Kartta yeni gelen") for publish + fal overlay.
     if (caption.trim()) {
