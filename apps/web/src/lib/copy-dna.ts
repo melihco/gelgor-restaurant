@@ -64,11 +64,19 @@ const SECTOR_COPY_DNA: Record<string, BrandCopyDna> = {
   local_products_shop: {
     voice: ['samimi', 'concrete', 'batch'],
     locale: 'auto',
-    bannedStems: [...SHARED_BANNED_EN, ...SHARED_BANNED_TR, 'taze ve doğal lezzetler'],
+    bannedStems: [
+      ...SHARED_BANNED_EN,
+      ...SHARED_BANNED_TR,
+      'taze ve doğal lezzetler',
+      'doğal ürünlerin hikayesi',
+      'doğal ürünlerimizi keşfedin',
+      'eşsiz bir süreç',
+      'bizi tercih edin',
+    ],
     proofNouns: ['erken hasat', 'zeytinyağı', 'parti', 'datça'],
     fallbackHeadlineTr: 'Bu parti bitince yok.',
     fallbackHeadlineEn: 'This batch does not come back.',
-    bannedCtas: ['hızlanın'],
+    bannedCtas: ['hızlanın', 'detaylar linkte'],
   },
   coffee_shop: {
     voice: ['warm', 'daily', 'aromatic'],

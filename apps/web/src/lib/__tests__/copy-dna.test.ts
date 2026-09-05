@@ -30,6 +30,8 @@ describe('copy-dna', () => {
     expect(isBrochureOverlay('Join us for magical sunset views', resolveCopyDna({ sector: 'beach_club' }))).toBe(true);
     expect(isBrochureOverlay('Güvenilirliğinizi artırın', resolveCopyDna({ sector: 'beauty_wellness' }))).toBe(true);
     expect(isBrochureOverlay('Erken hasat. Datça’nın eli.', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(false);
+    expect(isBrochureOverlay('Doğal ürünlerin hikayesini görün.', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
+    expect(isBrochureOverlay('Eşsiz bir süreç!', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
   });
 
   it('flags broken English overlays', () => {
@@ -77,5 +79,10 @@ describe('copy-dna', () => {
       cta: 'Bize katıl',
       dna: resolveCopyDna({ sector: 'beach_club', language: 'en' }),
     })).toBe('Join us');
+    expect(lockOverlayCta({
+      headline: 'Bu parti bitince yok.',
+      cta: 'Detaylar Linkte',
+      dna: resolveCopyDna({ sector: 'local_products_shop' }),
+    })).not.toMatch(/linkte/i);
   });
 });

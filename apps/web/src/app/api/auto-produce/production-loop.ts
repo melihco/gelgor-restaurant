@@ -5155,7 +5155,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       kind === 'instagram_reel' ? 22
         : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
           : 32;
-    const publishHeadline = sanitizeProductionHeadline({
+    let publishHeadline = sanitizeProductionHeadline({
       headline,
       ideationHeadline: usesFalDesignCopy ? headline : storedIdeationHeadline,
       caption: publishCaption || caption,
@@ -5170,8 +5170,52 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ? falOverlayMaxLen
           : 72,
     });
+    const persistDna = applyCopyDnaHeadline({
+      headline: publishHeadline,
+      caption: publishCaption || caption,
+      brandName: resolvedBrandName,
+      dna: copyDna,
+      recentKeys: usedOverlayHeadlineKeys,
+      maxLen: adPublishChannel
+        ? adHeadlineCharLimit(adPublishChannel)
+        : usesFalDesignCopy
+          ? falOverlayMaxLen
+          : 48,
+    });
+    if (persistDna.replaced) {
+      console.warn(
+        `[auto-produce] copy DNA persist (${persistDna.reason}): "${publishHeadline.slice(0, 48)}" → "${persistDna.headline}"`,
+      );
+    }
+    publishHeadline = persistDna.headline;
+    const persistOverlayKey = strategistHeadlineKey({ headline: publishHeadline });
+    if (persistOverlayKey) usedOverlayHeadlineKeys.add(persistOverlayKey);
+    cta = lockOverlayCta({
+      headline: publishHeadline,
+      cta,
+      caption: publishCaption || caption,
+      dna: copyDna,
+    });
     const designOverlayHeadline = publishHeadline;
     headline = designOverlayHeadline;
+
+    const designedOverlayRequired = Boolean(
+      isFalDesignPost
+      || isFalOnlyPost
+      || isPremiumEditorial
+      || designedStoryRequired
+      || designedPosterReady,
+    );
+    if (designedOverlayRequired && !publishHeadline.trim()) {
+      console.warn(`[auto-produce] designed_overlay_empty — skip persist "${slotKey}"`);
+      results.push({
+        title: storedIdeationHeadline || '(empty overlay)',
+        imageUrl: '',
+        error: 'designed_overlay_empty',
+        slotKey,
+      });
+      continue;
+    }
     if (
       !ideationHeadline
       || isGalleryTagHeadline(ideationHeadline)
@@ -5215,7 +5259,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || (markyBranded && imageUrl)
       || (usesFalDesignCopy && (imageUrl || videoUrl)),
     );
-    const canvasOverlayHeadline = overlayWasPainted ? paintedOverlayHeadline : null;
+    const canvasOverlayHeadline = overlayWasPainted
+      ? (designOverlayHeadline || paintedOverlayHeadline)
+      : null;
     if (canvasOverlayHeadline && canvasOverlayHeadline !== designOverlayHeadline) {
       console.warn(
         `[auto-produce] overlay/publish headline drift: canvas "${canvasOverlayHeadline.slice(0, 36)}" `

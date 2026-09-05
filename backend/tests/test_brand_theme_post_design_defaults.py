@@ -95,3 +95,16 @@ def test_merge_preserves_post_design_when_incoming_omits():
     merged = _merge_theme_dict_for_save(incoming, existing)
     assert merged["post_design_defaults"]["font_preset"] == "elegant_serif"
     assert merged["typography_design"]["vibe"] == "handwritten"
+
+
+def test_merge_preserves_copy_dna_when_incoming_omits():
+    existing = {
+        "copy_dna": {
+            "voice": ["samimi", "hasat"],
+            "fallback_headline_tr": "Bu parti bitince yok.",
+        },
+    }
+    incoming = _minimal_theme()
+    incoming.pop("copy_dna", None)
+    merged = _merge_theme_dict_for_save(incoming, existing)
+    assert merged["copy_dna"]["fallback_headline_tr"] == "Bu parti bitince yok."

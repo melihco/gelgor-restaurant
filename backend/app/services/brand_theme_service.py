@@ -731,6 +731,7 @@ def _merge_theme_dict_for_save(
         "typography_design",
         "fal_design_intensity",
         "slot_facilities",
+        "copy_dna",
     ):
         if key in existing and key not in merged:
             merged[key] = existing[key]
