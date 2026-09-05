@@ -76,6 +76,8 @@ function overlayLooksBad(
 ): boolean {
   const h = headline.trim();
   if (!h) return true;
+  const withoutSocialMeta = h.replace(/[#@]\S+/g, '').replace(/\s+/g, ' ').trim();
+  if (!withoutSocialMeta || withoutSocialMeta.length < 6) return true;
   if (!isMeaningfulFalOverlayText(h)) return true;
   if (isIncompleteOverlayPhrase(h)) return true;
   // Note: do not use isLabelStyleHeadline here — designed punchlines are often
@@ -286,4 +288,13 @@ export function canShipCaptionDesignPost(
   input: CaptionDesignPostCoherenceInput,
 ): CaptionDesignPostCoherenceResult {
   return evaluateCaptionDesignPostCoherence(input);
+}
+
+/**
+ * Photo / soft-template sample fights — do not paint. Overlay-only breaks
+ * can still ship after a caption-derived repair (or Satori last resort).
+ */
+export function isHardDesignWithholdBreak(breaks: readonly CoherenceBreak[]): boolean {
+  return breaks.includes('photo_theme_conflict')
+    || breaks.includes('design_sample_theme_conflict');
 }

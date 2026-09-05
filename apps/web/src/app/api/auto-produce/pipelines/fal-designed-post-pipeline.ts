@@ -63,6 +63,7 @@ import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
+import { isHardDesignWithholdBreak } from '@/lib/caption-design-post-coherence';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
   detectedCanvasTextOffCaption,
@@ -331,7 +332,7 @@ export async function produceFalDesignedPost(
           + `"${input.headline.slice(0, 36)}" → "${coherence.overlayHeadline.slice(0, 36)}"`,
         );
       }
-      if (!coherence.ok) {
+      if (!coherence.ok && isHardDesignWithholdBreak(coherence.breaks)) {
         console.warn(
           `[auto-produce] [fal-design] coherence fail-closed (${coherence.breaks.join(',')}) `
           + `— skip GPT designed post for "${input.caption.slice(0, 40)}"`,
@@ -344,6 +345,12 @@ export async function produceFalDesignedPost(
           costDelta: 0,
           failureReason: `caption_design_incoherent:${coherence.breaks.join('+')}`,
         };
+      }
+      if (!coherence.ok) {
+        console.warn(
+          `[auto-produce] [fal-design] overlay coherence (${coherence.breaks.join(',')}) `
+          + `— continue with caption-repaired headline "${canvasHeadline.slice(0, 36)}"`,
+        );
       }
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
@@ -754,8 +761,10 @@ async function renderDesignedPostLocalTypography(args: {
   falBrandColors: { primary: string; accent: string };
   falBrandVibe: TypographyVibe | null;
   localReferenceUrl: string;
+  headlineOverride?: string;
 }): Promise<Awaited<ReturnType<typeof renderLocalTypography>>> {
   const { inputs, templateBinding, falBrandColors, falBrandVibe, localReferenceUrl } = args;
+  const overlayHeadline = String(args.headlineOverride ?? inputs.headline).trim() || inputs.headline;
   const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
     caption: inputs.caption,
     headline: inputs.headline,
@@ -767,7 +776,7 @@ async function renderDesignedPostLocalTypography(args: {
   });
   return renderLocalTypography({
     workspaceId: inputs.workspaceId,
-    headline: inputs.headline,
+    headline: overlayHeadline,
     subtitle: inputs.falSubtitle || inputs.cta,
     brandName: inputs.resolvedBrandName,
     brandColors: resolveFalProductionBrandColors(falBrandColors, templateBinding.brandColors),
@@ -998,28 +1007,50 @@ export const falDesignHandler: ProductionPipelineHandler = {
       }
     }
 
-    // Safety net: a renderable template skipped Satori above, but the real
-    // designed pipeline produced nothing (e.g. OpenAI/fal outage). Fall back to
-    // Satori so the slot ships a branded still instead of an empty job.
-    if (
-      !state.imageUrl
-      && templateIsRenderable
-      && localTypographyEligible
-      && !inputs.requireGroundedGallery
-    ) {
+    // Safety net: GPT/Ideogram produced nothing (coherence overlay skip,
+    // API outage, or LOCAL_TYPOGRAPHY_ENABLED off so the first Satori path
+    // never ran). Paint on the gallery photo — that is still grounded.
+    const satoriFallbackPhoto = localReferenceUrl
+      && isUsableGalleryPhotoUrl(localReferenceUrl)
+      ? localReferenceUrl
+      : null;
+    if (!state.imageUrl && satoriFallbackPhoto && !inputs.adHocBrief) {
+      const paintFallback = resolveSlotPaintOverlay({
+        headline: inputs.headline,
+        subtitle: gatedFalSubtitle || inputs.cta,
+        caption: inputs.caption,
+        cta: inputs.cta,
+        channel: inputs.falAspectRatio === '9:16' ? 'story' : 'feed_post',
+        brandName: inputs.resolvedBrandName,
+        businessType: inputs.brandBusinessType,
+        punchlineLockSource: inputs.punchlineLockSource,
+        captionAwareHeadline: inputs.captionAwareHeadline,
+        sampleHeadline: templateBinding.matched?.sampleHeadline,
+        sampleSubtitle: templateBinding.matched?.sampleSubtitle,
+        showSubline: templateBinding.matched?.showSubline,
+        typeBudget: templateBinding.matched?.typeBudget,
+        photoUrl: satoriFallbackPhoto,
+        designMatchIsSoft: templateBinding.matched?.matchQuality === 'soft',
+      });
+      if (isHardDesignWithholdBreak(paintFallback.coherence.breaks)) {
+        state.pipelineFailureReason = state.pipelineFailureReason
+          ?? `caption_design_incoherent:${paintFallback.coherence.breaks.join('+')}`;
+        return;
+      }
       const local = await renderDesignedPostLocalTypography({
         inputs,
         templateBinding,
         falBrandColors: falBrand.brandColors,
         falBrandVibe: falBrand.vibe,
-        localReferenceUrl: localReferenceUrl as string,
+        localReferenceUrl: satoriFallbackPhoto,
+        headlineOverride: paintFallback.headline,
       });
       if (local) {
         applyLocalTypographyToState(state, local, templateBinding);
         state.pipelineFailureReason = null;
         console.log(
           `[auto-produce] [fal-design] designed pipeline empty — Satori fallback: ` +
-          `"${inputs.headline.slice(0, 40)}" layout=${local.layoutFamily}`,
+          `"${paintFallback.headline.slice(0, 40)}" layout=${local.layoutFamily}`,
         );
       }
     }

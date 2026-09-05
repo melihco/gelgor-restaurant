@@ -139,20 +139,34 @@ export function resolveSlotPaintOverlay(
     designMatchIsSoft: input.designMatchIsSoft,
   });
 
-  // Locked punchline: fail-closed on hard breaks, never rewrite canvas text.
-  if (!preserved && coherence.repaired && coherence.overlayHeadline) {
+  const captionDerivedLock = isCaptionDerivedPunchlineLock(input.punchlineLockSource);
+  // Locked punchline: fail-closed on hard breaks, never rewrite canvas text —
+  // except caption_pair / caption_aware. Those locks still come from the same
+  // caption; if coherence repaired the line, paint the repaired phrase.
+  const applyRepair = Boolean(
+    coherence.repaired
+    && coherence.overlayHeadline
+    && (!preserved || captionDerivedLock),
+  );
+  if (applyRepair) {
     headline = coherence.overlayHeadline;
   }
 
+  const keepLock = preserved && !applyRepair;
   return {
     headline,
     subtitle,
-    preserved,
-    coherence: preserved
+    preserved: keepLock,
+    coherence: keepLock
       ? { ...coherence, repaired: false, overlayHeadline: headline }
-      : coherence,
+      : { ...coherence, overlayHeadline: headline },
     budgetSource,
   };
+}
+
+function isCaptionDerivedPunchlineLock(source: PunchlineLockSource): boolean {
+  const s = String(source ?? '').trim();
+  return s === 'caption_pair' || s === 'caption_aware';
 }
 
 /**

@@ -116,6 +116,7 @@ import {
   assignmentImpliesReel,
   assignmentImpliesStoryFormat,
   assignmentRequiresDesignedStoryVisual,
+  assignmentRequiresDesignedStill,
   type ManifestProductionQueueItem,
   strategistHeadlineKey,
 } from '@/lib/production-pipeline-router';
@@ -4989,11 +4990,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
     if (missionId && !videoUrl && !imageUrl && referenceUrl) {
-      if (!assignmentRequiresDesignedStoryVisual(assignment)) {
+      if (!assignmentRequiresDesignedStill(assignment)) {
         imageUrl = referenceUrl;
       } else {
         console.warn(
-          `[auto-produce] designed story slot withheld — refusing plain gallery fallback `
+          `[auto-produce] designed slot withheld — refusing plain gallery fallback `
           + `pipeline=${assignment.pipeline} "${headline.slice(0, 40)}"`,
         );
       }
@@ -5124,6 +5125,33 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const bundleReadyNow = designedPosterReady || markyBranded;
 
     const designedStoryRequired = assignmentRequiresDesignedStoryVisual(assignment);
+    const designedStillRequired = assignmentRequiresDesignedStill(assignment);
+    const paintedDesignedStill = Boolean(
+      falDesignEngine
+      || designedPosterSyncUrl
+      || markyBranded
+      || (isPlayableVideoUrl(videoUrl) && designedStillRequired),
+    );
+    if (
+      designedStillRequired
+      && !paintedDesignedStill
+      && !isCarousel
+    ) {
+      const reason = falPipelineFailureReason
+        || reelFailureReason
+        || 'designed_visual_missing';
+      console.warn(
+        `[auto-produce] designed still missing — refusing gallery ContentUrl `
+        + `pipeline=${assignment.pipeline} "${headline.slice(0, 40)}" (${reason})`,
+      );
+      results.push({
+        title: headline,
+        imageUrl: '',
+        error: reason,
+        slotKey,
+      });
+      continue;
+    }
 
     // Designed stills often arrive as data:image — Nexus ContentUrl can't hold them
     // (varchar 1000), so without R2 upload the save path falls back to gallery and

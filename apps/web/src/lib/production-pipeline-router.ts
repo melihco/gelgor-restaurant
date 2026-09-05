@@ -474,6 +474,25 @@ export function assignmentRequiresDesignedStoryVisual(
     || assignment.slot_role === 'campaign_story_motion';
 }
 
+/**
+ * Feed/story slots that must persist a painted still — never a raw gallery
+ * photo when the design pipeline returns empty.
+ */
+export function assignmentRequiresDesignedStill(
+  assignment: Pick<ProductionAssignment, 'pipeline' | 'slot_role'>,
+): boolean {
+  if (assignmentRequiresDesignedStoryVisual(assignment)) return true;
+  const pipeline = String(assignment.pipeline ?? '').toLowerCase();
+  const role = String(assignment.slot_role ?? '').toLowerCase();
+  return pipeline === 'fal_design'
+    || pipeline === 'fal_designed_post'
+    || pipeline === 'fal_only_post'
+    || pipeline === 'premium_editorial'
+    || role === 'fal_designed_post'
+    || role === 'designed_post'
+    || role === 'designed_typography';
+}
+
 export function shouldUseGalleryOnlyPost(assignment: ProductionAssignment): boolean {
   return assignment.pipeline === 'gallery_photo';
 }

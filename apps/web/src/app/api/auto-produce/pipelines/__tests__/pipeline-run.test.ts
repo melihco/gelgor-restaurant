@@ -62,6 +62,7 @@ const h = vi.hoisted(() => ({
   })),
   resolveFalProductionOverlayHeadline: vi.fn((_headline: string) => _headline),
   validateTypographyText: vi.fn(async () => true),
+  renderLocalTypography: vi.fn(),
 }));
 
 vi.mock('@/lib/server-config', () => ({ serverConfig: h.serverConfig }));
@@ -189,6 +190,10 @@ vi.mock('@/lib/external-image-fetch', () => ({
 }));
 vi.mock('@/lib/grafiker-review-service', () => ({
   runGrafikerVisionReview: h.runGrafikerVisionReview,
+}));
+vi.mock('@/lib/local-typography-renderer', () => ({
+  renderLocalTypography: h.renderLocalTypography,
+  shouldUseLocalTypography: () => false,
 }));
 
 import { falVideoHandler } from '../fal-video-pipeline';
@@ -640,6 +645,54 @@ describe('falDesignHandler.run', () => {
       }),
     );
     expect(ctx.state.imageUrl).toBe('designed-url');
+  });
+
+  it('paints Satori on the gallery photo when GPT replica returns empty', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue(null);
+    h.renderLocalTypography.mockResolvedValue({
+      imageUrl: 'satori-fallback',
+      grafikerScore: 8,
+      grafikerPass: true,
+      layoutFamily: 'hero_footer',
+    });
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-satori',
+        templateType: 'product_hero',
+        templateName: 'Ürün hero',
+        matchQuality: 'hard',
+        canvaArchetypeId: null,
+        layoutPattern: null,
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/photo.jpg',
+      styleReferenceUrl: null,
+      brandDirectives: ['dir-1'],
+      brandColors: null,
+      logoUrl: 'https://x/logo.png',
+      occasion: undefined,
+    } as never);
+
+    const ctx = makeCtx({
+      isFalDesignPost: true,
+      slotRole: 'fal_designed_post',
+      pipeline: 'fal_design',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+      headline: 'Sunset Session',
+      caption: 'Rooftop golden hour on the deck tonight — join us.',
+      punchlineLockSource: 'caption_pair',
+    });
+    await falDesignHandler.run(ctx);
+
+    expect(ctx.state.imageUrl).toBe('satori-fallback');
+    expect(ctx.state.falDesignEngine).toBe('satori_local');
+    expect(ctx.state.pipelineFailureReason).toBeFalsy();
+    expect(h.renderLocalTypography).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referencePhotoUrl: 'https://x/photo.jpg',
+      }),
+    );
   });
 });
 

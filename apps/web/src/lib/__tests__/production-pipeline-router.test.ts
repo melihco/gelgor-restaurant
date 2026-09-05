@@ -21,6 +21,7 @@ import {
   prepareMissionFdAssignments,
   buildManifestProductionQueue,
   normalizeVideoTrackAssignment,
+  assignmentRequiresDesignedStill,
   type ProductionAssignment,
 } from '@/lib/production-pipeline-router';
 import type { ManifestProductionQueueItem } from '@/lib/production-pipeline-router';
@@ -808,5 +809,22 @@ describe('normalizeVideoTrackAssignment', () => {
       copy_bundle_id: 'x',
       publish_channel: 'instagram_organic',
     })).toMatchObject({ slot_role: 'fal_only_story', pipeline: 'fal_only_story' });
+  });
+});
+
+describe('assignmentRequiresDesignedStill', () => {
+  it('requires a painted still for fal_design posts and fal_story', () => {
+    expect(assignmentRequiresDesignedStill({
+      pipeline: 'fal_design',
+      slot_role: 'fal_designed_post',
+    })).toBe(true);
+    expect(assignmentRequiresDesignedStill({
+      pipeline: 'fal_story',
+      slot_role: 'campaign_story_motion',
+    })).toBe(true);
+    expect(assignmentRequiresDesignedStill({
+      pipeline: 'gallery_photo',
+      slot_role: 'organic_post',
+    })).toBe(false);
   });
 });

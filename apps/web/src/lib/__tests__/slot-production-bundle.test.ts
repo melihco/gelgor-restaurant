@@ -76,6 +76,20 @@ describe('slot-production-bundle', () => {
     })).toBe(false);
   });
 
+  it('repairs caption_pair hashtag lock from the same caption', () => {
+    const result = resolveSlotPaintOverlay({
+      headline: '#PazarKeyfi #Datça #yöresel',
+      caption: 'Pazar günlerinde dükkanımızda taze zeytinyağından, ballara kadar en güzel yöresel ürünlerimizi bulabilirsiniz.',
+      channel: 'feed_post',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      punchlineLockSource: 'caption_pair',
+    });
+    expect(result.headline).not.toMatch(/#/);
+    expect(result.headline.toLowerCase()).toMatch(/pazar|yöresel|zeytinyağ|dükkan/);
+    expect(result.preserved).toBe(false);
+  });
+
   it('locked retry shorten uses soft-clamp only', () => {
     const line = 'Sunset cocktails on the deck tonight.';
     expect(shortenLockedPunchlineForImageRetry(line, 'feed_post')).toContain('Sunset');

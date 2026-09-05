@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateCaptionDesignPostCoherence } from '@/lib/caption-design-post-coherence';
+import {
+  evaluateCaptionDesignPostCoherence,
+  isHardDesignWithholdBreak,
+} from '@/lib/caption-design-post-coherence';
 import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
@@ -145,4 +148,24 @@ describe('caption-design-post-coherence', () => {
       expect(overlayHeadlineGroundedInCaption(result.overlayHeadline, caption)).toBe(true);
     },
   );
+
+  it('treats hashtag-only overlay as unshippable and repairs from caption', () => {
+    const caption = 'Pazar günlerinde dükkanımızda taze zeytinyağı ve bal bulunur.';
+    const result = evaluateCaptionDesignPostCoherence({
+      caption,
+      overlayHeadline: '#PazarKeyfi #Datça #yöresel',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+    });
+    expect(result.overlayHeadline).not.toMatch(/#/);
+    expect(result.repaired).toBe(true);
+    expect(overlayHeadlineGroundedInCaption(result.overlayHeadline, caption)).toBe(true);
+  });
+
+  it('withholds only photo/sample fights — overlay-only breaks can still paint', () => {
+    expect(isHardDesignWithholdBreak(['photo_theme_conflict'])).toBe(true);
+    expect(isHardDesignWithholdBreak(['design_sample_theme_conflict'])).toBe(true);
+    expect(isHardDesignWithholdBreak(['overlay_meaningless'])).toBe(false);
+    expect(isHardDesignWithholdBreak(['overlay_ungrounded', 'overlay_theme_conflict'])).toBe(false);
+  });
 });
