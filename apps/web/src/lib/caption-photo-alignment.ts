@@ -112,6 +112,38 @@ const PERSON_SUBJECT_PHOTO_HINTS = [
 /** Penalty at/above this is a hard veto — photo must never ship for that caption. */
 export const HARD_CAPTION_PHOTO_CONFLICT = 40;
 
+/** Job / team copy — not "mutfak ekibimizin kahvaltı" (kitchen BTS). */
+const HIRING_CAPTION_TRIGGERS = [
+  'ekibimize katıl',
+  'iş ilanı',
+  'işe alım',
+  'we are hiring',
+  'open role',
+  'ekip arkadaşı',
+  'arımıza katıl',
+  'yeni bir pozisyon',
+  'join our team',
+];
+
+/** Plated / kitchen promise — not bare "lezzet" (that would veto every garden post). */
+const PLATED_STRONG_CAPTION = [
+  'kahvaltı', 'kahvalti', 'brunch', 'breakfast',
+  'gözleme', 'tabak', 'plating', 'plated',
+  'mutfak', 'kitchen bts', 'şefin', 'chefin',
+  'imza yemek', 'signature dish', 'dish',
+];
+
+const PRODUCT_ONLY_PHOTO = [
+  'product_photo', 'product_image', 'product_hero',
+  'bottle', 'jar', 'kavanoz', 'sku',
+];
+
+const VENUE_WITHOUT_FOOD_PHOTO = [
+  'venue_photo', 'venue_reference', 'venue_ambiance',
+  'ambiance', 'ambience', 'terrace', 'teras',
+  'bahçe', 'bahce', 'garden', 'interior', 'deck',
+];
+
 // ── Beauty sub-service clusters (closed taxonomy — keep small) ─────────────
 
 const BEAUTY_NAIL_CAPTION = [
@@ -377,6 +409,25 @@ export function captionPhotoConflictPenalty(
   }
   if (captionDrink >= 1 && emptyOrDecorOnly && photoEmptyVenue >= 1 && photoDrink === 0) {
     if (!(captionAsksForVenueFrame && captionVenue >= captionDrink)) return 62;
+  }
+
+  const captionHiring = textHits(caption, HIRING_CAPTION_TRIGGERS);
+  const photoProductOnly = textHits(photo, PRODUCT_ONLY_PHOTO);
+  const photoHasPeople = textHits(photo, PERSON_SUBJECT_PHOTO_HINTS) >= 1
+    || photo.includes('has_people_flag');
+  if (captionHiring >= 1 && photoProductOnly >= 1 && !photoHasPeople) {
+    return 72;
+  }
+
+  const captionPlated = textHits(caption, PLATED_STRONG_CAPTION);
+  const photoVenueFrame = textHits(photo, VENUE_WITHOUT_FOOD_PHOTO);
+  if (
+    captionPlated >= 1
+    && photoFood === 0
+    && photoVenueFrame >= 1
+    && !(captionAsksForVenueFrame && captionVenue >= captionPlated)
+  ) {
+    return 66;
   }
 
   // ── Soft (AI judge owns hard reject) ─────────────────────────────────────

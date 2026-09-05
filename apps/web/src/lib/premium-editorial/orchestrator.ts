@@ -67,6 +67,7 @@ export async function runPremiumEditorialCampaign(
     ) || null,
     outputType: request.outputType,
     preferredUrl: request.selectedGalleryAssetUrl,
+    catalogSlotKey: request.catalogSlotKey,
     candidateUrls: candidates,
     galleryAnalysis,
     tieBreakSeed: Array.from(generationId).reduce((a, c) => a + c.charCodeAt(0), 0),

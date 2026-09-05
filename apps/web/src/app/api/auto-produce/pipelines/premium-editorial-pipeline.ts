@@ -95,6 +95,7 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       outputType,
       aspectRatio: inputs.falAspectRatio ?? (outputType === 'story' ? '9:16' : '4:5'),
       selectedGalleryAssetUrl: matchedGalleryUrl,
+      catalogSlotKey: inputs.catalogSlotKey,
       logoAssetUrl: inputs.brandLogoUrl ?? null,
       addTextOverlay: true,
       addLogoOverlay: Boolean(inputs.brandLogoUrl),

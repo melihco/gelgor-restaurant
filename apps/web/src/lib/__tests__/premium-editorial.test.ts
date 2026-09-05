@@ -363,7 +363,29 @@ describe('premium-editorial gallery match (idea → photo)', () => {
         },
       },
     });
-    expect(result.primaryUrl).toBe(PIN);
+    expect(result.primaryUrl).toBe(FOOD);
+  });
+
+  it('rejects a product pin under hiring copy and withholds when no team photo', async () => {
+    const { resolvePremiumEditorialGalleryMatch } = await import(
+      '@/lib/premium-editorial/gallery-match'
+    );
+    const PIN = 'https://cdn.example.com/gallery/oil-bottle.jpg';
+    const result = resolvePremiumEditorialGalleryMatch({
+      headline: 'Ekibimize katıl',
+      caption: 'Yeni bir pozisyonda ekip arkadaşı arıyoruz.',
+      preferredUrl: PIN,
+      catalogSlotKey: 'local_products_shop_hiring_team_story',
+      candidateUrls: [PIN],
+      galleryAnalysis: {
+        [PIN]: {
+          contentTags: ['product', 'bottle', 'oil'],
+          description: 'Olive oil bottle on a rustic table',
+          suggestedAssetType: 'product_image',
+        },
+      },
+    });
+    expect(result.primaryUrl).toBeNull();
   });
 });
 

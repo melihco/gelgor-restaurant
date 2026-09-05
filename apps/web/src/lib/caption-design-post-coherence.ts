@@ -9,6 +9,7 @@ import {
   buildGalleryPhotoSearchable,
   isHardCaptionPhotoConflict,
 } from '@/lib/caption-photo-alignment';
+import { isSlotPhotoNeedUnmet } from '@/lib/catalog-slot-photo-fit';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { isHardGalleryThemeMismatch } from '@/lib/gallery-photo-matcher';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
@@ -54,6 +55,8 @@ export interface CaptionDesignPostCoherenceInput {
   designMatchIsSoft?: boolean;
   /** Overlay channel — drives rebias max length. */
   channel?: 'reel' | 'feed_post' | 'story';
+  /** Catalog slot — hiring/plated families fail-closed on the wrong photo class. */
+  catalogSlotKey?: string | null;
 }
 
 export interface CaptionDesignPostCoherenceResult {
@@ -264,7 +267,8 @@ export function evaluateCaptionDesignPostCoherence(
         meta,
         photoUrl,
       )
-      || isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable);
+      || isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
+      || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta);
     if (hard) breaks.push('photo_theme_conflict');
   }
 

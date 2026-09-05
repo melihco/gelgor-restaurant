@@ -84,6 +84,7 @@ export function validatePremiumEditorialRequest(
     outputType,
     aspectRatio,
     selectedGalleryAssetUrl: raw.selectedGalleryAssetUrl != null ? String(raw.selectedGalleryAssetUrl) : null,
+    catalogSlotKey: raw.catalogSlotKey != null ? String(raw.catalogSlotKey) : null,
     productAssetUrl: raw.productAssetUrl != null ? String(raw.productAssetUrl) : null,
     venueAssetUrl: raw.venueAssetUrl != null ? String(raw.venueAssetUrl) : null,
     logoAssetUrl: raw.logoAssetUrl != null ? String(raw.logoAssetUrl) : null,

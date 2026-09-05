@@ -8,6 +8,11 @@ import {
   type GalleryPhotoMeta,
   type PhotoMatchResult,
 } from '@/lib/gallery-photo-matcher';
+import {
+  buildGalleryPhotoSearchable,
+  isHardCaptionPhotoConflict,
+} from '@/lib/caption-photo-alignment';
+import { isSlotPhotoNeedUnmet } from '@/lib/catalog-slot-photo-fit';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
 export interface PremiumEditorialGalleryMatchInput {
@@ -20,6 +25,7 @@ export interface PremiumEditorialGalleryMatchInput {
   outputType?: 'post' | 'story' | 'square' | null;
   /** Explicit pin (mission referenceUrl / form selection) — preferred when usable. */
   preferredUrl?: string | null;
+  catalogSlotKey?: string | null;
   candidateUrls: string[];
   galleryAnalysis?: Record<string, GalleryPhotoMeta> | null;
   excludeUrls?: string[];
@@ -98,9 +104,32 @@ export function resolvePremiumEditorialGalleryMatch(
     )
     : null;
 
-  // Production-loop pin is SSOT when usable — never swap on moderate rematch score.
-  // Rematch only fills the gap when the pin is missing/unreachable.
+  const pinConflicts = (url: string): boolean => {
+    const meta = analysis[url]
+      ?? Object.entries(analysis).find(([k]) => k === url)?.[1];
+    const searchable = buildGalleryPhotoSearchable(meta, url);
+    return isHardCaptionPhotoConflict(`${caption} ${headline}`, searchable)
+      || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta);
+  };
+
+  // Production-loop pin is SSOT when it does not fight the caption/slot family.
+  // A hard conflict (hiring↔product, plated↔venue) must rematch or withhold —
+  // never stamp preferred_pin score=100 over a known mismatch.
   if (preferredUsable) {
+    if (pinConflicts(preferredUsable)) {
+      warnings.push(
+        `Production-loop pin rejected — caption/slot photo family conflict for "${headline.slice(0, 48)}"`,
+      );
+      if (match?.url && match.url !== preferredUsable && !pinConflicts(match.url)) {
+        return {
+          primaryUrl: match.url,
+          supportingUrls: matchPool.filter((u) => u !== match.url).slice(0, 3),
+          match,
+          warnings,
+        };
+      }
+      return { primaryUrl: null, supportingUrls: [], match: null, warnings };
+    }
     if (match?.url && match.url !== preferredUsable) {
       warnings.push(
         `Semantic rematch ignored (score=${match.score}) — honoring production-loop gallery pin.`,

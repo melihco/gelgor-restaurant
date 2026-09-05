@@ -3603,7 +3603,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     // Final chain gate: caption ↔ overlay ↔ photo must agree before paint.
-    if (usesFalDesignerTrackEarly && caption.trim().length >= 24) {
+    const designedCoherenceGate = usesFalDesignerTrackEarly
+      || isPremiumEditorialPipeline(assignment.pipeline)
+      || assignment.slot_role === 'premium_editorial_campaign_post'
+      || assignment.slot_role === 'premium_editorial_campaign_story';
+    if (designedCoherenceGate && caption.trim().length >= 24) {
       const lockedMeta = resolvedReferenceUrl
         ? (galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
           ?? Object.entries(galleryMeta).find(
@@ -3617,6 +3621,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         businessType: brandBusinessType,
         photoUrl: pickedFromBrandGallery ? resolvedReferenceUrl : null,
         galleryMeta: lockedMeta,
+        catalogSlotKey: assignment.catalog_slot_key
+          ?? (ideaRecord.catalog_slot_key as string | undefined),
       });
       if (
         chain.repaired
@@ -3683,6 +3689,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               businessType: brandBusinessType,
               photoUrl: rematchedUrl,
               galleryMeta: photoMetaForCaption,
+              catalogSlotKey: assignment.catalog_slot_key
+                ?? (ideaRecord.catalog_slot_key as string | undefined),
             });
             if (recheck.ok) {
               console.warn(

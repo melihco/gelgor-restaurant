@@ -85,6 +85,36 @@ describe('captionPhotoConflictPenalty — drink vs food (AI owns hard reject)', 
   });
 });
 
+describe('captionPhotoConflictPenalty — hiring vs product / plated vs venue', () => {
+  it('hard-vetoes hiring caption against product-only bottle (shop)', () => {
+    expect(isHardCaptionPhotoConflict(
+      'Karaman Datça\'da yeni bir pozisyonda ekip arkadaşı arıyoruz!',
+      'product_photo product_hero bottle jar olive oil sku',
+    )).toBe(true);
+  });
+
+  it('does not veto harvest caption against the same product bottle (shop)', () => {
+    expect(isHardCaptionPhotoConflict(
+      'Erken hasat zeytinyağımız soğuk sıkım — bu parti bitince yok.',
+      'product_photo product_hero bottle jar olive oil sku',
+    )).toBe(false);
+  });
+
+  it('hard-vetoes kahvaltı caption against venue-only garden (cafe)', () => {
+    expect(isHardCaptionPhotoConflict(
+      'El yapımı gözlemelerimizle kahvaltı tabaklarımız hazır.',
+      'venue_photo venue_ambiance garden terrace interior bahçe',
+    )).toBe(true);
+  });
+
+  it('does not veto reservation lezzet caption against the same garden (cafe)', () => {
+    expect(isHardCaptionPhotoConflict(
+      'Hafta sonu için yerinizi ayırtın. Bahçede buluşalım.',
+      'venue_photo venue_ambiance garden terrace interior bahçe',
+    )).toBe(false);
+  });
+});
+
 describe('captionPhotoConflictPenalty — nightlife vs food', () => {
   it('hard-vetoes DJ caption against food-only gallery meta', () => {
     const penalty = captionPhotoConflictPenalty(

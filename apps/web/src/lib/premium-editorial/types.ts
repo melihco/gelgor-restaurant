@@ -251,6 +251,7 @@ export interface PremiumEditorialCampaignRequest {
   outputType?: PremiumEditorialOutputType | null;
   aspectRatio?: PremiumEditorialAspectRatio | null;
   selectedGalleryAssetUrl?: string | null;
+  catalogSlotKey?: string | null;
   productAssetUrl?: string | null;
   venueAssetUrl?: string | null;
   logoAssetUrl?: string | null;
