@@ -26,6 +26,7 @@ import {
   resolveFalProductionOverlayHeadline,
 } from '@/lib/fal-caption-headline';
 import {
+  isHollowSocialHeadline,
   isMeaninglessBrandEchoHeadline,
   isSoullessMenuHourHeadline,
 } from '@/lib/production-headline-quality';
@@ -79,7 +80,7 @@ function overlayLooksBad(
   if (isIncompleteOverlayPhrase(h)) return true;
   // Note: do not use isLabelStyleHeadline here — designed punchlines are often
   // 2-word scene hooks ("DJ Night", "Altın Saat") that that helper rejects.
-  if (isSoullessMenuHourHeadline(h)) return true;
+  if (isSoullessMenuHourHeadline(h) || isHollowSocialHeadline(h)) return true;
   if (brandName && isMeaninglessBrandEchoHeadline(h, brandName)) return true;
   if (isOffTopicTourismOverlay(h, caption, businessType)) return true;
   if (caption.trim().length >= 24 && hasCaptionHeadlineThemeConflict(caption, h)) return true;

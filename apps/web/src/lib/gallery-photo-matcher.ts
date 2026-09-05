@@ -621,6 +621,17 @@ function computeGalleryMediaFingerprint(url: string): string {
     if (tail.length > 4) return `cdn:${tail.slice(-80)}`;
   }
 
+  const mediaKey = normalized.match(/[?&]key=([^&]+)/i);
+  if (mediaKey?.[1]) {
+    try {
+      const decoded = decodeURIComponent(mediaKey[1]);
+      const keyFile = decoded.match(/([^/]+\.(?:jpe?g|png|webp|avif|gif))$/i);
+      if (keyFile?.[1]) return `file:${keyFile[1]}`;
+    } catch {
+      /* malformed % sequence — fall through */
+    }
+  }
+
   const file = normalized.match(/\/([^/?#]+\.(?:jpe?g|png|webp|avif|gif))(?:\?|$)/i);
   if (file?.[1]) return `file:${file[1]}`;
 
@@ -747,6 +758,19 @@ export function resolveGalleryPhotoMeta(
   displayUrls: string[] = [],
 ): GalleryPhotoMeta | undefined {
   return resolveGalleryLookupEntry(url, galleryAnalysis, displayUrls)?.meta;
+}
+
+/** Bind a production/ideation URL to the analysis row that describes it. */
+export function bindGalleryUrlToAnalysis(
+  url: string,
+  galleryAnalysis: Record<string, GalleryPhotoMeta>,
+  displayUrls: string[] = [],
+): { url: string; analysisKey: string; meta: GalleryPhotoMeta } | null {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return null;
+  const entry = resolveGalleryLookupEntry(trimmed, galleryAnalysis, displayUrls);
+  if (!entry?.meta) return null;
+  return { url: trimmed, analysisKey: entry.analysisKey, meta: entry.meta };
 }
 
 /** Alias every production photo URL to its fingerprint-matched analysis row. */

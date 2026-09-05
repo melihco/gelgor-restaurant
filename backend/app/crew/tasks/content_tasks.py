@@ -11,6 +11,7 @@ from crewai import Agent, Task
 
 from app.crew.context import BrandInfo, build_urgency_directive
 from app.crew.prompts.content_prompts import CONTENT_IDEATION_TASK, CONTENT_CALENDAR_TASK
+from app.services.slot_purpose import slot_purpose_job
 
 
 def _variation_seed_block(mission_id: str | None = None) -> str:
@@ -574,7 +575,9 @@ def _catalog_slot_plan_block(
         key = str(slot.get("slot_key") or "").strip()
         fmt = str(slot.get("format") or "post").strip()
         name = f"{label} " if label else ""
-        lines.append(f"{i + 1}. [{fmt}] {name}({key})")
+        job = slot_purpose_job(key, "Turkish" if turkish else "English")
+        job_bit = f" — {job}" if job else ""
+        lines.append(f"{i + 1}. [{fmt}] {name}({key}){job_bit}")
 
     header = (
         "=== BU HAFTANIN YAYIN SLOTLARI (HER FİKİR BİR SLOT İÇİN YAZILIR) ==="

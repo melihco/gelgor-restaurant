@@ -16,6 +16,11 @@ from typing import Any
 from crewai import Crew, LLM, Process
 
 from app.config import get_settings
+from app.crew.caption_headline_pair import apply_caption_headline_pair
+from app.services.slot_purpose import (
+    align_ideas_to_slot_purpose,
+    bind_selected_gallery_to_analysis,
+)
 
 logger = logging.getLogger(__name__)
 from app.crew.agents.content_agent import create_content_agent
@@ -498,6 +503,8 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
                 item["asset_intent"] = "product_image"
             else:
                 item["asset_intent"] = "venue_reference"
+
+        apply_caption_headline_pair(item)
 
     return concepts
 
@@ -1238,13 +1245,27 @@ def run_content_ideation(
                 )
 
                 bound = bind_catalog_slot_plan_to_ideas(concepts, catalog_slot_plan)
+                aligned = align_ideas_to_slot_purpose(concepts, brand)
+                for idea in concepts:
+                    if isinstance(idea, dict):
+                        bind_selected_gallery_to_analysis(
+                            idea, getattr(brand, "gallery_analysis", None),
+                        )
                 raw_output = json.dumps(concepts, ensure_ascii=False)
                 logger.info(
-                    "ideation_catalog_slots_bound: bound=%d ideas=%d plan=%d tenant=%s",
+                    "ideation_catalog_slots_bound: bound=%d aligned=%d ideas=%d plan=%d tenant=%s",
                     bound,
+                    aligned,
                     len(concepts),
                     len(catalog_slot_plan),
                     getattr(brand, "tenant_id", "unknown"),
+                )
+                report = check_weekly_content(
+                    concepts=concepts,
+                    content_pillars=pillars_for_batch,
+                    brand_ctas=brand.default_ctas,
+                    brand_languages=brand.languages,
+                    catalog_slot_plan=catalog_slot_plan,
                 )
 
             # Per-piece quality scores

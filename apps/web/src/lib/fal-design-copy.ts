@@ -27,12 +27,13 @@ import {
 } from '@/lib/fal-caption-headline';
 import type { TemplateTypeBudget } from '@/lib/template-type-budget';
 import {
+  isDeadOnCanvasHeadline,
   isLabelStyleHeadline,
   isMeaninglessBrandEchoHeadline,
-  isSoullessMenuHourHeadline,
+  overlayTakenFromCaption,
   resolveMeaningfulProductionHeadline,
 } from '@/lib/production-headline-quality';
-import { rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
+import { overlayHeadlineGroundedInCaption, rebiasUngroundedOverlayCopy } from '@/lib/overlay-caption-grounding';
 import { preferBrandToneHeadline } from '@/lib/brand-tone-headline';
 import { resolveIdeationTagline } from '@/lib/production-idea-parse';
 import { applyCopyDnaHeadline, resolveCopyDna } from '@/lib/copy-dna';
@@ -49,6 +50,7 @@ export interface FalDesignCopyIdea {
   subline?: string;
   canva_field_copy?: Record<string, unknown> | null;
   canvaFieldCopy?: Record<string, unknown> | null;
+  overlay_headline_source?: string | null;
   visual_production_spec?: {
     text_layers?: { title?: string; subtitle?: string; cta?: string } | null;
   } | null;
@@ -139,7 +141,7 @@ export function extractCaptionAlignedPunchline(input: {
   });
   if (
     theme
-    && !isSoullessMenuHourHeadline(theme)
+    && !isDeadOnCanvasHeadline(theme)
     && !isLabelStyleHeadline(theme)
     && !isIncompleteOverlayPhrase(theme)
   ) {
@@ -181,7 +183,7 @@ export function extractCaptionAlignedPunchline(input: {
       && tight.split(/\s+/).filter(Boolean).length >= 2
       && isMeaningfulFalOverlayText(tight)
       && !isIncompleteOverlayPhrase(tight)
-      && !isSoullessMenuHourHeadline(tight)
+      && !isDeadOnCanvasHeadline(tight)
       && !isLabelStyleHeadline(tight)
     ) {
       return tight;
@@ -200,7 +202,7 @@ function isPublishableOverlayLine(
   // Punchy calendar quotes may be short (e.g. "Tadına bak!") — keep ≥6 chars / 2+ words.
   if (!clean || clean.length < 6) return false;
   if (clean.length < 8 && clean.split(/\s+/).filter(Boolean).length < 2) return false;
-  if (isSoullessMenuHourHeadline(clean)) return false;
+  if (isDeadOnCanvasHeadline(clean)) return false;
   if (isLabelStyleHeadline(clean)) return false;
   if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
   if (isIncompleteOverlayPhrase(clean)) return false;
@@ -386,7 +388,8 @@ export function shouldPreserveLockedPunchlineHeadline(
 ): boolean {
   return source === 'mission_tagline'
     || source === 'canva_field_copy'
-    || source === 'ad_hoc_brief';
+    || source === 'ad_hoc_brief'
+    || source === 'caption_pair';
 }
 
 function extractMissionTagline(idea: FalDesignCopyIdea): string {
@@ -395,7 +398,8 @@ function extractMissionTagline(idea: FalDesignCopyIdea): string {
 
 /**
  * Resolve on-canvas design copy for Fal / GPT designed slots.
- * Priority: mission tagline → canva/text_layers → agent headline →
+ * Priority: mission tagline → caption-pair (caption opening) →
+ * canva/text_layers → agent headline (only if taken from caption) →
  * caption punchline (rescue) → ideation title → catalog sample.
  */
 export function resolveMissionFalDesignCopy(input: {
@@ -437,7 +441,7 @@ export function resolveMissionFalDesignCopy(input: {
     const clean = unwrapQuotedOverlayLine(line);
     if (!clean || isIncompleteOverlayPhrase(clean)) return false;
     if (!isMeaningfulFalOverlayText(clean)) return false;
-    if (isSoullessMenuHourHeadline(clean)) return false;
+    if (isDeadOnCanvasHeadline(clean)) return false;
     if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
     if (localesClash(captionLoc, detectOverlayLocale(clean))) return false;
     return true;
@@ -525,7 +529,7 @@ export function resolveMissionFalDesignCopy(input: {
     }
     if (
       plannedHeadline
-      && !isSoullessMenuHourHeadline(plannedHeadline)
+      && !isDeadOnCanvasHeadline(plannedHeadline)
       && !isMeaninglessBrandEchoHeadline(plannedHeadline, brandName)
     ) {
       return {
@@ -533,6 +537,34 @@ export function resolveMissionFalDesignCopy(input: {
         subtitle,
         source: 'mission_tagline',
       };
+    }
+  }
+
+  // 1b) Caption opening is the only invented-overlay source. Ideation slogans
+  // ("keşfedin", "katıksız") lose to the caption the writer already published.
+  if (caption.length >= 16) {
+    const ideaLine = unwrapQuotedOverlayLine(String(input.idea.headline ?? '').trim());
+    const firstSpoken = (() => {
+      const raw = caption.replace(/[#@]\S+/g, '').trim();
+      const first = raw.split(/[.!?\n]+/).map((s) => s.trim()).find((s) => s.length >= 8) ?? '';
+      return first.replace(/[.,;:]+$/g, '');
+    })();
+    const pairedRaw = (
+      ideaLine
+      && overlayTakenFromCaption(ideaLine, caption)
+      && acceptPlannedOverlayLine(ideaLine)
+    )
+      ? ideaLine
+      : (firstSpoken && firstSpoken.length <= maxLen && acceptPlannedOverlayLine(firstSpoken)
+        ? firstSpoken
+        : '');
+    if (pairedRaw && acceptPlannedOverlayLine(pairedRaw)) {
+      const subtitle = resolveFalSubtitle({
+        caption,
+        headline: pairedRaw,
+        cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
+      }) ?? undefined;
+      return { headline: pairedRaw, subtitle, source: 'caption_pair' };
     }
   }
 
@@ -575,6 +607,13 @@ export function resolveMissionFalDesignCopy(input: {
     unwrapQuotedOverlayLine(input.ideationHeadline.trim()),
   ].filter(Boolean);
   for (const agentLine of agentMarketingLines) {
+    if (
+      caption.length >= 16
+      && !overlayTakenFromCaption(agentLine, caption)
+      && !overlayHeadlineGroundedInCaption(agentLine, caption)
+    ) {
+      continue;
+    }
     if (!isPublishableOverlayLine(agentLine, brandName, captionLoc)) continue;
     if (
       extracted.headline
@@ -659,7 +698,7 @@ export function resolveMissionFalDesignCopy(input: {
     if (
       !headline
       || isLabelStyleHeadline(headline)
-      || isSoullessMenuHourHeadline(headline)
+      || isDeadOnCanvasHeadline(headline)
       || isIncompleteOverlayPhrase(headline)
     ) {
       const qa = resolveMeaningfulProductionHeadline({
@@ -678,7 +717,7 @@ export function resolveMissionFalDesignCopy(input: {
         budget,
       );
     }
-    if (headline && !isSoullessMenuHourHeadline(headline) && !isLabelStyleHeadline(headline)) {
+    if (headline && !isDeadOnCanvasHeadline(headline) && !isLabelStyleHeadline(headline)) {
       const subtitle = resolveFalSubtitle({
         caption,
         headline,
@@ -719,7 +758,7 @@ export function resolveMissionFalDesignCopy(input: {
     if (
       overlay.headline
       && !isIncompleteOverlayPhrase(overlay.headline)
-      && !isSoullessMenuHourHeadline(overlay.headline)
+      && !isDeadOnCanvasHeadline(overlay.headline)
     ) {
       return lockToTemplate({ ...overlay, source: 'ideation_title' });
     }
@@ -745,7 +784,7 @@ export function resolveMissionFalDesignCopy(input: {
       maxWords: budget.maxWords,
       maxLen,
     });
-    if (punch && !isLabelStyleHeadline(punch) && !isSoullessMenuHourHeadline(punch)) {
+    if (punch && !isLabelStyleHeadline(punch) && !isDeadOnCanvasHeadline(punch)) {
       return lockToTemplate({
         headline: punch,
         subtitle: resolveFalSubtitle({ caption, headline: punch, cta: input.cta }) ?? undefined,
@@ -769,7 +808,7 @@ export function resolveMissionFalDesignCopy(input: {
     if (
       headline
       && !isLabelStyleHeadline(headline)
-      && !isSoullessMenuHourHeadline(headline)
+      && !isDeadOnCanvasHeadline(headline)
       && !isIncompleteOverlayPhrase(headline)
     ) {
       return lockToTemplate({
@@ -789,7 +828,7 @@ export function resolveMissionFalDesignCopy(input: {
       !overlay.headline
       || !isMeaningfulFalOverlayText(overlay.headline)
       || isLabelStyleHeadline(overlay.headline)
-      || isSoullessMenuHourHeadline(overlay.headline)
+      || isDeadOnCanvasHeadline(overlay.headline)
       || isMeaninglessBrandEchoHeadline(overlay.headline, brandName)
     )
   ) {

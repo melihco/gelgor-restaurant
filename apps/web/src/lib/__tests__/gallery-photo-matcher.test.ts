@@ -23,6 +23,7 @@ import {
   pickLeastUsedRotationPhoto,
   resolveGalleryMatchSubjectKey,
   isJamFamilySubject,
+  bindGalleryUrlToAnalysis,
   MIN_ACCEPT_SCORE,
   STRONG_MATCH_SCORE,
   type GalleryPhotoMeta,
@@ -162,6 +163,13 @@ describe('galleryMediaFingerprint — stable across CDN variants', () => {
         "wix": "wix:abc123~mv2.jpg",
       }
     `);
+  });
+
+  it('matches tenant media key to the same website filename', () => {
+    const site = galleryMediaFingerprint('https://shop.example.com/wp-content/uploads/2026/03/honey.jpg');
+    const media = galleryMediaFingerprint('/api/media?key=tenant%2Fimage%2F2026-03%2Fhoney.jpg');
+    expect(site).toBe(media);
+    expect(site).toBe('file:honey.jpg');
   });
 });
 
@@ -941,5 +949,18 @@ describe('subject aliases / family feed multilingual matching', () => {
       gallery[OIL_LABEL],
       OIL_LABEL,
     )).toBe(false);
+  });
+});
+
+describe('bindGalleryUrlToAnalysis', () => {
+  it('binds a same-filename media key to the website analysis row', () => {
+    const site = 'https://shop.example.com/wp-content/uploads/2026/03/honey.jpg';
+    const media = '/api/media?key=tenant%2Fimage%2F2026-03%2Fhoney.jpg';
+    const analysis = {
+      [site]: { primarySubject: 'honey', contentTags: ['honey'] },
+    };
+    const bind = bindGalleryUrlToAnalysis(media, analysis, [media, site]);
+    expect(bind?.analysisKey).toBe(site);
+    expect(bind?.meta.primarySubject).toBe('honey');
   });
 });

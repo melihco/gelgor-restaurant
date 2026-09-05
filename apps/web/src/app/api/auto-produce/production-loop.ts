@@ -49,6 +49,8 @@ import {
   MIN_ACCEPT_SCORE,
   REEL_GALLERY_MIN_SCORE,
   resolveGalleryMatchSubjectKey,
+  resolveGalleryLookupEntry,
+  bindGalleryUrlToAnalysis,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -2341,7 +2343,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             globalUsageCounts: globalGalleryUsageCounts,
             ...activeGalleryMatchExtras,
           };
-          const agentMeta = galleryMeta[normalizeGalleryUrl(pooledAgentUrl)]
+          const agentMeta = resolveGalleryLookupEntry(
+            pooledAgentUrl,
+            galleryMeta,
+            galleryPhotos,
+          )?.meta
+            ?? galleryMeta[normalizeGalleryUrl(pooledAgentUrl)]
             ?? Object.entries(galleryMeta).find(
               ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(pooledAgentUrl),
             )?.[1];
@@ -5594,6 +5601,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? { enhanced_photo_url: referenceUrl }
         : {}),
       ...(pickedGallerySourceUrl ? { selected_gallery_url: pickedGallerySourceUrl } : {}),
+      ...( (() => {
+        const bind = bindGalleryUrlToAnalysis(
+          String(pickedGallerySourceUrl || referenceUrl || ''),
+          galleryMeta,
+          galleryPhotos,
+        );
+        const fromIdea = typeof (idea as { gallery_analysis_key?: unknown }).gallery_analysis_key === 'string'
+          ? String((idea as { gallery_analysis_key?: string }).gallery_analysis_key)
+          : '';
+        const analysisKey = bind?.analysisKey || fromIdea;
+        return analysisKey
+          ? {
+            gallery_analysis_key: analysisKey,
+            gallery_analysis_subject: bind?.meta.primarySubject ?? undefined,
+          }
+          : {};
+      })() ),
       feed_preview_url: galleryPreviewUrl,
       agency_branded: markyBranded,
       ai_gallery_enhanced: aiEnhanceApplied,

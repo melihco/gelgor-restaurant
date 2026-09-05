@@ -122,6 +122,10 @@ def slot_subject_tokens(label: str, slot_key: str = "") -> list[str]:
             continue
         if folded not in out:
             out.append(folded)
+    from app.services.slot_purpose import slot_purpose_tokens
+    for extra in slot_purpose_tokens(slot_key):
+        if extra not in out:
+            out.append(extra)
     return out
 
 

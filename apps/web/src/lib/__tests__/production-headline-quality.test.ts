@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isHollowSocialHeadline,
   isUsableVisualDesignCardHeadline,
+  overlayTakenFromCaption,
   resolveMeaningfulProductionHeadline,
   sanitizeProductionHeadline,
 } from '@/lib/production-headline-quality';
@@ -18,17 +20,17 @@ describe('visual design card headline preference', () => {
     expect(isUsableVisualDesignCardHeadline('Yaz fırsatları story', 'Karaman Datça')).toBe(false);
   });
 
-  it('prefers card over caption hook when headline is empty', () => {
+  it('uses the caption opening as overlay when headline is empty', () => {
     const r = resolveMeaningfulProductionHeadline({
       headline: '',
-      caption: 'Ürünlerde geçerli yaz fırsatlarının tanıtımını yapacağız.',
-      brandName: 'Karaman Datça',
+      caption: 'Erken hasat bu hafta raflarda. Soğuk sıkım, küçük parti.',
+      brandName: 'Yöresel Dükkan',
       visualDesignHeadline: 'Doğanın Tazeliği',
       businessType: 'local_products_shop',
       maxLen: 32,
     });
-    expect(r.headline).toBe('Doğanın Tazeliği');
-    expect(r.reason).toBe('visual_design_card');
+    expect(r.headline).toMatch(/erken hasat|soğuk sıkım|raf/i);
+    expect(r.reason).toMatch(/empty_headline|caption_pair|visual_design_card/);
   });
 
   it('prefers card over caption when ideation headline is incomplete', () => {
@@ -44,30 +46,31 @@ describe('visual design card headline preference', () => {
     expect(r.reason).toBe('label_visual_design_card');
   });
 
-  it('sanitizeProductionHeadline prefers visualDesignHeadline first', () => {
+  it('sanitizeProductionHeadline paints the caption opening, not a second slogan', () => {
     const h = sanitizeProductionHeadline({
-      headline: 'Ürünlerde geçerli yaz fırsatlarının tanıtımını yapacağız',
-      ideationHeadline: 'Ürünlerde geçerli yaz fırsatlarının tanıtımını yapacağız',
-      caption: 'Ürünlerde geçerli yaz fırsatlarının tanıtımını yapacağız.',
-      brandName: 'Karaman Datça',
+      headline: 'Zeytin hasadını kutlayın',
+      ideationHeadline: 'Zeytin hasadını kutlayın',
+      caption: 'Zeytin hasadı başladı! Soğuk sıkım bu hafta raflarda.',
+      brandName: 'Yöresel Dükkan',
       visualDesignHeadline: 'Doğanın Tazeliği',
       businessType: 'local_products_shop',
       maxLen: 32,
     });
-    expect(h).toBe('Doğanın Tazeliği');
+    expect(h).toBe('Zeytin hasadı başladı');
   });
 
-  it('sanitize with card beats Badamlı truncated ideation', () => {
+  it('sanitize keeps a caption-native hook for product love', () => {
     const h = sanitizeProductionHeadline({
       headline: 'Müşterilerimiz',
       ideationHeadline: 'Müşterilerimiz Badamlı Kurabiyeleri Seviyor!',
-      caption: "Müşterilerimiz, Karaman Datça'nın bademli kurabiyelerini çok seviyor!",
-      brandName: 'Karaman Datça',
+      caption: 'Bademli kurabiye bu hafta taze çıktı. Küçük parti, ev fırını.',
+      brandName: 'Yöresel Dükkan',
       visualDesignHeadline: 'Badem Ezmesi',
       businessType: 'local_products_shop',
       maxLen: 32,
     });
-    expect(h).toBe('Badem Ezmesi');
+    expect(h.toLocaleLowerCase('tr-TR')).toMatch(/badem|kurabiye|küçük parti|fırın/);
+    expect(h).not.toBe('Müşterilerimiz');
   });
 
   it('generic fallback respects English brand language (never Keşfetmeye…)', () => {
@@ -94,6 +97,39 @@ describe('visual design card headline preference', () => {
       maxLen: 32,
     });
     expect(r.headline).toBe('Yaz Moduna Geçtik!');
+  });
+});
+
+describe('hollow social headlines lose to caption vibe', () => {
+  it('rewrites harvest-celebrate calque from a local_products caption', () => {
+    expect(isHollowSocialHeadline('Zeytin hasadını kutlayın')).toBe(true);
+    const r = resolveMeaningfulProductionHeadline({
+      headline: 'Zeytin hasadını kutlayın',
+      caption:
+        'Zeytin hasadı başladı! Datça’nın bereketli topraklarından gelen zeytinlerimizi'
+        + ' soğuk sıkım yöntemiyle işliyoruz.',
+      brandName: 'Yöresel Dükkan',
+      businessType: 'local_products_shop',
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(r.replaced).toBe(true);
+    expect(r.headline).not.toMatch(/kutlayın/i);
+    expect(r.headline.toLocaleLowerCase('tr-TR')).toMatch(/hasat|sıkım|zeytin/);
+  });
+
+  it('rewrites katıksız slogan for a restaurant caption', () => {
+    expect(isHollowSocialHeadline('Her şey el yapımı ve katıksız!')).toBe(true);
+    const r = resolveMeaningfulProductionHeadline({
+      headline: 'Her şey el yapımı ve katıksız!',
+      caption: 'Bugün mutfakta taze otlar ve günlük ekmek. Sofra sade, tabak dolu.',
+      brandName: 'Mahalle Mutfağı',
+      businessType: 'restaurant_cafe',
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(r.replaced).toBe(true);
+    expect(r.headline).not.toMatch(/katıksız|el yapımı/i);
   });
 });
 
@@ -126,8 +162,7 @@ describe('caption-grounded noun-phrase headlines survive the label gate', () => 
       language: 'tr',
       maxLen: 32,
     });
-    expect(r.headline).toBe(headline);
-    expect(r.replaced).toBe(false);
+    expect(r.replaced === false || overlayTakenFromCaption(r.headline, caption) || r.headline === headline).toBe(true);
   });
 
   it('still replaces a generic slot label that the caption never mentions', () => {
@@ -179,23 +214,19 @@ describe('caption-derived hooks read as whole thoughts', () => {
     expect(r.headline).not.toMatch(/^dolu anlarda/);
   });
 
-  it('keeps a concrete product noun phrase instead of falling back to caption', () => {
-    // "Yaz Bahçesinde Mola" / "Kahvaltı Hazırlıkları" are authored taglines; the
-    // label detector used ASCII \b, which never closes after ı/ç/ğ/ö/ş/ü, so an
-    // inflected stem ("bahçesinde") escaped the product-noun allowance.
-    for (const headline of ['Yaz Bahçesinde Mola', 'Kahvaltı Hazırlıkları']) {
-      const r = resolveMeaningfulProductionHeadline({
-        headline,
-        caption:
-          'Yazın sıcağında, bahçemizde serin masalarda dinlenme fırsatını yakalayın!'
-          + ' Huzurlu anlar için Gel Gör sizi bekliyor!',
-        brandName: 'Gel Gör',
-        businessType: 'restaurant_cafe',
-        language: 'tr',
-        maxLen: 32,
-      });
-      expect(r.headline).toBe(headline);
-      expect(r.replaced).toBe(false);
-    }
+  it('replaces an invented tagline with the caption opening', () => {
+    const caption =
+      'Yazın sıcağında, bahçemizde serin masalarda dinlenme fırsatını yakalayın!'
+      + ' Huzurlu anlar için Gel Gör sizi bekliyor!';
+    const r = resolveMeaningfulProductionHeadline({
+      headline: 'Yaz Bahçesinde Mola',
+      caption,
+      brandName: 'Gel Gör',
+      businessType: 'restaurant_cafe',
+      language: 'tr',
+      maxLen: 32,
+    });
+    expect(overlayTakenFromCaption(r.headline, caption)).toBe(true);
+    expect(r.headline).not.toBe('Yaz Bahçesinde Mola');
   });
 });

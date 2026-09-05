@@ -49,6 +49,30 @@ function tokenizeForBrandCompare(text: string): string[] {
  * Soulless daypart / menu-board lines — never on-canvas social hooks.
  * e.g. "Klasik Pazar Kahvaltısı", "Öğlen Menüsü", "Akşam Kokteyli".
  */
+/**
+ * EN→TR brochure calques and off-tone words — never on-canvas, even if the
+ * caption mentions the same noun ("Zeytin hasadını kutlayın", "katıksız").
+ */
+export function isHollowSocialHeadline(headline: string): boolean {
+  const lower = headline.trim().toLocaleLowerCase('tr-TR').normalize('NFC');
+  if (!lower) return false;
+  const patterns = [
+    /\bkatıksız\b/i,
+    /\bkutlayın\b/i,
+    /\bkeşfedin\b/i,
+    /\btadını\s+çıkarın\b/i,
+    /\bher\s+şey\s+el\s+yapımı\b/i,
+    /\b(hikayesini|sürecini|ürünlerimizi|lezzetlerimizi)\s+görün\b/i,
+    /\bhasadını\s+kutla/i,
+    /\bcelebrate\b/i,
+  ];
+  return patterns.some((p) => p.test(lower));
+}
+
+export function isDeadOnCanvasHeadline(headline: string): boolean {
+  return isSoullessMenuHourHeadline(headline) || isHollowSocialHeadline(headline);
+}
+
 export function isSoullessMenuHourHeadline(headline: string): boolean {
   const lower = headline.trim().toLowerCase();
   if (!lower) return true;
@@ -93,6 +117,7 @@ export function isLabelStyleHeadline(headline: string): boolean {
 
   if (words.length <= 1 && h.length < 15) return true;
   if (isSoullessMenuHourHeadline(h)) return true;
+  if (isHollowSocialHeadline(h)) return true;
 
   // Context-signal / calendar / occasion noun phrases — never on-canvas social copy.
   // e.g. "Gündüz plaj/havuz", "Yaz sezonu", "15 Temmuz anması", "Yaz zirvesi — plaj"
@@ -222,6 +247,21 @@ function startsMidSentence(hook: string, clause: string): boolean {
   return first === first.toLocaleLowerCase('tr-TR');
 }
 
+/** Spoken opening thought of the Instagram caption — the only overlay source. */
+export function overlayHeadlineFromCaption(
+  caption: string,
+  brandName: string,
+  maxLen = 32,
+): string {
+  return extractHookFromCaption(caption, brandName, maxLen);
+}
+
+export function overlayTakenFromCaption(headline: string, caption: string): boolean {
+  const h = normalizeKey(headline);
+  const c = normalizeKey(caption);
+  return Boolean(h) && h.length >= 8 && c.includes(h);
+}
+
 function extractHookFromCaption(caption: string, brandName: string, maxLen = 32): string {
   const cap = caption.trim();
   if (!cap) return '';
@@ -234,7 +274,9 @@ function extractHookFromCaption(caption: string, brandName: string, maxLen = 32)
   const usable = (hook: string) =>
     hook.length >= 8
     && !isMeaninglessBrandEchoHeadline(hook, brandName)
-    && !isIncompleteOverlayPhrase(hook);
+    && !isIncompleteOverlayPhrase(hook)
+    && !isHollowSocialHeadline(hook)
+    && !isSoullessMenuHourHeadline(hook);
 
   // Pass 1 — a sentence that already fits is a whole thought. Captions are
   // sentence-case prose, so shortening one always costs either its opening or
@@ -325,6 +367,7 @@ export function isUsableVisualDesignCardHeadline(headline: string, brandName: st
   if (/\b(story|stories|reel|reels|post|posts|carousel|feed)\s*$/i.test(h)) return false;
   // Reject planning-brief verbs that leak into cards
   if (/\b(yapacağız|oluşturacağız|vurgulayan|paylaşacağız|tanıtımını)\b/i.test(h)) return false;
+  if (isHollowSocialHeadline(h) || isSoullessMenuHourHeadline(h)) return false;
   return true;
 }
 
@@ -350,9 +393,21 @@ export function resolveMeaningfulProductionHeadline(input: {
   const usableCard = vdcHeadline && isUsableVisualDesignCardHeadline(vdcHeadline, brandName)
     ? enforceDisplayHeadline(vdcHeadline, maxLen)
     : '';
+  const captionOverlay = caption.length >= 16
+    ? overlayHeadlineFromCaption(caption, brandName, maxLen)
+    : '';
+  if (
+    captionOverlay
+    && headline
+    && !overlayTakenFromCaption(headline, caption)
+  ) {
+    return { headline: captionOverlay, replaced: true, reason: 'caption_pair' };
+  }
 
   if (!headline) {
-    // Prefer mission design-card headline over caption hooks (cards are written for overlay).
+    if (captionOverlay) {
+      return { headline: captionOverlay, replaced: true, reason: 'empty_headline' };
+    }
     if (usableCard) {
       return { headline: usableCard, replaced: true, reason: 'visual_design_card' };
     }
@@ -398,6 +453,7 @@ export function resolveMeaningfulProductionHeadline(input: {
   const isBadHeadline =
     isMeaninglessBrandEchoHeadline(headline, brandName)
     || labelStyle
+    || isHollowSocialHeadline(headline)
     || isInternalStrategyBriefing(headline)
     || isIncompleteOverlayPhrase(headline);
 
@@ -416,6 +472,7 @@ export function resolveMeaningfulProductionHeadline(input: {
     && !isInternalStrategyBriefing(headline)
     && !isIncompleteOverlayPhrase(headline)
     && overlayHeadlineGroundedInCaption(headline, caption)
+    && !isHollowSocialHeadline(headline)
   ) {
     return { headline: enforceDisplayHeadline(headline, maxLen), replaced: false };
   }
@@ -481,12 +538,8 @@ export function sanitizeProductionHeadline(input: {
     return resolved.headline;
   };
 
-  // Prefer design-card overlay when caller asks sanitize with empty/ideation-only paths.
-  const preferredCard = String(input.visualDesignHeadline ?? '').trim();
-  if (preferredCard && isUsableVisualDesignCardHeadline(preferredCard, brandName)) {
-    const cardOk = tryHeadline(preferredCard);
-    if (cardOk) return cardOk;
-  }
+  const captionLine = overlayHeadlineFromCaption(input.caption ?? '', brandName, maxLen);
+  if (captionLine && !isGalleryTagHeadline(captionLine)) return captionLine;
 
   for (const candidate of [input.ideationHeadline, input.headline]) {
     const ok = tryHeadline(candidate ?? '');

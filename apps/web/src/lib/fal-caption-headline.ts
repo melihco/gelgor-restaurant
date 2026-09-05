@@ -378,6 +378,17 @@ export function extractCaptionThemePunchline(input: {
   const caption = input.caption.trim();
   if (caption.length < 12) return '';
   const maxLen = input.maxLen ?? FAL_FEED_OVERLAY_MAX_CHARS;
+  const spoken = caption
+    .split(/[.!?\n]+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 10)
+    .map((s) => s.trim())
+    .find((s) =>
+      s.length <= maxLen
+      && isMeaningfulFalOverlayText(s)
+      && !isIncompleteOverlayPhrase(s),
+    );
+  if (spoken && caption.length >= 40) return spoken;
   const maxWords = input.maxWords ?? 3;
   const lower = caption.toLowerCase();
   const missionLower = String(input.missionTitle ?? '').toLowerCase();

@@ -12,6 +12,7 @@
  */
 
 import OpenAI from 'openai';
+import { overlayHeadlineFromCaption } from '@/lib/production-headline-quality';
 import { serverConfig } from './server-config';
 
 export interface BrandCreativeDirectorInput {
@@ -68,6 +69,7 @@ Rules:
 - Be SPECIFIC to this brand — never generic
 - sceneHint must describe the REAL SCENE a photographer would capture at this venue — NOT graphic design layout instructions
 - headline stays short and punchy (social media hook), max 4-5 words — derive it from Title + Direction, not a generic catalog line
+- NEVER use brochure calques: kutlayın, keşfedin, tadını çıkarın, katıksız (katkısız if purity is the point), "her şey el yapımı". Write the line the owner would actually put on the photo.
 - caption: if Direction is present, keep its meaning (polish voice only). If Direction is empty, write a native Instagram caption that matches Title + vibe.
 - sceneHint + visualDirection MUST follow the owner's Title + Direction vibe (urgent announcement vs warm invitation vs product drop).
 - sceneHint keywords help select the right gallery photo, so mention key visual elements: beach/pool/bar/dance floor/sunset/night/crowd/DJ/food etc.
@@ -157,11 +159,18 @@ export async function interpretBriefAsBrand(
 
     const result = parseResponse(content);
     if (result) {
-      if (input.lockUserHeadline) {
-        result.headline = input.title.trim().slice(0, 80);
-      }
       if (input.extraDirection?.trim()) {
         result.caption = input.extraDirection.trim().slice(0, 600);
+      }
+      if (input.lockUserHeadline) {
+        result.headline = input.title.trim().slice(0, 80);
+      } else if (input.extraDirection?.trim()) {
+        const fromCaption = overlayHeadlineFromCaption(
+          result.caption,
+          input.brandName,
+          48,
+        );
+        if (fromCaption) result.headline = fromCaption;
       }
       console.log(
         `[brand-creative-director] "${input.title}" → "${result.brandInterpretation}"`,

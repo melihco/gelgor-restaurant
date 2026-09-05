@@ -436,7 +436,14 @@ function buildMatchSignals(slotKey: string, designType: string): Record<string, 
       mergeKeywords(signals, ['kampanya', 'indirim', 'offer', 'sale', 'promo', 'fırsat']);
     }
   }
-  if (/social|testimonial|review|ugc|guest_social|member_story|client_testimonial/.test(key)) {
+  if (/weekend_hours|opening_hours/.test(key)) {
+    signals.announcement_types = ['announcement'];
+    mergeKeywords(signals, [
+      'saat', 'açık', 'cumartesi', 'pazar', 'hours', 'open', 'hafta sonu',
+    ]);
+    return signals;
+  }
+  if (/social|testimonial|review|ugc|guest_social|member_story|client_testimonial|customer_favorite/.test(key)) {
     signals.announcement_types = ['social_proof'];
     mergeKeywords(signals, ['yorum', 'review', 'testimonial', 'ugc', 'misafir', 'sosyal kanıt']);
   }

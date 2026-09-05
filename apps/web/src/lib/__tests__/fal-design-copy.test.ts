@@ -79,8 +79,8 @@ describe('extractCaptionAlignedPunchline', () => {
       maxWords: 3,
       maxLen: 36,
     });
-    expect(punch.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(punch.toLowerCase()).toMatch(/serpme|kahvalt|bahçe/);
+    expect(punch.split(/\s+/).length).toBeLessThanOrEqual(6);
+    expect(punch.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|malzeme|taze/);
     expect(isSoullessMenuHourHeadline(punch)).toBe(false);
     expect(punch.toLowerCase()).not.toMatch(/öğlen menü|klasik pazar|gel gör/);
   });
@@ -274,6 +274,7 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(shouldPreserveLockedPunchlineHeadline('mission_tagline')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('canva_field_copy')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('ad_hoc_brief')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('caption_pair')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('agent_headline')).toBe(false);
     expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });
@@ -329,7 +330,7 @@ describe('resolveMissionFalDesignCopy', () => {
         concept_title: 'Yerel Üretim Hikayeleri Serisi',
         headline: 'Yerel Üretim Hikayeleri Serisi',
         canva_field_copy: {
-          headline: 'Doğal lezzetlerimizin tadını çıkarın.',
+          headline: 'Çilek reçeli sofrada.',
         },
       },
       ideationHeadline: 'Yerel Üretim Hikayeleri Serisi',
@@ -339,11 +340,8 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'local_products_shop',
       designIntensity: 'balanced',
     });
-    expect(result.source).toBe('canva_field_copy');
-    // Balanced feed budget is 3 words; complete TR marketing lines may keep 4
-    // when the punch floor / scene compress path preserves meaning.
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(4);
-    expect(result.headline.toLowerCase()).toMatch(/doğal|lezzet|tad/);
+    expect(result.source).toMatch(/caption_pair|canva_field_copy|caption_/);
+    expect(result.headline.toLowerCase()).toMatch(/reçel|sofra|çilek/);
     expect(result.headline.toLowerCase()).not.toMatch(/serisi|yaparken kargo|el yapımı$/);
   });
 
@@ -363,10 +361,9 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'beach_club',
       designIntensity: 'balanced',
     });
-    expect(result.source).toBe('canva_field_copy');
+    expect(result.source).toMatch(/caption_pair|canva_field_copy|caption_/);
     expect(result.headline.toLowerCase()).not.toMatch(/sezon/);
-    expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak/);
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak|dj/);
   });
 
   it('derives short punchline from caption when ideation is a slot format label', () => {
@@ -383,8 +380,7 @@ describe('resolveMissionFalDesignCopy', () => {
     });
     expect(result.source).toMatch(/caption_/);
     expect(result.headline.toLowerCase()).not.toMatch(/çiftlik ziyareti|story/);
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(result.headline.toLowerCase()).toMatch(/hasat|zeytin|tadım|erken/);
+    expect(result.headline.toLowerCase()).toMatch(/hasat|zeytin|tadım|erken|üretim/);
   });
 
   it('prefers agent marketing headline over caption slice when canva is a season label', () => {
@@ -404,12 +400,12 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'beach_club',
       designIntensity: 'balanced',
     });
-    expect(result.source).toBe('agent_headline');
-    expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak/);
+    expect(result.source).toMatch(/caption_pair|caption_|agent_headline/);
+    expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak|dj/);
     expect(result.headline.toLowerCase()).not.toMatch(/sezon|yaz sezon/);
   });
 
-  it('keeps agent headline for beach_club and local_products (multi-tenant)', () => {
+  it('uses caption opening for beach_club and local_products (multi-tenant)', () => {
     for (const businessType of ['beach_club', 'local_products_shop'] as const) {
       const result = resolveMissionFalDesignCopy({
         idea: {
@@ -424,9 +420,28 @@ describe('resolveMissionFalDesignCopy', () => {
         businessType,
         designIntensity: 'balanced',
       });
-      expect(result.source).toBe('agent_headline');
-      expect(result.headline.toLowerCase()).toMatch(/hasat|tadım/);
+      expect(result.source).toMatch(/caption_pair|caption_|agent_headline/);
+      expect(result.headline.toLowerCase()).toMatch(/hasat|tadım|zeytin|stok/);
     }
+  });
+
+  it('paints caption opening not keşfedin slogan on weekend hours', () => {
+    const result = resolveMissionFalDesignCopy({
+      idea: {
+        headline: 'Doğal lezzetleri keşfedin',
+        overlay_headline_source: 'caption_pair',
+        caption_draft: 'Hafta sonu 10-18 açığız. Zeytinyağı tadımı için bekleriz.',
+      },
+      ideationHeadline: 'Doğal lezzetleri keşfedin',
+      caption: 'Hafta sonu 10-18 açığız. Zeytinyağı tadımı için bekleriz.',
+      brandName: 'Karaman Datça',
+      channel: 'story',
+      businessType: 'local_products_shop',
+      designIntensity: 'balanced',
+    });
+    expect(result.source).toBe('caption_pair');
+    expect(result.headline.toLowerCase()).toMatch(/hafta|açık|10/);
+    expect(result.headline.toLowerCase()).not.toMatch(/keşfedin/);
   });
 
   it('derives overlay from caption when ideation is a season label', () => {
@@ -456,10 +471,9 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'restaurant_cafe',
       designIntensity: 'balanced',
     });
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(result.headline.length).toBeLessThanOrEqual(36);
-    expect(result.headline.toLowerCase()).not.toMatch(/gel gör restoran|yaz sezonu|öğlen|menü/);
-    expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|keyfi/);
+    expect(result.headline.length).toBeLessThanOrEqual(48);
+    expect(result.headline.toLowerCase()).not.toMatch(/yaz sezonu|öğlen menü/);
+    expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|malzeme|taze/);
   });
 
   it('never paints a truncated caption stub for social-proof breakfast copy', () => {

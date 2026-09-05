@@ -40,6 +40,11 @@ const SHARED_BANNED_TR = [
   'fırsatlar sizi',
   'lezzetin adresi',
   'güvenilirliğinizi artırın',
+  'katıksız',
+  'kutlayın',
+  'keşfedin',
+  'tadını çıkarın',
+  'her şey el yapımı',
 ];
 
 const SECTOR_COPY_DNA: Record<string, BrandCopyDna> = {

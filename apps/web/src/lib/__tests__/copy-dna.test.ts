@@ -32,6 +32,9 @@ describe('copy-dna', () => {
     expect(isBrochureOverlay('Erken hasat. Datça’nın eli.', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(false);
     expect(isBrochureOverlay('Doğal ürünlerin hikayesini görün.', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
     expect(isBrochureOverlay('Eşsiz bir süreç!', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
+    expect(isBrochureOverlay('Zeytin hasadını kutlayın', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
+    expect(isBrochureOverlay('Her şey el yapımı ve katıksız!', resolveCopyDna({ sector: 'local_products_shop' }))).toBe(true);
+    expect(isBrochureOverlay('Menümüzü keşfedin', resolveCopyDna({ sector: 'restaurant_cafe' }))).toBe(true);
   });
 
   it('flags broken English overlays', () => {

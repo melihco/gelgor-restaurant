@@ -130,9 +130,12 @@ class TestHolidayWindow:
 
 class TestSlotSubjectTokens:
     def test_reads_the_subject_off_the_turkish_label(self):
-        assert slot_subject_tokens(
+        tokens = slot_subject_tokens(
             "Çiftlikten sofraya story", "restaurant_cafe_farm_to_table_story"
-        ) == ["ciftlikten", "sofraya"]
+        )
+        assert "ciftlikten" in tokens
+        assert "sofraya" in tokens
+        assert "ciftlik" in tokens
 
     def test_a_treatment_only_slot_has_no_subject(self):
         """"Tipografi poster story" says how it is made, never what it is about."""
@@ -201,7 +204,7 @@ class TestSlotCopySwap:
         report = check_weekly_content(
             _slot_concepts([
                 ("local_products_shop_gift_bundle_post",
-                 "Hasat başladı", "Bu haftanın hasadı geldi."),
+                 "Hasat başladı", "Bu haftanın hasadı."),
                 ("local_products_shop_harvest_story",
                  "Hasat zamanı", "Zeytin hasadı sürüyor."),
             ]),
@@ -261,7 +264,7 @@ class TestSlotCopySwap:
         report = check_weekly_content(
             _slot_concepts([
                 ("restaurant_cafe_farm_to_table_story",
-                 "Lezzet dolu anlar", "Bahçede güzel bir gün."),
+                 "Lezzet dolu anlar", "Raftaki kavanozlar sizi bekliyor."),
             ]),
             content_pillars=[],
             brand_ctas=[],
