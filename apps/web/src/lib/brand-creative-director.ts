@@ -28,6 +28,8 @@ export interface BrandCreativeDirectorInput {
   instagramBio?: string;
   customRules?: string;
   locale?: string;
+  /** Owner title is the canvas headline — do not invent a punchline. */
+  lockUserHeadline?: boolean;
 }
 
 export interface BrandCreativeDirectorOutput {
@@ -51,7 +53,7 @@ When the brand owner writes a short brief (e.g. "Full Moon"), you must:
 
 Output ONLY valid JSON with these exact fields:
 {
-  "headline": "Short punchy headline for the visual (max 5 words, MUST be in the brand's native language — Turkish brands → Turkish headline)",
+  "headline": "Short punchy overlay headline (max 5 words) written from the owner's Title + Direction/caption vibe, in the brand's native language",
   "caption": "Instagram caption draft (2-3 sentences, brand tone, relevant hashtags)",
   "sceneHint": "Specific visual scene description for the AI image generator — describe what the CAMERA SEES: environment, lighting, objects, people, time of day. Must match the brand's actual venue/product photos. Do NOT describe graphic design elements.",
   "mood": "2-3 word mood descriptor (e.g. 'mystical euphoric', 'warm intimate', 'bold energetic')",
@@ -65,8 +67,9 @@ Rules:
 - LANGUAGE: Always output headline and caption in the BRAND'S native language. If the brand is Turkish, ALL text output (headline, caption) MUST be in Turkish — even if the brief title is in English.
 - Be SPECIFIC to this brand — never generic
 - sceneHint must describe the REAL SCENE a photographer would capture at this venue — NOT graphic design layout instructions
-- headline stays short and punchy (social media hook), max 4-5 words
-- caption should feel native to the brand's Instagram voice
+- headline stays short and punchy (social media hook), max 4-5 words — derive it from Title + Direction, not a generic catalog line
+- caption: if Direction is present, keep its meaning (polish voice only). If Direction is empty, write a native Instagram caption that matches Title + vibe.
+- sceneHint + visualDirection MUST follow the owner's Title + Direction vibe (urgent announcement vs warm invitation vs product drop).
 - sceneHint keywords help select the right gallery photo, so mention key visual elements: beach/pool/bar/dance floor/sunset/night/crowd/DJ/food etc.
 - visualDirection MUST produce a UNIQUE design language for each brand — two different brands receiving the same brief must get completely different design approaches based on their sector, tone, and aesthetic DNA`;
 
@@ -91,7 +94,10 @@ function buildUserPrompt(input: BrandCreativeDirectorInput): string {
     input.extraDirection ? `- Direction: "${input.extraDirection.slice(0, 300)}"` : '',
     `- Format: ${input.outputType}`,
     '',
-    `Interpret this brief AS the brand's creative director. What would ${input.brandName} create for "${input.title}"?`,
+    `Interpret this brief AS the brand's creative director. Design and scene must match the owner's Title + Direction vibe.`,
+    input.lockUserHeadline
+      ? `HEADLINE LOCK: the JSON headline field must be exactly: "${input.title.trim().slice(0, 80)}"`
+      : `Write the overlay headline from Title + Direction (caption/vibe). Do not copy the Title unless it is already a punchy 2–5 word hook.`,
     `IMPORTANT: Output headline and caption in ${langLabel}.`,
   ];
   return lines.filter(Boolean).join('\n');
@@ -151,6 +157,12 @@ export async function interpretBriefAsBrand(
 
     const result = parseResponse(content);
     if (result) {
+      if (input.lockUserHeadline) {
+        result.headline = input.title.trim().slice(0, 80);
+      }
+      if (input.extraDirection?.trim()) {
+        result.caption = input.extraDirection.trim().slice(0, 600);
+      }
       console.log(
         `[brand-creative-director] "${input.title}" → "${result.brandInterpretation}"`,
       );

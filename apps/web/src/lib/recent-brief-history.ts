@@ -16,6 +16,7 @@ export interface RecentBriefDraft {
   campaign?: string;
   priority?: BriefPriority;
   photoUrls?: string[];
+  lockUserHeadline?: boolean;
   savedAt: string;
   source: 'local' | 'api';
 }

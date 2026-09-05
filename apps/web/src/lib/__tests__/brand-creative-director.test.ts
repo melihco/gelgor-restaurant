@@ -72,6 +72,42 @@ describe('brand-creative-director', () => {
     expect(call.messages[1].content).toContain('Sarnıç Beach');
     expect(call.messages[1].content).toContain('beach_club');
     expect(call.messages[1].content).toContain('Full Moon');
+    expect(call.messages[1].content).not.toContain('HEADLINE LOCK');
+  });
+
+  it('locks owner title when lockUserHeadline is set', async () => {
+    __mockCreate.mockResolvedValue({
+      choices: [{
+        message: {
+          content: JSON.stringify({
+            headline: 'Invented Punchline',
+            caption: 'x',
+            sceneHint: 'honey jar on a wooden table in morning light',
+            mood: 'warm',
+            visualDirection: 'product hero',
+            strategicPurpose: 'product',
+            brandInterpretation: 'shelf drop',
+          }),
+        },
+      }],
+    });
+
+    const result = await interpretBriefAsBrand({
+      title: 'Yeni fıstık ezmesi',
+      extraDirection: 'rafta ilk gün',
+      outputType: 'post',
+      brandName: 'Yore',
+      brandBusinessType: 'local_products_shop',
+      brandLocation: 'Datça',
+      brandTone: 'sıcak',
+      brandDescription: 'Yöresel ürünler',
+      lockUserHeadline: true,
+    });
+
+    expect(result!.headline).toBe('Yeni fıstık ezmesi');
+    expect(result!.caption).toBe('rafta ilk gün');
+    const call = __mockCreate.mock.calls[0]![0];
+    expect(call.messages[1].content).toContain('HEADLINE LOCK');
   });
 
   it('returns null when API key is missing', async () => {

@@ -122,20 +122,56 @@ describe('buildBriefProduceIdeas', () => {
     expect(ideas[0]!.content_brief).toContain('reçel');
   });
 
-  it('uses BCD copy when present and keeps selected content_type', () => {
-    const ideas = buildBriefProduceIdeas({
-      title: 'ignored when bcd',
-      extraDirection: '',
+  it('uses BCD headline from caption vibe unless lockUserHeadline is on', () => {
+    const generated = buildBriefProduceIdeas({
+      title: 'Cuma DJ Night',
+      extraDirection: 'mistik gece, rezervasyon istiyoruz',
       outputType: 'reel',
       count: 2,
       photoUrls: [],
       bcd: BCD,
     });
-    expect(ideas).toHaveLength(2);
-    expect(ideas[0]!.headline).toBe('Datça Ballı Öneri');
-    expect(ideas[0]!.content_type).toBe('reel');
-    expect(ideas[0]!.scene_hint).toBe(BCD.sceneHint);
-    expect(ideas[0]!.motion_cue).toBe(BCD.motionCue);
+    expect(generated[0]!.headline).toBe('Datça Ballı Öneri');
+    expect(generated[0]!.lock_user_headline).toBe(false);
+    expect(generated[0]!.caption_draft).toBe('mistik gece, rezervasyon istiyoruz');
+    expect(generated[0]!.canva_field_copy).toBeUndefined();
+    expect(generated[0]!.scene_hint).toBe(BCD.sceneHint);
+
+    const locked = buildBriefProduceIdeas({
+      title: 'Cuma DJ Night',
+      extraDirection: 'mistik gece, rezervasyon istiyoruz',
+      outputType: 'reel',
+      count: 1,
+      photoUrls: [],
+      bcd: BCD,
+      lockUserHeadline: true,
+    });
+    expect(locked[0]!.headline).toBe('Cuma DJ Night');
+    expect(locked[0]!.lock_user_headline).toBe(true);
+    expect(locked[0]!.canva_field_copy?.title).toBe('Cuma DJ Night');
+  });
+
+  it('keeps sector vibe on generated overlay for beach_club and local_products', () => {
+    const beach = buildBriefProduceIdeas({
+      title: 'Pazar brunch',
+      extraDirection: 'güneşli, aile masaları, rezervasyon',
+      outputType: 'post',
+      count: 1,
+      photoUrls: [],
+      bcd: BCD,
+    });
+    const shop = buildBriefProduceIdeas({
+      title: 'Yeni fıstık ezmesi',
+      extraDirection: 'rafta ilk gün, sıcak ve ev yapımı',
+      outputType: 'story',
+      count: 1,
+      photoUrls: [],
+      bcd: { ...BCD, visualDirection: 'shelf hero, kraft paper type' },
+    });
+    expect(beach[0]!.headline).toBe(BCD.headline);
+    expect(beach[0]!.caption_draft).toContain('rezervasyon');
+    expect(shop[0]!.headline).toBe(BCD.headline);
+    expect(shop[0]!.visual_direction).toContain('shelf hero');
   });
 
   it('attaches photos and rotates selected_gallery_url by slot', () => {

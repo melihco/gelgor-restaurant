@@ -56,6 +56,7 @@ interface BriefProduceParams {
   photoUrls: string[];
   tenantId: string;
   officeId: string;
+  lockUserHeadline: boolean;
 }
 
 interface BriefProduceResult {
@@ -70,6 +71,7 @@ async function loadBrandCreativeDirector(
   title: string,
   direction: string,
   outputType: BriefOutputType,
+  lockUserHeadline: boolean,
 ): Promise<BrandCreativeDirectorOutput | null> {
   try {
     const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
@@ -98,6 +100,7 @@ async function loadBrandCreativeDirector(
       instagramBio: typeof brandCtx.instagram_bio === 'string' ? brandCtx.instagram_bio : undefined,
       customRules: typeof brandCtx.custom_rules === 'string' ? brandCtx.custom_rules : undefined,
       locale: typeof brandCtx.locale === 'string' ? brandCtx.locale : 'tr',
+      lockUserHeadline,
     });
   } catch (bcdErr) {
     console.warn('[brief-produce] BCD brand context fetch failed, using rule-based:', bcdErr instanceof Error ? bcdErr.message : bcdErr);
@@ -115,9 +118,16 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
     photoUrls,
     tenantId,
     officeId,
+    lockUserHeadline,
   } = params;
 
-  const bcd = await loadBrandCreativeDirector(workspaceId, title, direction, outputType);
+  const bcd = await loadBrandCreativeDirector(
+    workspaceId,
+    title,
+    direction,
+    outputType,
+    lockUserHeadline,
+  );
   const ideas = buildBriefProduceIdeas({
     title,
     extraDirection: direction,
@@ -125,6 +135,7 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
     count: ideaCount,
     photoUrls,
     bcd,
+    lockUserHeadline,
   });
 
   const BASE = getNextjsInternalOrigin();
@@ -200,6 +211,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     count?: string | number;
     photoUrls?: string[];
     background?: boolean;
+    lockUserHeadline?: boolean;
   };
   try {
     body = await req.json();
@@ -216,6 +228,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     count,
     photoUrls = [],
     background = false,
+    lockUserHeadline = false,
   } = body;
 
   const validation = validateBriefProduceRequest({ workspaceId, title, outputType });
@@ -238,6 +251,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     photoUrls,
     tenantId,
     officeId,
+    lockUserHeadline: Boolean(lockUserHeadline),
   };
 
   if (background) {

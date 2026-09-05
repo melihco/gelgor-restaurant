@@ -362,11 +362,16 @@ def _succeeded_slot_map(produce_data: dict | None) -> dict[str, str | None]:
     for row in (produce_data or {}).get("results") or []:
         if not isinstance(row, dict):
             continue
-        if row.get("error") or not row.get("id"):
-            continue
         key = row.get("slotKey")
-        if isinstance(key, str) and key:
-            out[key] = str(row["id"])
+        if not isinstance(key, str) or not key:
+            continue
+        err = str(row.get("error") or "").strip().lower()
+        if err == "duplicate_skipped":
+            out[key] = str(row["id"]) if row.get("id") else None
+            continue
+        if err or not row.get("id"):
+            continue
+        out[key] = str(row["id"])
     return out
 
 
@@ -410,6 +415,8 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     GALLERY_THEME_MISMATCH_CODE,
     GALLERY_VOLUME_SHORTFALL_CODE,
     "yeni çekim yükleyin",
+    "no persistable content url",
+    "designed_image_persist_failed",
 )
 
 
@@ -932,6 +939,9 @@ _TRANSIENT_OPS_DEFER_MARKERS = (
     "enqueue_failed",
     "bullmq enqueue failed",
     "route_still_running",
+    "fetch failed",
+    "this operation was aborted",
+    "aborted",
 )
 
 # Quality / template gates — the slot's own inputs failed a gate, so every retry

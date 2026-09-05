@@ -146,6 +146,17 @@ export async function loadMissionAutoArtifactDedupeKeys(
       if (parseArtifactMissionId(artifact) !== missionId) continue;
       if (meta.auto_produced !== true && meta.source !== 'auto-produce') continue;
       keys.add(getProductionDedupeKey(artifact));
+      const idxRaw = meta.idea_index ?? meta.ideaIndex;
+      const idx = typeof idxRaw === 'number' && Number.isFinite(idxRaw)
+        ? idxRaw
+        : (typeof idxRaw === 'string' && /^-?\d+$/.test(idxRaw.trim()) ? Number(idxRaw.trim()) : null);
+      const role = String(meta.production_role ?? meta.slot_role ?? '').trim();
+      if (idx != null) {
+        keys.add(buildIdeaProductionDedupeKey(missionId, {
+          content_type: String(meta.contentType ?? meta.kind ?? 'story'),
+          idea_index: idx,
+        }, idx, role || undefined));
+      }
     }
   } catch {
     /* best-effort */

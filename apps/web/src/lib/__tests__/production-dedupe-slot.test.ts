@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getProductionDedupeKey } from '@/lib/production-bundle';
+import { buildIdeaProductionDedupeKey, getProductionDedupeKey } from '@/lib/production-bundle';
 import type { OutputArtifact } from '@/types';
 
 function artifact(partial: Partial<OutputArtifact> & { metadata?: Record<string, unknown> }): OutputArtifact {
@@ -37,5 +37,29 @@ describe('getProductionDedupeKey', () => {
       },
     });
     expect(getProductionDedupeKey(reel)).not.toBe(getProductionDedupeKey(carousel));
+  });
+
+  it('aligns story idea_index (string) with buildIdeaProductionDedupeKey', () => {
+    const mid = '3f6b3ccd-203a-482b-9a5f-bae175c6eb88';
+    const story = artifact({
+      id: 's1',
+      title: 'Üretim aşamalarımızı keşfedin!',
+      metadata: {
+        mission_id: mid,
+        kind: 'instagram_story',
+        idea_index: '12',
+        production_role: 'premium_editorial_campaign_story',
+        contentType: 'story',
+      },
+    });
+    const fromArtifact = getProductionDedupeKey(story);
+    const fromIdea = buildIdeaProductionDedupeKey(
+      mid,
+      { content_type: 'story', idea_index: 12 },
+      12,
+      'premium_editorial_campaign_story',
+    );
+    expect(fromArtifact).toBe(fromIdea);
+    expect(fromArtifact).toBe(`story::${mid}::idx-12::premium_editorial_campaign_story`);
   });
 });

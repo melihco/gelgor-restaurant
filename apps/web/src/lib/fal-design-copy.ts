@@ -384,7 +384,9 @@ function resolvePlannedOverlayLine(
 export function shouldPreserveLockedPunchlineHeadline(
   source: string | null | undefined,
 ): boolean {
-  return source === 'mission_tagline' || source === 'canva_field_copy';
+  return source === 'mission_tagline'
+    || source === 'canva_field_copy'
+    || source === 'ad_hoc_brief';
 }
 
 function extractMissionTagline(idea: FalDesignCopyIdea): string {

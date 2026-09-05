@@ -54,6 +54,24 @@ def test_succeeded_slot_map_keys_by_slotkey_skipping_errors_and_idless() -> None
     assert pfs._succeeded_slot_map(None) == {}
 
 
+def test_succeeded_slot_map_treats_duplicate_skipped_as_ready() -> None:
+    data = {
+        "results": [
+            {"slotKey": "12:premium_editorial_campaign_story", "error": "duplicate_skipped"},
+        ]
+    }
+    assert pfs._succeeded_slot_map(data) == {
+        "12:premium_editorial_campaign_story": None,
+    }
+
+
+def test_fetch_failed_and_persist_url_are_classified() -> None:
+    assert pfs._is_ops_defer_reason("fetch failed") is True
+    assert pfs._is_non_retryable_slot_failure(
+        "Production failed: no persistable content URL"
+    ) is True
+
+
 def test_slot_failure_map_extracts_per_slot_errors() -> None:
     data = {
         "results": [

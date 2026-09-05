@@ -93,6 +93,7 @@ export function NewBrief() {
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [lockUserHeadline, setLockUserHeadline] = useState(false);
   const [outputType, setOutputType] = useState<OutputType>('post');
   const [count, setCount] = useState('1');
   const [photos, setPhotos] = useState<{ dataUrl: string; uploadedUrl?: string; uploading?: boolean }[]>([]);
@@ -194,16 +195,18 @@ export function NewBrief() {
       extraDirection: description.trim(),
       outputType,
       count,
+      lockUserHeadline,
       photoUrls: photos.map((p) => p.uploadedUrl).filter(Boolean) as string[],
       savedAt: new Date().toISOString(),
     });
     setLocalDrafts(loadRecentBriefDrafts(tenantId));
     setAppliedDraftId(draftId);
-  }, [tenantId, title, description, outputType, count, photos, appliedDraftId]);
+  }, [tenantId, title, description, outputType, count, photos, appliedDraftId, lockUserHeadline]);
 
   function applyDraft(draft: RecentBriefDraft) {
     setTitle(draft.title);
     setDescription(draft.extraDirection ?? '');
+    setLockUserHeadline(draft.lockUserHeadline === true);
     if (draft.outputType === 'story' || draft.outputType === 'reel' || draft.outputType === 'post') {
       setOutputType(draft.outputType);
     }
@@ -250,6 +253,7 @@ export function NewBrief() {
           workspaceId: tenantId,
           title: title.trim(),
           extraDirection: description.trim(),
+          lockUserHeadline,
           outputType,
           count: parseInt(count, 10) || 1,
           photoUrls: readyPhotoUrls,
@@ -371,12 +375,53 @@ export function NewBrief() {
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="örn. Yaz Kokteylleri, Cuma Gecesi DJ, Taze Menü"
-            style={{ width: '100%', padding: '14px 16px', borderRadius: 14, outline: 'none', boxSizing: 'border-box', fontSize: 15, background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${title ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.09)'}`, color: '#f8fafc' }}
+            placeholder="örn. Cuma DJ Night, Yeni reçel vitrini, Mutfağa aşçı arıyoruz"
+            style={{ width: '100%', padding: '14px 16px', borderRadius: 14, outline: 'none', boxSizing: 'border-box', fontSize: 16, background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${title ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.09)'}`, color: '#f8fafc' }}
           />
           <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
-            Kısa bir konu yeterli — marka yaratıcı direktörünüz bunu sektörünüze ve marka dilinize göre yorumlar.
+            Konu bu. Headline, açıklama / caption vibe’ından üretilir — aşağıdaki kutuyu işaretlemezseniz.
           </div>
+          <button
+            type="button"
+            onClick={() => setLockUserHeadline((v) => !v)}
+            style={{
+              marginTop: 12,
+              width: '100%',
+              minHeight: 44,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              padding: '10px 12px',
+              borderRadius: 14,
+              cursor: 'pointer',
+              textAlign: 'left',
+              background: lockUserHeadline ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)',
+              border: `0.5px solid ${lockUserHeadline ? 'rgba(157,190,206,0.4)' : 'rgba(255,255,255,0.08)'}`,
+            }}
+          >
+            <span
+              aria-hidden
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 6,
+                flexShrink: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 13,
+                fontWeight: 700,
+                color: lockUserHeadline ? '#0f172a' : 'transparent',
+                background: lockUserHeadline ? '#9DBECE' : 'transparent',
+                border: `1.5px solid ${lockUserHeadline ? '#9DBECE' : 'rgba(148,163,184,0.45)'}`,
+              }}
+            >
+              ✓
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: lockUserHeadline ? '#e2e8f0' : 'rgba(148,163,184,0.75)', lineHeight: 1.4 }}>
+              Bu başlığı tasarımda headline olarak kullan
+            </span>
+          </button>
         </div>
 
         <div style={{ marginBottom: 22 }}>
@@ -446,7 +491,7 @@ export function NewBrief() {
 
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <Label text="Vibe & yönlendirme (opsiyonel)" />
+            <Label text="Açıklama / istek (tasarım vibe’ı)" />
             <button
               type="button"
               onClick={suggestDirection}
@@ -468,10 +513,13 @@ export function NewBrief() {
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="örn. mistik gece atmosferi, samimi akşam vibe'ı…"
+            placeholder="örn. bu gece 22:00, mistik ama davetkâr — rezervasyon istiyoruz"
             rows={3}
             style={{ width: '100%', padding: '13px 15px', borderRadius: 14, resize: 'none', outline: 'none', boxSizing: 'border-box', fontSize: 14, lineHeight: 1.55, background: 'rgba(255,255,255,0.04)', border: '0.5px solid rgba(255,255,255,0.08)', color: '#f8fafc' }}
           />
+          <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+            Tasarım, başlık + bu isteğin enerjisine göre üretilir. Boş bırakırsanız marka yönü önerilir.
+          </div>
           {directionError && (
             <div style={{ marginTop: 8, fontSize: 11, color: '#fb7185' }}>{directionError}</div>
           )}

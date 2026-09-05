@@ -273,6 +273,7 @@ describe('resolveMissionFalDesignCopy', () => {
   it('shouldPreserveLockedPunchlineHeadline covers tagline + canva sources', () => {
     expect(shouldPreserveLockedPunchlineHeadline('mission_tagline')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('canva_field_copy')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('ad_hoc_brief')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('agent_headline')).toBe(false);
     expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });

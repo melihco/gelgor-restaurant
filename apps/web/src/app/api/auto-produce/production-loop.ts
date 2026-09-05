@@ -1417,6 +1417,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const ideaCostBefore = costEstimate;
     const ideaIndex = queueItem.ideaIndex;
     const idea = queueItem.idea as ParsedIdea;
+    const lockAdHocUserHeadline = Boolean(adHocBrief && idea.lock_user_headline);
     const ideaRecord = queueItem.idea;
     let assignment = queueItem.assignment;
     assignment = {
@@ -1593,7 +1594,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
     }
-    const copyDnaFix = applyCopyDnaHeadline({
+    const copyDnaFix = lockAdHocUserHeadline
+      ? { headline, replaced: false as const }
+      : applyCopyDnaHeadline({
       headline,
       caption,
       brandName: resolvedBrandName,
@@ -1792,6 +1795,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // Content calendar quoted tagline = canvas punchline lock for the whole slot.
     if (calendarTaglinePublishable) {
       lockedFalPunchlineSource = 'mission_tagline';
+    } else if (lockAdHocUserHeadline && headline.trim()) {
+      lockedFalPunchlineSource = 'ad_hoc_brief';
     }
     if (usesFalDesignCopy && (caption.trim().length >= 16 || calendarTaglinePublishable)) {
       const falChannel =
@@ -4417,7 +4422,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           falGridSurfaceKind: slotFalGridSurface ?? undefined,
           // Strong ideation caption is publish + overlay SSOT — do not rewrite
           // on-canvas copy away from the Instagram under-post text.
-          captionAwareHeadline: originalIdeationCaption.trim().length < 24,
+          captionAwareHeadline: lockAdHocUserHeadline
+            ? false
+            : originalIdeationCaption.trim().length < 24,
           punchlineLockSource: lockedFalPunchlineSource,
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
@@ -5179,7 +5186,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ? falOverlayMaxLen
           : 72,
     });
-    const persistDna = applyCopyDnaHeadline({
+    const persistDna = lockAdHocUserHeadline
+      ? { headline: publishHeadline, replaced: false as const }
+      : applyCopyDnaHeadline({
       headline: publishHeadline,
       caption: publishCaption || caption,
       brandName: resolvedBrandName,

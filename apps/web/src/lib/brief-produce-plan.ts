@@ -2,8 +2,17 @@
  * Pure planning helpers for New Brief → auto-produce (no provider calls).
  */
 import type { ParsedIdea } from '@/app/api/auto-produce/caption-publish-resolver';
-import { resolveBriefIntent, type BriefOutputType } from '@/lib/brief-intent-resolver';
+import {
+  resolveBriefIntent,
+  stripBriefFormMetadata,
+  type BriefOutputType,
+} from '@/lib/brief-intent-resolver';
 import type { BrandCreativeDirectorOutput } from '@/lib/brand-creative-director';
+
+/** New Brief title is the on-canvas headline — never replaced by BCD or catalog samples. */
+export function lockBriefUserHeadline(title: string): string {
+  return title.trim().slice(0, 80);
+}
 
 export function mapBriefOutputToContentType(outputType: BriefOutputType): string {
   switch (outputType) {
@@ -118,21 +127,35 @@ export function buildBriefProduceIdeas(input: {
   count: number;
   photoUrls: string[];
   bcd: BrandCreativeDirectorOutput | null;
+  /** When true, overlay headline is the form title. Default: generate from caption + description. */
+  lockUserHeadline?: boolean;
 }): ParsedIdea[] {
   const contentType = mapBriefOutputToContentType(input.outputType);
   const ideaCount = clampBriefIdeaCount(input.count);
+  const lockUserHeadline = input.lockUserHeadline === true;
+
+  const userHeadline = lockBriefUserHeadline(input.title);
+  const userDirection = stripBriefFormMetadata(input.extraDirection);
 
   return Array.from({ length: ideaCount }, (_, i) => {
     if (input.bcd) {
+      const overlay = lockUserHeadline ? userHeadline : lockBriefUserHeadline(input.bcd.headline);
       const idea: ParsedIdea = {
-        headline: input.bcd.headline,
-        caption_draft: input.bcd.caption,
+        headline: overlay,
+        caption_draft: userDirection || input.bcd.caption,
         content_type: contentType,
         visual_direction: input.bcd.visualDirection,
         strategic_purpose: input.bcd.strategicPurpose,
         mood: input.bcd.mood,
         scene_hint: input.bcd.sceneHint,
         motion_cue: input.bcd.motionCue,
+        lock_user_headline: lockUserHeadline,
+        canva_field_copy: lockUserHeadline
+          ? {
+              title: overlay,
+              ...(userDirection ? { subtitle: userDirection.slice(0, 80) } : {}),
+            }
+          : undefined,
       };
       attachUserPhotosToIdea(idea, input.photoUrls, i);
       return enrichBriefIdeaForSlotMatch(idea, input);
@@ -143,13 +166,21 @@ export function buildBriefProduceIdeas(input: {
       extraDirection: input.extraDirection,
       outputType: input.outputType,
     });
+    const overlay = lockUserHeadline ? userHeadline : intent.headline;
     const idea: ParsedIdea = {
-      headline: intent.headline,
+      headline: overlay,
       caption_draft: intent.caption,
       content_type: contentType,
       visual_direction: intent.visualDirection,
       strategic_purpose: intent.strategicPurpose,
       mood: intent.mood,
+      lock_user_headline: lockUserHeadline,
+      canva_field_copy: lockUserHeadline
+        ? {
+            title: overlay,
+            ...(userDirection ? { subtitle: userDirection.slice(0, 80) } : {}),
+          }
+        : undefined,
     };
     attachUserPhotosToIdea(idea, input.photoUrls, i);
     return enrichBriefIdeaForSlotMatch(idea, input);

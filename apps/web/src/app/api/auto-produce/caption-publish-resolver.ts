@@ -103,6 +103,8 @@ export interface ParsedIdea {
   attached_photo_urls?: string[];
   /** When true, never repick from brand gallery — use attached_photo_urls only. */
   force_attached_photos?: boolean;
+  /** New Brief: owner title is the canvas headline (checkbox). */
+  lock_user_headline?: boolean;
   event_details?: {
     artist_name?: string;
     date?: string;

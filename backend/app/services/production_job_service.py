@@ -38,8 +38,10 @@ _BACKOFF_CAP_SEC = 900  # 15 min
 _STALE_CLAIM_SEC = 1800  # 30 min — Remotion renders routinely take 5-15 min
 # Proactive reclaim at each factory drain pass (shorter than _STALE_CLAIM_SEC).
 _FACTORY_DRAIN_STALE_RECLAIM_SEC = 600  # 10 min
-# BullMQ drain: reclaim running rows when enqueue/worker never completes (dev-friendly).
-_BULLMQ_DRAIN_STALE_RECLAIM_SEC = 180  # 3 min — Next compile / enqueue timeout recovery
+# BullMQ drain: reclaim running rows only after a long produce can finish.
+# Editorial stories routinely take 6–10 min; 3 min reclaim overlapped live
+# workers and re-painted the same story (Karaman idea 12, 2026-09-05).
+_BULLMQ_DRAIN_STALE_RECLAIM_SEC = 900  # 15 min — above editorial + persist
 # BullMQ watchdog: reclaim running rows when worker callback never arrives (~max auto-produce).
 _BULLMQ_WATCHDOG_STALE_SEC = 660  # 11 min — above Next maxDuration 600s
 

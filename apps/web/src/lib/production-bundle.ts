@@ -361,14 +361,24 @@ export function getProductionIdeaKey(artifact: OutputArtifact): string {
   return `${missionId}::${headline}`;
 }
 
+function coerceIdeaIndex(raw: unknown): number | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && /^-?\d+$/.test(raw.trim())) return Number(raw.trim());
+  return null;
+}
+
 /** Per-story identity — distinct manifest slots at the same idea_index stay separate. */
 export function getStoryBarDedupeKey(artifact: OutputArtifact): string {
   const missionId = parseArtifactMissionId(artifact) || 'no-mission';
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const content = parseArtifactContent(artifact.content);
-  const role = String(meta.production_role ?? content.production_role ?? '').trim();
-  const ideaIndex = meta.idea_index ?? content.idea_index ?? meta.ideaIndex;
-  if (typeof ideaIndex === 'number') {
+  const role = String(
+    meta.production_role ?? meta.slot_role ?? content.production_role ?? '',
+  ).trim();
+  const ideaIndex = coerceIdeaIndex(
+    meta.idea_index ?? content.idea_index ?? meta.ideaIndex,
+  );
+  if (ideaIndex != null) {
     return `story::${missionId}::idx-${ideaIndex}${role ? `::${role}` : ''}`;
   }
   const ideaId = String(meta.idea_id || meta.ideaId || content.idea_id || content.ideaId || '').trim();
@@ -393,9 +403,11 @@ export function getProductionDedupeKey(artifact: OutputArtifact): string {
   const missionId = parseArtifactMissionId(artifact) || 'no-mission';
   const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
   const content = parseArtifactContent(artifact.content);
-  const role = String(meta.production_role ?? content.production_role ?? '').trim();
-  const ideaIndex = meta.idea_index ?? content.idea_index;
-  if (role && typeof ideaIndex === 'number') {
+  const role = String(
+    meta.production_role ?? meta.slot_role ?? content.production_role ?? '',
+  ).trim();
+  const ideaIndex = coerceIdeaIndex(meta.idea_index ?? content.idea_index);
+  if (role && ideaIndex != null) {
     return `${fmt}::${missionId}::idx-${ideaIndex}::${role}`;
   }
   if (fmt === 'story') return getStoryBarDedupeKey(artifact);
