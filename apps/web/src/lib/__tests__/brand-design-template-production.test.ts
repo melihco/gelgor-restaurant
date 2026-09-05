@@ -18,6 +18,7 @@ import {
   buildTemplateReplicaPrompt,
   bindBrandTemplateForFalProduction,
   allowSoftTemplateFallbackForCatalogPin,
+  catalogTemplateWithholdReason,
   dropConflictingLayoutDirectives,
   normalizeLibraryPromptForFormat,
   requiresLibraryTemplateReplica,
@@ -95,6 +96,13 @@ describe('library template production standard', () => {
     expect(requiresLibraryTemplateReplica({ ...matched, matchQuality: 'soft' })).toBe(true);
     expect(requiresLibraryTemplateReplica({ ...matched, matchQuality: 'format_fallback' })).toBe(false);
     expect(requiresLibraryTemplateReplica(null)).toBe(false);
+  });
+
+  it('withholds catalog-pinned slots without a hard/soft replica (shop + beach)', () => {
+    expect(catalogTemplateWithholdReason('local_products_shop_harvest_post', null))
+      .toMatch(/local_products_shop_harvest_post/);
+    expect(catalogTemplateWithholdReason('beach_club_sunset_story', matched)).toBeNull();
+    expect(catalogTemplateWithholdReason('', matched)).toBeNull();
   });
 });
 

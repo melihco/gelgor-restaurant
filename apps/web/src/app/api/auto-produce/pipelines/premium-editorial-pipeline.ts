@@ -9,6 +9,10 @@ import {
   runPremiumEditorialCampaign,
   premiumEditorialArtifactMetadata,
 } from '@/lib/premium-editorial';
+import {
+  bindBrandTemplateForFalProduction,
+  catalogTemplateWithholdReason,
+} from '@/lib/brand-design-template-production';
 import type {
   ProductionPipelineHandler,
   SlotProductionContext,
@@ -43,6 +47,38 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
 
     // Idea-matched gallery from production-loop (pickGalleryPhotoForIdea / matchPhotoToContent).
     const matchedGalleryUrl = inputs.referenceUrl?.trim() || null;
+
+    const templateBinding = await bindBrandTemplateForFalProduction({
+      workspaceId: inputs.workspaceId,
+      slotRole: inputs.slotRole,
+      librarySlotKey: inputs.librarySlotKey,
+      format: outputType,
+      caption: inputs.caption,
+      headline: inputs.headline,
+      subtitle: inputs.falSubtitle || inputs.cta,
+      announcementType: inputs.announcementType,
+      templateUseCase: inputs.templateUseCase,
+      catalogSlotKey: inputs.catalogSlotKey,
+      brandActiveSlots: inputs.brandActiveSlots,
+      adHocBrief: Boolean(inputs.adHocBrief),
+      missionReferenceUrl: matchedGalleryUrl,
+      baseDirectives: [],
+      brandColors: { primary: '#111111', accent: '#C9A227' },
+      logoUrl: inputs.brandLogoUrl || undefined,
+      brandVibe: null,
+    });
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    if (withhold) {
+      state.pipelineFailureReason = withhold;
+      console.warn(`[premium_editorial] withheld: ${state.pipelineFailureReason}`);
+      return;
+    }
+    if (templateBinding.matched) {
+      state.brandDesignTemplateId = templateBinding.matched.id;
+      state.brandDesignTemplateType = templateBinding.matched.templateType;
+      state.brandDesignTemplateName = templateBinding.matched.templateName;
+      state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
+    }
 
     const result = await runPremiumEditorialCampaign({
       brandId: inputs.workspaceId,

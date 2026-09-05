@@ -65,6 +65,12 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/server-config', () => ({ serverConfig: h.serverConfig }));
+vi.mock('@/lib/production-slot-catalog', () => ({
+  resolveSectorSlotsWithPackFallback: () => [],
+}));
+vi.mock('@/lib/catalog-design-template-presets', () => ({
+  ONBOARDING_CATALOG_TEMPLATE_CAP: 8,
+}));
 vi.mock('@/lib/fal-designer-production', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/fal-designer-production')>();
   return {
@@ -89,7 +95,10 @@ vi.mock('@/lib/fal-brand-input', () => ({
     live: { primary: string; accent: string },
   ) => live,
 }));
-vi.mock('@/lib/media-url', () => ({ isUsableGalleryPhotoUrl: h.isUsableGalleryPhotoUrl }));
+vi.mock('@/lib/media-url', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/media-url')>();
+  return { ...actual, isUsableGalleryPhotoUrl: h.isUsableGalleryPhotoUrl };
+});
 vi.mock('@/lib/brand-design-template-production', () => ({
   bindBrandTemplateForFalProduction: h.bindBrandTemplateForFalProduction,
   pickTemplateReferenceUrls: h.pickTemplateReferenceUrls,
@@ -107,6 +116,15 @@ vi.mock('@/lib/brand-design-template-production', () => ({
   requiresLibraryTemplateReplica: (
     m: { matchQuality?: string } | null | undefined,
   ) => !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft'),
+  catalogTemplateWithholdReason: (
+    catalogSlotKey: string | null | undefined,
+    m: { matchQuality?: string } | null | undefined,
+  ) => {
+    const key = String(catalogSlotKey ?? '').trim();
+    if (!key) return null;
+    if (m && (m.matchQuality === 'hard' || m.matchQuality === 'soft')) return null;
+    return `library_template_required: no renderable template for catalog_slot_key=${key}`;
+  },
   allowSoftTemplateFallbackForCatalogPin: (catalogSlotKey?: string | null) =>
     !String(catalogSlotKey ?? '').trim(),
   templateReplicaSpecFromBinding: (

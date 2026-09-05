@@ -117,6 +117,7 @@ import {
   type ManifestProductionQueueItem,
   strategistHeadlineKey,
 } from '@/lib/production-pipeline-router';
+import { resolveArtifactSlotKeys } from '@/lib/production-slot-keys';
 import {
   gallerySequencePhotoTarget,
   isGalleryOnlyVisualPolicy,
@@ -1821,7 +1822,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           : undefined;
         // Soft early budget from slot sample; fal-designed-post refits to matched template sample.
         const falSlotSample = resolveSlotSampleCopy({
-          catalogSlotKey: assignment.catalog_slot_key ?? assignment.library_slot_key,
+          catalogSlotKey: assignment.catalog_slot_key,
           showSubline: falDesignLibrarySlot?.showSubline,
           sector: brandBusinessType,
         });
@@ -5325,8 +5326,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const storySlotMeta: Record<string, unknown> = {};
     const resolvedCatalogSlotKey = assignment.catalog_slot_key
       ?? (ideaRecord.catalog_slot_key as string | undefined);
-    const resolvedProductionSlotKey = assignment.library_slot_key
-      ?? resolvedCatalogSlotKey;
+    const artifactSlotKeys = resolveArtifactSlotKeys({
+      catalogSlotKey: resolvedCatalogSlotKey,
+      librarySlotKey: assignment.library_slot_key,
+    });
 
     if (assignmentImpliesStoryFormat(assignment.slot_role)) {
       const storySlotKey = resolveStoryLibrarySlotKey({
@@ -5612,7 +5615,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       publish_priority: primaryIdeaIndices.has(resolvedIdeaIndex) ? 'recommended' : 'extended',
       production_role: assignment.slot_role,
       pipeline: assignment.pipeline,
-      ...(resolvedCatalogSlotKey ? { catalog_slot_key: resolvedCatalogSlotKey } : {}),
+      ...artifactSlotKeys,
       ...(typeof ideaRecord.catalog_slot_label === 'string' && ideaRecord.catalog_slot_label
         ? { catalog_slot_label: ideaRecord.catalog_slot_label }
         : {}),
@@ -5631,7 +5634,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             : {}),
         }
         : {}),
-      ...(resolvedProductionSlotKey ? { library_slot_key: resolvedProductionSlotKey } : {}),
       visual_policy: galleryOnlyVisual ? 'gallery_only' : 'designed',
       copy_bundle_id: assignment.copy_bundle_id,
       publish_channel: assignment.publish_channel,

@@ -497,7 +497,9 @@ export function selectBrandDesignTemplate(
   const formats = compatibleFormats(opts.format);
   const catalogKey = String(opts.catalogSlotKey ?? '').trim() || null;
   const candidates = resolveDesignTemplateCandidateTypes({
-    librarySlotKey: opts.librarySlotKey,
+    // Catalog pin is SSOT — Remotion aliases (editorial_story / campaign_post)
+    // must not steer soft fallback to a foreign template family.
+    librarySlotKey: catalogKey ? undefined : opts.librarySlotKey,
     slotRole: opts.slotRole,
     caption: opts.caption,
     headline: opts.headline,

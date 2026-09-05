@@ -112,6 +112,17 @@ export function requiresLibraryTemplateReplica(
   return isRenderableDesignTemplateMatch(matched);
 }
 
+/** Catalog pin without a hard/soft library replica — withhold designed production. */
+export function catalogTemplateWithholdReason(
+  catalogSlotKey: string | null | undefined,
+  matched: MatchedDesignTemplate | null | undefined,
+): string | null {
+  const key = String(catalogSlotKey ?? '').trim();
+  if (!key) return null;
+  if (requiresLibraryTemplateReplica(matched)) return null;
+  return `library_template_required: no renderable template for catalog_slot_key=${key}`;
+}
+
 export function templateLockUsesGrafikerPass(score: number | null, pass: boolean | undefined): boolean {
   return pass === true || (score != null && score >= GRAFIKER_PASS_THRESHOLD);
 }

@@ -14,6 +14,7 @@ import {
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
+  catalogTemplateWithholdReason,
   dropConflictingLayoutDirectives,
   requiresLibraryTemplateReplica,
   resolveFalTemplateLockOptions,
@@ -310,9 +311,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
     // Fail closed rather than inventing a generic Ideogram/Satori layout.
     const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
     const libraryReplicaRequired = catalogPinned || requiresLibraryTemplateReplica(templateBinding.matched);
-    if (catalogPinned && !requiresLibraryTemplateReplica(templateBinding.matched)) {
-      state.pipelineFailureReason =
-        `library_template_required: no renderable ${falPipeline === 'fal_reel' ? 'reel_cover' : 'story'} template for catalog_slot_key=${inputs.catalogSlotKey}`;
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    if (withhold) {
+      state.pipelineFailureReason = withhold;
       console.warn(
         `[auto-produce] [fal-track] withheld ${falPipeline}: ${state.pipelineFailureReason}`,
       );

@@ -25,7 +25,7 @@ import {
   dropConflictingLayoutDirectives,
   buildTemplateReplicaPrompt,
   pickTemplateReferenceUrls,
-  requiresLibraryTemplateReplica,
+  catalogTemplateWithholdReason,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
   templateLayoutReferenceUrl,
@@ -867,10 +867,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       matchedShowSubline: templateBinding.matched?.showSubline,
     });
 
-    const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
-    if (catalogPinned && !requiresLibraryTemplateReplica(templateBinding.matched)) {
-      state.pipelineFailureReason =
-        `library_template_required: no renderable post/story template for catalog_slot_key=${inputs.catalogSlotKey}`;
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    if (withhold) {
+      state.pipelineFailureReason = withhold;
       console.warn(`[auto-produce] [fal-design] withheld: ${state.pipelineFailureReason}`);
       return;
     }

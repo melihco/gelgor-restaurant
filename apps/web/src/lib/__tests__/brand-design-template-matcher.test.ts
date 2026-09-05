@@ -108,6 +108,53 @@ describe('resolveDesignTemplateCandidateTypes', () => {
   });
 });
 
+describe('selectBrandDesignTemplate — catalog SSOT vs library alias', () => {
+  it('hard-pins catalog even when library alias is editorial_story (shop + cafe)', () => {
+    const shop = [
+      tpl({
+        id: 'harvest',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_post',
+        design_spec: purposeSpec(),
+      }),
+      tpl({
+        id: 'campaign',
+        template_type: 'campaign_announcement',
+        format: 'post',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const cafe = [
+      tpl({
+        id: 'favorite',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'restaurant_cafe_customer_favorite_post',
+        design_spec: purposeSpec(),
+      }),
+      tpl({
+        id: 'editorial',
+        template_type: 'campaign_announcement',
+        format: 'post',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    expect(selectBrandDesignTemplate(shop, {
+      slotRole: 'premium_editorial_campaign_post',
+      librarySlotKey: 'editorial_story',
+      format: 'post',
+      catalogSlotKey: 'local_products_shop_harvest_post',
+    })?.record.id).toBe('harvest');
+    expect(selectBrandDesignTemplate(cafe, {
+      slotRole: 'fal_designed_post',
+      librarySlotKey: 'campaign_post',
+      format: 'post',
+      catalogSlotKey: 'restaurant_cafe_customer_favorite_post',
+    })?.record.id).toBe('favorite');
+  });
+});
+
 describe('selectBrandDesignTemplate — 1A hard pin', () => {
   afterEach(() => {
     vi.useRealTimers();

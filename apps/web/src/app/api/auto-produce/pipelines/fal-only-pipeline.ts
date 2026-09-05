@@ -20,6 +20,7 @@ import { generateStoryMotionPlate, isPlayableVideoUrl } from '@/lib/fal-story-mo
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
+  catalogTemplateWithholdReason,
   dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
   templateLayoutReferenceUrl,
@@ -488,13 +489,9 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
     });
-    const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
-    if (
-      catalogPinned
-      && !isRenderableDesignTemplateMatch(templateBinding.matched)
-    ) {
-      state.pipelineFailureReason =
-        `library_template_required: no renderable template for catalog_slot_key=${inputs.catalogSlotKey}`;
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    if (withhold) {
+      state.pipelineFailureReason = withhold;
       console.warn(`[auto-produce] [fal-only] withheld: ${state.pipelineFailureReason}`);
       return;
     }
