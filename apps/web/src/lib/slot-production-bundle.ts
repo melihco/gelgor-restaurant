@@ -164,7 +164,7 @@ export function resolveSlotPaintOverlay(
   };
 }
 
-function isCaptionDerivedPunchlineLock(source: PunchlineLockSource): boolean {
+function isCaptionDerivedPunchlineLock(source?: PunchlineLockSource): boolean {
   const s = String(source ?? '').trim();
   return s === 'caption_pair' || s === 'caption_aware';
 }
