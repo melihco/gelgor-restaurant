@@ -260,18 +260,32 @@ export function evaluateCaptionDesignPostCoherence(
   if (photoUrl && caption.length >= 12) {
     const meta = input.galleryMeta ?? undefined;
     const searchable = buildGalleryPhotoSearchable(meta, photoUrl);
-    const hard =
-      isHardGalleryThemeMismatch(
-        {
-          caption,
-          headline: overlay,
-          businessType: input.businessType,
-        },
-        meta,
-        photoUrl,
+    const hasSubjectEvidence = Boolean(
+      meta?.primarySubject
+      || (meta?.contentTags && meta.contentTags.length > 0)
+      || String(meta?.description ?? '').trim(),
+    );
+    // SKU veto (bal ↔ zeytinyağı) needs vision evidence. A matcher-accepted
+    // pin with no bound analysis must not die here — that hid every shop feed
+    // post behind photo_theme_conflict while the photo was already the SKU.
+    const hard = hasSubjectEvidence
+      ? (
+        isHardGalleryThemeMismatch(
+          {
+            caption,
+            headline: overlay,
+            businessType: input.businessType,
+          },
+          meta,
+          photoUrl,
+        )
+        || isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
+        || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta)
       )
-      || isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
-      || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta);
+      : (
+        isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
+        || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta)
+      );
     if (hard) breaks.push('photo_theme_conflict');
   }
 

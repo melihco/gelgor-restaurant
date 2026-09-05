@@ -149,6 +149,35 @@ describe('caption-design-post-coherence', () => {
     },
   );
 
+  it('does not SKU-veto a matcher pin when gallery analysis is unbound', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Diken balımızı denediniz mi? Harika bir tat deneyimi sunuyor.',
+      overlayHeadline: 'Diken balımızı denediniz mi',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      photoUrl: 'https://cdn.example.com/WhatsApp-Image-2025-10-26-at-13.39.10-4.jpeg',
+    });
+    expect(result.breaks).not.toContain('photo_theme_conflict');
+  });
+
+  it('still withholds honey caption on an analyzed olive-oil photo', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Diken balımızı denediniz mi? Harika bir tat deneyimi sunuyor.',
+      overlayHeadline: 'Diken balımızı denediniz mi',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      galleryMeta: {
+        contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+        description: 'Dark glass bottle of olive oil',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'olive_oil',
+        subjectConfidence: 1,
+      },
+    });
+    expect(result.breaks).toContain('photo_theme_conflict');
+  });
+
   it('treats hashtag-only overlay as unshippable and repairs from caption', () => {
     const caption = 'Pazar günlerinde dükkanımızda taze zeytinyağı ve bal bulunur.';
     const result = evaluateCaptionDesignPostCoherence({
