@@ -78,7 +78,7 @@ const SECTOR_COPY_DNA: Record<string, BrandCopyDna> = {
       'eşsiz bir süreç',
       'bizi tercih edin',
     ],
-    proofNouns: ['erken hasat', 'zeytinyağı', 'parti', 'datça'],
+    proofNouns: ['zeytinyağı', 'bal', 'parti', 'kavanoz'],
     fallbackHeadlineTr: 'Bu parti bitince yok.',
     fallbackHeadlineEn: 'This batch does not come back.',
     bannedCtas: ['hızlanın', 'detaylar linkte'],

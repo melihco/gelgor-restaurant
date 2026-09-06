@@ -389,7 +389,8 @@ export function shouldPreserveLockedPunchlineHeadline(
   return source === 'mission_tagline'
     || source === 'canva_field_copy'
     || source === 'ad_hoc_brief'
-    || source === 'caption_pair';
+    || source === 'caption_pair'
+    || source === 'feed_slot_pack';
 }
 
 function extractMissionTagline(idea: FalDesignCopyIdea): string {

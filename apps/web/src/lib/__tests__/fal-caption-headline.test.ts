@@ -393,6 +393,15 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     ).not.toMatch(/müşterilerimiz kahvaltımızdan/);
   });
 
+  it('does not invent early-harvest overlay from a generic olive-oil caption', () => {
+    const punch = extractCaptionThemePunchline({
+      caption: 'Zeytinyağımız raflarda.',
+      maxWords: 3,
+      maxLen: 36,
+    });
+    expect(punch.toLowerCase()).not.toMatch(/erken hasat|early harvest/);
+  });
+
   it('rejects truncated Turkish participle fragments like "Kartta yeni gelen"', () => {
     expect(isIncompleteOverlayPhrase('Kartta yeni gelen')).toBe(true);
     expect(isMeaningfulFalOverlayText('Kartta yeni gelen')).toBe(false);

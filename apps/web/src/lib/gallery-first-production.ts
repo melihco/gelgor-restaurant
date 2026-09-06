@@ -1,7 +1,9 @@
 /**
  * Gallery-first mission production — pick analyzed gallery photo per slot.
- * Ideation caption is authoritative when present: never rewrite it (or its
- * headline) from photo vision/meta — that causes kitchen overlays on DJ posts.
+ * Ideation caption stays for tone/CTA. Product *variants* (erken hasat vs
+ * sızma) are grounded to the pinned still so we do not invent a SKU attribute
+ * the photo cannot prove. Full caption rewrite from vision is still forbidden
+ * — that caused kitchen overlays on DJ posts.
  */
 import {
   MIN_ACCEPT_SCORE,
@@ -30,6 +32,16 @@ import {
   scoreIdeationPhotoMatch,
 } from '@/lib/caption-photo-alignment';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
+import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
+import {
+  lookFeedSlotPack,
+  shouldLookFeedSlotPack,
+  slotJobFromCatalogKey,
+  type FeedSlotLookInput,
+  type FeedSlotLookIssue,
+  type FeedSlotLookResult,
+} from '@/lib/feed-slot-look';
+import { groundFeedSlotCopy, parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from '@/lib/vision-text-guard';
@@ -40,7 +52,12 @@ import {
 } from '@/lib/fal-caption-headline';
 import { resolveSlotSampleCopy } from '@/lib/slot-sample-copy';
 
-export type GalleryFirstCaptionSource = 'ideation_aligned' | 'gallery_meta' | 'gallery_gpt';
+export type GalleryFirstCaptionSource =
+  | 'ideation_aligned'
+  | 'photo_grounded'
+  | 'gallery_meta'
+  | 'gallery_gpt'
+  | 'slot_look';
 
 export interface GalleryFirstSlotResult {
   photoUrl: string | null;
@@ -50,6 +67,9 @@ export interface GalleryFirstSlotResult {
   matchScore: number | null;
   source: GalleryFirstCaptionSource;
   applied: boolean;
+  grounded?: boolean;
+  pack?: FeedSlotPack;
+  lookIssues?: FeedSlotLookIssue[];
 }
 
 type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
@@ -337,6 +357,95 @@ function captionNeedsGpt(caption: string): boolean {
   return false;
 }
 
+const LOOK_CANDIDATE_LIMIT = 4;
+
+function emptySlotLookResult(issues: FeedSlotLookIssue[]): GalleryFirstSlotResult {
+  return {
+    photoUrl: null,
+    caption: '',
+    headline: '',
+    hashtags: [],
+    matchScore: null,
+    source: 'slot_look',
+    applied: false,
+    lookIssues: issues,
+  };
+}
+
+function collectFeedSlotLookUrls(input: {
+  assignment: ProductionAssignment;
+  storyIndex?: number;
+  galleryPhotos: string[];
+  galleryMeta: Record<string, GalleryPhotoMeta>;
+  excludeUrls: string[];
+  brandName: string;
+  brandDescription?: string;
+  businessType?: string;
+  sectorId?: string;
+  catalogSlotKey?: string;
+  visualSubjectHint?: string;
+  creativeBrief?: string;
+  ideationCaption?: string;
+  ideationHeadline?: string;
+  subjectKey?: string;
+  slotBackfillPass?: boolean;
+  tieBreakSeed?: number;
+  forcedPhotoUrl?: string | null;
+  matchInput: MatchPhotoInput;
+}): Array<{ url: string; score: number }> {
+  const usedBases = new Set(input.excludeUrls.map(normalizeGalleryUrl));
+  const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
+  const captionIsStrong = isStrongIdeationCaption(input.ideationCaption);
+  const preferredPool = !captionIsStrong && input.matchInput.preferredAssetTypes?.length
+    ? filterGalleryUrlsByPreferredAssetTypes(
+      input.galleryPhotos,
+      input.galleryMeta,
+      input.matchInput.preferredAssetTypes,
+    )
+    : [];
+  const pool = preferredPool.length > 0 ? preferredPool : input.galleryPhotos;
+  const ranked = input.tieBreakSeed != null
+    ? rankPhotosForContentSeeded(
+      input.matchInput,
+      pool,
+      lookup,
+      input.tieBreakSeed,
+      usedBases,
+      input.galleryMeta,
+    )
+    : rankPhotosForContent(
+      input.matchInput,
+      pool,
+      lookup,
+      usedBases,
+      input.galleryMeta,
+    );
+
+  const picked: Array<{ url: string; score: number }> = [];
+  const seen = new Set<string>();
+  const forced = String(input.forcedPhotoUrl ?? '').trim();
+  if (forced && isUsableGalleryPhotoUrl(forced) && !usedBases.has(normalizeGalleryUrl(forced))) {
+    picked.push({ url: forced, score: ranked.find((r) => normalizeGalleryUrl(r.url) === normalizeGalleryUrl(forced))?.score ?? 0 });
+    seen.add(normalizeGalleryUrl(forced));
+  }
+  for (const row of ranked) {
+    const key = normalizeGalleryUrl(row.url);
+    if (seen.has(key) || !isUsableGalleryPhotoUrl(row.url)) continue;
+    picked.push({ url: row.url, score: row.score });
+    seen.add(key);
+    if (picked.length >= LOOK_CANDIDATE_LIMIT) return picked;
+  }
+  if (picked.length >= LOOK_CANDIDATE_LIMIT) return picked;
+  for (const url of input.galleryPhotos) {
+    const key = normalizeGalleryUrl(url);
+    if (seen.has(key) || usedBases.has(key) || !isUsableGalleryPhotoUrl(url)) continue;
+    picked.push({ url, score: 0 });
+    seen.add(key);
+    if (picked.length >= LOOK_CANDIDATE_LIMIT) break;
+  }
+  return picked;
+}
+
 /**
  * Pick gallery photo for slot + write caption/headline from analysis (meta → GPT fallback).
  */
@@ -365,6 +474,8 @@ export async function resolveGalleryFirstForSlot(input: {
   forceRewrite?: boolean;
   /** Pre-assigned photo from mission batch matcher — caption still generated for this URL. */
   forcedPhotoUrl?: string | null;
+  /** Test seam — inject the one-look packer. */
+  lookFn?: (input: FeedSlotLookInput) => Promise<FeedSlotLookResult>;
 }): Promise<GalleryFirstSlotResult | null> {
   const ideationCaption = String(input.ideationCaption ?? '').trim();
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
@@ -389,6 +500,75 @@ export async function resolveGalleryFirstForSlot(input: {
     visualDirection,
     strategicPurpose,
   });
+
+  if (shouldLookFeedSlotPack(input.assignment)) {
+    const shortlist = collectFeedSlotLookUrls({
+      ...input,
+      tieBreakSeed,
+      matchInput,
+    });
+    if (shortlist.length === 0) {
+      return emptySlotLookResult(['no_pick']);
+    }
+    const slotJob = String(input.assignment.catalog_slot_label ?? '').trim()
+      || slotJobFromCatalogKey(input.assignment.catalog_slot_key)
+      || slotLabelTr(input.assignment);
+    const lookFn = input.lookFn ?? lookFeedSlotPack;
+    const looked = await lookFn({
+      slotJob,
+      language: input.language ?? 'Turkish',
+      ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
+      candidates: shortlist.map((row) => {
+        const meta = input.galleryMeta[normalizeGalleryUrl(row.url)]
+          ?? Object.entries(input.galleryMeta).find(
+            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(row.url),
+          )?.[1];
+        return {
+          url: row.url,
+          visibleLabelText: meta?.visibleLabelText,
+          description: meta?.description,
+          primarySubject: meta?.primarySubject,
+        };
+      }),
+    });
+    if (!looked.ok) {
+      return emptySlotLookResult(looked.issues);
+    }
+    const pickedMeta = input.galleryMeta[normalizeGalleryUrl(looked.pack.photoUrl)]
+      ?? Object.entries(input.galleryMeta).find(
+        ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(looked.pack.photoUrl),
+      )?.[1];
+    const groundedCopy = groundFeedSlotCopy({
+      ...looked.pack,
+      ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
+      photoSideText: [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
+        .filter(Boolean)
+        .join(' '),
+    });
+    const locked = parseFeedSlotPack({
+      ...looked.pack,
+      evidenceNote: groundedCopy.evidenceNote,
+      caption: groundedCopy.caption,
+      headline: groundedCopy.headline,
+    });
+    if (!locked.ok) {
+      return emptySlotLookResult(locked.issues);
+    }
+    const matchScore = shortlist.find(
+      (row) => normalizeGalleryUrl(row.url) === normalizeGalleryUrl(locked.pack.photoUrl),
+    )?.score ?? null;
+    return {
+      photoUrl: locked.pack.photoUrl,
+      caption: locked.pack.caption,
+      headline: locked.pack.headline,
+      hashtags: [],
+      matchScore,
+      source: 'slot_look',
+      applied: true,
+      grounded: true,
+      pack: locked.pack,
+    };
+  }
 
   let pick: PhotoMatchResult | null = null;
   const forced = String(input.forcedPhotoUrl ?? '').trim();
@@ -458,8 +638,8 @@ export async function resolveGalleryFirstForSlot(input: {
     subjectKey,
   });
 
-  // Ideation caption present → keep caption + headline; only report match score.
-  // Do NOT rewrite from gallery meta/GPT (that invents "Mutfağımızda Neler" over DJ copy).
+  // Ideation caption present → keep tone/CTA; ground unproven product variants.
+  // Do NOT rebuild the whole caption from gallery meta/GPT (kitchen overlays on DJ).
   const keepIdeationCopy = ideationCaption.length >= 24
     && !input.forceRewrite
     && !input.slotBackfillPass;
@@ -472,14 +652,21 @@ export async function resolveGalleryFirstForSlot(input: {
     ) {
       return null;
     }
-    return {
-      photoUrl,
+    const grounded = groundPublishCopyToVisual({
       caption: ideationCaption,
       headline: ideationHeadline || ideationCaption.slice(0, 72),
+      photoUrl,
+      galleryMeta: input.galleryMeta,
+    });
+    return {
+      photoUrl,
+      caption: grounded.caption,
+      headline: grounded.headline,
       hashtags: [],
       matchScore: alignScore,
-      source: 'ideation_aligned',
+      source: grounded.changed ? 'photo_grounded' : 'ideation_aligned',
       applied: true,
+      grounded: grounded.changed,
     };
   }
 

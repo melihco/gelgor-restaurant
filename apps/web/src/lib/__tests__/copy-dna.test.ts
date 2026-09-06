@@ -9,6 +9,14 @@ import {
 import { strategistHeadlineKey } from '@/lib/production-pipeline-router';
 
 describe('copy-dna', () => {
+  it('shop sector DNA does not invent a harvest variant or place name', () => {
+    const dna = resolveCopyDna({ sector: 'local_products_shop' });
+    const folded = dna.proofNouns.join(' ').toLowerCase();
+    expect(folded).not.toMatch(/erken hasat/);
+    expect(folded).not.toMatch(/datça|datca/);
+    expect(folded).toMatch(/zeytinyağı|bal|kavanoz|parti/);
+  });
+
   it('uses beauty defaults and tenant theme overrides', () => {
     const dna = resolveCopyDna({
       sector: 'beauty_wellness',

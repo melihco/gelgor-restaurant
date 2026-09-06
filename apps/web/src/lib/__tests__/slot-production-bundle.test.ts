@@ -47,6 +47,27 @@ describe('slot-production-bundle', () => {
     expect(result.headline).toBe(punch);
   });
 
+  it('preserves a locked feed motto and does not saw the last word', () => {
+    const motto = 'Yağın en sakin hali';
+    const result = resolveSlotPaintOverlay({
+      headline: motto,
+      caption: 'Yağın en sakin hali. Natürel sızma.',
+      channel: 'feed_post',
+      brandName: 'Yerel dükkan',
+      businessType: 'local_products_shop',
+      punchlineLockSource: 'feed_slot_pack',
+      designIntensity: 'balanced',
+      typeBudget: {
+        source: 'generated',
+        headline: { maxChars: 18, maxWords: 2, maxLines: 1 },
+        subtitle: { maxChars: 16, maxWords: 3, maxLines: 1 },
+      },
+    });
+    expect(result.preserved).toBe(true);
+    expect(result.headline.toLowerCase()).toContain('sakin');
+    expect(result.headline.toLowerCase()).toContain('hali');
+  });
+
   it('fitMissionOverlay preserveHeadline keeps full tagline', () => {
     const tagline = 'Erken hasat zeytinyağı şişede.';
     const fitted = fitMissionOverlayToTemplateBudget({

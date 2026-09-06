@@ -416,7 +416,7 @@ export function extractCaptionThemePunchline(input: {
     { pattern: /mixologist|bartend|craft\s+signature\s+cocktail/i, tr: 'Barın İmzası', en: 'Bar Craft Glow', missionBoost: /mixolog|cocktail|bar|craft/i },
     { pattern: /\bdj\b|gece|\bnight\b/i, tr: 'Sıcak Gecede Buluş', en: 'Meet Under Stars', missionBoost: /\bdj\b|gece|night|star/i },
     { pattern: /kokteyl|cocktail/i, tr: 'Serinletici Kokteyl Anı', en: 'Cocktail Hour Glow', missionBoost: /kokteyl|cocktail|drink|içecek/i },
-    { pattern: /zeytinyağ/i, tr: 'Erken Hasat Tadım', en: 'Early Harvest Taste' },
+    { pattern: /zeytinyağ/i, tr: 'Zeytinyağı Tadım', en: 'Olive Oil Taste' },
     { pattern: /reçel|\bjam\b/i, tr: 'Kavanozda Doğallık', en: 'Jarred With Care' },
     { pattern: /bahçe|garden|teras|terrace/i, tr: 'Bahçede Yaz Keyfi', en: 'Garden Summer Mood' },
     { pattern: /latin|tropik|küba|cuba/i, tr: 'Latin Gece Ritmi', en: 'Latin Night Glow', missionBoost: /latin|cuba|küba|tropik/i },

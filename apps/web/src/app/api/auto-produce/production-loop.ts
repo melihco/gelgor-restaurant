@@ -337,6 +337,13 @@ import {
   type GalleryFirstCaptionSource,
 } from '@/lib/gallery-first-production';
 import {
+  describeFeedSlotLookIssues,
+  shouldLookFeedSlotPack,
+  shouldSkipFeedMeaningRematch,
+} from '@/lib/feed-slot-look';
+import { stampFeedSlotPackMetadata, type FeedSlotPack } from '@/lib/feed-slot-pack';
+import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
+import {
   buildMissionGalleryAssignments,
   missionGallerySlotKey,
   assignmentUsesGalleryPhoto,
@@ -1998,6 +2005,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let preassignedGalleryUrl: string | null = null;
     let galleryFirstSource: GalleryFirstCaptionSource | null = null;
     let galleryMatchScoreEarly: number | null = null;
+    let lockedFeedSlotPack: FeedSlotPack | null = null;
 
     if (shouldUseGalleryFirstMission({
       missionId,
@@ -2032,28 +2040,52 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         forceRewrite: Boolean(slotBackfillPass),
         forcedPhotoUrl: batchAssignedPhoto,
       });
+      if (gf?.source === 'slot_look' && !gf.applied) {
+        console.warn(
+          `[auto-produce] slot pack empty (${describeFeedSlotLookIssues(gf.lookIssues ?? [])}) `
+          + `slot ${assignment.slot_role}`,
+        );
+        results.push({
+          title: headline || '(empty idea)',
+          imageUrl: '',
+          error: `Paket yok (${describeFeedSlotLookIssues(gf.lookIssues ?? [])})`,
+          slotKey,
+        });
+        continue;
+      }
       if (gf?.applied) {
         preassignedGalleryUrl = gf.photoUrl;
         galleryFirstSource = gf.source;
         galleryMatchScoreEarly = gf.matchScore;
-        if (gf.caption.trim()) {
-          if (!originalIdeationCaption.trim()) {
-            caption = gf.caption;
+        if (gf.source === 'slot_look' && gf.pack) {
+          lockedFeedSlotPack = gf.pack;
+          caption = gf.pack.caption;
+          missionSessionCaptions.push(gf.pack.caption);
+          headline = gf.pack.headline;
+          lockedFalPunchlineSource = 'feed_slot_pack';
+        } else {
+          if (gf.caption.trim()) {
+            if (!originalIdeationCaption.trim() || gf.grounded) {
+              caption = gf.caption;
+            }
+            missionSessionCaptions.push(gf.caption);
           }
-          missionSessionCaptions.push(gf.caption);
-        }
-        if (gf.headline.trim()) {
-          if (!hasPublishableIdeationHeadline(storedIdeationHeadline, resolvedBrandName)) {
-            headline = sanitizeProductionHeadline({
-              headline: gf.headline,
-              ideationHeadline: storedIdeationHeadline,
-              caption: ideationCaption || caption,
-              brandName: resolvedBrandName,
-              conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
-              businessType: brandBusinessType,
-              language: brandLanguageCode,
-              maxLen: 72,
-            });
+          if (gf.headline.trim()) {
+            if (
+              !hasPublishableIdeationHeadline(storedIdeationHeadline, resolvedBrandName)
+              || gf.grounded
+            ) {
+              headline = sanitizeProductionHeadline({
+                headline: gf.headline,
+                ideationHeadline: storedIdeationHeadline,
+                caption: caption || ideationCaption,
+                brandName: resolvedBrandName,
+                conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
+                businessType: brandBusinessType,
+                language: brandLanguageCode,
+                maxLen: 72,
+              });
+            }
           }
         }
         if (gf.hashtags.length) {
@@ -2070,6 +2102,39 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       results.push({ title: '(empty idea)', imageUrl: '', error: 'No caption or headline', slotKey });
       continue;
     }
+
+    const applyVisualClaimGrounding = (opts?: {
+      photoUrl?: string | null;
+      generatedFill?: boolean;
+    }) => {
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) return;
+      const grounded = groundPublishCopyToVisual({
+        caption,
+        headline,
+        photoUrl: opts?.photoUrl,
+        galleryMeta,
+        generatedFill: opts?.generatedFill,
+      });
+      if (!grounded.changed) return;
+      caption = grounded.caption;
+      if (grounded.headline.trim()) {
+        headline = sanitizeProductionHeadline({
+          headline: grounded.headline,
+          ideationHeadline: storedIdeationHeadline,
+          caption: grounded.caption || caption,
+          brandName: resolvedBrandName,
+          conceptTitle: String(idea.concept_title ?? idea.idea_title ?? ''),
+          businessType: brandBusinessType,
+          language: brandLanguageCode,
+          maxLen: 72,
+        });
+      }
+      console.log(
+        `[auto-produce] photo-claim grounding stripped=${grounded.stripped.join(',') || '—'} `
+        + `replaced=${grounded.replaced.map((r) => `${r.from}->${r.to}`).join(',') || '—'} `
+        + `"${headline.slice(0, 40)}"`,
+      );
+    };
 
     if (shouldSkipIdeaForProduction(resolvedIdeaIndex, feedDirectorReport ?? null, {
       missionProduction: Boolean(missionId),
@@ -2301,8 +2366,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
+    if (lockedFeedSlotPack && !forceAttachedPhotos) {
+      referenceUrl = lockedFeedSlotPack.photoUrl;
+    }
+
     // Ideasyon selected_gallery_url — validate semantic score before override (multi-tenant).
-    if (!referenceUrl && typeof agentUrl === 'string' && isUsableGalleryPhotoUrl(agentUrl) && hasGallery) {
+    if (!lockedFeedSlotPack && !referenceUrl && typeof agentUrl === 'string' && isUsableGalleryPhotoUrl(agentUrl) && hasGallery) {
       const ideationPick = resolveBestGalleryUrl(
         {
           caption: ideationCaption,
@@ -2392,6 +2461,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !forceAttachedPhotos
       && !(hasRealBrandPhotos && usesFalDesignerTrackEarly)
     ) {
+      applyVisualClaimGrounding({ generatedFill: true });
       const aiFromCaption = await runScratchVibeImage();
       if (aiFromCaption) {
         referenceUrl = aiFromCaption;
@@ -2665,6 +2735,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       } else {
         console.log(`[auto-produce] no gallery photo → AI image generation for: "${headline.slice(0, 50)}"`);
       }
+      applyVisualClaimGrounding({ generatedFill: true });
       const aiGenerated = await runScratchVibeImage({
         referenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
         captionDrivenMode: isNonVenueSectorProfile(brandBusinessType) || isCaptionDrivenDefault(brandBusinessType),
@@ -2686,7 +2757,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       referenceUrl = normalizeExternalPhotoUrl(referenceUrl) ?? referenceUrl;
     }
 
-    if (referenceUrl && hasGallery && !captionDrivenGenerated && !forceAttachedPhotos) {
+    if (referenceUrl && hasGallery && !captionDrivenGenerated && !forceAttachedPhotos && !lockedFeedSlotPack) {
       referenceUrl = repickGalleryIfDuplicateForType({
         referenceUrl,
         caption: ideationCaption,
@@ -2712,7 +2783,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
+    if (referenceUrl && !captionDrivenGenerated) {
+      applyVisualClaimGrounding({ photoUrl: referenceUrl });
+    }
+
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await isProductionGalleryUrlReachable(referenceUrl))) {
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+        results.push({
+          title: headline,
+          imageUrl: '',
+          error: 'Paket yok (fotoğraf açılmıyor)',
+          slotKey,
+        });
+        continue;
+      }
       // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
       console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
       const fallbackCandidates = galleryPhotos.filter((u) => u !== referenceUrl);
@@ -2790,7 +2874,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
-    if (!forceAttachedPhotos && !referenceUrl?.trim()) {
+    if (!forceAttachedPhotos && !referenceUrl?.trim() && !lockedFeedSlotPack) {
       // FD or batch assign may leave an empty URL — try a fresh gallery pick before skipping.
       const emptyFallback = galleryPhotos.length
         ? pickMissionGallery(
@@ -2837,6 +2921,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       // pin must not withhold a slot they can compose without.
       && !pipelineComposesWithoutGalleryPin(assignment.pipeline, assignment.slot_role)
     ) {
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+        results.push({
+          title: headline,
+          imageUrl: '',
+          error: 'Paket yok (fotoğraf açılmıyor)',
+          slotKey,
+        });
+        continue;
+      }
       const brokenInternal = referenceUrl?.startsWith('/api/');
       const internalFallback = brokenInternal && galleryPhotos.length
         ? pickMissionGallery(
@@ -3240,6 +3333,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         resolvedReferenceUrl,
       ),
     );
+    if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+      hardThemeConflict = false;
+    }
     if (hardThemeConflict && resolvedReferenceUrl) {
       const rematchExclude = getMissionWideExcludeUrls(
         galleryUsage,
@@ -3275,6 +3371,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ?? Object.entries(galleryMeta).find(
             ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
           )?.[1];
+        applyVisualClaimGrounding({ photoUrl: rematchedUrl });
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
           headline: galleryMatchHeadline,
@@ -3324,6 +3421,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !captionDrivenGenerated
       && !forceAttachedPhotos
       && !stillBatchConfirmedPick
+      && !shouldSkipFeedMeaningRematch(lockedFeedSlotPack)
     ) {
       const judgeExclude = getMissionWideExcludeUrls(
         galleryUsage,
@@ -3484,7 +3582,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // When judge_reject clears the photo, shouldSkip sees !hasReference and would
     // call escalate again (no-op) then hard-fail with "Galeri–caption eşleşmesi…".
     if (
-      !galleryEscalatedToFalOnly
+      !shouldSkipFeedMeaningRematch(lockedFeedSlotPack)
+      && !galleryEscalatedToFalOnly
       && shouldSkipProductionForWeakGallery({
         missionProduction: Boolean(missionId),
         galleryMatchScore,
@@ -3659,6 +3758,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
       if (!chain.ok) {
+        if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+          results.push({
+            title: headline,
+            imageUrl: galleryPreviewUrl ?? '',
+            error: `Paket yok (kabuk uyumsuz: ${chain.breaks.join(', ')})`,
+            slotKey,
+          });
+          continue;
+        }
         // Photo broke after overlay settle — one rematch with final overlay text.
         if (
           chain.breaks.includes('photo_theme_conflict')
@@ -3695,6 +3803,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               ?? Object.entries(galleryMeta).find(
                 ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
               )?.[1];
+            applyVisualClaimGrounding({ photoUrl: rematchedUrl });
             const recheck = canShipCaptionDesignPost({
               caption,
               overlayHeadline: headline,
@@ -5010,7 +5119,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ? (eventCtaUrl
           ? `🔗 ${eventCtaText || 'Rezervasyon'} → ${eventCtaUrl}`
           : '') // event details are on the image
-      : (originalIdeationCaption.trim() || caption);
+      : (caption.trim() || originalIdeationCaption.trim());
     const publishHashtags = isEventStory ? [] : hashtags;
 
     const vpsRaw = (idea.visual_production_spec as Record<string, unknown> | undefined);
@@ -5206,7 +5315,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       kind === 'instagram_reel' ? 22
         : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
           : 32;
-    let publishHeadline = sanitizeProductionHeadline({
+    let publishHeadline = lockedFeedSlotPack
+      ? lockedFeedSlotPack.headline
+      : sanitizeProductionHeadline({
       headline,
       ideationHeadline: usesFalDesignCopy ? headline : storedIdeationHeadline,
       caption: publishCaption || caption,
@@ -5221,7 +5332,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           ? falOverlayMaxLen
           : 72,
     });
-    const persistDna = lockAdHocUserHeadline
+    const persistDna = lockAdHocUserHeadline || lockedFeedSlotPack
       ? { headline: publishHeadline, replaced: false as const }
       : applyCopyDnaHeadline({
       headline: publishHeadline,
@@ -5453,6 +5564,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         gallery_first_caption: true,
         caption_source: galleryFirstSource,
       } : {}),
+      ...(shouldLookFeedSlotPack(assignment)
+        ? stampFeedSlotPackMetadata(lockedFeedSlotPack)
+        : {}),
       ...(galleryPhotoDescription
         ? { gallery_photo_description: galleryPhotoDescription.slice(0, 800) }
         : {}),

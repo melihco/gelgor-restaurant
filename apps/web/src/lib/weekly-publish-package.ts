@@ -17,6 +17,7 @@ import { resolveArtifactPublishReady } from '@/lib/artifact-publish-ready';
 import { nodeHasOutput, nodeOutputArray, nodeOutputObject } from '@/lib/mission-node-output';
 import { buildMissionProductionIdeas } from '@/lib/mission-production-plan';
 import { isPublishableMediaUrl } from '@/lib/media-url';
+import { isStampedFeedSlotPackVisible } from '@/lib/feed-slot-pack';
 import {
   MISSION_WEEKLY_PACKAGE_COUNTS,
   type ProductionAssignment,
@@ -297,6 +298,8 @@ export function isArtifactFeedPublishable(artifact: OutputArtifact): boolean {
   } catch {
     return false;
   }
+
+  if (!isStampedFeedSlotPackVisible(meta)) return false;
 
   const contentUrl = String(artifact.contentUrl ?? '').trim();
   const videoUrl = resolveStoryVideoUrl(artifact);
