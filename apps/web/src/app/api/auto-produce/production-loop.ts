@@ -4154,6 +4154,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let imageUrl: string | null = null;
     let videoUrl: string | null = null;
     let carouselUrls: string[] = [];
+    let carouselDesignedHero = false;
     let carouselShortfallReason: string | null = null;
     let videoProduceMeta: VideoProduceMeta | null = null;
 
@@ -4684,7 +4685,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       const carouselMinScore = MIN_ACCEPT_SCORE;
       const carouselVisualDirection = String(idea.visual_direction ?? '').trim() || undefined;
-      let carouselDesignedHero = false;
 
       if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
