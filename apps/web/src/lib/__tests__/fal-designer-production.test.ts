@@ -425,6 +425,88 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt.indexOf('BRAND SOUL LOCK')).toBeLessThan(prompt.indexOf('LAYOUT LOCK:'));
   });
 
+  it('buildBrandSoulLock prefers HOUSE TOKENS over DNA prose', () => {
+    const lock = buildBrandSoulLock({
+      brandName: 'Datça Atölye',
+      sector: 'local_products_shop',
+      brandColors: { primary: '#5c3317', accent: '#c9a96e' },
+      visualDnaTone: 'this long prose should not crowd tokens when HOUSE TOKENS are present',
+      brandDirectives: [
+        'HOUSE TOKENS: materials=terracotta, linen; light=vitrin; type=Fraunces, samimi; anti=neon; offer=Ham bal.',
+        'VISUAL DNA — PRIMARY DESIGN SOURCE: A long unused dump that used to eat the tail.',
+      ],
+    });
+    expect(lock).toContain('HOUSE TOKENS');
+    expect(lock).toContain('terracotta');
+    expect(lock).toContain('Ham bal');
+    expect(lock).not.toContain('long unused dump');
+    expect(lock.length).toBeLessThanOrEqual(550);
+  });
+
+  it('keeps HOUSE TOKENS in protected head under designed intensity pressure', () => {
+    const recipe = [
+      '═══ BRAND SLOT DESIGN RECIPE ═══',
+      'Slot: Yeni ürün (local_products_shop_new_arrival_post) · post · intensity designed.',
+    ].join(' ');
+    const prompt = buildDesignedPostDesignCardPrompt({
+      vibe: 'anatolian_warm',
+      headline: 'Yeni hasat',
+      brandColors: { primary: '#7A2E1B', accent: '#D4A017' },
+      brandName: 'Karaman',
+      sector: 'local_products_shop',
+      aspectRatio: '4:5',
+      designIntensityLevel: 'designed',
+      layoutFamilySeed: 'local_products_shop_new_arrival_post',
+      brandDirectives: [
+        'HOUSE TOKENS: materials=keten, pirinç; type=Playfair, dürüst; offer=Yeni hasat.',
+        recipe,
+        ...Array.from({ length: 40 }, (_, i) =>
+          `EXTRA DIRECTIVE ${i}: filler ${'x'.repeat(80)} to force optional-tail trim.`,
+        ),
+      ],
+    });
+    expect(prompt).toContain('HOUSE TOKENS');
+    expect(prompt).toContain('keten');
+    expect(prompt).not.toContain('HOUSE STYLE v');
+    expect(prompt.indexOf('HOUSE TOKENS')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
+  });
+
+  it('rebuilds COPY FIT from the contracted sentence so designs do not paint a verb crumb', () => {
+    const shop = buildDesignedVideoReelDesignCardPrompt({
+      vibe: 'anatolian_warm',
+      headline: 'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
+      caption: 'Zeytinyağımızı nasıl ürettiğimizi merak ettin mi?',
+      brandColors: { primary: '#5c3317', accent: '#c9a96e' },
+      brandName: 'Atölye',
+      sector: 'local_products_shop',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'designed',
+      brandDirectives: [
+        '═══ COPY FIT (TEMPLATE LIBRARY) ═══ HEADLINE budget: max 3 words / ~28 chars.',
+      ],
+    });
+    expect(shop).toContain('Zeytinyağı Yapım Sürecimize Tanıklık Et');
+    expect(shop).not.toMatch(/HEADLINE budget: max 3 words/);
+    expect(shop).toMatch(/NEVER drop the subject|every contracted word/i);
+
+    const beach = buildDesignedStoryDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Hafta Sonu Daybed Rezervasyonuna Davet!',
+      caption: 'Hafta sonu daybed rezervasyonun açık — yerini ayırt.',
+      brandColors: { primary: '#00C5CC', accent: '#f5a25d' },
+      brandName: 'Sahil',
+      sector: 'beach_club',
+      aspectRatio: '9:16',
+      designIntensityLevel: 'designed',
+      brandDirectives: [
+        '═══ COPY FIT (TEMPLATE LIBRARY) ═══ HEADLINE budget: max 3 words / ~28 chars.',
+      ],
+    });
+    expect(beach).toContain('Hafta Sonu Daybed Rezervasyonuna Davet');
+    expect(beach).not.toMatch(/HEADLINE budget: max 3 words/);
+    expect(beach).toMatch(/NEVER drop the subject|every contracted word/i);
+  });
+
   it('buildBrandSoulLock extracts DNA and uniqueness from brandDirectives', () => {
     const lock = buildBrandSoulLock({
       brandName: 'Yula Bodrum',

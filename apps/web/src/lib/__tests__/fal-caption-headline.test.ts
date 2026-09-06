@@ -626,6 +626,45 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       .toBe('Sayfanıza Hızla Ekleyin');
   });
 
+  it('does not collapse a complete Turkish sentence to a verb crumb', () => {
+    // Shop process line — head-final 22/3 used to keep only "Tanıklık Et".
+    const shop = fitPunchlineUnderBudget(
+      'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
+      22,
+      3,
+    );
+    expect(shop.toLocaleLowerCase('tr-TR')).not.toBe('tanıklık et');
+    expect(shop.toLocaleLowerCase('tr-TR')).not.toBe('et');
+    expect(shop.split(/\s+/).length).toBeGreaterThanOrEqual(2);
+
+    // Beach invitation — must not paint the lone noun "Davet".
+    const beach = fitPunchlineUnderBudget(
+      'Hafta Sonu Daybed Rezervasyonuna Davet!',
+      22,
+      3,
+    );
+    expect(beach.toLocaleLowerCase('tr-TR')).not.toBe('davet');
+    expect(beach.toLocaleLowerCase('tr-TR')).toMatch(/daybed|rezerv|hafta/);
+  });
+
+  it('keeps a complete designed-reel sentence instead of the 22/3 tail', () => {
+    const shop = clampFalOverlayHeadlineForCanvas(
+      'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
+      'reel',
+      'designed',
+    );
+    expect(shop).toMatch(/Zeytinyağı Yapım Sürecimize Tanıklık Et/i);
+    expect(shop.toLocaleLowerCase('tr-TR')).not.toMatch(/^tanıklık et$/);
+
+    const beach = clampFalOverlayHeadlineForCanvas(
+      'Hafta Sonu Daybed Rezervasyonuna Davet!',
+      'story',
+      'designed',
+    );
+    expect(beach).toMatch(/Hafta Sonu Daybed Rezervasyonuna Davet/i);
+    expect(beach.toLocaleLowerCase('tr-TR')).not.toBe('davet');
+  });
+
   it('treats -ın imperatives as verbs, not genitives', () => {
     // "Tanışın" / "Keşfedin" end like a genitive but are publishable verbs.
     expect(fitPunchlineUnderBudget('Mutlu Müşteri Yorumlarıyla Tanışın!', 36, 3))
@@ -686,6 +725,7 @@ describe('buildFalOnCanvasTextContract', () => {
     expect(contract).toContain('BRAND MARK (small corner wordmark only');
     expect(contract).toContain('Brand mark channel: feed_post');
     expect(contract).toContain('FORBIDDEN on canvas: gibberish');
+    expect(contract).toMatch(/last two words/i);
   });
 
   it('forbids typing brand name when logo is provided', () => {

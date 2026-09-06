@@ -67,6 +67,12 @@ describe('resolveOverlayHeadlineWordBudget', () => {
     expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'balanced' }).maxWords).toBe(3);
     expect(resolveOverlayHeadlineWordBudget({ channel: 'feed_post', designIntensity: 'bold_editorial' }).maxWords).toBe(4);
     expect(resolveOverlayHeadlineWordBudget({ channel: 'reel' }).maxWords).toBe(3);
+    const designedReel = resolveOverlayHeadlineWordBudget({
+      channel: 'reel',
+      designIntensity: 'designed',
+    });
+    expect(designedReel.maxWords).toBe(8);
+    expect(designedReel.maxLen).toBeGreaterThanOrEqual(40);
   });
 });
 

@@ -67,6 +67,7 @@ import {
   STORY_CANVAS,
 } from '@/lib/design-canvas-aspect';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
+import { buildSlotCopyFitDirective } from '@/lib/slot-sample-copy';
 import { resolveFalDesignNumericLayout } from '@/lib/fal-design-numeric-layout';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
@@ -837,11 +838,12 @@ export function pickFalLibraryFallbackDirectives(
   if (!list.length) return [];
   const rank = (d: string): number => {
     if (d.includes('TEMPLATE PURPOSE')) return 0;
-    if (d.includes('BRAND SLOT DESIGN RECIPE')) return 1;
-    if (d.includes('BRAND DESIGN CONTRACT') || d.includes('VISUAL DNA')) return 2;
-    if (d.includes('COPY FIT')) return 3;
-    if (d.includes('FONT / VIBE')) return 4;
-    if (d.startsWith('SLOT:')) return 5;
+    if (d.includes('HOUSE TOKENS')) return 1;
+    if (d.includes('BRAND SLOT DESIGN RECIPE')) return 2;
+    if (d.includes('BRAND DESIGN CONTRACT') || d.includes('VISUAL DNA')) return 3;
+    if (d.includes('COPY FIT')) return 4;
+    if (d.includes('FONT / VIBE')) return 5;
+    if (d.startsWith('SLOT:')) return 6;
     return 9;
   };
   const sorted = [...list].sort((a, b) => rank(a) - rank(b));
@@ -872,25 +874,31 @@ export function buildBrandSoulLock(input: {
   const brand = input.brandName?.trim() || 'the brand';
   const sector = input.sector?.trim();
   const dirs = input.brandDirectives ?? [];
+  const tokenDir = dirs.find((d) => d.includes('HOUSE TOKENS:'));
+  const tokenLine = tokenDir
+    ? (tokenDir.match(/HOUSE TOKENS:\s*[^.]{8,360}\.?/i)?.[0] ?? '').replace(/\s+/g, ' ').trim()
+    : '';
   const source = dirs.find((d) => d.includes('BRAND DESIGN CONTRACT'))
     ?? dirs.find((d) => d.includes('VISUAL DNA'))
     ?? '';
 
   let dna = '';
-  const dnaMatch = source.match(
-    /VISUAL DNA[^:]*:\s*([^.]{12,400}(?:\.[^.]{0,80})?)/i,
-  );
-  if (dnaMatch?.[1]) {
-    dna = dnaMatch[1].replace(/\s+/g, ' ').trim().slice(0, 280);
-  } else if (input.visualDnaTone?.trim()) {
-    dna = input.visualDnaTone.trim().slice(0, 220);
+  if (!tokenLine) {
+    const dnaMatch = source.match(
+      /VISUAL DNA[^:]*:\s*([^.]{12,400}(?:\.[^.]{0,80})?)/i,
+    );
+    if (dnaMatch?.[1]) {
+      dna = dnaMatch[1].replace(/\s+/g, ' ').trim().slice(0, 280);
+    } else if (input.visualDnaTone?.trim()) {
+      dna = input.visualDnaTone.trim().slice(0, 220);
+    }
   }
 
   let uniqueness = '';
   const uniqMatch = source.match(/BRAND UNIQUENESS:\s*([^.]+(?:\.[^.]+)?)/i);
-  if (uniqMatch?.[1]) {
+  if (uniqMatch?.[1] && !tokenLine) {
     uniqueness = uniqMatch[1].replace(/\s+/g, ' ').trim().slice(0, 220);
-  } else {
+  } else if (!tokenLine) {
     uniqueness = (
       `A stranger should recognize this as ${brand} from color `
       + `(${input.brandColors.primary}/${input.brandColors.accent}), venue photo, `
@@ -898,8 +906,7 @@ export function buildBrandSoulLock(input: {
     );
   }
 
-  if (!dna && !source && !input.visualDnaTone?.trim()) {
-    // Still emit a short uniqueness lock so brand+palette stay above generic craft.
+  if (!tokenLine && !dna && !source && !input.visualDnaTone?.trim()) {
     return truncateAtWordBoundary(
       [
         '═══ BRAND SOUL LOCK ═══',
@@ -915,8 +922,8 @@ export function buildBrandSoulLock(input: {
     [
       '═══ BRAND SOUL LOCK ═══',
       `This composition must feel unmistakably like ${brand}${sector ? ` (${sector})` : ''} — not a generic sector template.`,
-      dna ? `Visual DNA (highest style authority after on-canvas text): ${dna}.` : '',
-      `Uniqueness: ${uniqueness}`,
+      tokenLine || (dna ? `Visual DNA (highest style authority after on-canvas text): ${dna}.` : ''),
+      uniqueness ? `Uniqueness: ${uniqueness}` : '',
       `Palette accents: ${input.brandColors.primary} + ${input.brandColors.accent} — brand-true only.`,
     ].filter(Boolean).join(' '),
     550,
@@ -1168,14 +1175,24 @@ function buildDesignedDesignCardPrompt(
       && !d.includes('COPY FIT (TEMPLATE LIBRARY)')
       && !d.includes('FONT / VIBE LOCK')
       && !d.includes('BRAND DESIGN CONTRACT')
-      && !d.includes('VISUAL DNA — PRIMARY'),
+      && !d.includes('VISUAL DNA — PRIMARY')
+      && !d.includes('HOUSE TOKENS:')
+      && !d.includes('HOUSE STYLE'),
   );
   // PURPOSE + brand recipe must survive — diversity depends on the job line.
   const brandRecipeLock = brandRecipeRaw
     ? truncateAtWordBoundary(brandRecipeRaw.replace(/\s+/g, ' ').trim(), 980)
     : '';
+  // Rebuild from the contracted headline so a library "max 3 words" lock
+  // cannot tell the painter to keep only "Tanıklık Et".
   const copyFitLock = copyFitRaw
-    ? truncateAtWordBoundary(copyFitRaw.replace(/\s+/g, ' ').trim(), 280)
+    ? truncateAtWordBoundary(
+      buildSlotCopyFitDirective({
+        headline: safeHeadline,
+        subtitle: safeSubtitle,
+      }).replace(/\s+/g, ' ').trim(),
+      480,
+    )
     : '';
   const vibeFontLock = vibeFontRaw
     ? truncateAtWordBoundary(vibeFontRaw.replace(/\s+/g, ' ').trim(), 220)

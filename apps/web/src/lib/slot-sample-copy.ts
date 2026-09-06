@@ -221,14 +221,26 @@ function sampleCopyForTemplateType(templateType: string, hospitalityFood = false
   }
 }
 
-/** Prompt block — short punchlines + no overflow in reserved type zones. */
+function isCompleteOverlaySentence(headline: string): boolean {
+  const words = headline.trim().split(/\s+/).filter(Boolean);
+  return words.length >= 4 || /[!?.…]/.test(headline);
+}
+
+/** Prompt block — contracted headline + no overflow in reserved type zones. */
 export function buildSlotCopyFitDirective(copy: SlotSampleCopy): string {
+  const headline = String(copy.headline ?? '').trim();
+  const words = headline.split(/\s+/).filter(Boolean);
+  const complete = isCompleteOverlaySentence(headline);
   const sub = copy.subtitle?.trim();
   // Budget-only — brand type energy lives in BRAND SOUL / FONT·VIBE / recipe locks.
   return [
     '═══ COPY FIT (TEMPLATE LIBRARY) ═══',
-    'Paint ONLY the ON-CANVAS TEXT CONTRACT — short punchline lockup, not a caption paragraph.',
-    `HEADLINE budget: max ${MAX_HEADLINE_WORDS} words / ~${MAX_HEADLINE_CHARS} chars — already contracted.`,
+    complete
+      ? 'Paint ONLY the ON-CANVAS TEXT CONTRACT — the contracted headline as one complete line, not a caption paragraph.'
+      : 'Paint ONLY the ON-CANVAS TEXT CONTRACT — short punchline lockup, not a caption paragraph.',
+    complete
+      ? `HEADLINE: paint every contracted word in order (${words.length} words). If the zone is tight, shrink type — NEVER drop the subject or keep only the last two words.`
+      : `HEADLINE budget: max ${MAX_HEADLINE_WORDS} words / ~${MAX_HEADLINE_CHARS} chars — already contracted.`,
     sub
       ? `SUBLINE budget: max ${MAX_SUBTITLE_WORDS} words — support line in its reserved zone only.`
       : 'SUBLINE: OFF — do NOT invent a supporting line, tagline, or quote attribution.',

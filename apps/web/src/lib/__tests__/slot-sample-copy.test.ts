@@ -82,6 +82,20 @@ describe('slot-sample-copy', () => {
     expect(noSub).toMatch(/SUBLINE: OFF/i);
   });
 
+  it('tells the painter to keep a complete sentence, not a two-word tail', () => {
+    const shop = buildSlotCopyFitDirective({
+      headline: 'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
+    });
+    expect(shop).toMatch(/every contracted word|NEVER drop the subject/i);
+    expect(shop).not.toMatch(/max 3 words/);
+
+    const beach = buildSlotCopyFitDirective({
+      headline: 'Hafta Sonu Daybed Rezervasyonuna Davet!',
+    });
+    expect(beach).toMatch(/NEVER drop the subject/i);
+    expect(beach).not.toMatch(/max 3 words/);
+  });
+
   it('catalog preset builder returns ≤3-word headlines for beach club slots', () => {
     const social = buildDesignPresetFromCatalogSlot(mockSlot({
       slot_key: 'beach_club_guest_social_proof_post',

@@ -808,6 +808,48 @@ export function windowStrandsCompoundVerb(words: string[], i: number, n: number)
   return TR_LIGHT_VERB_AUX.has(trLower(next).replace(/[^\p{L}']/gu, ''));
 }
 
+/** Standalone light-verb crumbs — "Et", "Gel" — never a publishable headline alone. */
+const TR_SHORT_LIGHT_VERB_CRUMB = new Set([
+  'et', 'ol', 'yap', 'ver', 'gel', 'bak', 'al', 'kal',
+]);
+
+/**
+ * A complete authored sentence must not collapse to a verb-only suffix after
+ * the subject was dropped ("Tanıklık Et", lone "Davet"). Noun-phrase tails
+ * ("Gelen Harika Yorumlar") stay allowed.
+ */
+export function windowSeversCompleteSentence(
+  words: string[],
+  i: number,
+  n: number,
+  authored: string,
+): boolean {
+  if (i <= 0) return false;
+  const complete = words.length >= 4 || /[!?.…]/.test(authored);
+  if (!complete) return false;
+  const window = words.slice(i, i + n);
+  if (window.length === 0) return false;
+  const last = trLower(window[window.length - 1]!).replace(/[^\p{L}']/gu, '');
+
+  // Lone last token of a longer line — "Davet", "Et"
+  if (window.length === 1 && words.length >= 4) return true;
+
+  // Noun + short aux after dropping the object — "Tanıklık Et"
+  if (
+    window.length <= 2
+    && (TR_SHORT_LIGHT_VERB_CRUMB.has(last) || (last.length <= 3 && TR_LIGHT_VERB_AUX.has(last)))
+  ) {
+    return true;
+  }
+
+  // Three-word suffix that still ends on short "Et" after dropping the subject
+  if (window.length === 3 && TR_SHORT_LIGHT_VERB_CRUMB.has(last) && i >= 2) {
+    return true;
+  }
+
+  return false;
+}
+
 export function endsOnStrandedTurkishDependent(text: string): boolean {
   const words = text.trim().split(/\s+/).filter(Boolean);
   if (words.length < 2) return false;
@@ -1042,6 +1084,7 @@ export function fitPunchlineUnderBudget(
     if (i > 0 && isOrphanOverlayLeadWord(words[i]!)) return '';
     if (headFinal && windowSeversTurkishDependency(words, i)) return '';
     if (headFinal && windowStrandsCompoundVerb(words, i, n)) return '';
+    if (headFinal && windowSeversCompleteSentence(words, i, n, clean)) return '';
     // A headline is title-cased, prose is sentence-cased. Opening a window on a
     // lower-case word therefore means we cut into the middle of a sentence
     // ("…lezzet bir arada"), which reads as a severed clause on canvas — unless
@@ -1341,6 +1384,9 @@ export function formatFalOnImageSubtitleDirective(subtitle: string): string {
 /** Feed designed posts — char ceiling; word budget usually bites first (3–4 words). */
 export const FAL_FEED_OVERLAY_MAX_CHARS = 36;
 
+/** Agent-planned mission taglines — complete sentences, not caption stubs. */
+export const FAL_MISSION_TAGLINE_MAX_CHARS = 48;
+
 export type OverlayHeadlineChannel = 'reel' | 'feed_post' | 'story';
 
 const MISSION_PUNCH_FLOOR_WORDS = 3;
@@ -1405,8 +1451,13 @@ export function resolveOverlayHeadlineWordBudget(input: {
   } else if (intensity === 'balanced') {
     maxWords = 3;
   } else if (intensity === 'designed' || intensity === 'bold_editorial') {
-    maxWords = Math.min(4, maxWords + (channel === 'feed_post' ? 0 : 0));
-    maxWords = channel === 'feed_post' ? 4 : 3;
+    // Designed story/reel: keep a complete planned sentence, not a 22/3 crumb.
+    maxWords = channel === 'feed_post' ? 4 : 8;
+  }
+
+  const designedSentence = intensity === 'designed' || intensity === 'bold_editorial';
+  if (designedSentence && (channel === 'reel' || channel === 'story')) {
+    return { maxWords: 8, maxLen: FAL_MISSION_TAGLINE_MAX_CHARS };
   }
 
   let maxLen = channelMaxLen;
@@ -1727,13 +1778,6 @@ export function tightenOverlayHeadline(
   return tightenVideoHeadline(text, maxLen, maxWords);
 }
 
-/** Agent-planned mission taglines — complete sentences, not caption stubs. */
-export const FAL_MISSION_TAGLINE_MAX_CHARS = 48;
-
-/**
- * Clamp overlay copy to lengths image models can spell reliably.
- * Reels/stories stay short; feed posts keep complete calendar/marketing lines ≤48.
- */
 /**
  * Clamp agent-planned taglines/subtitles for on-canvas overlay.
  * Preserves the full planned sentence (≤48 chars) on story/reel — never the old
@@ -1983,7 +2027,7 @@ export function buildFalOnCanvasTextContract(input: {
     'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
     'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, nightlife copy for a food caption, or food-plate copy for a cocktail caption.',
     'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec" or "Sinirli sure".',
-    'If space is tight, shrink typography — never invent alternate wording or truncate mid-word.',
+    'If space is tight, shrink typography — never invent alternate wording, never keep only the last two words of a longer headline, never truncate mid-word.',
   );
 
   return lines.join(' ');
