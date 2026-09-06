@@ -339,7 +339,7 @@ export async function generateDesignedPostImage(opts: {
   try {
     const baseUrl = getNextjsInternalOrigin();
     const payload = JSON.stringify({
-      title: opts.headline.slice(0, 60),
+      title: opts.headline.slice(0, 90),
       caption: opts.caption,
       contentType: opts.format === 'story' ? 'instagram_story' : 'instagram_post',
       brandName: opts.brandName,

@@ -11,6 +11,8 @@ import {
   extractCaptionThemePunchline,
   formatFalOnImageHeadlineDirective,
   clampFalOverlayHeadlineForCanvas,
+  clampMissionTaglineForCanvas,
+  keepCompleteOverlaySentence,
   isInternalStrategyBriefing,
   isIncompleteOverlayPhrase,
   stripDanglingOverlayTail,
@@ -663,6 +665,19 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     );
     expect(beach).toMatch(/Hafta Sonu Daybed Rezervasyonuna Davet/i);
     expect(beach.toLocaleLowerCase('tr-TR')).not.toBe('davet');
+  });
+
+  it('does not cut a complete sentence on the 36/48 char saw (shop + beach)', () => {
+    const shopFull = 'Lezzetlerimizi deneyimlerinizle paylaşın';
+    expect(isIncompleteOverlayPhrase('Lezzetlerimizi deneyimlerinizle')).toBe(true);
+    expect(isIncompleteOverlayPhrase(shopFull)).toBe(false);
+    expect(keepCompleteOverlaySentence(shopFull)).toBe(shopFull);
+    expect(clampMissionTaglineForCanvas(shopFull, 'feed_post')).toBe(shopFull);
+    expect(clampMissionTaglineForCanvas('Datça’nın doğal', 'feed_post')).toBe('');
+
+    const beachFull = 'Hafta Sonu Daybed Rezervasyonuna Davet!';
+    expect(keepCompleteOverlaySentence(beachFull)).toMatch(/Daybed Rezervasyonuna Davet/i);
+    expect(clampMissionTaglineForCanvas(beachFull, 'story').length).toBeGreaterThan(28);
   });
 
   it('treats -ın imperatives as verbs, not genitives', () => {

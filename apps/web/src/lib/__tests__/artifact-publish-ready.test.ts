@@ -108,6 +108,30 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.code).toBe('ready');
   });
 
+  it('carousel designed hero is feed-ready (shop + beach)', () => {
+    for (const role of ['organic_carousel', 'organic_carousel'] as const) {
+      const d = resolveArtifactPublishReady({
+        meta: {
+          pipeline: 'carousel_gallery',
+          production_role: role,
+          fal_designer_produced: true,
+          fal_design_engine: 'gpt_image_designed',
+          auto_produced: true,
+          agency_produced: true,
+          gallery_match_score: 70,
+        },
+        content: {
+          kind: 'instagram_carousel',
+          carousel_urls: ['https://cdn.example.com/a.jpg', 'https://cdn.example.com/b.jpg'],
+        },
+        format: 'carousel',
+        designedVisualReady: true,
+      });
+      expect(d.ready).toBe(true);
+      expect(d.blockFeed).toBe(false);
+    }
+  });
+
   it('unblocks premium_editorial not_ready when premium_composition was stamped', () => {
     const meta = {
       pipeline: 'premium_editorial',

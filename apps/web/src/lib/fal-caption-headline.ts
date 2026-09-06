@@ -1187,6 +1187,10 @@ const INCOMPLETE_TR_WHILE_CLAUSE_RX =
 const INCOMPLETE_TR_GENITIVE_MODIFIER_RX =
   /\b[\p{L}']+(nın|nin|nun|nün|'nın|'nin|'nun|'nün)\s+(el\s+yapımı|doğal|taze|yeni|özel|organik)\s*$/iu;
 
+/** "Lezzetlerimizi deneyimlerinizle" — instrumental cut before the verb (paylaşın). */
+const INCOMPLETE_TR_COMITATIVE_TAIL_RX =
+  /\b[\p{L}']+(ınızla|inizle|unuzla|ünüzle|larıyla|leriyle)\s*$/iu;
+
 /**
  * Quantifier left dangling after caption clamp — "Zeytinyağı, sağlığımıza birçok"
  * (lost "fayda sağlar"). Never a closed social punchline.
@@ -1234,7 +1238,8 @@ const INCOMPLETE_TR_BARE_GENITIVE_RX =
 
 /** Headline ends mid-thought — unsuitable for publish or fal canvas. */
 export function isIncompleteOverlayPhrase(text: string): boolean {
-  const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text));
+  const clean = stripDanglingOverlayTail(sanitizeFalOverlayText(text))
+    .replace(/[\u2018\u2019]/g, "'");
   if (!clean || clean.length < 4) return true;
   if (DANGLING_TAIL_RX.test(text.trim())) return true;
   if (INCOMPLETE_MODIFIER_TAIL_RX.test(text.trim())) return true;
@@ -1269,6 +1274,7 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   // loop in truncateAtWordBoundary accepted it.
   if (endsOnStrandedTurkishDependent(clean)) return true;
   const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length >= 2 && INCOMPLETE_TR_COMITATIVE_TAIL_RX.test(clean)) return true;
   if (words.length === 1 && INCOMPLETE_TR_BARE_POSSESSIVE_SUBJECT_RX.test(words[0]!)) return true;
   if (words.length === 1 && clean.length >= 7 && INCOMPLETE_TR_BARE_GENITIVE_RX.test(words[0]!)) {
     return true;
@@ -1581,9 +1587,20 @@ export function fitMissionOverlayToTemplateBudget(input: {
   const allowSoftFloor = budget.source !== 'operator_type_budget';
   const rawH = correctTurkishSpelling(sanitizeFalOverlayText(input.headline));
 
-  // Locked mission tagline / canva punchline: keep phrase, fit subtitle only.
-  if (input.preserveHeadline) {
-    const headline = clampMissionTaglineForCanvas(rawH, input.channel) || rawH;
+  // Complete mission sentence: never stem to the type-zone char/word saw.
+  // Operator-set zones stay exact — they are a designed box, not a default cap.
+  const keepCompleteHeadline = Boolean(
+    allowSoftFloor
+    && rawH
+    && !isIncompleteOverlayPhrase(rawH)
+    && isMeaningfulFalOverlayText(rawH),
+  );
+
+  // Locked / complete headline: keep phrase, fit subtitle only.
+  if (input.preserveHeadline || keepCompleteHeadline) {
+    const headline = keepCompleteHeadline
+      ? rawH
+      : (clampMissionTaglineForCanvas(rawH, input.channel) || rawH);
     if (!budget.subtitle || !budget.showSubline) {
       return { headline, budget };
     }
@@ -1779,35 +1796,37 @@ export function tightenOverlayHeadline(
 }
 
 /**
+ * Keep a complete on-canvas sentence. Word/char ceilings may shrink type, never
+ * delete the last word or letter. Only a paragraph is split — at the first .!?
+ */
+export function keepCompleteOverlaySentence(headline: string): string {
+  const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
+  if (!clean) return '';
+  if (isInternalStrategyBriefing(clean)) return '';
+  if (!isIncompleteOverlayPhrase(clean) && isMeaningfulFalOverlayText(clean)) {
+    return clean;
+  }
+  const sentence = (clean.split(/[.!?…]/)[0] ?? '').trim();
+  if (
+    sentence.length >= 8
+    && sentence !== clean
+    && !isIncompleteOverlayPhrase(sentence)
+    && isMeaningfulFalOverlayText(sentence)
+  ) {
+    return sentence;
+  }
+  return '';
+}
+
+/**
  * Clamp agent-planned taglines/subtitles for on-canvas overlay.
- * Preserves the full planned sentence (≤48 chars) on story/reel — never the old
- * 22/28 caption-stub truncation that made designs look amateur.
+ * Complete sentences stay whole — char/word budgets are size hints, not a saw.
  */
 export function clampMissionTaglineForCanvas(
   headline: string,
   _channel: 'reel' | 'feed_post' | 'story',
 ): string {
-  const clean = correctTurkishSpelling(sanitizeFalOverlayText(headline));
-  if (!clean) return '';
-  if (isInternalStrategyBriefing(clean)) return '';
-  if (clean.length <= FAL_MISSION_TAGLINE_MAX_CHARS && !isIncompleteOverlayPhrase(clean)) {
-    return clean;
-  }
-  const result = truncateAtWordBoundary(clean, FAL_MISSION_TAGLINE_MAX_CHARS);
-  if (result && isMeaningfulFalOverlayText(result) && !isIncompleteOverlayPhrase(result)) {
-    return result;
-  }
-  const sentence = clean.split(/[.!?…]/)[0]?.trim() ?? '';
-  if (
-    sentence.length >= 8
-    && sentence.length <= FAL_MISSION_TAGLINE_MAX_CHARS
-    && !isIncompleteOverlayPhrase(sentence)
-  ) {
-    return sentence.endsWith('.') || sentence.endsWith('!') || sentence.endsWith('?')
-      ? sentence
-      : `${sentence}.`;
-  }
-  return '';
+  return keepCompleteOverlaySentence(headline);
 }
 
 /** Overlay line from mission tagline / canva_field_copy — not caption-derived. */

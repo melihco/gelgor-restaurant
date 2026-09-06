@@ -362,24 +362,17 @@ function resolvePlannedOverlayLine(
 ): string {
   const planned = resolveMissionPlannedOverlayLine(line, fallbacks, channel);
   if (!planned) return '';
+  // Complete authored line wins. Budget may shrink type; it must not saw the sentence.
+  if (!isIncompleteOverlayPhrase(planned)) return planned;
   const budget = resolveOverlayHeadlineWordBudget({
     channel,
     designIntensity,
     sampleHeadline,
     typeBudget,
   });
-  // Quoted punchlines that already fit the budget stay verbatim.
-  const words = planned.replace(/[!?.…]+$/g, '').trim().split(/\s+/).filter(Boolean);
-  if (
-    words.length <= budget.maxWords
-    && planned.length <= budget.maxLen
-    && !isIncompleteOverlayPhrase(planned)
-  ) {
-    return planned;
-  }
   return fitPunchlineUnderBudget(planned, budget.maxLen, budget.maxWords)
     || tightenOverlayHeadline(planned, budget.maxLen, budget.maxWords)
-    || planned;
+    || '';
 }
 
 /** Mission tagline / canva punchline already locked as canvas headline — do not demote to event title. */
@@ -556,7 +549,7 @@ export function resolveMissionFalDesignCopy(input: {
       && acceptPlannedOverlayLine(ideaLine)
     )
       ? ideaLine
-      : (firstSpoken && firstSpoken.length <= maxLen && acceptPlannedOverlayLine(firstSpoken)
+      : (firstSpoken && acceptPlannedOverlayLine(firstSpoken)
         ? firstSpoken
         : '');
     if (pairedRaw && acceptPlannedOverlayLine(pairedRaw)) {

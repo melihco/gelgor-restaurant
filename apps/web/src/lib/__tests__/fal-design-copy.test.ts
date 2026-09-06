@@ -191,8 +191,7 @@ describe('resolveMissionFalDesignCopy', () => {
         typeBudget,
       });
       expect(result.source).toBe('mission_tagline');
-      // Soft-clamp ≤48 only — never crush to operator 2-word stems.
-      expect(result.headline.length).toBeLessThanOrEqual(48);
+      // Complete Hub sentence stays whole — never crush to operator 2-word stems.
       expect(result.headline.split(/\s+/).length).toBeGreaterThan(2);
       expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
       expect(result.headline.toLowerCase()).not.toMatch(/summer sunset|haftalık|vitrin|gathering/);
@@ -463,10 +462,10 @@ describe('resolveMissionFalDesignCopy', () => {
     });
     expect(result.source).toMatch(/caption_/);
     expect(result.headline.toLowerCase()).not.toMatch(/plaj\/havuz|gündüz/);
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
   });
 
-  it('never ships a long caption sentence as the feed overlay', () => {
+  it('keeps the complete first caption sentence on the feed overlay', () => {
     const result = resolveMissionFalDesignCopy({
       idea: { headline: 'Yaz sezonu / serinletici menü' },
       ideationHeadline: 'Yaz sezonu / serinletici menü',
@@ -477,9 +476,9 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'restaurant_cafe',
       designIntensity: 'balanced',
     });
-    expect(result.headline.length).toBeLessThanOrEqual(48);
+    expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
     expect(result.headline.toLowerCase()).not.toMatch(/yaz sezonu|öğlen menü/);
-    expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|malzeme|taze/);
+    expect(result.headline.toLowerCase()).toMatch(/serpme|kahvalt|bahçe|tadın/);
   });
 
   it('never paints a truncated caption stub for social-proof breakfast copy', () => {
@@ -503,9 +502,8 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'restaurant_cafe',
       designIntensity: 'balanced',
     });
-    expect(result.headline.toLowerCase()).not.toMatch(/müşterilerimiz kahvaltımızdan/);
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(result.headline.toLowerCase()).toMatch(/kahvalt|serpme|keyfi|vazgeçilmez|lezzet/);
+    expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
+    expect(result.headline.toLowerCase()).toMatch(/vazgeçemiyor|kahvalt|lezzet/);
   });
 
   it('keeps English overlay language when caption is English', () => {
@@ -522,6 +520,34 @@ describe('resolveMissionFalDesignCopy', () => {
     });
     expect(result.headline).toMatch(/Meet|stars|night|Join|summer/i);
     expect(result.headline).not.toMatch(/sezon|anması|plaj/i);
-    expect(result.headline.split(/\s+/).length).toBeLessThanOrEqual(3);
+    expect(isIncompleteOverlayPhrase(result.headline)).toBe(false);
+  });
+
+  it('does not saw a complete shop or beach sentence on the 36-char cap', () => {
+    const shop = resolveMissionFalDesignCopy({
+      idea: { headline: 'Lezzetlerimizi deneyimlerinizle paylaşın' },
+      ideationHeadline: 'Lezzetlerimizi deneyimlerinizle paylaşın',
+      caption: 'Lezzetlerimizi deneyimlerinizle paylaşın. Sofraya bal ve zeytinyağı.',
+      brandName: 'Karaman Datça',
+      channel: 'feed_post',
+      businessType: 'local_products_shop',
+      designIntensity: 'balanced',
+    });
+    expect(shop.headline.toLocaleLowerCase('tr-TR')).toContain('paylaşın');
+    expect(shop.headline.toLocaleLowerCase('tr-TR')).not.toMatch(/deneyimlerinizle\s*$/);
+    expect(isIncompleteOverlayPhrase(shop.headline)).toBe(false);
+
+    const beach = resolveMissionFalDesignCopy({
+      idea: { headline: 'Hafta Sonu Daybed Rezervasyonuna Davet!' },
+      ideationHeadline: 'Hafta Sonu Daybed Rezervasyonuna Davet!',
+      caption: 'Hafta Sonu Daybed Rezervasyonuna Davet! Çimlerin üstünde kalın.',
+      brandName: 'Sarnıç Beach',
+      channel: 'story',
+      businessType: 'beach_club',
+      designIntensity: 'designed',
+    });
+    expect(beach.headline).toMatch(/Daybed Rezervasyonuna Davet/i);
+    expect(beach.headline.toLocaleLowerCase('tr-TR')).not.toBe('davet');
+    expect(isIncompleteOverlayPhrase(beach.headline)).toBe(false);
   });
 });

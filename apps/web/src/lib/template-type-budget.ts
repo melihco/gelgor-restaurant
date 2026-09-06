@@ -212,7 +212,7 @@ export function typeBudgetAppliesSoftFloor(budget: TemplateTypeBudget | null | u
 export function formatTypeBudgetPromptLines(budget: TemplateTypeBudget | null | undefined): string[] {
   if (!budget) return [];
   const lines = [
-    `TYPE ZONE BUDGET (${budget.source}): headline ≤${budget.headline.maxChars} chars / ${budget.headline.maxWords} words / ${budget.headline.maxLines} lines — do not paint longer copy.`,
+    `TYPE ZONE BUDGET (${budget.source}): headline ≤${budget.headline.maxChars} chars / ${budget.headline.maxWords} words / ${budget.headline.maxLines} lines — size hint only. Paint the locked headline in full; shrink and wrap. Never cut a word or letter.`,
   ];
   if (budget.subtitle) {
     lines.push(

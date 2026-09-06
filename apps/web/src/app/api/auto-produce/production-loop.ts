@@ -5711,7 +5711,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       fal_designer_produced: (Boolean(videoUrl) && (isFalMissionVideo || isFalOnlyVideo))
         || falReelStillFallback
         || ((isFalDesignPost || isFalOnlyPost || isPremiumEditorial) && Boolean(imageUrl) && Boolean(falDesignEngine))
-        || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine)),
+        || ((isFalMissionVideo || isFalOnlyVideo) && Boolean(imageUrl) && Boolean(falDesignEngine))
+        || (isCarousel && carouselDesignedHero && carouselUrls.length >= 2),
       ...(falDesignEngine === 'satori_local' ? { typography_model: 'satori_local' } : {}),
       ...(isFalMissionVideo && videoProduceMeta ? { fal_video_model: videoProduceMeta.source } : {}),
       ...(videoProduceMeta ? {
@@ -5994,7 +5995,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || metadata.grafiker_pass === true
       || metadata.premium_composition === true
       || Boolean(metadata.fal_design_engine)
-      || isPremiumEditorial,
+      || isPremiumEditorial
+      || (isCarousel && carouselDesignedHero && carouselUrls.length >= 2),
     );
     const publishDecision = resolveArtifactPublishReady({
       meta: metadata,
