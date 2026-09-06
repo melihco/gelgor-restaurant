@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { compileBrandDesignConstitution } from '@/lib/brand-design-constitution';
 import { CANVA_SECTOR_ARCHETYPE_HINTS } from '@/lib/canva-archetype-catalog';
 import {
+  PACK_SIGNATURE_ARCHETYPES,
   mergeHouseFamilyIntoTheme,
   parseHouseMoodboardRefs,
   resolveHouseLayoutFamily,
@@ -10,6 +11,10 @@ import {
 } from '@/lib/house-layout-family';
 
 describe('resolveHouseLayoutFamily', () => {
+  it('keeps eight layout packs — no ninth geometry kit', () => {
+    expect(Object.keys(PACK_SIGNATURE_ARCHETYPES)).toHaveLength(8);
+  });
+
   it('keeps beach coastal family inside the beach pool', () => {
     const family = resolveHouseLayoutFamily({
       sector: 'beach_club',

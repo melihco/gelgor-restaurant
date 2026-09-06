@@ -332,7 +332,7 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
     });
   });
 
-  it('missing catalog template soft-binds same-format shell (under-provisioned tenant)', () => {
+  it('missing catalog template fails closed (beach_club — no peer shell)', () => {
     const active = [
       tpl({ id: 'popular', template_type: 'campaign_announcement', format: 'post', usage_count: 99 }),
       tpl({ id: 'daily', template_type: 'daily_story', format: 'story', usage_count: 50 }),
@@ -344,15 +344,13 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
       catalogSlotKey: 'beach_club_sunset_golden_story',
       announcementType: 'offer_campaign',
     });
-    expect(sel?.record.id).toBe('popular');
-    expect(sel?.matchQuality).toBe('soft');
-    expect(sel?.hardPinMiss?.reason).toBe('missing_template');
+    expect(sel).toBeNull();
     expect(
       diagnoseCatalogHardPinMiss(active, 'post', 'beach_club_sunset_golden_story').reason,
     ).toBe('missing_template');
   });
 
-  it('local_products_shop: missing catalog key soft-binds post shell across sectors', () => {
+  it('local_products_shop: missing catalog key does not borrow another post shell', () => {
     const active = [
       tpl({
         id: 'harvest_post',
@@ -368,9 +366,10 @@ describe('selectBrandDesignTemplate — 1A hard pin', () => {
       catalogSlotKey: 'local_products_shop_missing_catalog_key',
       announcementType: 'offer_campaign',
     });
-    expect(sel?.record.id).toBe('harvest_post');
-    expect(sel?.matchQuality).toBe('soft');
-    expect(sel?.hardPinMiss?.reason).toBe('missing_template');
+    expect(sel).toBeNull();
+    expect(
+      diagnoseCatalogHardPinMiss(active, 'post', 'local_products_shop_missing_catalog_key').reason,
+    ).toBe('missing_template');
   });
 
   it('allowSoftFallbackWhenHardMiss re-enables soft path for migration/debug', () => {
@@ -481,6 +480,84 @@ describe('selectBrandDesignTemplate — format gate', () => {
     });
     expect(sel?.matchQuality).toBe('hard');
     expect(sel?.record.id).toBe('craft_reel');
+  });
+
+  it('hard-pins carousel shells and rejects post/story peers (shop + beach)', () => {
+    const shop = [
+      tpl({
+        id: 'range_carousel',
+        template_type: 'menu_highlight',
+        format: 'carousel',
+        catalog_slot_key: 'local_products_shop_product_range_carousel',
+        design_spec: purposeSpec(),
+      }),
+      tpl({
+        id: 'harvest_post',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_post',
+        design_spec: purposeSpec(),
+        usage_count: 40,
+      }),
+    ];
+    const beach = [
+      tpl({
+        id: 'moments_carousel',
+        template_type: 'venue_showcase',
+        format: 'carousel',
+        catalog_slot_key: 'beach_club_guest_moments_carousel',
+        design_spec: purposeSpec(),
+      }),
+      tpl({
+        id: 'sunset_story',
+        template_type: 'daily_story',
+        format: 'story',
+        catalog_slot_key: 'beach_club_sunset_golden_story',
+        design_spec: purposeSpec(),
+        usage_count: 40,
+      }),
+    ];
+    const shopSel = selectBrandDesignTemplate(shop, {
+      slotRole: 'organic_carousel',
+      format: 'carousel',
+      catalogSlotKey: 'local_products_shop_product_range_carousel',
+    });
+    const beachSel = selectBrandDesignTemplate(beach, {
+      slotRole: 'organic_carousel',
+      format: 'carousel',
+      catalogSlotKey: 'beach_club_guest_moments_carousel',
+    });
+    expect(shopSel?.matchQuality).toBe('hard');
+    expect(shopSel?.record.id).toBe('range_carousel');
+    expect(beachSel?.matchQuality).toBe('hard');
+    expect(beachSel?.record.id).toBe('moments_carousel');
+  });
+
+  it('legacy carousel key stored as post still hard-pins; foreign post shells do not', () => {
+    const active = [
+      tpl({
+        id: 'legacy_range',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_product_range_carousel',
+        design_spec: purposeSpec(),
+      }),
+      tpl({
+        id: 'other_post',
+        template_type: 'campaign_announcement',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_harvest_post',
+        design_spec: purposeSpec(),
+        usage_count: 99,
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(active, {
+      slotRole: 'organic_carousel',
+      format: 'carousel',
+      catalogSlotKey: 'local_products_shop_product_range_carousel',
+    });
+    expect(sel?.matchQuality).toBe('hard');
+    expect(sel?.record.id).toBe('legacy_range');
   });
 
   it('without catalog key, soft match still works (pre-catalog brands)', () => {

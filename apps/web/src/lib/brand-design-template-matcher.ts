@@ -4,7 +4,7 @@
  * At mission production time, selects the brand's onboarding-generated design
  * template that best fits a slot (by intent + format) and returns a concise
  * brand-consistency directive plus the template's preferred gallery reference.
- * This keeps every produced post/story/reel aligned with the locked,
+ * This keeps every produced post/story/reel/carousel aligned with the locked,
  * brand-approved design set without overriding the slot's actual content.
  */
 
@@ -140,7 +140,7 @@ export interface CatalogHardPinMiss {
 }
 
 /** Production slot format → design-template formats considered compatible. */
-function compatibleFormats(format: 'story' | 'post' | 'reel'): string[] {
+function compatibleFormats(format: DesignTemplateMatchFormat): string[] {
   switch (format) {
     case 'post':
       return ['post'];
@@ -150,9 +150,15 @@ function compatibleFormats(format: 'story' | 'post' | 'reel'): string[] {
     // (Story soft-bind made Scorpios/Yula reels look like wrong library shells.)
     case 'reel':
       return ['reel_cover'];
+    case 'carousel':
+      return ['carousel'];
     default:
       return [format];
   }
+}
+
+function catalogKeyLooksCarousel(catalogSlotKey: string): boolean {
+  return /(?:^|_)carousel(?:$|_)/i.test(catalogSlotKey);
 }
 
 /** Calendar / ideation announcement_type → onboarding design template_type (priority order). */
@@ -183,11 +189,14 @@ const LIBRARY_SLOT_TO_TEMPLATE_TYPES: Record<string, string[]> = {
   ad_creative_post: ['campaign_announcement', 'announcement_formal'],
 };
 
-const DEFAULT_TEMPLATE_TYPES_BY_FORMAT: Record<'story' | 'post' | 'reel', string[]> = {
+export type DesignTemplateMatchFormat = 'story' | 'post' | 'reel' | 'carousel';
+
+const DEFAULT_TEMPLATE_TYPES_BY_FORMAT: Record<DesignTemplateMatchFormat, string[]> = {
   post: ['campaign_announcement', 'announcement_formal', 'brand_identity', 'venue_showcase'],
   story: ['daily_story', 'event_special', 'venue_showcase', 'social_proof'],
   // Types commonly stamped on reel_cover library rows (venue/menu/event + reel_cover).
   reel: ['reel_cover', 'venue_showcase', 'menu_highlight', 'event_special'],
+  carousel: ['menu_highlight', 'venue_showcase', 'campaign_announcement', 'brand_identity'],
 };
 
 function normalizeSignalToken(value: string | null | undefined): string {
@@ -216,7 +225,7 @@ export interface DesignTemplateMatchSignals {
   headline?: string;
   announcementType?: string | null;
   templateUseCase?: string | null;
-  format?: 'story' | 'post' | 'reel';
+  format?: DesignTemplateMatchFormat;
 }
 
 /**
@@ -394,7 +403,7 @@ function findCatalogKeyHardMatch(
  */
 export function diagnoseCatalogHardPinMiss(
   active: BrandDesignTemplateRecord[],
-  format: 'story' | 'post' | 'reel',
+  format: DesignTemplateMatchFormat,
   catalogSlotKey: string,
 ): CatalogHardPinMiss {
   const key = catalogSlotKey.trim();
@@ -407,7 +416,10 @@ export function diagnoseCatalogHardPinMiss(
     return { reason: 'missing_template', catalogSlotKey: key, foundFormats: [] };
   }
   const foundFormats = [...new Set(keyed.map((r) => r.format))];
-  const formatOk = keyed.filter((r) => formats.includes(r.format));
+  const formatOk = keyed.filter((r) => (
+    formats.includes(r.format)
+    || (format === 'carousel' && catalogKeyLooksCarousel(key) && r.format === 'post')
+  ));
   if (formatOk.length === 0) {
     return { reason: 'format_mismatch', catalogSlotKey: key, foundFormats };
   }
@@ -466,7 +478,7 @@ export interface BrandDesignTemplateSelection {
 export interface SelectBrandDesignTemplateInput {
   slotRole: string;
   librarySlotKey?: string | null;
-  format: 'story' | 'post' | 'reel';
+  format: DesignTemplateMatchFormat;
   caption?: string;
   headline?: string;
   announcementType?: string | null;
@@ -509,7 +521,16 @@ export function selectBrandDesignTemplate(
   });
 
   // 1A — hard pin on the slot's own catalog_slot_key (format-validated).
-  const hardMatch = findCatalogKeyHardMatch(active, formats, catalogKey);
+  // Legacy carousel shells were stored as post — bind the same catalog key only.
+  let hardMatch = findCatalogKeyHardMatch(active, formats, catalogKey);
+  if (
+    !hardMatch
+    && opts.format === 'carousel'
+    && catalogKey
+    && catalogKeyLooksCarousel(catalogKey)
+  ) {
+    hardMatch = findCatalogKeyHardMatch(active, ['post'], catalogKey);
+  }
   if (hardMatch) {
     console.log(
       `[design-matcher] hard pin catalog_slot_key=${catalogKey} → "${hardMatch.template_name}" (${hardMatch.template_type})`,
@@ -518,18 +539,11 @@ export function selectBrandDesignTemplate(
   }
 
   // Catalog key requested but hard pin missed.
-  // - missing_template: soft same-format shell (tenant under-provisioned) —
-  //   better than withholding the whole fal slot; telemetry keeps hardPinMiss.
-  // - format_mismatch / off_season / empty_active_set: fail closed unless
-  //   allowSoftFallbackWhenHardMiss is explicitly true (migration/debug).
+  // Missing own shell fails closed — same-format peer is the wrong kabuk.
+  // Soft only when allowSoftFallbackWhenHardMiss is explicitly true (migration/debug).
   if (catalogKey) {
     const miss = diagnoseCatalogHardPinMiss(active, opts.format, catalogKey);
-    // missing_template: under-provisioned tenant may soft-bind a same-format shell.
-    // purpose_brief_missing: keyed orphans exist — fail closed so a foreign purpose
-    // shell (e.g. DJ teaser) cannot soft-hijack another catalog slot.
-    const softOk =
-      miss.reason === 'missing_template'
-      || opts.allowSoftFallbackWhenHardMiss === true;
+    const softOk = opts.allowSoftFallbackWhenHardMiss === true;
     console.warn(
       `[design-matcher] hard pin MISS catalog_slot_key=${catalogKey} reason=${miss.reason}` +
         (miss.foundFormats.length ? ` found_formats=${miss.foundFormats.join(',')}` : '') +
@@ -668,7 +682,7 @@ export async function matchDesignTemplateToSlot(
   opts: {
     slotRole: string;
     librarySlotKey: string | null | undefined;
-    format: 'story' | 'post' | 'reel';
+    format: DesignTemplateMatchFormat;
     caption?: string;
     headline?: string;
     announcementType?: string | null;

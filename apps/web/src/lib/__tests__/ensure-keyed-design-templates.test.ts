@@ -16,7 +16,7 @@ function tpl(
 }
 
 describe('planKeyedDesignTemplateClones', () => {
-  it('clones missing beach_club story keys from same-format peer', () => {
+  it('does not clone missing beach_club story keys from a same-format peer', () => {
     const plans = planKeyedDesignTemplateClones({
       enabledSlots: [
         {
@@ -42,13 +42,7 @@ describe('planKeyedDesignTemplateClones', () => {
         }),
       ],
     });
-    expect(plans).toHaveLength(2);
-    expect(plans.map((p) => p.catalogSlotKey).sort()).toEqual([
-      'beach_club_cocktail_promo_story',
-      'beach_club_day_pass_story',
-    ]);
-    expect(plans.every((p) => p.donorSource === 'active_peer')).toBe(true);
-    expect(plans.every((p) => p.format === 'story')).toBe(true);
+    expect(plans).toHaveLength(0);
   });
 
   it('revives archived same-key template for local_products_shop story gap', () => {
@@ -108,7 +102,45 @@ describe('planKeyedDesignTemplateClones', () => {
     expect(plans).toHaveLength(0);
   });
 
-  it('injects target-slot purpose brief (not donor brief) for local_products_shop', () => {
+  it('revives archived carousel keys as carousel format (not post)', () => {
+    const plans = planKeyedDesignTemplateClones({
+      enabledSlots: [
+        {
+          slotKey: 'local_products_shop_product_range_carousel',
+          format: 'carousel',
+          designTemplateType: 'menu_highlight',
+          labelTr: 'Ürün yelpazesi',
+        },
+        {
+          slotKey: 'beach_club_guest_moments_carousel',
+          format: 'carousel',
+          designTemplateType: 'venue_showcase',
+          labelTr: 'Misafir anları',
+        },
+      ],
+      templates: [],
+      archivedTemplates: [
+        tpl({
+          id: 'arch-shop',
+          catalog_slot_key: 'local_products_shop_product_range_carousel',
+          format: 'carousel',
+          template_type: 'menu_highlight',
+          status: 'archived',
+        }),
+        tpl({
+          id: 'arch-beach',
+          catalog_slot_key: 'beach_club_guest_moments_carousel',
+          format: 'carousel',
+          template_type: 'venue_showcase',
+          status: 'archived',
+        }),
+      ],
+    });
+    expect(plans).toHaveLength(2);
+    expect(plans.every((p) => p.format === 'carousel')).toBe(true);
+  });
+
+  it('injects target-slot purpose brief (not archived donor brief) for local_products_shop', () => {
     const plans = planKeyedDesignTemplateClones({
       enabledSlots: [
         {
@@ -118,14 +150,16 @@ describe('planKeyedDesignTemplateClones', () => {
           labelTr: 'Atölye story',
         },
       ],
-      templates: [
+      templates: [],
+      archivedTemplates: [
         tpl({
-          id: 'peer',
-          catalog_slot_key: 'local_products_shop_shelf_story',
+          id: 'arch-atelier',
+          catalog_slot_key: 'local_products_shop_atelier_story',
           format: 'story',
           template_type: 'daily_story',
+          status: 'archived',
           design_spec: {
-            prompt: 'peer shell',
+            prompt: 'archived shell',
             slot_creative_brief: {
               version: 1,
               creative_intent_tr: 'DONOR BRIEF MUST NOT SURVIVE',
@@ -136,6 +170,7 @@ describe('planKeyedDesignTemplateClones', () => {
       brandSeed: { brandName: 'Atelier X', location: 'Datça' },
     });
     expect(plans).toHaveLength(1);
+    expect(plans[0]!.donorSource).toBe('archived_same_key');
     const brief = plans[0]!.designSpec.slot_creative_brief as {
       creative_intent_tr: string;
     };

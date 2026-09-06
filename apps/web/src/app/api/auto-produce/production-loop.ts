@@ -98,7 +98,7 @@ import {
   resolveVisualPipelineSteps,
   runGptImageEnhanceForIdea,
 } from '@/lib/brand-visual-pipeline';
-import { resolveVisualSubject, shouldUseCaptionDrivenVisual } from '@/lib/ai-visual-production-standard';
+import { resolveVisualSubject, resolveVisualSubjectForSlot, shouldUseCaptionDrivenVisual } from '@/lib/ai-visual-production-standard';
 import { normalizeHashtags, resolveCarouselUrls } from '@/lib/artifact-utils';
 import {
   detectIdeaPackageFormat,
@@ -1096,6 +1096,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       visualSubject: fromAuto,
     };
   }
+  // Mission-wide default — each slot may override (farm/hours ≠ product restage).
+  const missionAiVisualStandard = aiVisualStandard;
+  const missionResolvedVisualSubject = resolvedVisualSubject;
 
   // Brief'ten gelen kullanıcı fotoğraflarını galeri yoksa inject et (hasGallery ve PIS için)
   const briefPhotoUrls: string[] = ideas
@@ -1978,6 +1981,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ?? (ideaRecord.catalog_slot_key as string | undefined)
         ?? '',
     ).trim();
+    const slotVisualSubject = resolveVisualSubjectForSlot({
+      subject: pctx.aiVisualStandard.visualSubject,
+      businessType: brandBusinessType,
+      catalogSlotKey: slotCatalogKey,
+      galleryMeta,
+    });
+    resolvedVisualSubject = slotVisualSubject;
+    aiVisualStandard = {
+      ...missionAiVisualStandard,
+      visualSubject: slotVisualSubject,
+    };
+    if (slotVisualSubject !== missionResolvedVisualSubject) {
+      console.log(
+        `[auto-produce] slot visual subject: ${missionResolvedVisualSubject} → ${slotVisualSubject} `
+        + `(${slotCatalogKey || assignment.slot_role})`,
+      );
+    }
     activeGalleryMatchExtras = {
       ...(visualDirectionForMatch ? { visualDirection: visualDirectionForMatch } : {}),
       ...(String(strategicPurpose).trim()
@@ -4664,6 +4684,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       const carouselMinScore = MIN_ACCEPT_SCORE;
       const carouselVisualDirection = String(idea.visual_direction ?? '').trim() || undefined;
+      let carouselDesignedHero = false;
 
       if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
@@ -4677,6 +4698,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           visualDirection: carouselVisualDirection,
           strategicPurpose: strategicPurpose || undefined,
           subjectKey: ideationSubjectKey || undefined,
+          catalogSlotKey: assignment.catalog_slot_key
+            ?? (ideaRecord.catalog_slot_key as string | undefined),
+          slotRole: assignment.slot_role,
+          logoUrl: brandLogoUrl || undefined,
           galleryAnalysis: galleryMeta,
           candidateUrls: galleryPhotos,
           excludeUrls: carouselExclude,
@@ -4684,6 +4709,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           minScore:     carouselMinScore,
           minSlides:    CAROUSEL_MIN_SLIDES,
         });
+        carouselDesignedHero = carouselResult.designedHero;
         carouselUrls = carouselResult.enhancedUrls;
         carouselGalleryUrls = carouselResult.galleryUrls;
         for (const gUrl of carouselGalleryUrls) {
@@ -4749,6 +4775,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               cta: cta || (idea as { cta?: string }).cta || '',
               primaryColor: carouselBrandTokens.primaryColor,
               accentColor: carouselBrandTokens.accentColor,
+              skipDesignedHeroOverlay: carouselDesignedHero,
             });
             const persistedSlides = await persistCarouselSlideBuffers(buffers, workspaceId);
             if (persistedSlides.length >= 2 && persistedSlides.length === buffers.length) {

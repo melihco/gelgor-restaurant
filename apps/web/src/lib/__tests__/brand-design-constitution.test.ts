@@ -4,6 +4,7 @@ import {
   applyConstitutionToSampleCopy,
   compileBrandDesignConstitution,
   formatConstitutionHouseRules,
+  formatHouseSoulTokenLine,
   mapTemplateNeedToType,
   rankSlotsByTemplateNeeds,
 } from '@/lib/brand-design-constitution';
@@ -114,6 +115,35 @@ describe('compileBrandDesignConstitution', () => {
     expect(c.neededTemplateTypes).toEqual(['menu_highlight', 'daily_story']);
     expect(c.signatureOfferings[0]).toBe('Badem ezmesi');
     expect(c.layoutPackId).toMatch(/artisan|product|balanced/);
+    expect(c.soulTokens.materials).toMatch(/terracotta|jar|handwritten/i);
+    expect(c.soulTokens.offer).toBe('Badem ezmesi');
+    expect(c.soulTokens.typeEnergy).toMatch(/Fraunces/);
+  });
+
+  it('compiles five soul tokens without inventing sector slogans', () => {
+    const beach = compileBrandDesignConstitution({
+      brandName: 'Coastal Club',
+      sector: 'beach_club',
+      visualDnaTone: 'sun-washed coastal editorial, wet teak',
+      vibeProfile: { anti_patterns: ['neon flyer'] },
+      serviceProfile: { signature_offerings: ['gün batımı daybed'] },
+      brandTheme: { typography: { heading_font: 'Syne', font_source: 'onboarding' } },
+    });
+    const shop = compileBrandDesignConstitution({
+      brandName: 'Datça Atölye',
+      sector: 'local_products_shop',
+      visualDna: 'artisan jars, terracotta, handwritten labels, rustic wood',
+      serviceProfile: { signature_offerings: ['Ham bal'] },
+      brandTheme: { typography: { heading_font: 'Fraunces', font_source: 'onboarding' } },
+    });
+    expect(beach.soulTokens.light).toMatch(/sun-washed/i);
+    expect(beach.soulTokens.offer).toMatch(/daybed/i);
+    expect(beach.soulTokens.anti).toMatch(/neon/i);
+    expect(shop.soulTokens.materials).toMatch(/terracotta|jar/i);
+    expect(shop.soulTokens.offer).toBe('Ham bal');
+    expect(beach.soulTokens.materials).not.toEqual(shop.soulTokens.materials);
+    expect(formatHouseSoulTokenLine(shop.soulTokens)).toContain('HOUSE TOKENS');
+    expect(formatHouseSoulTokenLine(shop.soulTokens)).not.toMatch(/Think Michelin|Aesop|Scorpios/i);
   });
 
   it('does not invent offerings when service profile is empty', () => {
@@ -263,8 +293,9 @@ describe('applyConstitutionToPreset + house directives', () => {
       galleryAnalysis: {},
     }, 'post', 'designed').join(' ');
 
-    expect(beachDir).toContain('HOUSE STYLE');
+    expect(beachDir).toContain('HOUSE TOKENS');
     expect(beachDir).toContain('Syne');
+    expect(beachDir).not.toContain('HOUSE STYLE');
     expect(beachDir).not.toContain('VISUAL DNA — PRIMARY DESIGN SOURCE');
     expect(beachDir).not.toContain('A'.repeat(80));
     expect(shopDir).toContain('Fraunces');

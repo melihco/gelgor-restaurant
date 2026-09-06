@@ -16,6 +16,7 @@ import {
   getDefaultVisualSubject,
   isNonVenueSectorProfile,
 } from '@/lib/sector-production-profile';
+import { catalogSlotPurposeKey } from '@/lib/sector-slot-pack';
 
 /** Minimal gallery meta shape — avoids coupling to full GalleryPhotoMeta. */
 export type GallerySubjectEvidence = {
@@ -115,7 +116,51 @@ function resolveFromSector(businessType: string): ResolvedVisualSubject {
 
 export type ResolveVisualSubjectOptions = {
   galleryMeta?: Record<string, GallerySubjectEvidence> | null;
+  /** Catalog slot — venue/process jobs must not inherit a mission-wide product_hero. */
+  catalogSlotKey?: string | null;
 };
+
+/**
+ * Slot job wins over gallery-density auto. A shop of jar photos must not
+ * restage farm / hours / ambiance cards as the same product hero.
+ * Purpose stem only — never brand names or tenant ids.
+ */
+export function inferVisualSubjectFromSlotKey(
+  catalogSlotKey?: string | null,
+): ResolvedVisualSubject | null {
+  const key = catalogSlotPurposeKey(String(catalogSlotKey ?? ''));
+  if (!key) return null;
+  if (
+    /weekend_hours|opening_hours|ambiance|atmosphere|venue|facility|aerial|interior|terrace|pool|sunset|golden_hour/.test(key)
+  ) {
+    return 'venue_ambiance';
+  }
+  if (
+    /farm_visit|farm.?to.?table|orchard|grove|producer_visit|production_bts|craft_process|behind_scenes|kitchen_bts|shop_tour/.test(key)
+  ) {
+    return 'venue_ambiance';
+  }
+  if (
+    /product_hero|new_arrival|limited_batch|gift_bundle|gift_set|hamper|product_detail|product_range|unboxing|signature_dish|menu_highlight|cocktail|chef_special/.test(key)
+  ) {
+    return 'product_hero';
+  }
+  return null;
+}
+
+/** Slot job first, then Hub subject / gallery density / sector. */
+export function resolveVisualSubjectForSlot(input: {
+  subject: AiVisualSubject;
+  businessType: string;
+  catalogSlotKey?: string | null;
+  galleryMeta?: Record<string, GallerySubjectEvidence> | null;
+}): ResolvedVisualSubject {
+  const fromSlot = inferVisualSubjectFromSlotKey(input.catalogSlotKey);
+  if (fromSlot) return fromSlot;
+  return resolveAutoVisualSubject(input.subject, input.businessType, {
+    galleryMeta: input.galleryMeta,
+  });
+}
 
 /**
  * Resolve theme `ai_visual_subject` to a concrete production subject.

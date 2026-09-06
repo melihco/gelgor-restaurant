@@ -77,7 +77,7 @@ export function buildCanvaQualityDesignContract(input?: {
     ? (isVertical
       ? [
           'SLOT GEOMETRY (9:16 HARD PIN): Match the numeric layout document / IMAGE 2 panel roles exactly (including color_block/wedge when present); photo window keeps the hero subject fully visible.',
-          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
+          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 14% / bottom 16% / left-right 12% — first glyph of every line stays inside; never flush to x=0.',
         ]
       : [
           'SLOT GEOMETRY (4:5 HARD PIN): Match the numeric layout document / IMAGE 2 panel roles exactly (including color_block/wedge when present) with ≥10% inner padding in type zones.',
@@ -86,7 +86,7 @@ export function buildCanvaQualityDesignContract(input?: {
     : (isVertical
       ? [
           'SLOT GEOMETRY (9:16): Prefer translucent scrim / asymmetric type lockup / thin brand rules ON a full-bleed photo — not a tall opaque header stack.',
-          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 12% and bottom 15% are Instagram UI danger zones (no critical type).',
+          'SAFE ZONE: Native 9:16 canvas — compose for the FULL frame (no post-crop). Top 14% / bottom 16% / left-right 12% — first glyph of every line stays inside; never flush to x=0.',
           'FORBIDDEN: opaque geometric header/diagonal paint covering ≥25% of frame unless a hard layout document demands color_block|wedge.',
         ]
       : [

@@ -394,30 +394,40 @@ function adaptSeedForAspect(
       ),
     };
   }
-  // 9:16 — story/reel safe bands; keep relative panel roles but push type out of UI chrome.
+  // 9:16 — story/reel safe bands. Left-flush type on a tall frame clips the
+  // first glyph of every line ("Bu yılki" → "ı yılki"). Center + 12% inset.
   return {
-    safeArea: { top: 0.12, right: 0.08, bottom: 0.15, left: 0.08 },
+    safeArea: { top: 0.14, right: 0.12, bottom: 0.16, left: 0.12 },
     panels: seed.panels.map((p, i) => ({
       ...p,
-      zone: r(p.zone.x, Math.min(0.7, p.zone.y * 0.85 + 0.04), p.zone.width, Math.min(0.45, p.zone.height * 0.9)),
+      zone: r(
+        Math.max(0.1, p.zone.x),
+        Math.min(0.7, p.zone.y * 0.85 + 0.04),
+        Math.min(0.8, p.zone.width),
+        Math.min(0.45, p.zone.height * 0.9),
+      ),
       id: p.id || `panel_${i}`,
     })),
     textSlots: seed.textSlots.map((t) => {
       if (t.role === 'headline') {
         return {
           ...t,
-          zone: r(0.08, 0.12, 0.84, Math.max(0.1, Math.min(0.18, t.zone.height))),
+          align: 'center',
+          paddingNorm: Math.max(t.paddingNorm ?? 0.1, 0.12),
+          maxLines: Math.max(t.maxLines ?? 2, 3),
+          zone: r(0.14, 0.16, 0.72, Math.max(0.14, Math.min(0.22, t.zone.height + 0.06))),
         };
       }
       if (t.role === 'subtitle' || t.role === 'cta') {
         return {
           ...t,
-          zone: r(0.1, Math.max(0.72, t.zone.y), 0.7, Math.min(0.1, t.zone.height)),
+          align: t.align === 'right' ? 'right' : 'center',
+          zone: r(0.14, Math.max(0.74, t.zone.y), 0.72, Math.min(0.1, t.zone.height)),
         };
       }
       return t;
     }),
-    photoSlot: r(0.08, 0.28, 0.84, 0.42),
+    photoSlot: r(0.1, 0.3, 0.8, 0.4),
     logoSlot: r(0.68, 0.88, 0.22, 0.05),
   };
 }
@@ -610,6 +620,9 @@ export function buildDesignSpecLayoutLockBlock(layout: DesignSpecLayout): string
     `logoSlot: ${fmtRect(layout.logoSlot)} — keep empty for post composite; never over letters`,
     `panels: ${panelSummary}`,
     `safeArea: top=${fmtPct(layout.safeArea.top)} bottom=${fmtPct(layout.safeArea.bottom)} sides=${fmtPct(layout.safeArea.left)}`,
+    layout.canvas.aspectRatio === '9:16'
+      ? '9:16 EDGE: first glyph of every line ≥12% from left and right — shrink and wrap; never flush to x=0.'
+      : '',
     'IMAGE 2 still shows craft finish — but panel ratios and type boxes MUST match these normalized slots.',
     'FORBIDDEN: inventing a different shell (e.g. bottom caption ribbon when document is a side split).',
   ].filter(Boolean).join('\n');

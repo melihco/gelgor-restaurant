@@ -93,10 +93,8 @@ export function resolveFalTemplateLockOptions(input: {
 /**
  * Soft fallback policy for catalog-pinned slots.
  *
- * Matcher SSOT (`selectBrandDesignTemplate`) already soft-binds on
- * `missing_template` so under-provisioned tenants do not withhold fal slots.
- * This flag only gates *dangerous* miss reasons (format_mismatch / off_season)
- * — keep false when a catalog key is present so those stay fail-closed.
+ * Catalog pin without its own keyed shell withholds the slot.
+ * This flag only re-opens soft bind when explicitly requested (migration/debug).
  * Unpinned slots may soft-match freely.
  */
 export function allowSoftTemplateFallbackForCatalogPin(
@@ -267,7 +265,7 @@ export async function bindBrandTemplateForFalProduction(input: {
   workspaceId: string;
   slotRole: string;
   librarySlotKey: string | null | undefined;
-  format: 'story' | 'post' | 'reel';
+  format: 'story' | 'post' | 'reel' | 'carousel';
   caption?: string;
   headline?: string;
   subtitle?: string;
@@ -316,7 +314,7 @@ export async function bindBrandTemplateForFalProduction(input: {
       templateUseCase: input.templateUseCase,
       catalogSlotKey: input.catalogSlotKey,
       brandActiveSlots: input.brandActiveSlots,
-      // Catalog pin = exact library template only (post/story/reel_cover).
+      // Catalog pin = exact library template only (post/story/reel_cover/carousel).
       // Soft same-format match only when the slot has no catalog key.
       allowSoftFallbackWhenHardMiss: allowSoftTemplateFallbackForCatalogPin(
         input.catalogSlotKey,
@@ -405,7 +403,7 @@ export interface TemplateReplicaSpec {
   /** Persisted design_spec.type_budget — preferred over sample-length inference. */
   typeBudget?: TemplateTypeBudget | null;
   forbiddenTexts: string[];
-  format?: 'story' | 'post' | 'reel';
+  format?: 'story' | 'post' | 'reel' | 'carousel';
   recipe?: TemplateFillRecipe | null;
 }
 
@@ -415,13 +413,13 @@ export interface TemplateReplicaSpec {
  */
 export function normalizeLibraryPromptForFormat(
   prompt: string,
-  format: 'story' | 'post' | 'reel' | 'reel_cover' | null | undefined,
+  format: 'story' | 'post' | 'reel' | 'reel_cover' | 'carousel' | null | undefined,
 ): string {
   const channel = format === 'reel' || format === 'reel_cover'
     ? 'reel'
     : format === 'story'
       ? 'story'
-      : format === 'post'
+      : format === 'post' || format === 'carousel'
         ? 'post'
         : null;
   if (!channel || !prompt.trim()) return prompt;

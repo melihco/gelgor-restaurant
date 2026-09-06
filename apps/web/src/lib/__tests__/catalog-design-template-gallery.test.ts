@@ -240,4 +240,17 @@ describe('catalogGalleryFormatMatches', () => {
     expect(catalogGalleryFormatMatches(row, 'reel')).toBe(true);
     expect(catalogGalleryFormatMatches(row, 'post')).toBe(false);
   });
+
+  it('filters carousel slots separately from posts', () => {
+    const row = buildCatalogDesignGalleryRows({
+      slots: [mockSlot({
+        slot_key: 'local_products_shop_product_range_carousel',
+        format: 'carousel',
+        design_template_type: 'menu_highlight',
+      })],
+      templates: [],
+    })[0]!;
+    expect(catalogGalleryFormatMatches(row, 'carousel')).toBe(true);
+    expect(catalogGalleryFormatMatches(row, 'post')).toBe(false);
+  });
 });

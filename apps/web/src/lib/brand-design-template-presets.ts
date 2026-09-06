@@ -8,7 +8,15 @@
  * Fal.ai-generated preview grounded on a matched gallery photo.
  */
 
-export type DesignTemplateFormat = 'story' | 'post' | 'reel_cover';
+export type DesignTemplateFormat = 'story' | 'post' | 'reel_cover' | 'carousel';
+
+/** Catalog slot format → library template format (never cross-channel). */
+export function slotFormatToDesignTemplateFormat(format: string): DesignTemplateFormat {
+  if (format === 'reel') return 'reel_cover';
+  if (format === 'story') return 'story';
+  if (format === 'carousel') return 'carousel';
+  return 'post';
+}
 
 /** Stable template_type identifiers persisted in brand_design_templates. */
 export type DesignTemplateType =

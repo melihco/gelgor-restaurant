@@ -10,11 +10,16 @@ import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 import {
   resolveAutoVisualSubject,
+  inferVisualSubjectFromSlotKey,
   type ResolveVisualSubjectOptions,
 } from '@/lib/resolve-visual-subject';
 
 export type { GallerySubjectEvidence, ResolveVisualSubjectOptions } from '@/lib/resolve-visual-subject';
-export { inferVisualSubjectFromGallery } from '@/lib/resolve-visual-subject';
+export {
+  inferVisualSubjectFromGallery,
+  inferVisualSubjectFromSlotKey,
+  resolveVisualSubjectForSlot,
+} from '@/lib/resolve-visual-subject';
 
 export type AiEnhanceFormat = 'post' | 'story' | 'carousel' | 'reel';
 export type AiVisualSubject = 'auto' | 'venue_ambiance' | 'product_hero' | 'digital_ui';
@@ -286,6 +291,8 @@ export function resolveVisualSubject(
   businessType: string,
   opts?: ResolveVisualSubjectOptions,
 ): ResolvedVisualSubject {
+  const fromSlot = inferVisualSubjectFromSlotKey(opts?.catalogSlotKey);
+  if (fromSlot) return fromSlot;
   return resolveAutoVisualSubject(subject, businessType, opts);
 }
 

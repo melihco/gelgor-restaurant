@@ -4,6 +4,7 @@ import {
   isTypographyDesignConfirmed,
   isKnownTypographyVibe,
   resolveSuggestedTypographyConfig,
+  typographyNotConfirmedResponse,
 } from '@/lib/typography-design-policy';
 
 describe('typography-design-policy', () => {
@@ -30,6 +31,7 @@ describe('typography-design-policy', () => {
     expect(isTypographyDesignConfirmed({
       typography_design: { vibe: 'warm_coastal', source: 'derived' },
     })).toBe(false);
+    expect(typographyNotConfirmedResponse().error).toBe('typography_not_confirmed');
   });
 
   it('accepts camelCase typographyDesign.confirmedAt from theme BFF', () => {

@@ -40,6 +40,7 @@ describe('resolveTargetCanvas', () => {
 describe('resolveTargetCanvasForFormat', () => {
   it('maps template formats to post 4:5 vs story/reel 9:16', () => {
     expect(resolveTargetCanvasForFormat('post')).toEqual(POST_CANVAS);
+    expect(resolveTargetCanvasForFormat('carousel')).toEqual(POST_CANVAS);
     expect(resolveTargetCanvasForFormat('story')).toEqual(STORY_CANVAS);
     expect(resolveTargetCanvasForFormat('reel_cover')).toEqual(STORY_CANVAS);
   });

@@ -71,6 +71,29 @@ describe('buildDesignPresetFromCatalogSlot', () => {
     );
     expect(preset.format).toBe('reel_cover');
   });
+
+  it('maps carousel catalog slots to carousel design format (beach + shop)', () => {
+    const beach = buildDesignPresetFromCatalogSlot(
+      mockSlot({
+        slot_key: 'beach_club_guest_moments_carousel',
+        design_template_type: 'venue_showcase',
+        format: 'carousel',
+        sector_id: 'beach_club',
+      }),
+    );
+    const shop = buildDesignPresetFromCatalogSlot(
+      mockSlot({
+        slot_key: 'local_products_shop_product_range_carousel',
+        design_template_type: 'menu_highlight',
+        format: 'carousel',
+        sector_id: 'local_products_shop',
+        label_tr: 'Ürün yelpazesi carousel',
+      }),
+    );
+    expect(beach.format).toBe('carousel');
+    expect(shop.format).toBe('carousel');
+    expect(shop.catalogSlotKey).toBe('local_products_shop_product_range_carousel');
+  });
 });
 
 describe('selectCatalogSlotsForOnboarding', () => {

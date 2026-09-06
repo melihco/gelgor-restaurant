@@ -120,7 +120,7 @@ import {
 } from '@/lib/template-type-budget';
 import {
   constitutionStamp,
-  formatConstitutionHouseRules,
+  formatHouseSoulTokenLine,
   type BrandDesignConstitution,
 } from '@/lib/brand-design-constitution';
 import { buildTemplateFillRecipe } from '@/lib/template-fill-recipe';
@@ -302,7 +302,7 @@ function aspectForFormat(format: DesignTemplateFormat): '9:16' | '4:5' | '1:1' {
 }
 
 function imageFormatForFormat(format: DesignTemplateFormat): 'post' | 'story' {
-  return format === 'post' ? 'post' : 'story';
+  return format === 'story' || format === 'reel_cover' ? 'story' : 'post';
 }
 
 const HERO_ASSET_TYPE_SCORES: Array<[RegExp, number]> = [
@@ -554,16 +554,19 @@ export function buildBrandIntelligenceDirectives(
   level: FalDesignIntensityLevel,
 ): string[] {
   const intel = input.brandIntelligence;
-  const house = input.constitution
-    ? formatConstitutionHouseRules(input.constitution)
-    : [];
-  if (house.length) {
+  const houseTokens = input.constitution
+    ? formatHouseSoulTokenLine(input.constitution.soulTokens)
+    : '';
+  if (houseTokens || input.constitution) {
+    const font = input.constitution?.headingFont ?? '';
+    const primary = input.constitution?.primary ?? input.brandColors.primary;
+    const accent = input.constitution?.accent ?? input.brandColors.accent;
     return [
-      house.join(' '),
-      `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from ${input.constitution!.headingFont} + ${input.constitution!.primary}/${input.constitution!.accent} + the gallery photo — never a stock ${input.sector} Canva pack.`,
-      `Template channel/intensity: ${channel} uses ${level}. Build a DISTINCT LAYOUT RECIPE for THIS slot role while the house style stays locked. Never generic identical Canva header strips across every template.`,
+      houseTokens,
+      `BRAND UNIQUENESS: A stranger should recognize this as ${input.brandName} from ${font} + ${primary}/${accent} + the gallery photo — never a stock ${input.sector} Canva pack.`,
+      `Template channel/intensity: ${channel} uses ${level}. Build a DISTINCT LAYOUT RECIPE for THIS slot role while the house tokens stay locked. Never generic identical Canva header strips across every template.`,
       'TEMPLATE RULE: Build reusable brand recipes, not one-off copy cards. The generated preview may use sample copy, but the layout system must be reusable for future mission headlines, captions, events, and offers. Keep text exact and legible; never invent or misspell Turkish words.',
-    ];
+    ].filter(Boolean);
   }
   if (!intel) return [];
 
@@ -671,6 +674,14 @@ export function resolveTemplatePurposeBrief(input: {
       designJob:
         'FORMAL ANNOUNCEMENT: clear informational hierarchy, calm institutional craft — readable notice, not nightlife flyer energy.',
       rejectLook: 'neon club flyer, emoji promo, crowded event lineup',
+    };
+  }
+  if (/carousel/.test(key)) {
+    return {
+      jobLabel,
+      designJob:
+        'CAROUSEL COVER SLIDE: first swipe of a multi-slide set — designed 4:5 cover that teases the gallery, not a lone feed poster and not a 9:16 story/reel freeze.',
+      rejectLook: 'single feed sandwich, vertical story poster, reel cover freeze, one-off product card with no swipe-forward read',
     };
   }
   if (/reel|kapak/.test(key) || type === 'reel_cover') {
@@ -961,7 +972,9 @@ async function generateOne(
     : preset.format === 'story'
       ? buildDesignedStoryDesignCardPrompt
       : buildDesignedPostDesignCardPrompt;
-  const gptDesignCardMode: 'post' | 'reel' = preset.format === 'post' ? 'post' : 'reel';
+  const gptDesignCardMode: 'post' | 'reel' = preset.format === 'story' || preset.format === 'reel_cover'
+    ? 'reel'
+    : 'post';
 
   const layoutFamilySeed = [
     preset.catalogSlotKey ?? preset.name,
@@ -1111,7 +1124,9 @@ async function generateOne(
         ? 'STORY CANVAS LOCK: Exact Instagram Story 9:16 (1080×1920). Compose as a vertical story poster — full-height frame, safe-zone typography. FORBIDDEN: 4:5 feed crop language, square feed composition, or feed-post framing.'
         : preset.format === 'reel_cover'
           ? 'REEL CANVAS LOCK: Exact Instagram Reel 9:16 (1080×1920). Compose as a reel cover — full-height frame, motion-ready typography. FORBIDDEN: 4:5 feed crop language or square feed composition.'
-          : '',
+          : preset.format === 'carousel'
+            ? 'CAROUSEL COVER LOCK: Exact Instagram feed 4:5 (1080×1350). This is slide 1 of a swipe set — designed carousel cover, photo-led tease. FORBIDDEN: 9:16 story/reel proportions, a lone post sandwich that ignores the remaining slides, or painting every product on one frame.'
+            : '',
     'FORBIDDEN LAYOUT: generic 50/50 horizontal screen-split with flat color block on top and photo strip below — unless the Canva archetype explicitly requires a diagonal or editorial asymmetry.',
     brandMark.mode === 'official_logo'
       ? [
@@ -1154,7 +1169,7 @@ async function generateOne(
       // otherwise generators may both composite logo and type the name.
       logoUrl: brandMark.logoUrl,
     }),
-    preset.format === 'reel_cover' ? 'reel' : preset.format,
+    preset.format === 'reel_cover' ? 'reel' : preset.format === 'carousel' ? 'carousel' : preset.format,
   );
 
   let thumbnailUrl: string | null = null;

@@ -19,6 +19,7 @@ import {
   buildScratchVisualBrief,
   type ScratchVisualBrief,
 } from '@/lib/scratch-visual-brief';
+import { matchDesignTemplateToSlot } from '@/lib/brand-design-template-matcher';
 
 export type GenerateVibeImageOpts = {
   workspaceId: string;
@@ -532,6 +533,51 @@ export async function generateMarkyLayerCard(opts: {
   }
 }
 
+async function designCarouselHeroSlide(opts: {
+  workspaceId: string;
+  catalogSlotKey?: string | null;
+  slotRole?: string;
+  headline: string;
+  caption: string;
+  photoUrl: string;
+  brandName: string;
+  location?: string;
+  businessType?: string;
+  logoUrl?: string;
+}): Promise<string | null> {
+  const catalogSlotKey = String(opts.catalogSlotKey ?? '').trim();
+  if (!catalogSlotKey || !isUsableGalleryPhotoUrl(opts.photoUrl)) return null;
+  const matched = await matchDesignTemplateToSlot(opts.workspaceId, {
+    slotRole: opts.slotRole || 'organic_carousel',
+    librarySlotKey: null,
+    format: 'carousel',
+    catalogSlotKey,
+    headline: opts.headline,
+    caption: opts.caption,
+    allowSoftFallbackWhenHardMiss: false,
+  });
+  if (!matched) return null;
+  const prompt = String(matched.designSpecPrompt ?? matched.directive ?? '').trim();
+  if (!prompt) return null;
+  console.log(
+    `[auto-produce] carousel hero binds "${matched.templateName}" (${matched.format}) key=${catalogSlotKey}`,
+  );
+  return generateDesignedPostImage({
+    workspaceId: opts.workspaceId,
+    designCardPrompt: prompt,
+    designCardMode: 'post',
+    headline: opts.headline,
+    caption: opts.caption,
+    referenceImageUrls: [opts.photoUrl],
+    brandName: opts.brandName,
+    format: 'post',
+    location: opts.location,
+    businessType: opts.businessType,
+    logoUrl: opts.logoUrl,
+    templateLayoutImageUrl: matched.thumbnailUrl,
+  });
+}
+
 export async function generateVibeCarousel(opts: {
   workspaceId: string;
   headline: string;
@@ -543,6 +589,9 @@ export async function generateVibeCarousel(opts: {
   visualDirection?: string;
   strategicPurpose?: string;
   subjectKey?: string;
+  catalogSlotKey?: string | null;
+  slotRole?: string;
+  logoUrl?: string;
   galleryAnalysis: Record<string, GalleryPhotoMeta>;
   candidateUrls: string[];
   excludeUrls: string[];
@@ -550,7 +599,7 @@ export async function generateVibeCarousel(opts: {
   minScore?: number;
   /** Minimum caption-aligned slides (default 2 for IG carousel). */
   minSlides?: number;
-}): Promise<{ enhancedUrls: string[]; galleryUrls: string[] }> {
+}): Promise<{ enhancedUrls: string[]; galleryUrls: string[]; designedHero: boolean }> {
   const baseUrl = getNextjsInternalOrigin();
   const minSlides = Math.max(2, opts.minSlides ?? 2);
 
@@ -617,16 +666,37 @@ export async function generateVibeCarousel(opts: {
   }
 
   if (picked.length < minSlides) {
-    return { enhancedUrls: [], galleryUrls: [] };
+    return { enhancedUrls: [], galleryUrls: [], designedHero: false };
   }
 
+  const heroUrl = picked[0]!;
+  const designedHeroUrl = await designCarouselHeroSlide({
+    workspaceId: opts.workspaceId,
+    catalogSlotKey: opts.catalogSlotKey,
+    slotRole: opts.slotRole,
+    headline: opts.headline,
+    caption: opts.caption,
+    photoUrl: heroUrl,
+    brandName: opts.brandName,
+    location: opts.location,
+    businessType: opts.businessType,
+    logoUrl: opts.logoUrl,
+  });
+
   if (shouldPreserveVenuePhotos()) {
-    return { enhancedUrls: picked.slice(0, opts.count), galleryUrls: picked.slice(0, opts.count) };
+    const urls = picked.slice(0, opts.count);
+    if (designedHeroUrl) urls[0] = designedHeroUrl;
+    return {
+      enhancedUrls: urls,
+      galleryUrls: picked.slice(0, opts.count),
+      designedHero: Boolean(designedHeroUrl),
+    };
   }
 
   const enhanced = (await Promise.all(
     picked.slice(0, opts.count).map(async (refUrl, idx) => {
       if (idx > 0) return refUrl;
+      if (designedHeroUrl) return designedHeroUrl;
       try {
         const body: Record<string, unknown> = {
           title:           opts.headline,
@@ -655,7 +725,11 @@ export async function generateVibeCarousel(opts: {
     }))
   ).filter(Boolean) as string[];
 
-  return { enhancedUrls: enhanced, galleryUrls: picked.slice(0, opts.count) };
+  return {
+    enhancedUrls: enhanced,
+    galleryUrls: picked.slice(0, opts.count),
+    designedHero: Boolean(designedHeroUrl),
+  };
 }
 
 export async function renderEventCardFromPayload(

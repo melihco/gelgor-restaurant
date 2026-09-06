@@ -13,7 +13,7 @@ import {
   type BrandSlotFacilities,
 } from '@/lib/sector-slot-pack';
 
-export type CatalogGalleryFormatFilter = 'all' | 'post' | 'story' | 'reel';
+export type CatalogGalleryFormatFilter = 'all' | 'post' | 'story' | 'reel' | 'carousel';
 
 export interface CatalogDesignGalleryRow {
   slotKey: string;

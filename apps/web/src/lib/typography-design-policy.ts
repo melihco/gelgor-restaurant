@@ -59,6 +59,19 @@ export function isTypographyDesignConfirmed(
   return Boolean(cfg && isKnownTypographyVibe(cfg.vibe) && cfg.confirmed_at);
 }
 
+/** HTTP / runner error when a full template set is requested without confirm. */
+export const TYPOGRAPHY_NOT_CONFIRMED = 'typography_not_confirmed';
+
+export function typographyNotConfirmedResponse(): {
+  error: typeof TYPOGRAPHY_NOT_CONFIRMED;
+  message: string;
+} {
+  return {
+    error: TYPOGRAPHY_NOT_CONFIRMED,
+    message: 'Renk ve tipografi onayı olmadan şablon seti üretilmez.',
+  };
+}
+
 /**
  * DNA-aware suggestion — same policy as Python PDP / production-design-policy.
  * Never invents gradient_stack + gradient_mesh when DNA says warm/handwritten.

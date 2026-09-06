@@ -49,7 +49,18 @@ export interface BrandDesignConstitution {
   contentPillars: string[];
   nativeCtas: string[];
   typeEnergy: string;
+  /** Five feeling tokens for the protected soul lock — not a HOUSE prose dump. */
+  soulTokens: HouseSoulTokens;
 }
+
+/** Compact house feeling — materials / light / type / anti / offer. */
+export type HouseSoulTokens = {
+  materials: string;
+  light: string;
+  typeEnergy: string;
+  anti: string;
+  offer: string;
+};
 
 export interface CompileBrandDesignConstitutionInput {
   brandName: string;
@@ -297,7 +308,79 @@ export function compileBrandDesignConstitution(
     contentPillars: readStringList(input.contentPillars, 6, 48),
     nativeCtas: readStringList(input.defaultCtas, 4, 40),
     typeEnergy,
+    soulTokens: compileHouseSoulTokens({
+      visualDna: input.visualDna,
+      visualDnaTone: input.visualDnaTone,
+      typeEnergy,
+      headingFont: headingFromTheme || sectorFonts.heading,
+      antiPatterns,
+      signatureOfferings: offerings,
+      vibeProfile: input.vibeProfile,
+    }),
   };
+}
+
+const HOUSE_LIGHT_RX =
+  /\b(sun-?washed|golden(?:\s*hour)?|window\s*light|daylight|vitrin|güneş|ışık|candle(?:lit)?|neon|night\s*tungsten|soft\s*daylight|shop\s*window)\b/i;
+
+function isUsableAesthetic(text: string): boolean {
+  const t = text.replace(/\s+/g, ' ').trim();
+  if (t.length < 8) return false;
+  const letters = t.toLowerCase().replace(/[^a-zğüşıöçà-ÿ]/gi, '');
+  return new Set(letters).size >= 6;
+}
+
+function clipToken(text: string, max: number): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, max).replace(/[|,;]+$/g, '').trim();
+}
+
+/** Derive five soul tokens from tenant DNA — never sector slogans, never brand-name ifs. */
+export function compileHouseSoulTokens(input: {
+  visualDna?: string | null;
+  visualDnaTone?: string | null;
+  typeEnergy?: string | null;
+  headingFont?: string | null;
+  antiPatterns?: string[];
+  signatureOfferings?: string[];
+  vibeProfile?: Record<string, unknown> | null;
+}): HouseSoulTokens {
+  const tone = String(input.visualDnaTone ?? '').replace(/\s+/g, ' ').trim();
+  const dna = String(input.visualDna ?? '').replace(/\s+/g, ' ').trim();
+  const vibe = asRecord(input.vibeProfile);
+  const vibeLight = clipToken(String(vibe?.lighting ?? vibe?.light ?? vibe?.atmosphere ?? ''), 28);
+  const blob = [tone, dna].filter((s) => isUsableAesthetic(s)).join(' · ');
+  const lightFromBlob = blob.match(HOUSE_LIGHT_RX)?.[0] ?? '';
+  const light = clipToken(vibeLight || lightFromBlob, 28);
+  let materials = clipToken(tone || firstSentence(dna, 48), 48);
+  if (light && materials) {
+    materials = clipToken(materials.replace(new RegExp(light.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), ' '), 48);
+  }
+  if (!isUsableAesthetic(materials)) materials = '';
+  const energy = clipToken(String(input.typeEnergy ?? ''), 40);
+  const typeBits = [
+    clipToken(String(input.headingFont ?? ''), 24),
+    isUsableAesthetic(energy) ? energy : '',
+  ].filter(Boolean);
+  return {
+    materials,
+    light,
+    typeEnergy: clipToken(typeBits.join(', '), 48),
+    anti: uniqShort(input.antiPatterns ?? [], 2, 28).join(', '),
+    offer: uniqShort(input.signatureOfferings ?? [], 1, 32).join(''),
+  };
+}
+
+export function formatHouseSoulTokenLine(tokens: HouseSoulTokens | null | undefined): string {
+  if (!tokens) return '';
+  const parts = [
+    tokens.materials ? `materials=${tokens.materials}` : '',
+    tokens.light ? `light=${tokens.light}` : '',
+    tokens.typeEnergy ? `type=${tokens.typeEnergy}` : '',
+    tokens.anti ? `anti=${tokens.anti}` : '',
+    tokens.offer ? `offer=${tokens.offer}` : '',
+  ].filter(Boolean);
+  if (!parts.length) return '';
+  return `HOUSE TOKENS: ${parts.join('; ')}.`;
 }
 
 /** Compact typed house rules — not a DNA prose dump. */
@@ -355,6 +438,7 @@ export function constitutionStamp(constitution: BrandDesignConstitution): Record
       neededTypes: constitution.neededTemplateTypes,
       signatureArchetypes: constitution.signatureArchetypes,
       moodboardCount: constitution.moodboardRefs.length,
+      soulTokens: constitution.soulTokens,
     },
   };
 }

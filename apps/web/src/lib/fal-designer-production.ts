@@ -1272,7 +1272,7 @@ function buildDesignedDesignCardPrompt(
     designHarmonyLock,
     logoBlock,
     isVertical
-      ? 'SAFE ZONE: keep all text/logos inside inner 85%; protect top 12% / bottom 15% from UI overlap; shrink type before clipping. Native 9:16 full frame — no post-crop.'
+      ? 'SAFE ZONE: keep all text/logos inside inner 76%; left/right ≥12% — first glyph of every line must be fully visible (never "ı yılki" / "men bilgi"). Protect top 14% / bottom 16% from UI overlap; shrink and wrap before clipping. Native 9:16 full frame — no post-crop.'
       : 'SAFE ZONE: keep all text/logos inside inner 85% (7.5% edge margin). Native 4:5 full frame — no cover-crop.',
     craftZonesActive
       ? (isVertical

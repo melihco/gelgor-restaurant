@@ -11,6 +11,10 @@ import {
   type GenerateBody,
 } from '@/lib/run-generate-design-templates';
 import {
+  TYPOGRAPHY_NOT_CONFIRMED,
+  typographyNotConfirmedResponse,
+} from '@/lib/typography-design-policy';
+import {
   getDesignTemplateJobStatusByWorkspace,
   isDesignTemplateJobInFlight,
   setDesignTemplateJobStatus,
@@ -136,6 +140,9 @@ export async function POST(
         },
         { status: 422 },
       );
+    }
+    if (message === TYPOGRAPHY_NOT_CONFIRMED) {
+      return NextResponse.json(typographyNotConfirmedResponse(), { status: 422 });
     }
     console.error('[generate-design-templates] sync failed:', workspaceId, message);
     return NextResponse.json({ error: 'generation_failed', message }, { status: 500 });

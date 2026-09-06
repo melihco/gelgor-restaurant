@@ -32,6 +32,7 @@ import {
   parseTemplateTypeBudget,
   type TemplateTypeBudget,
 } from '@/lib/template-type-budget';
+import { isTypographyDesignConfirmed } from '@/lib/typography-design-policy';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -39,6 +40,7 @@ const FORMAT_LABELS: Record<Exclude<CatalogGalleryFormatFilter, 'all'>, string> 
   post: 'Post',
   story: 'Story',
   reel: 'Reels',
+  carousel: 'Carousel',
 };
 
 const DESKTOP_THEME: T = {
@@ -534,6 +536,7 @@ export function BrandFalTemplateGalleryPanel({
   });
 
   const brandTheme = themeProp ?? fetchedTheme ?? null;
+  const typographyConfirmed = isTypographyDesignConfirmed(brandTheme);
   const productionSettings = useMemo(
     () => resolveFalTemplateProductionSettings(brandTheme),
     [brandTheme],
@@ -881,6 +884,11 @@ export function BrandFalTemplateGalleryPanel({
 
   const generateBrandSet = async () => {
     if (!tenantId || generating) return;
+    if (!isTypographyDesignConfirmed(brandTheme)) {
+      setStatusKind('error');
+      setStatus('Önce Renk & Tipografi’yi onaylayın — set o olmadan üretilmez.');
+      return;
+    }
     setGenerating(true);
     setStatus('');
     setStatusKind('info');
@@ -895,7 +903,7 @@ export function BrandFalTemplateGalleryPanel({
           body: JSON.stringify(payload),
         },
       );
-      const data = res.ok ? ((await res.json()) as Record<string, unknown>) : null;
+      const data = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       return { res, data };
     };
 
@@ -911,7 +919,13 @@ export function BrandFalTemplateGalleryPanel({
       });
       if (!smoke.res.ok) {
         setStatusKind('error');
-        setStatus('Şablon üretimi başarısız — galeri fotoğrafı ve API anahtarlarını kontrol edin.');
+        setStatus(
+          smoke.data?.error === 'typography_not_confirmed'
+            ? String(smoke.data.message ?? 'Önce Renk & Tipografi’yi onaylayın.')
+            : smoke.data?.error === 'no_gallery_photos'
+              ? String(smoke.data.message ?? 'Galeri fotoğrafı yok.')
+              : 'Şablon üretimi başarısız — galeri fotoğrafı ve API anahtarlarını kontrol edin.',
+        );
         return;
       }
       const smokeGenerated = Number(smoke.data?.generated ?? 0);
@@ -1014,10 +1028,14 @@ export function BrandFalTemplateGalleryPanel({
         >
           <p style={{ margin: 0, fontSize: 12, lineHeight: 1.5, color: t.textSecondary }}>
             {coverage.missingCount} / {coverage.slotCount} slot önizlemesi eksik — yeniden üretin.
+            {!typographyConfirmed
+              ? ' Önce Renk & Tipografi’yi onaylayın; set o olmadan üretilmez.'
+              : ''}
           </p>
           <button
             type="button"
-            disabled={generating}
+            disabled={generating || !typographyConfirmed}
+            title={!typographyConfirmed ? 'Önce Renk & Tipografi’yi onaylayın' : undefined}
             onClick={() => void generateBrandSet()}
             style={{
               alignSelf: 'flex-start',
@@ -1028,7 +1046,7 @@ export function BrandFalTemplateGalleryPanel({
               color: '#fff',
               fontSize: 13,
               fontWeight: 700,
-              cursor: generating ? 'wait' : 'pointer',
+              cursor: generating ? 'wait' : !typographyConfirmed ? 'not-allowed' : 'pointer',
               opacity: generating ? 0.75 : 1,
             }}
           >
@@ -1048,7 +1066,7 @@ export function BrandFalTemplateGalleryPanel({
           background: t.isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
         }}
       >
-        {(['all', 'post', 'story', 'reel'] as CatalogGalleryFormatFilter[]).map((f) => {
+        {(['all', 'post', 'story', 'reel', 'carousel'] as CatalogGalleryFormatFilter[]).map((f) => {
           const active = formatFilter === f;
           const label = f === 'all' ? 'Tümü' : FORMAT_LABELS[f];
           return (
@@ -1088,11 +1106,13 @@ export function BrandFalTemplateGalleryPanel({
               : isLoading
                 ? 'Slot kataloğu yükleniyor…'
                 : 'Sektör tanımsız — Kimlik’te sektör kaydedin'}
+            {!typographyConfirmed ? ' · Set için tipografi onayı gerekir' : ''}
           </span>
         </div>
         <button
           type="button"
-          disabled={generating || Boolean(generatingSlotKey)}
+          disabled={generating || Boolean(generatingSlotKey) || !typographyConfirmed}
+          title={!typographyConfirmed ? 'Önce Renk & Tipografi’yi onaylayın' : undefined}
           onClick={() => void generateBrandSet()}
           style={{
             minHeight: 40,
@@ -1103,8 +1123,12 @@ export function BrandFalTemplateGalleryPanel({
             color: '#fff',
             fontSize: 12,
             fontWeight: 700,
-            cursor: (generating || generatingSlotKey) ? 'wait' : 'pointer',
-            opacity: (generating || generatingSlotKey) ? 0.75 : 1,
+            cursor: generating || generatingSlotKey
+              ? 'wait'
+              : !typographyConfirmed
+                ? 'not-allowed'
+                : 'pointer',
+            opacity: (generating || generatingSlotKey || !typographyConfirmed) ? 0.75 : 1,
             flexShrink: 0,
           }}
         >

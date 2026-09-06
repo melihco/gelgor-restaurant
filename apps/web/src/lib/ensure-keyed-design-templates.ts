@@ -1,9 +1,6 @@
 /**
- * Multi-tenant repair: enabled catalog slots missing an active keyed
- * brand_design_template get a clone from the best same-format peer (or an
- * archived row for the same catalog_slot_key).
- *
- * Closes under-provisioned gaps without brand-name branches.
+ * Multi-tenant repair: revive an archived row for the same catalog_slot_key.
+ * Never copy another slot's shell — missing key means no pack.
  */
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import {
@@ -15,16 +12,20 @@ import {
   seedSlotCreativeBrief,
   type SlotCreativeCustomization,
 } from '@/lib/slot-creative-customization';
+import {
+  slotFormatToDesignTemplateFormat,
+  type DesignTemplateFormat,
+} from '@/lib/brand-design-template-presets';
 
 export interface KeyedTemplateClonePlan {
   catalogSlotKey: string;
   templateType: string;
   templateName: string;
-  format: 'story' | 'post' | 'reel_cover';
+  format: DesignTemplateFormat;
   thumbnailUrl: string | null;
   designSpec: Record<string, unknown>;
   donorId: string;
-  donorSource: 'archived_same_key' | 'active_peer';
+  donorSource: 'archived_same_key';
 }
 
 export interface KeyedTemplateBrandSeed {
@@ -34,21 +35,8 @@ export interface KeyedTemplateBrandSeed {
   brandTone?: string;
 }
 
-function normalizeFormat(raw: string | null | undefined): 'story' | 'post' | 'reel_cover' {
-  const f = String(raw ?? '').toLowerCase();
-  if (f === 'reel' || f === 'reel_cover') return 'reel_cover';
-  if (f === 'story') return 'story';
-  return 'post';
-}
-
-function slotFormatForTemplate(slotFormat: string): 'story' | 'post' | 'reel_cover' {
-  if (slotFormat === 'reel') return 'reel_cover';
-  if (slotFormat === 'story') return 'story';
-  return 'post';
-}
-
-function formatsCompatible(slotFmt: string, templateFmt: string): boolean {
-  return slotFormatForTemplate(slotFmt) === normalizeFormat(templateFmt);
+function slotFormatForTemplate(slotFormat: string): DesignTemplateFormat {
+  return slotFormatToDesignTemplateFormat(slotFormat);
 }
 
 function purposeBriefForSlot(input: {
@@ -138,39 +126,7 @@ export function planKeyedDesignTemplateClones(input: {
         donorSource: 'archived_same_key',
       });
       keyedActive.add(key);
-      continue;
     }
-
-    const wantType = String(slot.designTemplateType ?? '').toLowerCase();
-    const sectorPrefix = key.split('_').slice(0, 2).join('_'); // e.g. beach_club / local_products
-    const peers = active.filter((t) => formatsCompatible(slot.format, t.format));
-    peers.sort((a, b) => {
-      const aType = String(a.template_type ?? '').toLowerCase() === wantType ? 1 : 0;
-      const bType = String(b.template_type ?? '').toLowerCase() === wantType ? 1 : 0;
-      if (aType !== bType) return bType - aType;
-      const aKey = String(a.catalog_slot_key ?? '');
-      const bKey = String(b.catalog_slot_key ?? '');
-      const aSector = sectorPrefix && aKey.startsWith(sectorPrefix) ? 1 : 0;
-      const bSector = sectorPrefix && bKey.startsWith(sectorPrefix) ? 1 : 0;
-      if (aSector !== bSector) return bSector - aSector;
-      const aThumb = a.thumbnail_url ? 1 : 0;
-      const bThumb = b.thumbnail_url ? 1 : 0;
-      return bThumb - aThumb;
-    });
-    const donor = peers[0];
-    if (!donor) continue;
-
-    plans.push({
-      catalogSlotKey: key,
-      templateType: wantType || donor.template_type || 'campaign_announcement',
-      templateName: slot.labelTr || donor.template_name,
-      format: slotFormatForTemplate(slot.format),
-      thumbnailUrl: donor.thumbnail_url,
-      designSpec: designSpecFromDonor(donor, purposeBrief, 'active_peer_gap_fill'),
-      donorId: donor.id,
-      donorSource: 'active_peer',
-    });
-    keyedActive.add(key);
   }
   return plans;
 }

@@ -4,7 +4,6 @@ import {
   __resetDesignTemplateJobStatusMemoryForTests,
   setDesignTemplateJobStatus,
 } from '@/lib/design-template-job-status';
-
 const afterMock = vi.fn((fn: () => void | Promise<void>) => {
   // Do not run background generation — zero-cost verification.
   void fn;
@@ -18,29 +17,53 @@ vi.mock('next/server', async () => {
   };
 });
 
+let themeConfirmedForTest = true;
+
+const confirmedTheme = {
+  typography_design: {
+    vibe: 'warm_coastal',
+    confirmed_at: '2026-09-01T00:00:00.000Z',
+    source: 'user',
+  },
+};
+
+async function defaultCrewMock(path: string) {
+  if (path.includes('/gallery-analysis')) {
+    return { ok: true, status: 200, data: { photo_a: {} }, error: null };
+  }
+  if (path.includes('/theme')) {
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        theme: themeConfirmedForTest
+          ? confirmedTheme
+          : { typography_design: { vibe: 'editorial_serif', source: 'derived' } },
+      },
+      error: null,
+    };
+  }
+  if (path.includes('/brand-context/')) {
+    return {
+      ok: true,
+      status: 200,
+      data: {
+        business_name: 'Test Beach',
+        business_type: 'beach_club',
+        reference_image_urls: [
+          'https://cdn.example.com/a.jpg',
+          'https://cdn.example.com/b.jpg',
+          'https://cdn.example.com/c.jpg',
+        ],
+      },
+      error: null,
+    };
+  }
+  return { ok: false, status: 404, data: null, error: 'not_mocked' };
+}
+
 vi.mock('@/lib/crew-proxy', () => ({
-  fetchCrewBackendJson: vi.fn(async (path: string) => {
-    if (path.includes('/gallery-analysis')) {
-      return { ok: true, status: 200, data: { photo_a: {} }, error: null };
-    }
-    if (path.includes('/brand-context/')) {
-      return {
-        ok: true,
-        status: 200,
-        data: {
-          business_name: 'Test Beach',
-          business_type: 'beach_club',
-          reference_image_urls: [
-            'https://cdn.example.com/a.jpg',
-            'https://cdn.example.com/b.jpg',
-            'https://cdn.example.com/c.jpg',
-          ],
-        },
-        error: null,
-      };
-    }
-    return { ok: false, status: 404, data: null, error: 'not_mocked' };
-  }),
+  fetchCrewBackendJson: vi.fn(defaultCrewMock),
 }));
 
 vi.mock('@/app/api/auto-produce/gallery-context', () => ({
@@ -58,12 +81,13 @@ vi.mock('@/app/api/auto-produce/gallery-context', () => ({
 describe('POST /api/brand-context/.../generate-design-templates (background)', () => {
   beforeEach(() => {
     afterMock.mockClear();
+    themeConfirmedForTest = true;
     __resetDesignTemplateJobStatusMemoryForTests();
   });
 
   it('queues background job with 202 and does not run generation in test', async () => {
     const { POST } = await import('../route');
-    const workspaceId = '327db521-ede2-48e0-8f06-4146ee458c50';
+    const workspaceId = crypto.randomUUID();
 
     const res = await POST(
       new NextRequest(`http://localhost/api/brand-context/${workspaceId}/generate-design-templates`, {
@@ -123,5 +147,24 @@ describe('POST /api/brand-context/.../generate-design-templates (background)', (
     expect(data.reused).toBe(true);
     expect(data.queued).toBe(true);
     expect(afterMock).not.toHaveBeenCalled();
+  });
+
+  it('returns 422 when typography is not confirmed (two tenants)', async () => {
+    themeConfirmedForTest = false;
+    const { POST } = await import('../route');
+    for (const workspaceId of [crypto.randomUUID(), crypto.randomUUID()]) {
+      const res = await POST(
+        new NextRequest(`http://localhost/api/brand-context/${workspaceId}/generate-design-templates`, {
+          method: 'POST',
+          body: JSON.stringify({ locale: 'tr', background: true }),
+          headers: { 'Content-Type': 'application/json' },
+        }),
+        { params: Promise.resolve({ workspaceId }) },
+      );
+      expect(res.status).toBe(422);
+      const data = await res.json() as { error: string };
+      expect(data.error).toBe('typography_not_confirmed');
+      expect(afterMock).not.toHaveBeenCalled();
+    }
   });
 });

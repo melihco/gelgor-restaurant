@@ -32,6 +32,8 @@ export interface CarouselCompositorOptions {
   primaryColor?: string;
   accentColor?: string;
   fontFamily?: string;
+  /** Slide 1 already painted from the carousel library template — do not restamp headline. */
+  skipDesignedHeroOverlay?: boolean;
 }
 
 export interface CarouselFromUrlsOptions {
@@ -221,6 +223,7 @@ export async function compositeCarouselFrames(
     cta = '',
     primaryColor = '#1a2b4a',
     accentColor = '#c9a96e',
+    skipDesignedHeroOverlay = false,
   } = opts;
 
   const middleCaptions = splitCaptionForCarouselSlides(caption, slides[0]?.total ?? slides.length);
@@ -233,6 +236,10 @@ export async function compositeCarouselFrames(
       const h = meta.height ?? 1080;
       const isFirst = slide.index === 0;
       const isLast = slide.index === slide.total - 1;
+      if (isFirst && skipDesignedHeroOverlay) {
+        results.push(slide.buffer);
+        continue;
+      }
       const slideCaption = slide.overlayCaption
         ?? (isFirst ? caption.slice(0, 120) : (!isLast ? middleCaptions[slide.index - 1] : undefined));
 

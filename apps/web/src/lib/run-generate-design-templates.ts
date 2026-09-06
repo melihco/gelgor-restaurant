@@ -20,10 +20,10 @@ import {
 } from '@/lib/house-layout-family';
 import { distillBrandSoul } from '@/lib/fal-brand-input';
 import {
-  buildUserConfirmedTypographyPatch,
   isTypographyDesignConfirmed,
   resolvePostDesignDefaultsForTypography,
-  resolveSuggestedTypographyConfig,
+  TYPOGRAPHY_NOT_CONFIRMED,
+  typographyNotConfirmedResponse,
 } from '@/lib/typography-design-policy';
 import {
   ensureSlotCreativeBriefsForAssignments,
@@ -100,7 +100,7 @@ export async function validateGenerationPrereqs(workspaceId: string): Promise<
   | { ok: true }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const [ctxRes, analysisRes] = await Promise.all([
+  const [ctxRes, analysisRes, themeRes] = await Promise.all([
     fetchCrewBackendJson<Record<string, unknown>>(
       `/api/v1/brand-context/${workspaceId}`,
       { workspaceId, timeoutMs: 15_000 },
@@ -108,6 +108,10 @@ export async function validateGenerationPrereqs(workspaceId: string): Promise<
     fetchCrewBackendJson<Record<string, unknown>>(
       `/api/v1/brand-context/${workspaceId}/gallery-analysis`,
       { workspaceId, timeoutMs: 20_000 },
+    ),
+    fetchCrewBackendJson<{ theme?: Record<string, unknown> }>(
+      `/api/v1/brand-context/${workspaceId}/theme`,
+      { workspaceId, timeoutMs: 15_000 },
     ),
   ]);
 
@@ -138,6 +142,20 @@ export async function validateGenerationPrereqs(workspaceId: string): Promise<
         error: 'no_gallery_photos',
         message: 'Marka galerisinde kullanılabilir görsel yok.',
       },
+    };
+  }
+
+  const themeFromApi = themeRes.ok && themeRes.data?.theme && typeof themeRes.data.theme === 'object'
+    ? themeRes.data.theme
+    : null;
+  const themeFromCtx = typeof brandCtx.brand_theme === 'object' && brandCtx.brand_theme
+    ? brandCtx.brand_theme as Record<string, unknown>
+    : null;
+  if (!isTypographyDesignConfirmed(themeFromApi ?? themeFromCtx)) {
+    return {
+      ok: false,
+      status: 422,
+      body: typographyNotConfirmedResponse(),
     };
   }
 
@@ -184,16 +202,8 @@ export async function runGenerateDesignTemplates(
     : (typeof brandCtx.brand_theme === 'object' ? brandCtx.brand_theme as Record<string, unknown> : null);
 
   const typographyConfirmed = isTypographyDesignConfirmed(brandTheme);
-  const visualDnaForTypo = typeof brandCtx.visual_dna === 'string' ? brandCtx.visual_dna : null;
-  let typographyUsedForGenerate = typographyConfirmed;
   if (!typographyConfirmed) {
-    const suggested = resolveSuggestedTypographyConfig(brandTheme, sector, visualDnaForTypo);
-    const confirmed = buildUserConfirmedTypographyPatch(suggested);
-    brandTheme = {
-      ...(brandTheme ?? {}),
-      typography_design: confirmed,
-      typographyDesign: confirmed,
-    };
+    throw new Error(TYPOGRAPHY_NOT_CONFIRMED);
   }
   const themeAnti = Array.isArray(brandTheme?.anti_patterns)
     ? (brandTheme!.anti_patterns as string[])
@@ -382,9 +392,8 @@ export async function runGenerateDesignTemplates(
   } else {
     const { invalidateDesignTemplateCache } = await import('@/lib/brand-design-template-matcher');
     invalidateDesignTemplateCache(workspaceId);
-    // Seal vibe + empty house family so missions inherit the 2–3 geometries.
-    // preferred_canva_archetypes is not an identity fingerprint — no library regen.
-    if (!typographyConfirmed || shouldSealHouseFamily) {
+    // House family seal only — generate never stamps typography confirm.
+    if (shouldSealHouseFamily) {
       const typo = (brandTheme?.typography_design ?? brandTheme?.typographyDesign) as
         | Parameters<typeof resolvePostDesignDefaultsForTypography>[0]
         | undefined;
@@ -405,10 +414,9 @@ export async function runGenerateDesignTemplates(
             },
           },
         );
-        typographyUsedForGenerate = sealRes.ok || typographyConfirmed;
         if (!sealRes.ok) {
           console.warn(
-            `[generate-design-templates] typography/house-family seal failed for ${workspaceId}:`,
+            `[generate-design-templates] house-family seal failed for ${workspaceId}:`,
             sealRes.error,
           );
         }
@@ -434,7 +442,7 @@ export async function runGenerateDesignTemplates(
   return {
     workspaceId,
     sector,
-    typography_design_confirmed: typographyConfirmed || typographyUsedForGenerate,
+    typography_design_confirmed: typographyConfirmed,
     generated: result.generated,
     failed: result.failed,
     persisted: persistRes.ok,

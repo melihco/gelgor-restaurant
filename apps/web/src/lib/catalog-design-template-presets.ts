@@ -9,7 +9,7 @@ import {
 } from '@/lib/brand-design-constitution';
 import {
   DESIGN_TEMPLATE_INTENT_BY_TYPE,
-  type DesignTemplateFormat,
+  slotFormatToDesignTemplateFormat,
   type DesignTemplatePreset,
   type DesignTemplateType,
   resolveDesignTemplatePresets,
@@ -53,10 +53,8 @@ const ASSET_TYPES_BY_TEMPLATE: Partial<Record<DesignTemplateType, string[]>> = {
   reel_cover: ['venue_reference', 'food_drink_photo', 'product_image', 'event_photo'],
 };
 
-function slotFormatToDesignFormat(format: string): DesignTemplateFormat {
-  if (format === 'reel') return 'reel_cover';
-  if (format === 'story') return 'story';
-  return 'post';
+function slotFormatToDesignFormat(format: string) {
+  return slotFormatToDesignTemplateFormat(format);
 }
 
 function sampleCopyForSlot(slot: ProductionSlotDefinition): {

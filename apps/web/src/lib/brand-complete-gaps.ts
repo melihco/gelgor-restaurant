@@ -228,14 +228,27 @@ export async function runCompleteBrandGaps(
       );
       let typeCov = summarizeDesignTemplateTypeCoverage(templates, businessType);
       if (!typeCov.sufficient) {
-        const gen = await postInternal(
-          `/api/brand-context/${tenantId}/generate-design-templates`,
-          tenantId,
-          forwardHeaders,
-          240_000,
-          { archiveExisting: false },
+        const themeRes = await fetchCrewBackendJson<{ theme?: Record<string, unknown> }>(
+          `/api/v1/brand-context/${tenantId}/theme`,
+          { workspaceId: tenantId, timeoutMs: 15_000, headers: forwardHeaders },
         );
-        steps.push({ ...gen, id: 'generate_design_templates' });
+        const theme = themeRes.ok && themeRes.data?.theme ? themeRes.data.theme : null;
+        if (!isTypographyDesignConfirmed(theme)) {
+          steps.push({
+            id: 'generate_design_templates',
+            ok: false,
+            detail: 'typography_not_confirmed',
+          });
+        } else {
+          const gen = await postInternal(
+            `/api/brand-context/${tenantId}/generate-design-templates`,
+            tenantId,
+            forwardHeaders,
+            240_000,
+            { archiveExisting: false },
+          );
+          steps.push({ ...gen, id: 'generate_design_templates' });
+        }
       } else {
         steps.push({
           id: 'generate_design_templates',

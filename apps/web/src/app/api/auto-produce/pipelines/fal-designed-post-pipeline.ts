@@ -63,6 +63,11 @@ import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
+import {
+  composeDesignSpecShell,
+  DESIGN_SPEC_SHELL_ENGINE,
+  type ShellComposeMode,
+} from '@/lib/design-spec-shell-compose';
 import { isHardDesignWithholdBreak } from '@/lib/caption-design-post-coherence';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
@@ -136,6 +141,12 @@ export interface FalDesignedPostInput {
   productionTier?: string | null;
   /** production-loop punchline lock — paint must not stem/rewrite. */
   punchlineLockSource?: string | null;
+  /**
+   * auto (default): paint layout boxes on the real photo when geometry exists.
+   * off: current GPT JPEG replica (compare / fallback).
+   * only: fail if the shell cannot compose.
+   */
+  shellCompose?: ShellComposeMode;
 }
 
 export interface FalDesignedPostResult {
@@ -355,6 +366,54 @@ export async function produceFalDesignedPost(
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
+      const shellMode = input.shellCompose ?? 'auto';
+      if (shellMode !== 'off' && referenceUrl) {
+        const shell = await composeDesignSpecShell({
+          headline: canvasHeadline,
+          subtitle: dedupedSubtitle,
+          brandColors,
+          vibe: designVibe,
+          archetypeId: input.canvaArchetypeId
+            ?? binding?.matched?.canvaArchetypeId
+            ?? null,
+          format: aspectRatio === '9:16' ? 'story' : 'post',
+          layoutPattern: binding?.matched?.layoutPattern ?? null,
+          photoUrl: referenceUrl,
+          workspaceId: input.workspaceId,
+          persist: true,
+        });
+        if (shell?.imageUrl) {
+          console.log(
+            `[auto-produce] [fal-design] design_spec_shell archetype=${shell.layout.archetypeId} `
+            + `"${canvasHeadline.slice(0, 40)}"`,
+          );
+          return {
+            imageUrl: shell.imageUrl,
+            falGrafikerScore: null,
+            falGrafikerPass: true,
+            falDesignEngine: DESIGN_SPEC_SHELL_ENGINE,
+            falTextValidated: true,
+            falGrafikerReviewed: false,
+            costDelta: 0,
+            artifactMetaPatch: {
+              design_spec_shell: true,
+              design_spec_layout_version: shell.layout.version,
+              design_spec_archetype: shell.layout.archetypeId,
+              design_spec_copy_fit_ok: shell.fit.ok,
+            },
+          };
+        }
+        if (shellMode === 'only') {
+          return {
+            imageUrl: null,
+            falGrafikerScore: null,
+            falGrafikerPass: false,
+            falDesignEngine: DESIGN_SPEC_SHELL_ENGINE,
+            costDelta: 0,
+            failureReason: 'design_spec_shell_failed',
+          };
+        }
+      }
       // "Yeniden üret" semantics: reuse the template's stored generation prompt
       // (design_spec.prompt) with mission copy swapped in, instead of rebuilding
       // a fresh prompt that may fight the template layout reference.

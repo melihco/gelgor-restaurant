@@ -80,7 +80,25 @@ describe('design_spec.layout v1 seeds', () => {
     expect(layout!.canvas.height).toBe(1920);
     expect(layout!.safeArea.top).toBeGreaterThanOrEqual(0.1);
     expect(layout!.safeArea.bottom).toBeGreaterThanOrEqual(0.12);
+    expect(layout!.safeArea.left).toBeGreaterThanOrEqual(0.12);
+    const headline = layout!.textSlots.find((t) => t.role === 'headline');
+    expect(headline?.zone.x).toBeGreaterThanOrEqual(0.12);
+    expect(headline?.align).toBe('center');
     expect(layout!.pinMode).toBe('hard');
+  });
+
+  it('local_products_shop story keeps long headlines off the left edge', () => {
+    const shop = seedDesignSpecLayout({
+      archetypeId: 'product_hero_card',
+      format: 'story',
+    });
+    const hl = shop!.textSlots.find((t) => t.role === 'headline');
+    expect(hl?.zone.x).toBeGreaterThanOrEqual(0.12);
+    expect(hl?.zone.x + hl!.zone.width).toBeLessThanOrEqual(0.88);
+    expect(hl?.align).toBe('center');
+    expect(hl?.maxLines).toBeGreaterThanOrEqual(3);
+    const lock = buildDesignSpecLayoutLockBlock(shop!);
+    expect(lock).toMatch(/9:16 EDGE|first glyph/i);
   });
 
   it('seeds product_hero_card for retail-style post (local_products_shop vertical)', () => {
