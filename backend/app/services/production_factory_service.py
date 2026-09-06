@@ -550,7 +550,7 @@ async def drain_production_jobs(
     settings = get_settings()
     use_bullmq = settings.use_bullmq_executor
 
-    if not await jobs.has_open_jobs(mission_id):
+    if not await jobs.has_runnable_jobs(mission_id):
         return {"claimed": 0, "ready": 0, "failed": 0}
 
     # Recover slots stuck in running/claimed after worker crash, dev reload, or a hung
@@ -803,7 +803,7 @@ async def drain_production_jobs(
     # Continuation kicks — BullMQ relies on worker callbacks; schedule a safety-net
     # drain when open jobs remain so slots do not freeze if the callback never arrives.
     if use_bullmq:
-        if await jobs.has_open_jobs(mission_id):
+        if await jobs.has_runnable_jobs(mission_id):
             delay = 45.0 if enqueued_total > 0 else 2.0
             schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
         elif (
@@ -812,7 +812,7 @@ async def drain_production_jobs(
             and int(summary_after.get("active") or 0) == 0
         ):
             schedule_completion_pass(mission_id, workspace_id, delay_sec=12.0)
-    elif await jobs.has_open_jobs(mission_id):
+    elif await jobs.has_runnable_jobs(mission_id):
         # Longer delay when slots failed without artifacts — avoids fal.ai retry storms.
         delay = 120.0 if failed_total > 0 and ready_total == 0 else 45.0
         schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
@@ -1044,11 +1044,11 @@ def _bullmq_defer_delay_sec(reason: str) -> float:
     """Backoff before re-claiming deferred BullMQ slots."""
     lower = (reason or "").strip().lower()
     if "aylık kredi" in lower or "sa kredi" in lower or "token_wallet" in lower:
-        return 180.0
+        return 900.0
     if "provider_billing" in lower or "skip-no-fal-quota" in lower:
-        return 90.0
+        return 900.0
     if "budget" in lower or "günlük" in lower:
-        return 120.0
+        return 600.0
     if (
         "overlay_ungrounded" in lower
         or "caption" in lower and "tutarsız" in lower
@@ -1188,7 +1188,7 @@ async def apply_bullmq_completion(
     )
 
     # Claim + enqueue any remaining runnable jobs for this mission.
-    if not summary_after.get("complete") and await jobs.has_open_jobs(mission_id):
+    if not summary_after.get("complete") and await jobs.has_runnable_jobs(mission_id):
         # Match mark_deferred backoff — avoid enqueue storms while lock is held.
         delay = 45.0 if deferred > 0 else 2.0
         schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)

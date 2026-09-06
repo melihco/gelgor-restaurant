@@ -151,6 +151,13 @@ def test_resolve_bullmq_batch_reason_unreachable_not_in_flight() -> None:
     assert pfs._resolve_bullmq_batch_reason(None, http_status=409) == "production_in_flight"
 
 
+def test_bullmq_stale_window_does_not_overlap_live_paint() -> None:
+    from app.services import production_job_service as pjs
+
+    assert pjs._BULLMQ_WATCHDOG_STALE_SEC == pjs._BULLMQ_DRAIN_STALE_RECLAIM_SEC
+    assert pjs._BULLMQ_WATCHDOG_STALE_SEC >= 900
+
+
 def test_ops_defer_reasons_cover_billing_and_credit() -> None:
     assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is True
     assert pfs._is_ops_defer_reason(
@@ -166,8 +173,8 @@ def test_ops_defer_reasons_cover_billing_and_credit() -> None:
     ) is True
     assert pfs._is_ops_defer_reason("withheld_quality_gate") is False
     assert pfs._is_ops_defer_reason("no_artifact") is False
-    assert pfs._bullmq_defer_delay_sec("Aylık kredi limiti doldu") == 180.0
-    assert pfs._bullmq_defer_delay_sec("provider_billing_circuit_open") == 90.0
+    assert pfs._bullmq_defer_delay_sec("Aylık kredi limiti doldu") == 900.0
+    assert pfs._bullmq_defer_delay_sec("provider_billing_circuit_open") == 900.0
     assert pfs._bullmq_defer_delay_sec("Caption–tasarım–görsel tutarsız (overlay_ungrounded)") == 60.0
     assert pfs._resolve_bullmq_batch_reason(
         {"error": "Aylık kredi limiti doldu (1 / 1 SA Kredi)"},
@@ -215,6 +222,9 @@ class _JobsRecorder:
 
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
         return not self._summary.get("complete", False)
+
+    async def has_runnable_jobs(self, mission_id: uuid.UUID) -> bool:
+        return await self.has_open_jobs(mission_id)
 
     async def claim_batch(
         self,
@@ -271,6 +281,7 @@ def _install_drain_doubles(
     """Wire up the monkeypatches shared by the drain flow tests."""
     for name in (
         "has_open_jobs",
+        "has_runnable_jobs",
         "claim_batch",
         "mark_running",
         "mark_ready",
@@ -490,6 +501,7 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     monkeypatch.setattr(pfs.jobs, "mark_ready", _mark_ready, raising=True)
     monkeypatch.setattr(pfs.jobs, "mark_failed", _mark_failed, raising=True)
     monkeypatch.setattr(pfs.jobs, "has_open_jobs", _has_open, raising=True)
+    monkeypatch.setattr(pfs.jobs, "has_runnable_jobs", _has_open, raising=True)
     monkeypatch.setattr(pfs, "_workspace_for_mission", _workspace_for_mission, raising=True)
 
     async def _fake_finalize(mission_id):
@@ -597,3 +609,40 @@ async def test_drain_follow_up_schedules_with_force(
     assert out["ready"] == 1
     assert len(rekicks) == 1
     assert rekicks[0][1].get("force") is True
+
+
+async def test_drain_skips_follow_up_when_only_deferred_jobs_remain(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    """Quota/lock defer is open but not runnable — do not kick drain again."""
+    patch_settings(use_bullmq_executor=False, auto_feed_production_enabled=False)
+    batch = [_job(0, "story")]
+
+    class _DeferredOnly(_JobsRecorder):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._runnable_checks = 0
+
+        async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
+            return True
+
+        async def has_runnable_jobs(self, mission_id: uuid.UUID) -> bool:
+            self._runnable_checks += 1
+            # First check: enter drain. After the batch: only deferred remain.
+            return self._runnable_checks == 1
+
+    jobs = _DeferredOnly(
+        claim_batches=[batch, []],
+        summary={"total": 1, "complete": False, "active": 0, "failed": 0, "ready": 1},
+    )
+    rekicks = _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0"}]},
+        brand=brand_stub,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["ready"] == 1
+    assert rekicks == []
