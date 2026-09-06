@@ -11,6 +11,7 @@ import {
   FAL_PHOTO_WINDOW_COMPOSE_DIRECTIVE,
   FAL_SUBJECT_CLEARANCE_DIRECTIVE,
   pickFalLibraryFallbackDirectives,
+  resolveFalReelMotionSource,
   resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
@@ -94,6 +95,29 @@ describe('resolveFalRequireGroundedGallery', () => {
       sector: 'restaurant_cafe',
       captionDrivenGenerated: false,
     })).toBe(true);
+  });
+});
+
+describe('resolveFalReelMotionSource', () => {
+  it('uses the designed shop still, never the raw gallery photo', () => {
+    expect(resolveFalReelMotionSource({
+      designedStillUrl: 'https://cdn.example.com/shop-designed-9x16.jpg',
+      galleryUrl: 'https://karamandatca.com.tr/wp-content/uploads/oil.jpg',
+    })).toBe('https://cdn.example.com/shop-designed-9x16.jpg');
+  });
+
+  it('uses the designed beach still, never the raw gallery photo', () => {
+    expect(resolveFalReelMotionSource({
+      designedStillUrl: 'https://cdn.example.com/beach-designed-9x16.jpg',
+      galleryUrl: 'https://cdn.example.com/gallery/sunset-4x5.webp',
+    })).toBe('https://cdn.example.com/beach-designed-9x16.jpg');
+  });
+
+  it('withholds motion when the designed plate is missing', () => {
+    expect(() => resolveFalReelMotionSource({
+      designedStillUrl: '  ',
+      galleryUrl: 'https://cdn.example.com/gallery/sunset-4x5.webp',
+    })).toThrow(/designed 9:16 still required/);
   });
 });
 

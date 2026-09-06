@@ -2022,6 +2022,21 @@ export async function produceFalDesignerStill(
 }
 
 /**
+ * Reel motion plate — designed 9:16 still only.
+ * A raw gallery photo must not become the I2V source.
+ */
+export function resolveFalReelMotionSource(input: {
+  designedStillUrl: string | null | undefined;
+  galleryUrl?: string | null;
+}): string {
+  const designed = String(input.designedStillUrl ?? '').trim();
+  if (!designed) {
+    throw new Error('fal reel withheld — designed 9:16 still required before motion');
+  }
+  return designed;
+}
+
+/**
  * fal.ai designer video — premium designed card (headline + subtitle + brand system),
  * then Kling locked-composition animation. Not a single-line Remotion-style hook.
  */
@@ -2056,13 +2071,15 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
   const effectiveMotionMode = recipe
     ? resolveEffectiveReelMotionMode(recipe)
     : 'locked_graphics';
-  // photo_plate: I2V the gallery photo (no baked type) → logo composite.
-  // Designed still remains the feed cover (imageUrl) — kills frame-3 gibberish.
-  const motionSourceUrl = effectiveMotionMode === 'photo_plate'
-    && input.referencePhotoUrl?.trim()
-    ? input.referencePhotoUrl.trim()
+  // Motion is the designed 9:16 plate (slot template + overlay). Never I2V a
+  // raw gallery still — photo_plate only picks camera energy, not the source.
+  const motionSourceUrl = input.pipeline === 'fal_reel'
+    ? resolveFalReelMotionSource({
+      designedStillUrl: still.imageUrl,
+      galleryUrl: input.referencePhotoUrl,
+    })
     : still.imageUrl;
-  const preserveText = effectiveMotionMode !== 'photo_plate';
+  const preserveText = true;
 
   const motionStyle = input.pipeline === 'fal_reel'
     ? (effectiveMotionMode === 'photo_plate'

@@ -244,7 +244,8 @@ public class ArtifactsController : ControllerBase
         [FromQuery] int? limit,
         [FromQuery] DateTime? since,
         [FromQuery] string? missionId,
-        CancellationToken cancellationToken)
+        [FromQuery] bool includeDerivedAds = false,
+        CancellationToken cancellationToken = default)
     {
         var cappedLimit = limit is > 0 ? Math.Min(limit.Value, 500) : (int?)null;
         var artifacts = await _artifactService.GetArtifactsAsync(
@@ -253,6 +254,7 @@ public class ArtifactsController : ControllerBase
             cappedLimit,
             since,
             missionId,
+            includeDerivedAds,
             cancellationToken);
         return Ok(artifacts);
     }

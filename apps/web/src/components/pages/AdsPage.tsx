@@ -286,7 +286,7 @@ function AdCreativePendingPanel({ queryClient }: { queryClient: ReturnType<typeo
   const { data: artifacts = [] } = useQuery({
     queryKey: ['artifacts', 'ad_copy', 'pending'],
     queryFn: async () => {
-      const all = await apiClient.getArtifacts({ status: 'pending_review' });
+      const all = await apiClient.getArtifacts({ status: 'pending_review', includeDerivedAds: true });
       return all.filter((a) =>
         a.artifactType?.toLowerCase().includes('ad') ||
         a.artifactType === 'ad_copy' ||

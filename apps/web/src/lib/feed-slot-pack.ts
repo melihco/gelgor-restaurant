@@ -385,7 +385,12 @@ function quotedEvidenceLabels(evidence: string): string[] {
   const rx = /['‘’“”"]([^'‘’“”"]{3,80})['‘’“”"]/g;
   let match: RegExpExecArray | null = rx.exec(evidence);
   while (match) {
-    const phrase = match[1].replace(/\s+/g, ' ').trim();
+    const captured = match[1];
+    if (!captured) {
+      match = rx.exec(evidence);
+      continue;
+    }
+    const phrase = captured.replace(/\s+/g, ' ').trim();
     if (phrase.length >= 3) out.push(phrase);
     match = rx.exec(evidence);
   }
@@ -424,7 +429,7 @@ function swapLakeToSea(text: string, english: boolean): string {
     .replace(/\bgölde\b/giu, english ? 'at sea' : 'denizde')
     .replace(/\bgöle\b/giu, english ? 'sea' : 'denize')
     .replace(/\bgölü\b/giu, english ? 'sea' : 'denizi')
-    .replace(/\bgöl\b/giu, (m) => (m[0] === m[0].toLocaleUpperCase('tr-TR') ? cap : sea))
+    .replace(/\bgöl\b/giu, (m) => (m.charAt(0) === m.charAt(0).toLocaleUpperCase('tr-TR') ? cap : sea))
     .replace(/\blakes?\b/gi, 'sea');
 }
 
@@ -496,7 +501,8 @@ function productCopyMissesEvidence(input: {
 function compactQuotedLabels(labels: string[]): string[] {
   const pretty = labels.map(prettyPhrase).filter(Boolean);
   if (pretty.length < 2) return pretty;
-  const lead = pretty[0].split(' ')[0] ?? '';
+  const first = pretty[0] ?? '';
+  const lead = first.split(' ')[0] ?? '';
   if (!lead || !pretty.every((p) => fold(p).startsWith(fold(lead)))) return pretty;
   return pretty.map((p, i) => (i === 0 ? p : prettyPhrase(p.slice(lead.length))));
 }
@@ -504,9 +510,10 @@ function compactQuotedLabels(labels: string[]): string[] {
 function productSubjectAndRest(labels: string[]): { subject: string; rest: string } {
   const compact = compactQuotedLabels(labels);
   if (!compact.length) return { subject: '', rest: '' };
-  const lead = compact[0].split(/\s+/).filter(Boolean);
+  const head = compact[0] ?? '';
+  const lead = head.split(/\s+/).filter(Boolean);
   const subject = prettyPhrase(
-    lead.length >= 3 ? lead.slice(1, 3).join(' ') : compact[0],
+    lead.length >= 3 ? lead.slice(1, 3).join(' ') : head,
   );
   const rest = compact.slice(1).map((phrase) => {
     const words = phrase.split(/\s+/).filter(Boolean);

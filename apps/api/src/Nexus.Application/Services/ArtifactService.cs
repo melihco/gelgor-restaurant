@@ -10,6 +10,7 @@ public interface IArtifactService
         int? limit = null,
         DateTime? sinceUtc = null,
         string? missionId = null,
+        bool includeDerivedAds = false,
         CancellationToken cancellationToken = default);
     Task<ArtifactDto?> GetArtifactByIdAsync(Guid artifactId, Guid tenantId, CancellationToken cancellationToken = default);
 }

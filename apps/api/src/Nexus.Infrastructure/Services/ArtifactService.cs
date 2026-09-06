@@ -21,6 +21,7 @@ public class ArtifactService : IArtifactService
         int? limit = null,
         DateTime? sinceUtc = null,
         string? missionId = null,
+        bool includeDerivedAds = false,
         CancellationToken cancellationToken = default)
     {
         if (!string.IsNullOrWhiteSpace(missionId))
@@ -68,8 +69,17 @@ public class ArtifactService : IArtifactService
                 .ToListAsync(cancellationToken);
         }
 
-        var query = _dbContext.OutputArtifacts
-            .Where(a => a.TenantId == tenantId);
+        // Tenant Akış first paint takes newest N. Derived Meta/Google clones
+        // must be dropped before Take, or they occupy the window and hide posts.
+        // SqlIsClone is a compile-time fragment — FromSqlRaw keeps it as SQL, not a bind param.
+        var query = includeDerivedAds
+            ? _dbContext.OutputArtifacts.Where(a => a.TenantId == tenantId)
+            : _dbContext.OutputArtifacts
+                .FromSqlRaw(
+                    "SELECT * FROM \"OutputArtifacts\" WHERE \"TenantId\" = {0} AND NOT "
+                    + DerivedAdCreative.SqlIsClone,
+                    tenantId)
+                .AsNoTracking();
 
         if (agentRunId.HasValue)
         {

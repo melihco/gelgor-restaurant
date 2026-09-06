@@ -151,6 +151,8 @@ export interface GetArtifactsParams {
   since?: string;
   /** Filter metadata JSON containing this mission UUID. */
   missionId?: string;
+  /** Default false — Akış first paint drops Meta/Google clones before the limit. */
+  includeDerivedAds?: boolean;
 }
 
 export interface GetArtifactsOptions {
@@ -415,6 +417,7 @@ class ApiClient {
     if (params?.limit != null && params.limit > 0) qs.set('limit', String(params.limit));
     if (params?.since) qs.set('since', params.since);
     if (params?.missionId) qs.set('missionId', params.missionId);
+    if (params?.includeDerivedAds === true) qs.set('includeDerivedAds', 'true');
     const endpoint = `/api/artifacts${qs.toString() ? `?${qs.toString()}` : ''}`;
     const scopedHeaders = tenantId ? getTenantBffHeaders(tenantId) : undefined;
     try {

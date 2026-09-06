@@ -44,11 +44,6 @@ import {
   getReelArchetype,
   resolveReelArchetypeForProduction,
 } from '@/lib/reel-canva-archetypes';
-import {
-  assembleReelBeatMontage,
-  pickReelBeatPhotoUrls,
-  shouldRunReelBeatMontage,
-} from '@/lib/reel-beat-montage';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export async function runFalStoryPosterProduction(input: {
@@ -465,21 +460,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
         }
       }
 
-      // Beat montage runs its own I2V per photo — skip the cover locked-graphics
-      // motion so we don't pay for a clip that is immediately discarded.
-      const willBeatMontage = Boolean(
-        falPipeline === 'fal_reel'
-        && reelRecipe
-        && shouldRunReelBeatMontage({
-          recipe: reelRecipe,
-          photoUrls: [
-            photoUrl,
-            ...(inputs.montagePhotoUrls ?? []),
-          ].filter(Boolean) as string[],
-          productionTier: inputs.productionTier,
-        }),
-      );
-
       const designer = await produceFalDesignerVideo({
         workspaceId: inputs.workspaceId,
         headline: inputs.headline,
@@ -528,7 +508,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
         templateReplica: templateReplicaSpecFromBinding(templateBinding),
         productionTier: inputs.productionTier,
         reelRecipe,
-        skipMotion: willBeatMontage,
       });
       if (falPipeline === 'fal_reel' && (reelAgencyPack || reelRecipe)) {
         console.log(
@@ -538,78 +517,11 @@ export const falVideoHandler: ProductionPipelineHandler = {
           + `mode=${reelRecipe ? resolveEffectiveReelMotionMode(reelRecipe) : '—'} `
           + `job=${reelRecipe?.reelJob ?? '—'} `
           + `edit=${reelRecipe?.editStyle ?? '—'} `
-          + `directives=${(reelAgencyPack?.stillDirectives.length ?? 0) + reelCoverDirectives.length}`
-          + (willBeatMontage ? ' skipMotion=montage' : ''),
+          + `directives=${(reelAgencyPack?.stillDirectives.length ?? 0) + reelCoverDirectives.length}`,
         );
       }
 
-      let finalVideoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
-      if (willBeatMontage && reelRecipe) {
-        const beatPhotos = pickReelBeatPhotoUrls({
-          primaryUrl: photoUrl,
-          candidates: inputs.montagePhotoUrls ?? [],
-          beatCount: reelRecipe.beatCount,
-        });
-        try {
-          const montage = await assembleReelBeatMontage({
-            photoUrls: beatPhotos,
-            recipe: reelRecipe,
-            sector: inputs.brandBusinessType,
-            brandName: inputs.resolvedBrandName,
-            mood: inputs.mood,
-            designerMotionCue: reelMotionCue,
-            workspaceId: inputs.workspaceId,
-          });
-          if (montage && isPlayableVideoUrl(montage.videoUrl)) {
-            finalVideoUrl = montage.videoUrl;
-            console.log(
-              `[auto-produce] [fal-track] beat montage: ${montage.beatCount} beats `
-              + `arch=${reelRecipe.reelArchetypeId} model=${montage.model}`,
-            );
-            if (inputs.brandLogoUrl && reelRecipe.logoPolicy === 'composite_only') {
-              const { compositeOfficialLogoOnVideoUrl } = await import('@/lib/fal-logo-composite');
-              const withLogo = await compositeOfficialLogoOnVideoUrl({
-                videoUrl: finalVideoUrl,
-                logoUrl: inputs.brandLogoUrl,
-                placement: inputs.falLogoPlacement ?? null,
-                channel: 'reel',
-                workspaceId: inputs.workspaceId,
-              });
-              if (withLogo.logoApplied) finalVideoUrl = withLogo.videoUrl;
-            }
-          }
-        } catch (montageErr) {
-          console.warn(
-            '[auto-produce] [fal-track] beat montage failed — single-clip recovery I2V:',
-            montageErr instanceof Error ? montageErr.message : montageErr,
-          );
-        }
-        // Montage skipped motion on the cover — recover with one locked I2V if needed.
-        if (!isPlayableVideoUrl(finalVideoUrl) && designer.imageUrl) {
-          try {
-            const recovery = await generateStoryMotionPlateWithRetry({
-              imageUrl: designer.imageUrl,
-              style: 'social_reel_graphics',
-              sector: inputs.brandBusinessType,
-              brandName: inputs.resolvedBrandName,
-              mood: inputs.mood,
-              preserveExistingText: true,
-              pipeline: 'fal_reel',
-              designerMotionCue: reelMotionCue,
-              productionTier: inputs.productionTier,
-              timeoutMs: 360_000,
-            });
-            if (isPlayableVideoUrl(recovery.videoUrl)) {
-              finalVideoUrl = recovery.videoUrl;
-            }
-          } catch (recoveryErr) {
-            console.warn(
-              '[auto-produce] [fal-track] montage recovery I2V failed:',
-              recoveryErr instanceof Error ? recoveryErr.message : recoveryErr,
-            );
-          }
-        }
-      }
+      const finalVideoUrl = isPlayableVideoUrl(designer.videoUrl) ? designer.videoUrl : null;
 
       state.videoUrl = finalVideoUrl;
       // Reels: only keep the designed 9:16 still — never fall back to a raw gallery 4:5.
