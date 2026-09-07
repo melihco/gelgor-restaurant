@@ -10,25 +10,23 @@ import {
   releaseGlobalProductionSlot,
   tryAcquireGlobalProductionSlot,
 } from '../lib/production-global-inflight';
-import { produceFromQueueJob, studioDirectEnabled } from '../studio/produce-from-job';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 const WEB_BASE_URL = (process.env.WEB_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
-const STUDIO_DIRECT = studioDirectEnabled();
+
+// This file is esbuild-bundled into production-worker.cjs for Render.
+// Do not import studio / satori / sharp here — native .node files break the bundle.
+// Local in-process studio: `npm run studio` → studio-worker.ts.
 
 // Default concurrency=1: avoids two parallel workers saturating the same local Next.js
 // instance (which causes "fetch failed" / http_status=0). Override with
 // PRODUCTION_WORKER_CONCURRENCY env var when running multiple Next replicas behind a LB.
 const CONCURRENCY = Math.max(1, Number(process.env.PRODUCTION_WORKER_CONCURRENCY ?? 1));
-// Global rate limit across this worker: max N jobs per `duration` ms.
 const RATE_MAX = Math.max(1, Number(process.env.PRODUCTION_WORKER_RATE_MAX ?? 10));
 const RATE_DURATION_MS = Math.max(1000, Number(process.env.PRODUCTION_WORKER_RATE_DURATION_MS ?? 60_000));
 
-// Pre-flight health check: verify Next.js is reachable before attempting production.
-// Returns true when the service is up, false otherwise.
 async function isNextJsReachable(): Promise<boolean> {
   try {
-    // Dev cold-compile regularly exceeds 8s; keep this above Next's first-hit latency.
     const healthTimeoutMs = Math.max(
       8_000,
       Number(process.env.PRODUCTION_WORKER_HEALTH_TIMEOUT_MS ?? 35_000),
@@ -44,7 +42,6 @@ async function isNextJsReachable(): Promise<boolean> {
   }
 }
 
-// Sleep helper for retry backoff.
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 async function processSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
@@ -82,34 +79,16 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
     missionId,
   };
 
-  let produceData: Record<string, unknown> = {};
-  let httpStatus = 0;
-
-  if (STUDIO_DIRECT) {
-    try {
-      const result = await produceFromQueueJob({
-        autoProduceBody: pinnedAutoProduceBody,
-        factoryJobs,
-        missionId,
-        workspaceId,
-        callbackUrl,
-      });
-      httpStatus = result.status;
-      produceData = result.body;
-    } catch (err) {
-      produceData = { error: err instanceof Error ? err.message : 'studio produce failed' };
-      httpStatus = 500;
-    }
-  } else {
-  // Legacy: HTTP hop into Next. Off unless STUDIO_DIRECT=0.
   const FETCH_RETRY_DELAYS_MS = [8_000, 20_000] as const;
   const fetchTimeoutMs = Math.max(
     60_000,
     Number(process.env.PRODUCTION_WORKER_FETCH_TIMEOUT_MS ?? 620_000),
   );
 
+  let produceData: Record<string, unknown> = {};
+  let httpStatus = 0;
+
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
-    // Pre-flight: confirm Next.js is up before sending the heavy request.
     if (!(await isNextJsReachable())) {
       const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
       if (retryDelay === undefined) {
@@ -148,7 +127,6 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
           produced: 0,
         };
       } else if (httpStatus === 429) {
-        // Budget / monthly SA Kredi — Python defers without burning attempts.
         const budgetReason = String(
           produceData.reason || produceData.error || 'budget_exhausted',
         );
@@ -166,7 +144,7 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
       clearTimeout(fetchTimer);
     }
 
-    if (httpStatus !== 0) break; // success or non-transport error
+    if (httpStatus !== 0) break;
 
     const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
     if (retryDelay === undefined) {
@@ -180,9 +158,7 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
     );
     await sleep(retryDelay);
   }
-  }
 
-  // 2. Call back to Python to mark each claimed job ready/failed by slot key.
   try {
     await fetch(callbackUrl, {
       method: 'POST',
@@ -199,8 +175,6 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
       }),
     });
   } catch (err) {
-    // If the callback fails, the jobs stay 'running' and Python's stale-claim
-    // window reclaims + re-drains them. Surface the error to BullMQ for retry.
     throw new Error(`callback failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
@@ -232,7 +206,7 @@ function main(): void {
 
   console.log(
     `[production-worker] started. queue=${PRODUCTION_SLOTS_QUEUE} concurrency=${CONCURRENCY} ` +
-      `rate=${RATE_MAX}/${RATE_DURATION_MS}ms studio=${STUDIO_DIRECT ? 'direct' : `http:${WEB_BASE_URL}`}`,
+      `rate=${RATE_MAX}/${RATE_DURATION_MS}ms web=${WEB_BASE_URL}`,
   );
 
   const shutdown = async () => {

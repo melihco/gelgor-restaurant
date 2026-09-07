@@ -18,7 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "worker:production": "tsx src/workers/production-worker.ts",
-    "studio": "tsx src/workers/production-worker.ts",
+    "studio": "tsx src/workers/studio-worker.ts",
     "dashboard:queues": "tsx src/workers/bull-board.ts",
     "loadtest:queue": "node scripts/load-test-queue.mjs",
     "codegen:api": "node scripts/generate-api-types.mjs",
