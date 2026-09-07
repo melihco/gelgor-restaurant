@@ -332,6 +332,37 @@ describe('feed-slot-look — shop + beach', () => {
     })).toBe(false);
   });
 
+  it('adaptive scene keeps the weekly process sentence on a bottle still', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        language: 'Turkish',
+        adaptiveScene: true,
+        ideationHint: 'Üretimde bugün iş başındayız',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled oil bottle on a shelf',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: "Etiket: 'NATUREL SIZMA ZEYTİNYAĞI'. Rafta bir şişe.",
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Sızma zeytinyağımız raflarda',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.caption.toLowerCase()).toMatch(/üretim|iş baş/);
+      expect(result.pack.photoRole).toBe('product_for_sale');
+    }
+  });
+
   it('rescues a sawed shop headline from the caption sentence', async () => {
     const result = await lookFeedSlotPack(
       {

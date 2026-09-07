@@ -217,6 +217,10 @@ export async function runGptImageEnhanceForIdea(
     sceneBrief: input.sceneBrief,
     missionId: input.missionId,
     venueFingerprint: input.venueFingerprint,
+    slotJob: input.assignment.catalog_slot_label
+      || input.assignment.catalog_slot_key
+      || input.enhancePolicy?.slotJob
+      || '',
   });
 
   if (enhancedUrls.length) {

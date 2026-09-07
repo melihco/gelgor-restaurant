@@ -2477,7 +2477,11 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderRadius: 14, marginBottom: 10, background: t.isDark ? 'rgba(77,112,136,0.08)' : 'rgba(77,112,136,0.06)', border: `0.5px solid ${aiAdaptiveScene ? 'rgba(77,112,136,0.35)' : t.separator}` }}>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a uygun sahne</div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{aiAdaptiveScene ? 'Aktif' : 'Kapalı'}</div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, maxWidth: 220, lineHeight: 1.35 }}>
+                    {aiAdaptiveScene
+                      ? 'Yazıdaki sahne kurulur, seçili ürün/mekan yerleştirilir. Başka marka veya başka mekan yok.'
+                      : 'Kapalı: yalnız resimde duran yazılır. Açınca yazıdaki sahne kurulur.'}
+                  </div>
                 </div>
                 <Toggle
                   t={t}

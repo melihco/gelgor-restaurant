@@ -8,6 +8,7 @@ import type { AiEnhanceLevel } from '@/lib/ai-gallery-enhance';
 import { shouldAiEnhanceGalleryPipeline } from '@/lib/ai-gallery-enhance';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
+import { isProcessOrBtsSceneText } from '@/lib/caption-scene-fit';
 import {
   resolveAutoVisualSubject,
   inferVisualSubjectFromSlotKey,
@@ -197,8 +198,19 @@ export function resolveAdaptiveSceneMode(
   mode: AiAdaptiveSceneMode,
   businessType: string,
   caption: string,
+  slotJob?: string,
 ): ResolvedAdaptiveSceneMode {
   if (mode === 'digital_ui_context') return 'digital_ui_context';
+  const sceneText = `${caption} ${slotJob ?? ''}`;
+  if (isProcessOrBtsSceneText(sceneText)) {
+    const bt = businessType.toLowerCase();
+    if (
+      /barber|berber|salon|restaurant|cafe|hotel|beach|club|spa|clinic|dental|gym|venue|resort/i.test(bt)
+    ) {
+      return 'venue_context';
+    }
+    return 'lifestyle_composite';
+  }
   if (mode === 'venue_context' || mode === 'product_showcase' || mode === 'lifestyle_composite') {
     return mode;
   }
@@ -266,15 +278,18 @@ export function buildAdaptiveScenePromptBlock(input: {
       `Instagram product-hero presentation for: "${brief}".`,
       'Clean editorial framing, premium shadows, scroll-stopping composition.',
       'LOCKED PRODUCT: shape, lid, label, logo, and every printed character stay letter-perfect from the source photo.',
+      'Same brand and same SKU only — do not invent another mill or competitor label.',
       'Upgrade ONLY environment, light, and staging outside the product silhouette — never rewrite or invent packaging.',
       'Jewelry/accessories: boutique display or lifestyle flat-lay; packaged goods: contextual props at edges only (never overlapping the label).',
     );
   } else {
     lines.push(
       `Lifestyle composite scene for: "${brief}".`,
-      'Merge subject with a believable real-world setting (e.g. olive grove for olive oil, workshop for artisan goods).',
+      'Place the SELECTED hero from the reference photo into a caption-fit setting.',
+      'LOCKED PRODUCT: shape, lid, label, logo, and every printed character stay letter-perfect from the source photo.',
+      'Same brand only — do not invent another mill, factory tour, or competitor packaging.',
+      'If a venue fingerprint is provided, stay inside that place. No stock Italian grove or generic workshop.',
       'The final image must read as one coherent photograph — not a pasted cutout.',
-      'If a packaged product is the hero: keep label/logo letter-perfect; change only background and props outside the SKU.',
       'Props and background support the caption story; never obscure the hero subject.',
     );
   }

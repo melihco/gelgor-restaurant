@@ -2059,6 +2059,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ideaIndex,
         forceRewrite: Boolean(slotBackfillPass),
         forcedPhotoUrl: batchAssignedPhoto,
+        adaptiveScene: aiVisualStandard.adaptiveScene,
       });
       if (gf?.source === 'slot_look' && !gf.applied) {
         console.warn(
@@ -4000,6 +4001,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           designedPostPhotoEnhance: true,
           skipEnhanceForDesignedGrade: serverConfig.productionFlags.skipEnhanceForDesignedGrade,
           productionProfile,
+          caption,
+          slotJob: lockedFeedSlotPack?.slotJob
+            || String(assignment.catalog_slot_label ?? assignment.catalog_slot_key ?? ''),
+          evidenceNote: lockedFeedSlotPack?.evidenceNote,
+          photoRole: lockedFeedSlotPack?.photoRole,
         },
       });
       if (bgEnhance.applied && bgEnhance.photoUrls[0]) {
@@ -4064,6 +4070,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         willDesignedPost: false,
         designedPosterSync: isDesignedPostSlotEarly,
         productionProfile,
+        caption,
+        slotJob: lockedFeedSlotPack?.slotJob
+          || String(assignment.catalog_slot_label ?? assignment.catalog_slot_key ?? ''),
+        evidenceNote: lockedFeedSlotPack?.evidenceNote,
+        photoRole: lockedFeedSlotPack?.photoRole,
       },
     });
     if (enhanceResult.applied && enhanceResult.photoUrls.length) {

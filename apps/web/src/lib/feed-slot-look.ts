@@ -32,6 +32,7 @@ import {
   inlineLookVisionDataUris,
   resolveLookVisionUrls,
 } from '@/studio/look-urls';
+import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
 
 export type FeedSlotLookCandidate = {
   url: string;
@@ -47,6 +48,8 @@ export type FeedSlotLookInput = {
   brandTone?: string;
   /** Haftalık fikir — ipucu. Kanıt uymuyorsa reddedilir, kopyalanmaz. */
   ideationHint?: string;
+  /** Brand flag: keep weekly scene sentence; restage photo later. */
+  adaptiveScene?: boolean;
   candidates: FeedSlotLookCandidate[];
   missionId?: string | null;
   workspaceId?: string | null;
@@ -114,6 +117,15 @@ Rules:
 - If no candidate can do the slot_job without inventing, pickIndex null.
 - If slot_job is a place (lawn, umbrellas, loungers, sea, venue), pick a place photo and venue_ambiance. A product basket or labeled goods is pickIndex null — do not sell on a place job.
 - One look. Do not ask for another photo.`;
+
+const LOOK_SYSTEM_ADAPTIVE = `${LOOK_SYSTEM}
+
+Adaptive scene is ON for this brand:
+- Still pick a real hero (labeled product or the real venue). Do not invent a different mill, beach, or brand.
+- If ideation_hint is a process / at-work / behind-the-scenes sentence, KEEP that scene sentence as caption and headline.
+- Do not invent product grades, origins, or names that are not on the label.
+- evidenceNote still names what is currently in the frame (bottle, label, lawn).
+- Place jobs still need a place photo. A bottle cannot prove a shop-interior or lawn job.`;
 
 export function feedSlotLookEnabled(): boolean {
   return process.env.FEED_SLOT_LOOK !== 'false';
@@ -299,12 +311,17 @@ function draftFromLookJson(
   };
 }
 
+export function lookSystemPrompt(adaptiveScene?: boolean): string {
+  return adaptiveScene ? LOOK_SYSTEM_ADAPTIVE : LOOK_SYSTEM;
+}
+
 function buildLookUserText(input: FeedSlotLookInput, candidates: FeedSlotLookCandidate[]): string {
   return JSON.stringify({
     slot_job: input.slotJob.slice(0, 120),
     language: (input.language ?? 'Turkish').slice(0, 40),
     brand_tone: String(input.brandTone ?? '').slice(0, 80) || null,
     ideation_hint: String(input.ideationHint ?? '').slice(0, 400) || null,
+    adaptive_scene: Boolean(input.adaptiveScene),
     candidates: candidates.map((c, i) => ({
       index: i,
       visible_label_text: c.visibleLabelText ?? null,
@@ -360,7 +377,7 @@ export async function lookFeedSlotPack(
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: LOOK_SYSTEM },
+        { role: 'system', content: lookSystemPrompt(input.adaptiveScene) },
         { role: 'user', content: parts },
       ],
     });
@@ -384,6 +401,9 @@ export async function lookFeedSlotPack(
       return { ok: false, issues: ['no_pick'] };
     }
     const picked = candidates[pickIndex];
+    const photoSideText = [picked?.visibleLabelText, picked?.description, picked?.primarySubject]
+      .filter(Boolean)
+      .join(' ');
     const grounded = groundFeedSlotCopy({
       slotJob,
       photoRole: draft.photoRole,
@@ -392,15 +412,22 @@ export async function lookFeedSlotPack(
       caption: String(draft.caption ?? ''),
       headline: String(draft.headline ?? ''),
       ideationHint: input.ideationHint,
-      photoSideText: [picked?.visibleLabelText, picked?.description, picked?.primarySubject]
-        .filter(Boolean)
-        .join(' '),
+      photoSideText,
+    });
+    const sceneCopy = keepWeeklySceneCopy({
+      adaptiveScene: Boolean(input.adaptiveScene),
+      ideationHint: input.ideationHint,
+      caption: grounded.caption,
+      headline: grounded.headline,
+      evidenceNote: grounded.evidenceNote,
+      photoSideText,
+      photoUrl: picked?.url,
     });
     const parsed = parseFeedSlotPack({
       ...draft,
       evidenceNote: grounded.evidenceNote,
-      caption: grounded.caption,
-      headline: grounded.headline,
+      caption: sceneCopy.caption,
+      headline: sceneCopy.headline,
     });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
     const complete = completeLookPack(parsed.pack);

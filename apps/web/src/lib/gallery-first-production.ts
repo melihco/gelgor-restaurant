@@ -42,6 +42,7 @@ import {
   type FeedSlotLookResult,
 } from '@/lib/feed-slot-look';
 import { groundFeedSlotCopy, parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
+import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from '@/lib/vision-text-guard';
@@ -476,6 +477,8 @@ export async function resolveGalleryFirstForSlot(input: {
   forcedPhotoUrl?: string | null;
   /** Test seam — inject the one-look packer. */
   lookFn?: (input: FeedSlotLookInput) => Promise<FeedSlotLookResult>;
+  /** Brand flag: keep weekly scene sentence when the still is only a product. */
+  adaptiveScene?: boolean;
 }): Promise<GalleryFirstSlotResult | null> {
   const ideationCaption = String(input.ideationCaption ?? '').trim();
   const ideationHeadline = String(input.ideationHeadline ?? '').trim();
@@ -517,6 +520,7 @@ export async function resolveGalleryFirstForSlot(input: {
     const looked = await lookFn({
       slotJob,
       language: input.language ?? 'Turkish',
+      adaptiveScene: Boolean(input.adaptiveScene),
       ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
       candidates: shortlist.map((row) => {
         const meta = input.galleryMeta[normalizeGalleryUrl(row.url)]
@@ -538,18 +542,29 @@ export async function resolveGalleryFirstForSlot(input: {
       ?? Object.entries(input.galleryMeta).find(
         ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(looked.pack.photoUrl),
       )?.[1];
+    const photoSideText = [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
+      .filter(Boolean)
+      .join(' ');
+    const ideationHint = [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400);
     const groundedCopy = groundFeedSlotCopy({
       ...looked.pack,
-      ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
-      photoSideText: [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
-        .filter(Boolean)
-        .join(' '),
+      ideationHint,
+      photoSideText,
+    });
+    const sceneCopy = keepWeeklySceneCopy({
+      adaptiveScene: Boolean(input.adaptiveScene),
+      ideationHint,
+      caption: groundedCopy.caption,
+      headline: groundedCopy.headline,
+      evidenceNote: groundedCopy.evidenceNote,
+      photoSideText,
+      photoUrl: looked.pack.photoUrl,
     });
     const locked = parseFeedSlotPack({
       ...looked.pack,
       evidenceNote: groundedCopy.evidenceNote,
-      caption: groundedCopy.caption,
-      headline: groundedCopy.headline,
+      caption: sceneCopy.caption,
+      headline: sceneCopy.headline,
     });
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);

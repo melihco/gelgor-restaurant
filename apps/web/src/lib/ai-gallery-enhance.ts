@@ -142,6 +142,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
   sceneBrief?: ProductSceneBrief | null;
   missionId?: string;
   venueFingerprint?: VenueGalleryFingerprint | null;
+  slotJob?: string;
 }): Promise<string[]> {
   const urls = opts.photoUrls
     .filter((u) => typeof u === 'string' && u.trim().length > 0)
@@ -173,6 +174,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
           standard.adaptiveSceneMode,
           opts.businessType,
           opts.caption ?? opts.contextCaption,
+          opts.slotJob,
         ),
         caption: opts.caption ?? opts.contextCaption,
         headline: opts.headline ?? '',
@@ -217,6 +219,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
           standard.adaptiveSceneMode,
           opts.businessType,
           opts.caption ?? opts.contextCaption,
+          opts.slotJob,
         )
       : undefined,
     prebuiltSceneBrief: sceneBriefForEnhanceApi(opts.sceneBrief),

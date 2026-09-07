@@ -121,18 +121,13 @@ export function applyAgencyProductionThemeDefaults(
     base.ai_enhance_gallery_selected = profile.galleryRevisionDefault;
   }
 
-  // Adaptive scene: when gallery reliability is low, bypass gallery_match_ok skip.
-  // This is the key fix for service sectors (beauty, barber, healthcare) where
-  // gallery match score is misleading — high score ≠ brief-specific visual.
-  if (shouldForceAdaptiveScene(input.sector)) {
-    // Force ON regardless of stored value — sector characteristic, not user preference
-    base.ai_adaptive_scene = true;
-    reasons.push(`adaptive_scene_forced:${profile.sectorId}`);
+  // Adaptive scene: user false always wins. Undefined fills from sector profile
+  // (forceAdaptiveScene or low/medium gallery reliability).
+  if (base.ai_adaptive_scene === false) {
+    reasons.push('adaptive_scene_explicit_off');
   } else if (base.ai_adaptive_scene === undefined) {
-    // Medium/low gallery reliability: default adaptive scene ON so weak-match slots
-    // use GPT enhance instead of brand_solid vibe generation.
-    base.ai_adaptive_scene = profile.galleryReliability !== 'high';
-    if (base.ai_adaptive_scene) {
+    if (shouldForceAdaptiveScene(input.sector) || profile.galleryReliability !== 'high') {
+      base.ai_adaptive_scene = true;
       reasons.push(`adaptive_scene_default:${profile.sectorId}`);
     }
   }

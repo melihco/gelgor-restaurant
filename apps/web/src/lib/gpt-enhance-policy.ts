@@ -9,6 +9,7 @@ import { shouldAiEnhanceForOutput } from '@/lib/ai-visual-production-standard';
 import type { AiVisualProductionStandard } from '@/lib/ai-visual-production-standard';
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
+import { captionSceneNeedsRestage } from '@/lib/caption-scene-fit';
 
 /** Strong caption↔photo match — no $0.21 enhance needed for organic stills. */
 export const GALLERY_ENHANCE_SKIP_MIN_SCORE = GIS_PILOT_MIN_SCORE + 3;
@@ -31,6 +32,10 @@ export interface GptEnhancePolicyInput {
    * ve fotoğraf güçlü bir marka-galeri eşleşmesiyse enhance atlanır. */
   skipEnhanceForDesignedGrade?: boolean;
   productionProfile?: ProductionProfile | null;
+  caption?: string | null;
+  slotJob?: string | null;
+  evidenceNote?: string | null;
+  photoRole?: string | null;
 }
 
 /**
@@ -59,7 +64,18 @@ export function isProductHeroStaging(
  * eşleşmesiyse (stok değil) render-zamanı cinematic grade ile karşılanabilir.
  * Product-hero staging never skips — packaging shots still need lifestyle BG.
  */
+function needsCaptionSceneRestage(input: GptEnhancePolicyInput): boolean {
+  return captionSceneNeedsRestage({
+    adaptiveScene: input.visualStandard.adaptiveScene,
+    caption: input.caption,
+    slotJob: input.slotJob,
+    evidenceNote: input.evidenceNote,
+    photoRole: input.photoRole,
+  });
+}
+
 function canSkipDesignedPostEnhanceForGrade(input: GptEnhancePolicyInput): boolean {
+  if (needsCaptionSceneRestage(input)) return false;
   if (isProductHeroStaging(input.visualStandard)) return false;
   return Boolean(
     input.skipEnhanceForDesignedGrade
@@ -121,8 +137,10 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   // Product-hero brands (e-commerce / local products) keep enhance: phone snaps of
   // olive oil / jars often score "high" on topic match but still need staged BG.
   const productHeroStaging = isProductHeroStaging(input.visualStandard);
+  const sceneRestage = needsCaptionSceneRestage(input);
   if (
     !productHeroStaging
+    && !sceneRestage
     && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
@@ -132,7 +150,8 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
   }
 
   if (
-    input.pickedFromBrandGallery
+    !sceneRestage
+    && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
     && pipeline === 'carousel_gallery'
@@ -170,6 +189,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
       && input.galleryMatchScore != null
       && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE - 8
       && !isProductHeroStaging(input.visualStandard)
+      && !needsCaptionSceneRestage(input)
     ) {
       return false;
     }
@@ -188,8 +208,10 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   }
 
   const productHeroStaging = isProductHeroStaging(input.visualStandard);
+  const sceneRestage = needsCaptionSceneRestage(input);
   if (
     !productHeroStaging
+    && !sceneRestage
     && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GALLERY_ENHANCE_SKIP_MIN_SCORE
@@ -200,6 +222,7 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
 
   if (
     !productHeroStaging
+    && !sceneRestage
     && input.pickedFromBrandGallery
     && input.galleryMatchScore != null
     && input.galleryMatchScore >= GIS_PILOT_MIN_SCORE
