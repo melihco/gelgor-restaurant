@@ -380,6 +380,13 @@ describe('shouldUseLocalTypography (role matrix + flag gate)', () => {
     expect(shouldUseLocalTypography(null, 'fal_reel')).toBe(false);
   });
 
+  it('studio pack lock forbids Satori even when the flag is on', () => {
+    process.env.LOCAL_TYPOGRAPHY_ENABLED = 'true';
+    expect(shouldUseLocalTypography('fal_designed_post', 'fal_design', null, {
+      forbidSatoriEscape: true,
+    })).toBe(false);
+  });
+
   it('respects brand production_engines.satori.local_typography_enabled opt-out', () => {
     process.env.LOCAL_TYPOGRAPHY_ENABLED = 'true';
     const disabledTheme = { production_engines: { satori: { local_typography_enabled: false } } };

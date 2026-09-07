@@ -62,6 +62,7 @@ import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-product
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
+import { studioForbidsSatoriEscape } from '@/studio/paint';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import {
   composeDesignSpecShell,
@@ -950,7 +951,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
     const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
     const localTypographyEligible = Boolean(
       !inputs.adHocBrief
-      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme, {
+        forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
+      })
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl),
     );
@@ -1073,7 +1076,12 @@ export const falDesignHandler: ProductionPipelineHandler = {
       && isUsableGalleryPhotoUrl(localReferenceUrl)
       ? localReferenceUrl
       : null;
-    if (!state.imageUrl && satoriFallbackPhoto && !inputs.adHocBrief) {
+    if (
+      !state.imageUrl
+      && satoriFallbackPhoto
+      && !inputs.adHocBrief
+      && !studioForbidsSatoriEscape(inputs)
+    ) {
       const paintFallback = resolveSlotPaintOverlay({
         headline: inputs.headline,
         subtitle: gatedFalSubtitle || inputs.cta,

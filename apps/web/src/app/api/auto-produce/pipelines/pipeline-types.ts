@@ -150,6 +150,8 @@ export interface SlotProductionInputs {
    * Paint paths must soft-clamp only — no type_budget stem / coherence rewrite.
    */
   punchlineLockSource?: string | null;
+  /** Studio: locked FeedSlotPack — Satori escape and paint rematch are closed. */
+  forbidSatoriEscape?: boolean;
   /** Designed tagline/subline for fal typography (calendar tagline). */
   falSubtitle?: string;
   falFontPersonality?: string;

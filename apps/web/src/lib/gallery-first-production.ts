@@ -554,19 +554,24 @@ export async function resolveGalleryFirstForSlot(input: {
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);
     }
+    const { acceptBoundPack } = await import('@/studio/bind');
+    const accepted = acceptBoundPack(locked.pack);
+    if (!accepted.ok) {
+      return emptySlotLookResult(accepted.codes);
+    }
     const matchScore = shortlist.find(
-      (row) => normalizeGalleryUrl(row.url) === normalizeGalleryUrl(locked.pack.photoUrl),
+      (row) => normalizeGalleryUrl(row.url) === normalizeGalleryUrl(accepted.pack.photoUrl),
     )?.score ?? null;
     return {
-      photoUrl: locked.pack.photoUrl,
-      caption: locked.pack.caption,
-      headline: locked.pack.headline,
+      photoUrl: accepted.pack.photoUrl,
+      caption: accepted.pack.caption,
+      headline: accepted.pack.headline,
       hashtags: [],
       matchScore,
       source: 'slot_look',
       applied: true,
       grounded: true,
-      pack: locked.pack,
+      pack: accepted.pack,
     };
   }
 

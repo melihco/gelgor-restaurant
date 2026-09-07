@@ -188,6 +188,15 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
 });
 
 describe('feed-slot-pack — motto box + caption open', () => {
+  it('shop: a complete long sentence is not sawed for the box', () => {
+    const locked = lockFeedCardCopy({
+      headline: 'Sızma zeytinyağımız raflarda sofranıza bir damla yeter',
+      caption: 'Sızma zeytinyağımız raflarda sofranıza bir damla yeter. Kavanoz etiketli.',
+    });
+    expect(locked.headline).toMatch(/sofranıza bir damla yeter/i);
+    expect(locked.headline).not.toMatch(/Sızma zeytinyağımız$/);
+  });
+
   it('shop: keeps a four-word oil motto inside the box', () => {
     expect(fitHeadlineToMottoBox('Yağın en sakin hali.')).toBe('Yağın en sakin hali');
     const locked = lockFeedCardCopy({

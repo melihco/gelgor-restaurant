@@ -289,6 +289,23 @@ describe('feed-slot-look — shop + beach', () => {
       catalog_slot_key: 'beach_club_sunset_ambiance_story',
       publish_channel: 'instagram_organic',
     })).toBe(true);
+    expect(isCampaignSentenceLock({
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
+      catalog_slot_key: 'local_products_shop_farm_visit_story',
+    })).toBe(false);
+    expect(shouldLookFeedSlotPack({
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
+      catalog_slot_key: 'local_products_shop_farm_visit_story',
+      publish_channel: 'instagram_organic',
+    })).toBe(true);
+    expect(shouldLookFeedSlotPack({
+      slot_role: 'campaign_story_motion',
+      pipeline: 'fal_story',
+      catalog_slot_key: 'beach_club_weekend_hours_story',
+      publish_channel: 'instagram_organic',
+    })).toBe(true);
   });
 
   it('does not mix a locked campaign sentence into the weekly pack', () => {
@@ -313,6 +330,34 @@ describe('feed-slot-look — shop + beach', () => {
       pipeline: 'fal_design',
       rationale: 'ad_hoc_brief_fal_designed_post',
     })).toBe(false);
+  });
+
+  it('rescues a sawed shop headline from the caption sentence', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        language: 'Turkish',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Zeytinyağımızın üretim sürecine',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.headline).toMatch(/Sızma zeytinyağımız raflarda/i);
+      expect(result.pack.headline.toLowerCase()).not.toMatch(/üretim sürecine/);
+    }
   });
 });
 

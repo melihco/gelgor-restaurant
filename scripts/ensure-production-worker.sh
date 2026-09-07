@@ -8,7 +8,8 @@ WEB="$ROOT/apps/web"
 mkdir -p "$ROOT/.logs"
 
 if pgrep -f 'src/workers/production-worker.ts' >/dev/null 2>&1 \
-  || pgrep -f 'production-worker.cjs' >/dev/null 2>&1; then
+  || pgrep -f 'production-worker.cjs' >/dev/null 2>&1 \
+  || pgrep -f '@smartagency/studio' >/dev/null 2>&1; then
   echo "✓ production worker already running"
   pgrep -fl 'production-worker' | head -5
   exit 0
@@ -22,8 +23,9 @@ if [[ -z "${REDIS_URL:-}" ]] && [[ -f "$WEB/.env.local" ]]; then
 fi
 export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
 
-echo "→ starting BullMQ production worker…"
-cd "$WEB"
-nohup npm run worker:production >>"$ROOT/.logs/production-worker.log" 2>&1 &
+echo "→ starting studio production worker (STUDIO_DIRECT=1)…"
+export STUDIO_DIRECT="${STUDIO_DIRECT:-1}"
+cd "$ROOT"
+nohup npm run studio >>"$ROOT/.logs/production-worker.log" 2>&1 &
 echo "  pid=$!  log=$ROOT/.logs/production-worker.log"
 echo "  required when backend PRODUCTION_EXECUTOR=bullmq"

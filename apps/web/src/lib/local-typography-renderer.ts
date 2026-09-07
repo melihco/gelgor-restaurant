@@ -88,11 +88,18 @@ export { isSatoriTypographyMeta, LOCAL_TYPOGRAPHY_ROLES } from '@/lib/local-typo
  * Single routing authority. `designed_post` (hero) and any reel role stay on the
  * expensive external pipeline and are intentionally NOT in the role set.
  */
+export type LocalTypographyOpts = {
+  /** Studio paint: locked pack never falls back to Satori. */
+  forbidSatoriEscape?: boolean;
+};
+
 export function shouldUseLocalTypography(
   slotRole: string | null | undefined,
   pipeline?: string | null,
   brandTheme?: Record<string, unknown> | null,
+  opts?: LocalTypographyOpts,
 ): boolean {
+  if (opts?.forbidSatoriEscape) return false;
   if (!serverConfig.localTypography?.enabled) return false;
   if (!isLocalTypographyEnabledForBrand(brandTheme)) return false;
   const role = String(slotRole ?? '').trim();

@@ -14,6 +14,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(rootDir, 'src'),
+      '@smartagency/contracts': path.resolve(rootDir, '../../packages/contracts/src/index.ts'),
     },
   },
   test: {

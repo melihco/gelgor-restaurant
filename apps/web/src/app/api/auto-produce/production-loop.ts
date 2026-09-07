@@ -4564,6 +4564,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ? false
             : originalIdeationCaption.trim().length < 24,
           punchlineLockSource: lockedFalPunchlineSource,
+          forbidSatoriEscape: Boolean(lockedFeedSlotPack),
           falSubtitle: falCalendarSubtitle,
           falFontPersonality: falSlotTypography?.fontPersonality,
           falHeadingFont: falSlotTypography?.headingFont,

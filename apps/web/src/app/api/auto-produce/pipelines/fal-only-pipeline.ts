@@ -31,6 +31,7 @@ import { serverConfig } from '@/lib/server-config';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
+import { studioForbidsSatoriEscape } from '@/studio/paint';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export interface FalOnlyVideoMeta {
@@ -503,7 +504,9 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       !state.imageUrl
       && !state.videoUrl
       && !templateIsRenderable
-      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme)
+      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme, {
+        forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
+      })
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl)
     ) {

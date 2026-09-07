@@ -15,7 +15,6 @@ import {
   type OpenAiUsageLike,
 } from '@/lib/ai-cost-telemetry';
 import {
-  deriveHeadlineFromCaption,
   groundFeedSlotCopy,
   headlineTakenFromCaption,
   parseFeedSlotPack,
@@ -24,6 +23,15 @@ import {
   type FeedSlotPack,
   type FeedSlotPackIssue,
 } from '@/lib/feed-slot-pack';
+import {
+  isIncompleteOverlayPhrase,
+  keepCompleteOverlaySentence,
+} from '@/lib/fal-caption-headline';
+import {
+  isAttachableVisionUrl,
+  inlineLookVisionDataUris,
+  resolveLookVisionUrls,
+} from '@/studio/look-urls';
 
 export type FeedSlotLookCandidate = {
   url: string;
@@ -45,7 +53,14 @@ export type FeedSlotLookInput = {
   slotKey?: string | null;
 };
 
-export type FeedSlotLookIssue = FeedSlotPackIssue | 'look_unavailable' | 'no_pick';
+export type FeedSlotLookIssue =
+  | FeedSlotPackIssue
+  | 'look_unavailable'
+  | 'look_no_key'
+  | 'look_vision_blocked'
+  | 'look_call_failed'
+  | 'no_pick'
+  | 'incomplete_headline';
 
 export type FeedSlotLookResult =
   | { ok: true; pack: FeedSlotPack }
@@ -88,7 +103,7 @@ Rules:
 - Name water only from the frame. Open horizon water, waves, or a coast next to lawn and umbrellas is sea (deniz), not a lake (göl). Say göl/lake only when the water is clearly an enclosed inland lake.
 - evidenceNote names what is in the frame (lawn, umbrellas, loungers, sea). Caption is a magazine motto about that place — not a furniture inventory and not brochure filler ("mükemmel bir yer", "dinlendirici", "perfect place").
 - Caption and headline are a magazine motto — the opening line of a social caption. Not a shop command ("gelin", "alın"), not a photo description (bottle, basket, label, lawn, umbrella), not a weekly table note ("sofrada", "bu hafta"). Do not use brochure ("sizi bekliyoruz", "keşfedin", "experience", "deneyimlemek").
-- Headline fits the feed box: at most 4 words and 36 characters. Write it to that size — do not write a longer line that will be cut. Caption opens with the same motto, then one evidence-backed line.
+- Headline is one complete sentence taken from the caption. Do not cut a word or letter to hit a box. Type can shrink later. Caption opens with that same sentence, then one evidence-backed line.
 - ideation_hint is optional weekly intent. If the photo cannot prove it, ignore the hint and write from the photo + slot_job — or return pickIndex null.
 - headline must be taken from the caption (same words). A complete motto, not a two-word product name and not a separate slogan. No hashtags as headline.
 - Write caption and headline in the requested language.
@@ -115,13 +130,18 @@ export function isCampaignSentenceLock(assignment: {
 }): boolean {
   if (assignment.publish_channel === 'instagram_campaign') return true;
   if (String(assignment.rationale ?? '').startsWith('ad_hoc_brief')) return true;
+  const role = String(assignment.slot_role ?? '').trim();
+  // Weekly motion roles are named campaign_* — that is not a campaign lock.
+  const roleForLock = /^(campaign_story_motion|campaign_reel_motion|fal_story_motion|fal_reel_motion)$/.test(role)
+    ? ''
+    : role;
   const bag = [
-    assignment.slot_role,
+    roleForLock,
     assignment.pipeline,
     assignment.catalog_slot_key,
     assignment.library_slot_key,
   ].join(' ').toLowerCase();
-  return /campaign|offer_campaign|campaign_offer|campaign_announcement|premium_editorial/.test(bag);
+  return /offer_campaign|campaign_offer|campaign_announcement|premium_editorial|(?:^|[\s_])campaign(?:$|[\s_])/.test(bag);
 }
 
 /** Feed stilleri. Reel ikinci bir hareket hattı — bakış yok. Kampanya ayrı kapı. */
@@ -184,16 +204,15 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
   look_unavailable: 'Bakış yapılamadı',
+  look_no_key: 'Bakış yapılamadı (anahtar yok)',
+  look_vision_blocked: 'Bakış yapılamadı (fotoğraf açılamadı)',
+  look_call_failed: 'Bakış yapılamadı (bakış çağrısı)',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',
+  incomplete_headline: 'Üst yazı yarım kaldı',
 };
 
 export function describeFeedSlotLookIssues(issues: FeedSlotLookIssue[]): string {
   return issues.map((id) => LOOK_ISSUE_TR[id] ?? id).join('; ');
-}
-
-function isAttachableVisionUrl(url: string): boolean {
-  const trimmed = url.trim();
-  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('data:image/');
 }
 
 function visionImageUrl(candidate: FeedSlotLookCandidate): string | null {
@@ -201,33 +220,23 @@ function visionImageUrl(candidate: FeedSlotLookCandidate): string | null {
   return isAttachableVisionUrl(target) ? target : null;
 }
 
-function isPublicHttpImageUrl(url: string): boolean {
-  return /^https?:\/\//i.test(url.trim());
-}
-
-function needsVisionUrlResolution(url: string): boolean {
-  const trimmed = url.trim();
-  return trimmed.startsWith('/api/media') && !isPublicHttpImageUrl(trimmed);
-}
-
 async function withResolvedVisionUrls(
   candidates: FeedSlotLookCandidate[],
 ): Promise<FeedSlotLookCandidate[]> {
-  const shortlist = candidates.slice(0, LOOK_MAX_CANDIDATES);
-  if (!shortlist.some((c) => needsVisionUrlResolution(c.url))) return shortlist;
+  return resolveLookVisionUrls(candidates.slice(0, LOOK_MAX_CANDIDATES));
+}
 
-  const { resolveExternallyAccessibleUrl } = await import('@/lib/media-url');
-  return Promise.all(
-    shortlist.map(async (candidate) => {
-      if (!needsVisionUrlResolution(candidate.url)) return candidate;
-      try {
-        const visionUrl = await resolveExternallyAccessibleUrl(candidate.url);
-        return isPublicHttpImageUrl(visionUrl) ? { ...candidate, visionUrl } : candidate;
-      } catch {
-        return candidate;
-      }
-    }),
-  );
+function completeHeadlineFromCaption(caption: string): string {
+  const first = caption.trim().split(/[.!?…\n]/)[0]?.trim() || caption.trim();
+  return keepCompleteOverlaySentence(first) || first;
+}
+
+function completeLookPack(pack: FeedSlotPack): FeedSlotPack | null {
+  if (!isIncompleteOverlayPhrase(pack.headline)) return pack;
+  const rescued = completeHeadlineFromCaption(pack.caption);
+  if (!rescued || isIncompleteOverlayPhrase(rescued)) return null;
+  const parsed = parseFeedSlotPack({ ...pack, headline: rescued });
+  return parsed.ok ? parsed.pack : null;
 }
 
 function asRole(raw: unknown): FeedPhotoRole | undefined {
@@ -268,7 +277,7 @@ function draftFromLookJson(
   const caption = String(parsed.caption ?? '').trim();
   let headline = String(parsed.headline ?? '').trim();
   if (caption.length >= 16 && (!headline || !headlineTakenFromCaption(headline, caption))) {
-    headline = deriveHeadlineFromCaption(caption);
+    headline = completeHeadlineFromCaption(caption);
   }
 
   let photoRole = asRole(parsed.photoRole ?? parsed.photo_role);
@@ -317,12 +326,13 @@ export async function lookFeedSlotPack(
 
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey && !deps?.openai) {
-    return { ok: false, issues: ['look_unavailable'] };
+    return { ok: false, issues: ['look_no_key'] };
   }
 
-  const candidates = await withResolvedVisionUrls(incoming);
+  const resolved = await withResolvedVisionUrls(incoming);
+  const candidates = await inlineLookVisionDataUris(resolved);
   if (!candidates.some((c) => visionImageUrl(c))) {
-    return { ok: false, issues: ['look_unavailable'] };
+    return { ok: false, issues: ['look_vision_blocked'] };
   }
 
   const profile = getAiModelProfile();
@@ -393,9 +403,11 @@ export async function lookFeedSlotPack(
       headline: grounded.headline,
     });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
-    return parsed;
+    const complete = completeLookPack(parsed.pack);
+    if (!complete) return { ok: false, issues: ['incomplete_headline'] };
+    return { ok: true, pack: complete };
   } catch (err) {
     console.warn('[feed-slot-look] call failed:', err instanceof Error ? err.message : String(err));
-    return { ok: false, issues: ['look_unavailable'] };
+    return { ok: false, issues: ['look_call_failed'] };
   }
 }

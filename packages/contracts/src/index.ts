@@ -3,3 +3,4 @@ export * from './brand';
 export * from './common';
 export * from './mission';
 export * from './production';
+export * from './studio';

@@ -10,9 +10,11 @@ import {
   releaseGlobalProductionSlot,
   tryAcquireGlobalProductionSlot,
 } from '../lib/production-global-inflight';
+import { produceFromQueueJob, studioDirectEnabled } from '../studio/produce-from-job';
 
 const INTERNAL_KEY = process.env.INTERNAL_API_KEY ?? 'smartagency-internal-dev-key';
 const WEB_BASE_URL = (process.env.WEB_BASE_URL ?? 'http://127.0.0.1:3000').replace(/\/$/, '');
+const STUDIO_DIRECT = studioDirectEnabled();
 
 // Default concurrency=1: avoids two parallel workers saturating the same local Next.js
 // instance (which causes "fetch failed" / http_status=0). Override with
@@ -80,17 +82,31 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
     missionId,
   };
 
-  // 1. Execute production via the internal auto-produce route.
-  //    Retry up to 2 times when Next.js is temporarily unreachable (http_status=0).
-  //    Backoff delays let the server recover from transient saturation.
+  let produceData: Record<string, unknown> = {};
+  let httpStatus = 0;
+
+  if (STUDIO_DIRECT) {
+    try {
+      const result = await produceFromQueueJob({
+        autoProduceBody: pinnedAutoProduceBody,
+        factoryJobs,
+        missionId,
+        workspaceId,
+        callbackUrl,
+      });
+      httpStatus = result.status;
+      produceData = result.body;
+    } catch (err) {
+      produceData = { error: err instanceof Error ? err.message : 'studio produce failed' };
+      httpStatus = 500;
+    }
+  } else {
+  // Legacy: HTTP hop into Next. Off unless STUDIO_DIRECT=0.
   const FETCH_RETRY_DELAYS_MS = [8_000, 20_000] as const;
   const fetchTimeoutMs = Math.max(
     60_000,
     Number(process.env.PRODUCTION_WORKER_FETCH_TIMEOUT_MS ?? 620_000),
   );
-
-  let produceData: Record<string, unknown> = {};
-  let httpStatus = 0;
 
   for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
     // Pre-flight: confirm Next.js is up before sending the heavy request.
@@ -164,6 +180,7 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
     );
     await sleep(retryDelay);
   }
+  }
 
   // 2. Call back to Python to mark each claimed job ready/failed by slot key.
   try {
@@ -215,7 +232,7 @@ function main(): void {
 
   console.log(
     `[production-worker] started. queue=${PRODUCTION_SLOTS_QUEUE} concurrency=${CONCURRENCY} ` +
-      `rate=${RATE_MAX}/${RATE_DURATION_MS}ms web=${WEB_BASE_URL}`,
+      `rate=${RATE_MAX}/${RATE_DURATION_MS}ms studio=${STUDIO_DIRECT ? 'direct' : `http:${WEB_BASE_URL}`}`,
   );
 
   const shutdown = async () => {

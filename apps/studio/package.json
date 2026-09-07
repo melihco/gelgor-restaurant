@@ -1,0 +1,15 @@
+{
+  "name": "@smartagency/studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Studio production worker — bind/paint/motion/gate. No Next HTTP hop.",
+  "type": "module",
+  "scripts": {
+    "start": "npm run worker:production --prefix ../web",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "tsx": "^4.22.4",
+    "typescript": "^5.3.3"
+  }
+}

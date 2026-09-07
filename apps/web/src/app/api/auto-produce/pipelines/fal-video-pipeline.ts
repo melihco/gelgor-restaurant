@@ -33,6 +33,7 @@ import {
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
+import { studioForbidsSatoriEscape } from '@/studio/paint';
 import {
   buildReelRecipeMotionCue,
   resolveEffectiveReelMotionMode,
@@ -334,7 +335,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
         if (
           noLibraryTemplate
           && !templateIsRenderable
-          && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)
+          && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme, {
+            forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
+          })
         ) {
           const local = await renderLocalTypography({
             workspaceId: inputs.workspaceId,
@@ -417,7 +420,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
           // empty slot when local typography is enabled for this role.
           if (
             !templateIsRenderable
-            || !shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme)
+            || !shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme, {
+              forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
+            })
           ) {
             throw posterErr;
           }

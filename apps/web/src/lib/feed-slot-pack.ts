@@ -1,6 +1,7 @@
 import {
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
+  keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
 
 /**
@@ -168,12 +169,13 @@ export function captionOpensWithHeadline(caption: string, headline: string): boo
   return first.includes(h) || h.includes(first);
 }
 
-/** Headline kutuya sığar; caption aynı motto ile açılır. */
+/** Headline tam cümle kalır; caption aynı motto ile açılır. Kutu punto işidir. */
 export function lockFeedCardCopy(input: {
   caption: string;
   headline: string;
 }): { caption: string; headline: string } {
-  const headline = fitHeadlineToMottoBox(input.headline);
+  const first = filled(input.headline).split(/[.!?…\n—–]/)[0]?.replace(/[.!?…]+$/g, '').trim() ?? '';
+  const headline = keepCompleteOverlaySentence(first) || first;
   let caption = filled(input.caption);
   if (headline && !captionOpensWithHeadline(caption, headline)) {
     const lead = headline.endsWith('.') || headline.endsWith('!') || headline.endsWith('?')
@@ -184,10 +186,10 @@ export function lockFeedCardCopy(input: {
   return { caption, headline };
 }
 
-/** Üst yazı yoksa veya sapmışsa alt yazının ilk cümlesi. İkinci bakış yok. */
+/** Üst yazı yoksa veya sapmışsa alt yazının ilk cümlesi. Kesilmez. */
 export function deriveHeadlineFromCaption(caption: string): string {
   const cut = filled(caption).split(/[.!?…\n]/)[0]?.trim() || filled(caption);
-  return fitHeadlineToMottoBox(cut);
+  return keepCompleteOverlaySentence(cut) || cut;
 }
 
 /** Üst yazı, alt yazının içinden gelmeli — ayrı slogan yok. */

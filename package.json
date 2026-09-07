@@ -3,10 +3,12 @@
   "private": true,
   "workspaces": [
     "apps/mobile",
+    "apps/studio",
     "packages/*"
   ],
   "scripts": {
     "contracts:typecheck": "tsc -p packages/contracts/tsconfig.json --noEmit",
-    "mobile:typecheck": "tsc -p apps/mobile/tsconfig.json --noEmit"
+    "mobile:typecheck": "tsc -p apps/mobile/tsconfig.json --noEmit",
+    "studio": "npm run start --workspace=@smartagency/studio"
   }
 }
