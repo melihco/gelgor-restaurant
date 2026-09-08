@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildGalleryUsageFromArtifacts,
   buildGlobalGalleryUsageCounts,
+  extractGalleryUrlsFromArtifact,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
 
@@ -44,6 +45,22 @@ describe('gallery-usage-tracker', () => {
     const counts = buildGlobalGalleryUsageCounts(usage);
     expect(counts.get(PHOTO_A)).toBe(3);
     expect(counts.get(PHOTO_B)).toBe(1);
+  });
+
+  it('tracks the look pack source still, not the enhanced R2 output', () => {
+    const extracted = extractGalleryUrlsFromArtifact({
+      reviewStatus: 'Pending',
+      metadata: JSON.stringify({
+        kind: 'instagram_post',
+        feed_slot_pack: {
+          photoUrl: PHOTO_A,
+          caption: 'İncir reçelimiz kavanozda.',
+        },
+        imageUrl: 'https://pub.example.r2.dev/enhanced/card.jpg',
+      }),
+    });
+    expect(extracted?.urls).toContain(PHOTO_A);
+    expect(extracted?.urls.some((u) => u.includes('r2.dev'))).toBe(false);
   });
 });
 

@@ -3,6 +3,7 @@ import type OpenAI from 'openai';
 import {
   isCampaignSentenceLock,
   lookFeedSlotPack,
+  lookSystemPrompt,
   shouldLookFeedSlotPack,
   shouldSkipFeedMeaningRematch,
   slotJobFromCatalogKey,
@@ -330,6 +331,13 @@ describe('feed-slot-look — shop + beach', () => {
       pipeline: 'fal_design',
       rationale: 'ad_hoc_brief_fal_designed_post',
     })).toBe(false);
+  });
+
+  it('adaptive look prefers the caption scene, not any labeled bottle', () => {
+    const adaptive = lookSystemPrompt(true);
+    expect(adaptive).toMatch(/best-caption-first|ordered best-caption-first/);
+    expect(adaptive).toMatch(/labeled product is correct only/i);
+    expect(adaptive).not.toMatch(/Still pick a real hero \(labeled product/);
   });
 
   it('adaptive scene keeps the weekly process sentence on a bottle still', async () => {

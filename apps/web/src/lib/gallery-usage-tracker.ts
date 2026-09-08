@@ -150,6 +150,18 @@ export function extractGalleryUrlsFromArtifact(
   const vps = parseJsonRecord(meta.visual_production_spec ?? content.visual_production_spec);
   pushUrl(urls, vps.selected_gallery_url);
 
+  const feedPack = parseJsonRecord(meta.feed_slot_pack ?? content.feed_slot_pack);
+  const packPhoto = String(feedPack.photoUrl ?? feedPack.photo_url ?? '').trim();
+  if (packPhoto && !looksGenerated(packPhoto)) {
+    pushUrl(urls, packPhoto);
+  }
+  const sourceGallery = String(
+    meta.source_gallery_url ?? content.source_gallery_url ?? meta.picked_gallery_url ?? '',
+  ).trim();
+  if (sourceGallery && !looksGenerated(sourceGallery)) {
+    pushUrl(urls, sourceGallery);
+  }
+
   const galleryList = meta.gallery_photo_urls ?? content.gallery_photo_urls;
   if (Array.isArray(galleryList)) {
     for (const u of galleryList) pushUrl(urls, u);

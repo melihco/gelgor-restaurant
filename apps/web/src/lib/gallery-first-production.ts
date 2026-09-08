@@ -359,6 +359,19 @@ function captionNeedsGpt(caption: string): boolean {
 }
 
 const LOOK_CANDIDATE_LIMIT = 4;
+/** Drop look tails that lose the caption winner by more than this. */
+const CAPTION_LOOK_SCORE_GAP = 8;
+
+function trimLookShortlistToCaptionFit(
+  picked: Array<{ url: string; score: number }>,
+): Array<{ url: string; score: number }> {
+  if (picked.length <= 1) return picked.slice(0, LOOK_CANDIDATE_LIMIT);
+  const best = picked[0]!.score;
+  if (best <= 0) return picked.slice(0, LOOK_CANDIDATE_LIMIT);
+  return picked
+    .filter((row) => best - row.score <= CAPTION_LOOK_SCORE_GAP)
+    .slice(0, LOOK_CANDIDATE_LIMIT);
+}
 
 function emptySlotLookResult(issues: FeedSlotLookIssue[]): GalleryFirstSlotResult {
   return {
@@ -391,6 +404,7 @@ function collectFeedSlotLookUrls(input: {
   subjectKey?: string;
   slotBackfillPass?: boolean;
   tieBreakSeed?: number;
+  /** Ignored for look: caption rank owns the shortlist. */
   forcedPhotoUrl?: string | null;
   matchInput: MatchPhotoInput;
 }): Array<{ url: string; score: number }> {
@@ -424,19 +438,18 @@ function collectFeedSlotLookUrls(input: {
 
   const picked: Array<{ url: string; score: number }> = [];
   const seen = new Set<string>();
-  const forced = String(input.forcedPhotoUrl ?? '').trim();
-  if (forced && isUsableGalleryPhotoUrl(forced) && !usedBases.has(normalizeGalleryUrl(forced))) {
-    picked.push({ url: forced, score: ranked.find((r) => normalizeGalleryUrl(r.url) === normalizeGalleryUrl(forced))?.score ?? 0 });
-    seen.add(normalizeGalleryUrl(forced));
-  }
   for (const row of ranked) {
     const key = normalizeGalleryUrl(row.url);
     if (seen.has(key) || !isUsableGalleryPhotoUrl(row.url)) continue;
     picked.push({ url: row.url, score: row.score });
     seen.add(key);
-    if (picked.length >= LOOK_CANDIDATE_LIMIT) return picked;
+    if (picked.length >= LOOK_CANDIDATE_LIMIT) {
+      return trimLookShortlistToCaptionFit(picked);
+    }
   }
-  if (picked.length >= LOOK_CANDIDATE_LIMIT) return picked;
+  if (picked.length > 0) {
+    return trimLookShortlistToCaptionFit(picked);
+  }
   for (const url of input.galleryPhotos) {
     const key = normalizeGalleryUrl(url);
     if (seen.has(key) || usedBases.has(key) || !isUsableGalleryPhotoUrl(url)) continue;
@@ -444,7 +457,35 @@ function collectFeedSlotLookUrls(input: {
     seen.add(key);
     if (picked.length >= LOOK_CANDIDATE_LIMIT) break;
   }
-  return picked;
+  return trimLookShortlistToCaptionFit(picked);
+}
+
+/** Caption-ranked look shortlist. Batch force only leads when it also fits the caption. */
+export function buildCaptionFitLookShortlist(input: {
+  assignment: ProductionAssignment;
+  storyIndex?: number;
+  galleryPhotos: string[];
+  galleryMeta: Record<string, GalleryPhotoMeta>;
+  excludeUrls: string[];
+  brandName: string;
+  brandDescription?: string;
+  businessType?: string;
+  sectorId?: string;
+  catalogSlotKey?: string;
+  visualSubjectHint?: string;
+  creativeBrief?: string;
+  ideationCaption?: string;
+  ideationHeadline?: string;
+  subjectKey?: string;
+  slotBackfillPass?: boolean;
+  tieBreakSeed?: number;
+  forcedPhotoUrl?: string | null;
+}): Array<{ url: string; score: number }> {
+  const matchInput = buildSlotGalleryMatchInput(input);
+  return collectFeedSlotLookUrls({
+    ...input,
+    matchInput,
+  });
 }
 
 /**

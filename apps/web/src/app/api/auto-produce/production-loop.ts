@@ -2078,6 +2078,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         preassignedGalleryUrl = gf.photoUrl;
         galleryFirstSource = gf.source;
         galleryMatchScoreEarly = gf.matchScore;
+        if (gf.photoUrl) {
+          markSourceGalleryUsed(galleryUsage, batchUsedByType, gf.photoUrl, postType);
+          batchUsedGalleryMission.add(normalizeGalleryUrl(gf.photoUrl));
+        }
         if (gf.source === 'slot_look' && gf.pack) {
           lockedFeedSlotPack = gf.pack;
           caption = gf.pack.caption;

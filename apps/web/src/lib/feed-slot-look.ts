@@ -116,15 +116,17 @@ Rules:
 - Never use scene_fill when you pick a gallery photo. scene_fill is only for a generated stand-in with no gallery pick.
 - If no candidate can do the slot_job without inventing, pickIndex null.
 - If slot_job is a place (lawn, umbrellas, loungers, sea, venue), pick a place photo and venue_ambiance. A product basket or labeled goods is pickIndex null — do not sell on a place job.
+- Candidates are ordered best-caption-first. Prefer pickIndex 0 unless that photo cannot do the slot_job (no identity on a sell job, or a bottle on a place job).
 - One look. Do not ask for another photo.`;
 
 const LOOK_SYSTEM_ADAPTIVE = `${LOOK_SYSTEM}
 
 Adaptive scene is ON for this brand:
-- Still pick a real hero (labeled product or the real venue). Do not invent a different mill, beach, or brand.
+- Pick the candidate that fits the ideation_hint scene (place, grove, market, range, process, or the named product). Do not invent a different mill, beach, or brand.
+- A labeled product is correct only when the hint or slot_job is selling that package. Do not skip a matching scene photo to grab a bottle just because the label is readable.
 - If ideation_hint is a process / at-work / behind-the-scenes sentence, KEEP that scene sentence as caption and headline.
 - Do not invent product grades, origins, or names that are not on the label.
-- evidenceNote still names what is currently in the frame (bottle, label, lawn).
+- evidenceNote still names what is currently in the frame (bottle, label, lawn, grove).
 - Place jobs still need a place photo. A bottle cannot prove a shop-interior or lawn job.`;
 
 export function feedSlotLookEnabled(): boolean {
@@ -322,6 +324,7 @@ function buildLookUserText(input: FeedSlotLookInput, candidates: FeedSlotLookCan
     brand_tone: String(input.brandTone ?? '').slice(0, 80) || null,
     ideation_hint: String(input.ideationHint ?? '').slice(0, 400) || null,
     adaptive_scene: Boolean(input.adaptiveScene),
+    candidates_ordered_by_caption: true,
     candidates: candidates.map((c, i) => ({
       index: i,
       visible_label_text: c.visibleLabelText ?? null,

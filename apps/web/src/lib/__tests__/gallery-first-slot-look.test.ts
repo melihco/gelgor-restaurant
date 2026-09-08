@@ -1,11 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { resolveGalleryFirstForSlot } from '@/lib/gallery-first-production';
+import {
+  buildCaptionFitLookShortlist,
+  resolveGalleryFirstForSlot,
+} from '@/lib/gallery-first-production';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import type { ProductionAssignment } from '@/lib/mission-production-manifest';
-import type { FeedSlotLookResult } from '@/lib/feed-slot-look';
+import type { FeedSlotLookInput, FeedSlotLookResult } from '@/lib/feed-slot-look';
 
 const OIL = 'https://cdn.example.com/gallery/sizma-bottle.jpg';
+const JAM = 'https://cdn.example.com/gallery/fig-jam-jar.jpg';
 const TABLE = 'https://cdn.example.com/gallery/sunset-table.jpg';
+const PLATE = 'https://cdn.example.com/gallery/lunch-plate.jpg';
+
+function shopMeta(): Record<string, GalleryPhotoMeta> {
+  return {
+    [OIL]: {
+      primarySubject: 'olive_oil',
+      visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+      description: 'Labeled olive oil bottle on a shelf',
+      suggestedAssetType: 'product_image',
+    },
+    [JAM]: {
+      primarySubject: 'fig_jam',
+      subjectFamily: 'jam',
+      visibleLabelText: 'İNCİR REÇELİ',
+      description: 'Fig jam jar with a handwritten label',
+      suggestedAssetType: 'product_image',
+    },
+  };
+}
+
+function beachMeta(): Record<string, GalleryPhotoMeta> {
+  return {
+    [TABLE]: {
+      primarySubject: 'venue',
+      description: 'Gün batımı terası, şemsiyeler ve açık deniz ufku',
+      suggestedAssetType: 'venue_reference',
+    },
+    [PLATE]: {
+      primarySubject: 'food',
+      description: 'Öğle yemeği tabağı ve salata',
+      suggestedAssetType: 'food_image',
+    },
+  };
+}
 
 function shopAssignment(): ProductionAssignment {
   return {
@@ -143,6 +181,86 @@ describe('gallery-first — one look owns the pack', () => {
     expect(gf?.applied).toBe(false);
     expect(gf?.source).toBe('slot_look');
     expect(gf?.lookIssues).toContain('no_pick');
+  });
+
+  it('shop: jam caption ranks the jar over a forced oil bottle', async () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'İncir reçelimiz kavanozda, kahvaltıya bir kaşık yeter.',
+      ideationHeadline: 'İncir Reçeli',
+      forcedPhotoUrl: OIL,
+    });
+    expect(shortlist[0]?.url).toBe(JAM);
+    expect(shortlist.map((row) => row.url)).not.toContain(OIL);
+
+    let seen: string[] = [];
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'İncir reçelimiz kavanozda, kahvaltıya bir kaşık yeter.',
+      ideationHeadline: 'İncir Reçeli',
+      language: 'Turkish',
+      forcedPhotoUrl: OIL,
+      lookFn: async (input: FeedSlotLookInput): Promise<FeedSlotLookResult> => {
+        seen = input.candidates.map((c) => c.url);
+        return {
+          ok: true,
+          pack: {
+            slotJob: 'ürün hero',
+            photoUrl: input.candidates[0]!.url,
+            photoRole: 'product_for_sale',
+            caption: 'İncir reçelimiz kavanozda. Kahvaltıya bir kaşık yeter.',
+            headline: 'İncir reçelimiz kavanozda',
+            shellDirection: 'product_hero',
+            evidenceNote: "Etiket: 'İNCİR REÇELİ'",
+          },
+        };
+      },
+    });
+    expect(seen[0]).toBe(JAM);
+    expect(gf?.applied).toBe(true);
+    expect(gf?.photoUrl).toBe(JAM);
+  });
+
+  it('shop: a used jam still is excluded so the next slot can take the oil', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [JAM],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Sızma zeytinyağımız raflarda, sofraya bir damla yeter.',
+      ideationHeadline: 'Sızma Zeytinyağı',
+      forcedPhotoUrl: JAM,
+    });
+    expect(shortlist.map((row) => row.url)).toContain(OIL);
+    expect(shortlist.map((row) => row.url)).not.toContain(JAM);
+  });
+
+  it('beach: sunset caption ranks the terrace over a forced lunch plate', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [PLATE, TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Plaj',
+      businessType: 'beach_club',
+      ideationCaption: 'Gün batımında masada kal, altın saat kaçmasın ve gel.',
+      ideationHeadline: 'Gün batımında masada kal',
+      forcedPhotoUrl: PLATE,
+    });
+    expect(shortlist[0]?.url).toBe(TABLE);
+    expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
   });
 
   it('does not call the look on reels', async () => {
