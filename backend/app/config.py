@@ -183,6 +183,10 @@ class Settings(BaseSettings):
     dedup_gallery_backstory: bool = True
     # When False, content_ideation skips Instagram tools (often “not connected” anyway) — big latency win.
     crewai_content_ideation_instagram_tools: bool = False
+    # Perplexity / Apify / asset tools on ideation resend the full prompt each
+    # hop. Off by default — brand DNA + gallery already in the task. Opt in
+    # with CREWAI_CONTENT_IDEATION_RESEARCH_TOOLS=true.
+    crewai_content_ideation_research_tools: bool = False
     # Content calendar is mostly LLM planning; skipping Meta tools reduces tool loops and hang risk.
     crewai_content_calendar_instagram_tools: bool = False
     # Per-task wall clock cap inside CrewAI Agent (seconds); avoids endless tool/LLM loops.

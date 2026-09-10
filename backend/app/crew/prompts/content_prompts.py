@@ -74,6 +74,109 @@ def get_language_persona(output_language: str) -> str:
     )
 
 
+# Own-sector lock only. Dumping every industry into every tenant wastes tokens
+# and pulls SaaS / gym / nail copy into a shop or beach week.
+_SECTOR_SCOPE: dict[str, str] = {
+    "local_products_shop": (
+        "ürün hikayeleri, üretici ziyaretleri, tadım, mevsimlik ürün, hediye paket. "
+        "YASAK: canlı müzik, akşam yemeği, rezervasyon, masa servisi, plaj/DJ."
+    ),
+    "beach_club": (
+        "atmosfer, gün batımı, şezlong, kokteyl, DJ gece, rezervasyon. "
+        "YASAK: otel odası, kargo, süpermarket ürün satışı."
+    ),
+    "restaurant_cafe": (
+        "yemek, içecek, atmosfer, şef, rezervasyon. "
+        "YASAK: online kargo dükkanı, otel konaklama."
+    ),
+    "hotel": (
+        "oda, havuz, manzara, SPA, konaklama. YASAK: ürün kargo, konser uydurma."
+    ),
+    "hair_salon": (
+        "saç, stil, randevu, öncesi-sonrası. YASAK: yemek, konaklama, DJ."
+    ),
+    "beauty_wellness": (
+        "bakım, randevu, hijyen. YASAK: yemek, DJ, spor salonu iddiası."
+    ),
+}
+
+_SAAS_TYPES = ("saas", "tech_company", "agency_services", "software", "panel")
+
+
+def _norm_sector(business_type: str) -> str:
+    raw = (business_type or "").strip().lower()
+    aliases = {
+        "yöresel": "local_products_shop",
+        "local_product": "local_products_shop",
+        "beach": "beach_club",
+        "bar": "beach_club",
+        "restaurant": "restaurant_cafe",
+        "cafe": "restaurant_cafe",
+        "resort": "hotel",
+        "kuaför": "hair_salon",
+        "kuafor": "hair_salon",
+        "nail": "beauty_wellness",
+        "spa": "beauty_wellness",
+        "estetik": "beauty_wellness",
+    }
+    if raw in _SECTOR_SCOPE:
+        return raw
+    for needle, key in aliases.items():
+        if needle in raw:
+            return key
+    return raw
+
+
+def sector_scope_block(business_type: str, business_name: str) -> str:
+    key = _norm_sector(business_type)
+    own = _SECTOR_SCOPE.get(key)
+    if own:
+        line = f"- {key} → {own}"
+    else:
+        line = (
+            f"- {business_type or 'this business'} → only what the brand actually sells or hosts. "
+            "YASAK: another industry's services."
+        )
+    return (
+        f"This brand is **{business_type}**. Use only this scope:\n{line}\n"
+        f"Do not write as a different industry. If you cannot confirm "
+        f"{business_name} offers it, drop the concept."
+    )
+
+
+def is_saas_like_sector(business_type: str) -> bool:
+    raw = (business_type or "").lower()
+    return any(token in raw for token in _SAAS_TYPES)
+
+
+def trial_and_saas_mix_block(business_type: str, count: int) -> str:
+    if not is_saas_like_sector(business_type):
+        return ""
+    return f"""⚠️ FREE TRIAL / ÜCRETSİZ DENEME HEADLINE CAP (MANDATORY):
+Across the ENTIRE batch of {count} concepts:
+- MAXIMUM 1 concept may use "ücretsiz deneme", "free trial", or "deneme fırsatı" in headline, concept_title, or caption_draft hook.
+- If RECENTLY PRODUCED already contains that angle → ZERO this week.
+
+⚠️ SaaS MIX (count ≥ 10): at least one lead_generation, social_proof, educational_post, behind_the_scenes, and campaign_offer OR event_announcement.
+"""
+
+
+def collapse_repeated_lines(text: str) -> str:
+    """Keep the first copy of each scrape line (kargo banner ×6 → 1)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for line in str(text or "").splitlines():
+        key = line.strip()
+        if not key:
+            out.append(line)
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(line)
+    return "\n".join(out)
+
+
 CONTENT_AGENT_BACKSTORY = """You are a senior content strategist specializing in
 Instagram marketing for {business_type} businesses.
 
@@ -116,29 +219,7 @@ Content pillars confirmed for this brand: {content_pillars}
 ALL concepts MUST reflect what {business_name} ACTUALLY DOES as a {business_type}.
 NEVER suggest activities, services, or experiences that require infrastructure this business does not have.
 
-Scope examples by business type (find the closest match — if your type is not listed, derive scope from ACTUAL products/services only):
-- local_products_shop / yöresel ürün dükkanı → ürün hikayeleri, üretici ziyaretleri, tadım, mevsimlik ürünler, hediye paket. YASAK: canlı müzik, akşam yemeği, rezervasyon, masa servisi.
-- restaurant_cafe → yemek, içecek, atmosfer, şef, reservasyon. YASAK: online satış, kargo.
-- beach_club / bar → atmosfer, kokteyller, gün batımı, DJ geceler. YASAK: otel rezervasyonu.
-- hotel / resort → oda, havuz, deniz manzarası, SPA. YASAK: ürün satışı, konser.
-- retail_fashion → koleksiyonlar, stil, trend. YASAK: yemek, etkinlik.
-- hair_salon / kuaför / güzellik merkezi → saç bakım, stil transformasyonu, ürün tanıtımı, müşteri öncesi-sonrası, randevu. YASAK: yemek, konaklama, canlı müzik.
-- nail_salon / tırnak salonu / beauty_wellness / spa / estetik → tırnak bakım, manikür, pedikür, kalıcı oje, nail art, cilt bakımı, epilasyon, randevu. YASAK: yemek, konaklama, DJ geceleri, spor aktivitesi. Sağlık/hijyen içeriği yapılabilir; tıbbi klinik iddiası YASAK.
-- gym / fitness / spor salonu → antrenman, üyelik avantajları, diyet ipuçları, motivasyon, eğitmen tanıtımı, vücut dönüşümü. YASAK: yemek servisi, konaklama, moda.
-- clinic / doktor / sağlık merkezi → hizmet tanıtımı, uzman görüşleri, hasta hikayeleri, bilgilendirme, randevu. YASAK: yemek, eğlence, moda.
-- auto_service / oto yıkama / oto tamir → hizmet vitrinleri, öncesi-sonrası, bakım ipuçları, kampanya. YASAK: yemek, konaklama, moda.
-- e_commerce / online mağaza → ürün tanıtımı, kargo kampanyası, müşteri yorumları, unboxing, mevsimlik indirim. YASAK: mekan atmosferi, lokasyon bazlı etkinlik.
-- tech_company / SaaS / rezervasyon yazılımı / berber-kuaför paneli → ürün özelliği, demo/ücretsiz deneme (lead_generation), müşteri başarısı (social_proof), nasıl kullanılır (educational_post), kampanya/indirim (campaign_offer), webinar/lansman (event_announcement). YASAK: fiziksel mekan atmosferi, yemek, DJ gecesi.
-- bakery / pastane / fırın → taze ürün vitrinleri, yapım süreci, mevsimsel lezzetler, sipariş. YASAK: canlı müzik, konaklama.
-- pet_shop / veteriner → hayvan bakımı, ürün, sağlık ipucu, müşteri & hayvan hikayeleri. YASAK: yemek servisi, moda.
-- education / kurs / eğitim merkezi → ders programı, öğrenci başarıları, uzman hocalar, kayıt. YASAK: yemek, konaklama, moda.
-- real_estate / emlak → portföy tanıtımı, lokasyon avantajları, sanal tur, müşteri deneyimi. YASAK: yemek, etkinlik.
-
-CRITICAL SECTOR RULE:
-If {business_type} is NOT in the list above, DO NOT default to hospitality/restaurant content.
-Instead: read the brand description, website_intelligence, and content_pillars below.
-Generate content ONLY about what the business actually sells or offers.
-When in doubt, check: "Does {business_name} actually provide this service?" If you can't confirm → DON'T suggest it.
+{sector_scope_block}
 
 If custom_rules below explicitly forbid certain content types, those are ABSOLUTE — never override them.
 If content_pillars is empty, derive scope STRICTLY from business_type and brand description — do NOT fill gaps with generic hospitality content.
@@ -206,21 +287,7 @@ Every concept must be genuinely different from ALL past output for this brand.
    repeat the same marketing angle with only content_type/format changed. Each slot is a different
    story, product, moment, or customer insight.
 
-⚠️ FREE TRIAL / ÜCRETSİZ DENEME HEADLINE CAP (MANDATORY):
-Across the ENTIRE batch of {count} concepts:
-- MAXIMUM 1 concept may use "ücretsiz deneme", "free trial", or "deneme fırsatı" in headline, concept_title, or caption_draft hook.
-- If RECENTLY PRODUCED (last 14 days) already contains ücretsiz deneme / free trial → ZERO concepts with that angle this week. Use social_proof, educational_post, behind_the_scenes, or campaign_offer instead.
-- lead_generation is allowed once — but only ONE piece may lead with demo/trial copy; others use signup tips, feature spotlight, or customer proof without repeating trial wording.
-
-⚠️ SaaS / agency_services / berber-kuaför panel MIX (when count ≥ 10):
-Deliver at least ONE concept for EACH template_use_case:
-- lead_generation (demo/signup — trial wording only once, see cap above)
-- social_proof (customer success / testimonial / review)
-- educational_post (how-to / panel tip / workflow)
-- behind_the_scenes (product build / team / salon workflow)
-- campaign_offer OR event_announcement (promo without repeating free trial)
-Plus the standard 10-slot mission mix: 4 post + 3 story + 1 carousel + 2 reel.
-
+{trial_and_saas_mix_block}
 ⚠️ PRODUCT SHOWCASE REQUIREMENT (when brand sells physical products):
 If the brand has physical products (food, beverages, cosmetics, retail items, handmade goods):
 - Include at LEAST 2 concepts with asset_intent="product_image" and template_use_case="product_highlight"

@@ -27,6 +27,11 @@ from app.crew.tools.apify_tools import build_market_research_tools
 from app.crew.tools.perplexity_search import PerplexitySearchTool
 
 
+def ideation_research_tools_enabled(settings: object | None = None) -> bool:
+    cfg = settings or get_settings()
+    return bool(getattr(cfg, "crewai_content_ideation_research_tools", False))
+
+
 def create_content_agent(
     brand: BrandInfo,
     llm: LLM | None = None,
@@ -94,18 +99,25 @@ def create_content_agent(
         for_calendar and not settings.crewai_content_calendar_instagram_tools
     )
 
+    research_on = ideation_research_tools_enabled(settings)
+
     if use_light_tools:
-        tools = [
-            AssetSelectorTool(),
-            ImagePromptPreparerTool(),
-            perplexity_tool,            # real-time web research
-            *market_research_tools,     # Apify hashtag + competitor scan
-        ]
-        max_iter = settings.crewai_content_ideation_max_iter if for_ideation else settings.crewai_content_max_iter
-        if for_calendar and not for_ideation:
-            max_iter = min(max_iter, settings.crewai_content_ideation_max_iter)
-        # Allow more iterations when market research tools are available
-        max_iter = min(max_iter + 2, 10)
+        if for_ideation and not research_on:
+            # Gallery + brand DNA already sit in the task. Tool loops resend
+            # the whole prompt and pull generic trend copy that dilutes the week.
+            tools = []
+            max_iter = settings.crewai_content_ideation_max_iter
+        else:
+            tools = [
+                AssetSelectorTool(),
+                ImagePromptPreparerTool(),
+                perplexity_tool,
+                *market_research_tools,
+            ]
+            max_iter = settings.crewai_content_ideation_max_iter if for_ideation else settings.crewai_content_max_iter
+            if for_calendar and not for_ideation:
+                max_iter = min(max_iter, settings.crewai_content_ideation_max_iter)
+            max_iter = min(max_iter + 2, 10)
     else:
         tools = [
             InstagramInsightsTool(),

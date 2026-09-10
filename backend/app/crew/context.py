@@ -635,8 +635,9 @@ def _build_brand_context_prompt_inner(
         sections += ["## Brand Discovery Intelligence", ""]
 
         if brand.website_summary:
+            from app.crew.prompts.content_prompts import collapse_repeated_lines
             # Truncate at 700 chars — enough for product-heavy brands (menus, services)
-            ws = brand.website_summary[:700]
+            ws = collapse_repeated_lines(brand.website_summary)[:700]
             sections += [
                 f"**Website Summary** (scraped from live site):\n{ws}",
                 "",

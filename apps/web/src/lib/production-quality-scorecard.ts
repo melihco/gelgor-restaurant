@@ -90,8 +90,6 @@ export function buildProductionQualityScorecard(
     meta,
     'typography_text_valid',
     'typographyTextValid',
-    'text_validated',
-    'textValidated',
   );
 
   // The vision reviewer could not fetch the frames it was asked to judge until
@@ -119,10 +117,11 @@ export function buildProductionQualityScorecard(
     softWarnings.push(`Tasarım denetimi ${grafikerScore}/10 — gözden geçirin`);
   }
 
-  // `typography_text_valid` is only a text verdict where the text validator
-  // actually ran; on the gallery and premium routes it mirrors the Grafiker pass
-  // flag, so blocking on it there would reimpose the same uncalibrated threshold.
-  const textValidatorRan = readBoolean(meta, 'text_validated', 'textValidated') != null;
+  // `text_validated` = did a checker look at the painted line.
+  // `false` means it did not run — not that the line is invalid.
+  // `typography_text_valid` is the verdict. On gallery / premium routes it
+  // often just mirrors Grafiker pass; blocking on that reimposes threshold 8.
+  const textValidatorRan = readBoolean(meta, 'text_validated', 'textValidated') === true;
   if (!hardBlock && typographyTextValid === false) {
     if (textValidatorRan || grafikerScore == null) {
       hardBlock = true;

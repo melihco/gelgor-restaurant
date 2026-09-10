@@ -99,6 +99,25 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     });
     expect(card.hardBlock).toBe(false);
   });
+
+  it('shop: text_validated false is "not checked", not invalid text', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      text_validated: false,
+      grafiker_pass: true,
+      grafiker_score: 9,
+      fal_designer_produced: true,
+    });
+    expect(card.hardBlock).toBe(false);
+  });
+
+  it('beach: text_validated false with a mid score stays a warning', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      text_validated: false,
+      grafiker_pass: false,
+      grafiker_score: 6,
+    });
+    expect(card.hardBlock).toBe(false);
+  });
 });
 
 describe('resolveApprovalQualityGateFromMeta', () => {

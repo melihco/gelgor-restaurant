@@ -180,6 +180,142 @@ describe('resolveArtifactPublishReady', () => {
     expect(filterFeedPublishableArtifacts([artifact])).toHaveLength(1);
   });
 
+  it('recomputes stale quality_hard_block when current scorecard would pass (shop post)', () => {
+    const meta = {
+      pipeline: 'fal_design',
+      production_role: 'fal_designed_post',
+      fal_designer_produced: true,
+      fal_design_engine: 'gpt_image_designed',
+      grafiker_pass: true,
+      grafiker_score: 9,
+      agency_produced: true,
+      auto_produced: true,
+      source: 'auto-produce',
+      mission_id: 'mission-shop',
+      text_validated: false,
+      publish_blocked: true,
+      publish_ready: false,
+      publish_block_code: 'quality_hard_block',
+      publish_block_reason: 'Görseldeki metin doğrulanamadı veya yarım kaldı',
+      gallery_match_score: 70,
+    };
+    const d = resolveArtifactPublishReady({
+      meta,
+      content: {
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/shop.jpg',
+        mission_id: 'mission-shop',
+        source: 'auto-produce',
+      },
+      format: 'post',
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+
+    const artifact = {
+      id: 'art-shop-ambiance',
+      title: 'Dükkan atmosferi',
+      status: 'pending_review',
+      contentUrl: '/api/media?key=tenant/image/shop.jpg',
+      content: JSON.stringify({
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/shop.jpg',
+        mission_id: 'mission-shop',
+        source: 'auto-produce',
+      }),
+      metadata: JSON.stringify(meta),
+    } as OutputArtifact;
+    expect(isArtifactFeedReady(artifact)).toBe(true);
+    expect(filterFeedPublishableArtifacts([artifact])).toHaveLength(1);
+  });
+
+  it('recomputes stale quality_hard_block for a beach designed post', () => {
+    const meta = {
+      pipeline: 'fal_design',
+      production_role: 'fal_designed_post',
+      fal_designer_produced: true,
+      grafiker_pass: true,
+      grafiker_score: 8,
+      agency_produced: true,
+      auto_produced: true,
+      source: 'auto-produce',
+      mission_id: 'mission-beach',
+      text_validated: false,
+      publish_blocked: true,
+      publish_block_code: 'quality_hard_block',
+      publish_block_reason: 'Görseldeki metin doğrulanamadı veya yarım kaldı',
+      gallery_match_score: 68,
+    };
+    const artifact = {
+      id: 'art-beach-sunset',
+      title: 'Gün batımı',
+      status: 'pending_review',
+      contentUrl: '/api/media?key=tenant/image/sunset.jpg',
+      content: JSON.stringify({
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/sunset.jpg',
+        mission_id: 'mission-beach',
+        source: 'auto-produce',
+      }),
+      metadata: JSON.stringify(meta),
+    } as OutputArtifact;
+    expect(resolveArtifactPublishReady({
+      meta,
+      content: { kind: 'instagram_post', source: 'auto-produce' },
+      format: 'post',
+    }).blockFeed).toBe(false);
+    expect(isArtifactFeedReady(artifact)).toBe(true);
+  });
+
+  it('designed post with grafiker_pass false above the floor still reaches the feed', () => {
+    const artifact = {
+      id: 'art-shop-mid',
+      title: 'Orta skor post',
+      status: 'pending_review',
+      contentUrl: '/api/media?key=tenant/image/mid.jpg',
+      content: JSON.stringify({
+        kind: 'instagram_post',
+        imageUrl: '/api/media?key=tenant/image/mid.jpg',
+        mission_id: 'mission-shop',
+        source: 'auto-produce',
+      }),
+      metadata: JSON.stringify({
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_pass: false,
+        grafiker_score: 6,
+        agency_produced: true,
+        auto_produced: true,
+        source: 'auto-produce',
+        mission_id: 'mission-shop',
+        gallery_match_score: 66,
+      }),
+    } as OutputArtifact;
+    expect(isArtifactFeedReady(artifact)).toBe(true);
+  });
+
+  it('keeps a real typography fail off the feed after stamp recompute', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_pass: false,
+        grafiker_score: 6,
+        typography_text_valid: false,
+        text_validated: true,
+        publish_blocked: true,
+        publish_block_code: 'quality_hard_block',
+      },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/cut.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.code).toBe('quality_hard_block');
+  });
+
   it('hard-blocks grafiker fail even when a still exists', () => {
     const d = resolveArtifactPublishReady({
       meta: {

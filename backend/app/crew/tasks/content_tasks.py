@@ -10,8 +10,18 @@ from datetime import datetime, timezone
 from crewai import Agent, Task
 
 from app.crew.context import BrandInfo, build_urgency_directive
-from app.crew.prompts.content_prompts import CONTENT_IDEATION_TASK, CONTENT_CALENDAR_TASK
+from app.crew.prompts.content_prompts import (
+    CONTENT_CALENDAR_TASK,
+    CONTENT_IDEATION_TASK,
+    sector_scope_block,
+    trial_and_saas_mix_block,
+)
 from app.services.slot_purpose import slot_purpose_job
+
+
+def _is_fallback_gallery_description(description: str) -> bool:
+    desc = (description or "").lower()
+    return "metadata fallback" in desc or "url tokens suggest" in desc
 
 
 def _variation_seed_block(mission_id: str | None = None) -> str:
@@ -204,6 +214,9 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
             desc_raw = meta.get("description") or ""
             if not tags and not usage and not desc_raw:
                 continue
+            # Fallback scrape text poisons topic coverage ("whatsapp") and wastes tokens.
+            if _is_fallback_gallery_description(desc_raw):
+                continue
             used_types = _used_types_for_url(url)
             is_used = bool(used_types) or url.split("?")[0] in used_bases
             label = tags[0] if tags else (meta.get("suggestedAssetType") or desc_raw[:30] or "venue")
@@ -231,6 +244,8 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
         from collections import Counter as _Counter
         all_tags: _Counter = _Counter()
         for _meta in gallery_data.values():
+            if _is_fallback_gallery_description(str(_meta.get("description") or "")):
+                continue
             _enriched = _enrich_meta_tags(_meta)
             for _t in (_enriched.get("contentTags") or []):
                 all_tags[_t] += 1
@@ -635,9 +650,10 @@ def create_content_ideation_task(
     resolved_pillars = content_pillars or brand.content_pillars or []
     from app.services.pillar_coverage_service import build_pillar_coverage_prompt_block
 
+    biz_type = brand.business_type or "general_business"
     description = CONTENT_IDEATION_TASK.format(
         business_name=brand.business_name,
-        business_type=brand.business_type or "general_business",
+        business_type=biz_type,
         location=brand.location or loc_default,
         brand_tone=brand.brand_tone or "professional",
         target_audience=brand.target_audience or aud_default,
@@ -654,6 +670,8 @@ def create_content_ideation_task(
         reference_image_urls_list=gallery_scene_block,
         output_language=output_language,
         format_mix_rule=_format_mix_rule(count, format_targets),
+        sector_scope_block=sector_scope_block(biz_type, brand.business_name),
+        trial_and_saas_mix_block=trial_and_saas_mix_block(biz_type, count),
     )
 
     # Variation seed — run-unique token to prevent same-context repetition

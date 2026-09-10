@@ -462,7 +462,9 @@ export function isArtifactFeedDisplayReady(artifact: OutputArtifact): boolean {
 
   if (pipeline === 'fal_design' || role === 'designed_post' || role === 'designed_typography' || role === 'fal_designed_post') {
     if (status === 'failed') return false;
-    if (meta.grafiker_pass === false) return false;
+    // Pass threshold (8) is a warning. Hard floor already ran in
+    // resolveArtifactPublishReady — do not hide posts the scorecard lets through.
+    // Stories never had this extra gate; posts were disappearing from Akış.
     if (status !== 'ready') {
       const poster = resolvePosterUrl(artifact);
       const contentUrl = String(artifact.contentUrl ?? '').trim();

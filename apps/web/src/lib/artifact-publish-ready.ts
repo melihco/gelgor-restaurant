@@ -143,7 +143,10 @@ export function resolveArtifactPublishReady(input: {
     // fal_designer_produced/fal_only — recompute those instead of permanently hiding.
     const staleNotReady =
       stampedCode === 'not_ready' && hasDesignedOrAgencyVisual(meta);
-    if (!staleNotReady) {
+    // Quality stamps freeze the produce-time scorecard. Grafiker floor and
+    // typography keys moved; a 9/10 post stayed hidden as "metin yarım".
+    const recomputeQuality = stampedCode === 'quality_hard_block';
+    if (!staleNotReady && !recomputeQuality) {
       return {
         ready: false,
         blockFeed: true,
