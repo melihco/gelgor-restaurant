@@ -251,6 +251,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         'Brand gallery photo required — headline-matched venue photo missing for fal video slot';
       return;
     }
+    const scenePhoto = photoUrl ?? referenceUrl;
     const styleRefs = templateStyleReferenceUrls(templateBinding, inputs.brandReferenceImageUrls);
     const lockOpts = resolveFalTemplateLockOptions({
       binding: templateBinding,
@@ -363,7 +364,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
             brandColors,
             vibe: designVibe,
             aspectRatio: '9:16',
-            referencePhotoUrl: photoUrl,
+            referencePhotoUrl: scenePhoto,
             logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
             sector: inputs.brandBusinessType,
             occasion: templateBinding.occasion,
@@ -404,7 +405,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
             brandLocation: inputs.brandLocation,
             mood: inputs.mood,
             artDirection: inputs.artDirection,
-            referenceUrl: photoUrl,
+            referenceUrl: scenePhoto,
             styleRefs,
             designVibe,
             brandColors,
@@ -454,7 +455,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
             brandColors,
             vibe: designVibe,
             aspectRatio: '9:16',
-            referencePhotoUrl: photoUrl,
+            referencePhotoUrl: scenePhoto,
             logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
             sector: inputs.brandBusinessType,
             occasion: templateBinding.occasion,
@@ -500,7 +501,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         brandColors,
         vibe: designVibe,
         backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
-        referencePhotoUrl: photoUrl,
+        referencePhotoUrl: scenePhoto,
         logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
         location: inputs.brandLocation,
         brandReferenceImageUrls: styleRefs,
@@ -603,7 +604,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
         `template=${templateBinding.matched?.templateType ?? 'none'} ` +
         `typo=${designer.typographyModel} motion=${designer.motionModel} ` +
         `grafiker=${designer.grafikerScore ?? '—'}/10 ` +
-        `gallery=${photoUrl.split('/').pop()?.slice(0, 48) ?? 'none'}` +
+        `gallery=${scenePhoto.split('/').pop()?.slice(0, 48) ?? 'none'}` +
         (reelAgencyPack ? ` agencyDirectives=${reelAgencyPack.stillDirectives.length}` : ''),
       );
     } catch (falErr) {
@@ -626,7 +627,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
           brandLocation: inputs.brandLocation,
           mood: inputs.mood,
           artDirection: inputs.artDirection,
-          referenceUrl: photoUrl,
+          referenceUrl: scenePhoto,
           styleRefs,
           designVibe,
           brandColors,
