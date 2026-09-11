@@ -10,5 +10,6 @@ export { useFeedEngagement } from './use-feed-engagement';
 export { CommentsBottomSheet } from './CommentsBottomSheet';
 export { ShareBottomSheet } from './ShareBottomSheet';
 export { ReelsScreen } from './ReelsScreen';
+export { IgStoryChrome } from './IgStoryChrome';
 export { FlowHeaderActions } from './FlowHeaderActions';
 export { DoubleTapHeart } from './DoubleTapHeart';

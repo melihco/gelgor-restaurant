@@ -29,7 +29,7 @@ export function MobileArtifactsPoller() {
   const lastArtifactCountRef = useRef<number | null>(null);
 
   // Feed + profile share the growing archive window; mission hub keeps the recent pool.
-  const listLimit = screen === 'feed' || screen === 'profile'
+  const listLimit = screen === 'feed' || screen === 'profile' || screen === 'profile-posts'
     ? Math.max(MOBILE_ARTIFACT_MISSION_POOL_LIMIT, feedListLimit)
     : mobileArtifactsListLimitForScreen(screen);
 

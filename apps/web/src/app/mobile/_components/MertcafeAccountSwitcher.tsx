@@ -98,7 +98,10 @@ export function MertcafeAccountSwitcher({
     onSuccess: async (data) => {
       setOauthUrlBroken(false);
       await invalidate();
-      const result = data as { message?: string; connect_ready?: boolean };
+      const result = data as { message?: string; connect_ready?: boolean; auth_url?: string | null };
+      if (result.auth_url) {
+        window.open(result.auth_url, '_blank', 'noopener,noreferrer');
+      }
       flash(
         result.message
           || (result.connect_ready === false
@@ -245,11 +248,13 @@ export function MertcafeAccountSwitcher({
 
   const overall: { color: string; label: string } = isLoading
     ? { color: t.textMuted, label: 'Kontrol ediliyor…' }
-    : tenantReady
-      ? { color: '#22c55e', label: 'Yayına hazır' }
-      : hasApiKey
-        ? { color: '#f59e0b', label: 'Hesap seçilmedi' }
-        : { color: t.textMuted, label: 'Bağlı değil' };
+    : apiKeyInvalid
+      ? { color: '#f87171', label: 'Anahtar geçersiz' }
+      : tenantReady
+        ? { color: '#22c55e', label: 'Yayına hazır' }
+        : hasApiKey
+          ? { color: '#f59e0b', label: 'Hesap seçilmedi' }
+          : { color: t.textMuted, label: 'Bağlı değil' };
 
   return (
     <div style={{ marginBottom: compact ? 24 : 0 }}>
@@ -326,8 +331,7 @@ export function MertcafeAccountSwitcher({
           <div style={{ margin: '0 18px 14px', padding: '12px 14px', borderRadius: 12,
             background: 'rgba(239,68,68,0.07)', border: '0.5px solid rgba(239,68,68,0.22)',
             fontSize: 11.5, color: '#f87171', lineHeight: 1.5 }}>
-            {status?.error
-              || 'Mertcafe API anahtarı geçersiz — Instagram paylaşımı için Ayarlar’dan yeniden bağlayın veya yeni hesap oluşturun.'}
+            Kayıtlı yayın anahtarı Mertcafe’de artık geçerli değil. Instagram Meta token’ı değil — yeni bir yayın hesabı oluşturup sonra Instagram ile giriş yapın.
           </div>
         )}
 
@@ -342,7 +346,63 @@ export function MertcafeAccountSwitcher({
         {/* ── Primary action ── */}
         {!isLoading && (
           <div style={{ padding: '0 18px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {!hasApiKey ? (
+            {apiKeyInvalid ? (
+              <>
+                <button
+                  type="button"
+                  disabled={provisionMutation.isPending}
+                  onClick={() => setPendingConfirm({ kind: 'reset' })}
+                  style={{
+                    width: '100%', padding: '13px 14px', borderRadius: 13, border: 'none', cursor: 'pointer',
+                    background: IG_GRADIENT, color: '#fff', fontSize: 14.5, fontWeight: 700, minHeight: 48,
+                    letterSpacing: '-0.01em', boxShadow: '0 6px 18px rgba(221,42,123,0.28)',
+                  }}
+                >
+                  {provisionMutation.isPending ? 'Yenileniyor…' : 'Yayın bağlantısını yenile'}
+                </button>
+                {showLinkKeyForm ? (
+                  <div style={{ padding: '12px 14px', borderRadius: 13, border: `0.5px solid ${t.separator}` }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: t.textPrimary, marginBottom: 8 }}>
+                      Mevcut yayın anahtarını bağla
+                    </div>
+                    <input
+                      value={existingApiKey}
+                      onChange={(e) => setExistingApiKey(e.target.value)}
+                      placeholder="Mertcafe API anahtarı"
+                      autoComplete="off"
+                      style={inputStyle(t)}
+                    />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                      <button
+                        type="button"
+                        disabled={existingApiKey.trim().length < 8 || linkKeyMutation.isPending}
+                        onClick={() => linkKeyMutation.mutate()}
+                        style={{
+                          flex: 1, padding: '11px', borderRadius: 11, border: 'none', cursor: 'pointer',
+                          background: t.accent, color: '#fff', fontSize: 13, fontWeight: 700, minHeight: 44,
+                        }}
+                      >
+                        {linkKeyMutation.isPending ? 'Bağlanıyor…' : 'Bağla'}
+                      </button>
+                      <button type="button" onClick={() => setShowLinkKeyForm(false)} style={ghostBtnStyle(t)}>
+                        Vazgeç
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkKeyForm(true)}
+                    style={{
+                      background: 'none', border: 'none', cursor: 'pointer', padding: '8px 0 0',
+                      fontSize: 12, fontWeight: 600, color: t.textTertiary, textAlign: 'center' as const,
+                    }}
+                  >
+                    Mertcafe’den aldığım anahtar var
+                  </button>
+                )}
+              </>
+            ) : !hasApiKey ? (
               <>
                 <button
                   type="button"

@@ -199,7 +199,11 @@ export function InstagramProfile() {
   const { t } = useTheme();
   const brand = useTenantBrandContext();
   const navigate = useMobileStore((s) => s.navigate);
-  const openPlatformPreview = useMobileStore((s) => s.openPlatformPreview);
+  const openProfilePosts = useMobileStore((s) => s.openProfilePosts);
+
+  useEffect(() => {
+    void import('./ProfilePostsFeed');
+  }, []);
   const feedListLimit = useMobileStore((s) => s.feedListLimit);
   const setFeedListLimit = useMobileStore((s) => s.setFeedListLimit);
   const [tab, setTab] = useState<ProfileTab>('grid');
@@ -384,7 +388,7 @@ export function InstagramProfile() {
             <button
               key={c.artifact.id}
               type="button"
-              onClick={() => openPlatformPreview(c.artifact.id)}
+              onClick={() => openProfilePosts(c.artifact.id, 'stories')}
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, flexShrink: 0, width: 64 }}
             >
               <div style={{
@@ -437,7 +441,12 @@ export function InstagramProfile() {
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1.5 }}>
             {activeCards.map((c) => (
-              <GridCell key={c.artifact.id} vm={c} aspect={cellAspect} onOpen={openPlatformPreview} />
+              <GridCell
+                key={c.artifact.id}
+                vm={c}
+                aspect={cellAspect}
+                onOpen={(id) => openProfilePosts(id, tab === 'reels' ? 'reels' : 'posts')}
+              />
             ))}
           </div>
           {(hasMoreArchive || isFetching) && (

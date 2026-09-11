@@ -18,6 +18,17 @@ import { artifactToNativeContent, type NativeContentData } from '../platform-nat
 import { DoubleTapHeart } from './DoubleTapHeart';
 import { useMediaPlayback } from './media-playback-context';
 import type { FeedEngagementState } from './types';
+import {
+  IgAudioDisc,
+  IgBookmark,
+  IgCamera,
+  IgChevronLeft,
+  IgComment,
+  IgHeart,
+  IgMoreDots,
+  IgPaperPlane,
+  igIconHit,
+} from './ig-native-icons';
 
 export interface ReelsScreenProps {
   items: OutputArtifact[];
@@ -30,6 +41,7 @@ export interface ReelsScreenProps {
   onToggleSave: (id: string) => void;
   onOpenComments: (id: string) => void;
   onOpenShare: (id: string) => void;
+  onOpenCamera?: () => void;
   sheetOpen?: boolean;
   missionIdeationLookup?: ReadonlyMap<string, string>;
 }
@@ -55,6 +67,7 @@ function ReelSlide({
   onOpenShare,
   onToggleMute,
   onTogglePause,
+  onMore,
 }: {
   artifact: OutputArtifact;
   content: NativeContentData;
@@ -70,6 +83,7 @@ function ReelSlide({
   onOpenShare: () => void;
   onToggleMute: () => void;
   onTogglePause: () => void;
+  onMore: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
@@ -191,95 +205,118 @@ function ReelSlide({
 
       <DoubleTapHeart visible={heartBurst > 0} key={heartBurst} />
 
-      {showPauseIcon && pausedByUi && (
+      {showPauseIcon && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', alignItems: 'center',
           justifyContent: 'center', pointerEvents: 'none', zIndex: 30,
         }}>
           <div style={{
-            width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,0,0,0.45)',
+            width: 72, height: 72, borderRadius: '50%', background: 'rgba(0,0,0,0.42)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff"><polygon points="8 5 19 12 8 19 8 5" /></svg>
+            {pausedByUi ? (
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="#fff"><polygon points="8 5 19 12 8 19 8 5" /></svg>
+            ) : (
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+                <rect x="6" y="5" width="4.5" height="14" rx="1" />
+                <rect x="13.5" y="5" width="4.5" height="14" rx="1" />
+              </svg>
+            )}
           </div>
         </div>
       )}
 
-      <div
-        ref={progressRef}
-        className="sa-reels-progress-fill"
-        style={{
-          position: 'absolute',
-          top: 'max(8px, env(safe-area-inset-top))',
-          left: 0,
-          right: 0,
-          height: 2,
-          background: 'rgba(255,255,255,0.85)',
-          transformOrigin: 'left center',
-          transform: 'scaleX(0)',
-          zIndex: 20,
-          pointerEvents: 'none',
-        }}
-      />
-
       <div style={{
         position: 'absolute',
-        right: 10,
-        bottom: 'max(88px, calc(env(safe-area-inset-bottom) + 72px))',
+        right: 6,
+        bottom: 'max(92px, calc(env(safe-area-inset-bottom) + 78px))',
         zIndex: 15,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 18,
+        gap: 14,
       }}>
-        <div style={{ position: 'relative', marginBottom: 4 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: '50%', overflow: 'hidden',
-            border: '2px solid #fff', background: '#222',
-          }}>
-            {logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <div style={{
-                width: '100%', height: '100%', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: 14,
-              }}>
-                {h.replace('@', '')[0]?.toUpperCase()}
-              </div>
-            )}
-          </div>
+        <div style={{
+          width: 44, height: 44, borderRadius: '50%', overflow: 'hidden',
+          border: '1.5px solid #fff', background: '#222',
+        }}>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <div style={{
+              width: '100%', height: '100%', display: 'flex', alignItems: 'center',
+              justifyContent: 'center', fontWeight: 800, color: '#fff', fontSize: 14,
+            }}>
+              {h.replace('@', '')[0]?.toUpperCase()}
+            </div>
+          )}
         </div>
 
-        <ActionBtn
+        <ReelRailBtn
           label={formatCount(engagement.likeCount)}
           ariaLabel={engagement.isLiked ? 'Beğeniyi kaldır' : 'Beğen'}
           onClick={onToggleLike}
-          active={engagement.isLiked}
-          heart
-        />
-        <ActionBtn
+        >
+          <IgHeart filled={engagement.isLiked} />
+        </ReelRailBtn>
+        <ReelRailBtn
           label={formatCount(engagement.commentCount)}
           ariaLabel="Yorumlar"
           onClick={onOpenComments}
-          comment
-        />
-        <ActionBtn label="Paylaş" ariaLabel="Paylaş" onClick={onOpenShare} share />
-        <ActionBtn
-          label={engagement.isSaved ? 'Kaydedildi' : 'Kaydet'}
+        >
+          <IgComment />
+        </ReelRailBtn>
+        <ReelRailBtn
+          label={formatCount(engagement.shareCount)}
+          ariaLabel="Gönder"
+          onClick={onOpenShare}
+        >
+          <IgPaperPlane />
+        </ReelRailBtn>
+        <ReelRailBtn
           ariaLabel={engagement.isSaved ? 'Kaydı kaldır' : 'Kaydet'}
           onClick={onToggleSave}
-          saved={engagement.isSaved}
-          bookmark
-        />
+        >
+          <IgBookmark filled={engagement.isSaved} />
+        </ReelRailBtn>
+        <button type="button" aria-label="Diğer" onClick={onMore} style={igIconHit}>
+          <IgMoreDots />
+        </button>
         <button
           type="button"
           aria-label={muted ? 'Sesi aç' : 'Sesi kapat'}
           onClick={onToggleMute}
-          style={iconBtnStyle}
+          style={{ ...igIconHit, height: 52 }}
         >
-          {muted ? '🔇' : '🔊'}
+          <IgAudioDisc spinning={active && !pausedByUi && !muted} coverUrl={logoUrl} />
         </button>
+      </div>
+
+      <div
+        aria-hidden
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 2,
+          background: 'rgba(255,255,255,0.22)',
+          zIndex: 20,
+          pointerEvents: 'none',
+        }}
+      >
+        <div
+          ref={progressRef}
+          className="sa-reels-progress-fill"
+          style={{
+            height: '100%',
+            width: '100%',
+            background: '#fff',
+            transformOrigin: 'left center',
+            transform: 'scaleX(0)',
+          }}
+        />
       </div>
 
       <div style={{
@@ -289,8 +326,13 @@ function ReelSlide({
         bottom: 'max(28px, calc(env(safe-area-inset-bottom) + 20px))',
         zIndex: 15,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{h}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <span style={{
+            fontSize: 14, fontWeight: 700, color: '#fff',
+            textShadow: '0 1px 3px rgba(0,0,0,0.55)',
+          }}>
+            {h}
+          </span>
         </div>
         {content.caption && (
           <button
@@ -336,65 +378,37 @@ function ReelSlide({
   );
 }
 
-const iconBtnStyle: React.CSSProperties = {
-  background: 'none',
-  border: 'none',
-  padding: 0,
-  cursor: 'pointer',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 3,
-  color: '#fff',
-  minWidth: 44,
-  minHeight: 44,
-  justifyContent: 'center',
-};
-
-function ActionBtn({
+function ReelRailBtn({
   label,
   ariaLabel,
   onClick,
-  heart,
-  comment,
-  share,
-  bookmark,
-  saved,
-  active,
+  children,
 }: {
-  label: string;
+  label?: string;
   ariaLabel: string;
   onClick: () => void;
-  heart?: boolean;
-  comment?: boolean;
-  share?: boolean;
-  bookmark?: boolean;
-  saved?: boolean;
-  active?: boolean;
+  children: React.ReactNode;
 }) {
   return (
-    <button type="button" aria-label={ariaLabel} onClick={onClick} style={iconBtnStyle}>
-      {heart && (
-        <svg width="28" height="28" viewBox="0 0 24 24" fill={active ? '#FF3040' : 'none'} stroke={active ? '#FF3040' : '#fff'} strokeWidth="2">
-          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-        </svg>
+    <button type="button" aria-label={ariaLabel} onClick={onClick} style={{
+      ...igIconHit,
+      flexDirection: 'column',
+      height: 'auto',
+      minHeight: 44,
+      gap: 2,
+    }}>
+      {children}
+      {label != null && (
+        <span style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: '#fff',
+          textShadow: '0 1px 3px rgba(0,0,0,0.7)',
+          lineHeight: 1.1,
+        }}>
+          {label}
+        </span>
       )}
-      {comment && (
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      )}
-      {share && (
-        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2">
-          <line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" />
-        </svg>
-      )}
-      {bookmark && (
-        <svg width="26" height="26" viewBox="0 0 24 24" fill={saved ? '#fff' : 'none'} stroke="#fff" strokeWidth="2">
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-        </svg>
-      )}
-      <span style={{ fontSize: 12, fontWeight: 700, textShadow: '0 1px 3px rgba(0,0,0,0.7)' }}>{label}</span>
     </button>
   );
 }
@@ -410,6 +424,7 @@ export function ReelsScreen({
   onToggleSave,
   onOpenComments,
   onOpenShare,
+  onOpenCamera,
   sheetOpen = false,
   missionIdeationLookup,
 }: ReelsScreenProps) {
@@ -509,9 +524,9 @@ export function ReelsScreen({
     <div className="sa-reels-root" role="dialog" aria-modal="true" aria-label="Reels">
       <div style={{
         position: 'absolute',
-        top: 'max(10px, env(safe-area-inset-top))',
-        left: 12,
-        right: 12,
+        top: 'max(6px, env(safe-area-inset-top))',
+        left: 4,
+        right: 4,
         zIndex: 40,
         display: 'flex',
         alignItems: 'center',
@@ -521,22 +536,26 @@ export function ReelsScreen({
         <button
           type="button"
           onClick={onClose}
-          aria-label="Reels kapat"
-          style={{
-            width: 44, height: 44, borderRadius: '50%', border: 'none',
-            background: 'rgba(0,0,0,0.4)', color: '#fff', fontSize: 20,
-            cursor: 'pointer', pointerEvents: 'auto', lineHeight: 1,
-          }}
+          aria-label="Geri"
+          style={{ ...igIconHit, pointerEvents: 'auto' }}
         >
-          ←
+          <IgChevronLeft />
         </button>
         <span style={{
-          fontSize: 16, fontWeight: 700, color: '#fff',
-          textShadow: '0 1px 4px rgba(0,0,0,0.6)', pointerEvents: 'none',
+          fontSize: 17, fontWeight: 700, color: '#fff',
+          textShadow: '0 1px 4px rgba(0,0,0,0.55)', pointerEvents: 'none',
+          letterSpacing: '-0.02em',
         }}>
           Reels
         </span>
-        <div style={{ width: 44 }} aria-hidden />
+        <button
+          type="button"
+          onClick={onOpenCamera}
+          aria-label="Reel çek"
+          style={{ ...igIconHit, pointerEvents: onOpenCamera ? 'auto' : 'none', opacity: onOpenCamera ? 1 : 0 }}
+        >
+          <IgCamera />
+        </button>
       </div>
 
       <div ref={scrollerRef} className="sa-reels-scroller">
@@ -565,6 +584,7 @@ export function ReelsScreen({
               onOpenShare={() => onOpenShare(artifact.id)}
               onToggleMute={() => setPreferUnmuted(muted)}
               onTogglePause={() => setPaused((p) => !p)}
+              onMore={() => onOpenShare(artifact.id)}
             />
           );
         })}

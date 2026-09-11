@@ -4386,6 +4386,10 @@ const CSS = `
     background: #000;
     flex-shrink: 0;
   }
+  @keyframes saReelDisc {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
   @keyframes saReelsEnter {
     from { opacity: 0; transform: scale(0.96); }
     to { opacity: 1; transform: scale(1); }
@@ -4523,15 +4527,6 @@ const CSS = `
       min-height: 0;
       width: 100%;
     }
-    .ig-story-viewer-dock {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      z-index: 30;
-      background: linear-gradient(to top, rgba(8,8,10,0.98) 0%, rgba(8,8,10,0.88) 70%, transparent 100%);
-      border-top: none;
-    }
   }
   .ig-story-viewer-backdrop {
     position: fixed;
@@ -4547,34 +4542,26 @@ const CSS = `
   .ig-story-viewer-column {
     display: flex;
     flex-direction: column;
-    width: min(100%, calc((100dvh - 120px) * 9 / 16), 420px);
+    width: min(100%, calc(100dvh * 9 / 16), 420px);
     max-height: 100dvh;
+    height: 100dvh;
     flex: 0 1 auto;
+    position: relative;
   }
   .ig-story-viewer-stage {
     position: relative;
     width: 100%;
-    aspect-ratio: 9 / 16;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
     background: #000;
-  }
-  .ig-story-viewer-dock {
-    flex-shrink: 0;
-    position: relative;
-    z-index: 30;
-    width: 100%;
-    pointer-events: auto;
   }
   @media (min-width: 768px) {
     .ig-story-viewer-column {
       box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
     }
     .ig-story-viewer-stage {
-      border-radius: 12px 12px 0 0;
-    }
-    .ig-story-viewer-dock {
-      border-radius: 0 0 12px 12px;
+      border-radius: 12px;
     }
   }
 

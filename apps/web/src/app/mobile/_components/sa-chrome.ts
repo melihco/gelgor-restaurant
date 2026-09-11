@@ -19,6 +19,7 @@ export const FEED_NATIVE_SCREENS = new Set([
   'approval',
   'platform-preview',
   'profile',
+  'profile-posts',
 ]);
 
 export function shouldWrapWithSaChrome(screen: string): boolean {

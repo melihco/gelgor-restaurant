@@ -222,7 +222,7 @@ export function MobileNav() {
     [artifacts],
   );
   const showAllLabels = !isMobileOperatorMode();
-  const profileActive = screen === 'profile';
+  const profileActive = screen === 'profile' || screen === 'profile-posts';
   // On the More-menu stack or the missions tab neither side tab is "current"
   // (those live inside the Marka hub now) — dim feed + brand.
   const onHubScreen = isMoreMenuScreen(screen) || activeTab === 'missions';

@@ -60,7 +60,7 @@ export const MOBILE_ARTIFACT_FEED_LIMIT = 500;
 export const MOBILE_ARTIFACT_OUTPUTS_LIMIT = 150;
 
 export function mobileArtifactsListLimitForScreen(screen: string): number {
-  if (screen === 'feed' || screen === 'profile') return MOBILE_ARTIFACT_FEED_INITIAL;
+  if (screen === 'feed' || screen === 'profile' || screen === 'profile-posts') return MOBILE_ARTIFACT_FEED_INITIAL;
   if (screen === 'outputs') return MOBILE_ARTIFACT_OUTPUTS_LIMIT;
   return MOBILE_ARTIFACT_LIST_LIMIT;
 }
@@ -103,6 +103,7 @@ export function getMobileArtifactsQueryOptions(
 export const ARTIFACT_POLL_SCREENS = new Set([
   'feed',
   'profile',
+  'profile-posts',
   'outputs',
   'missions',
   'mission-factory',

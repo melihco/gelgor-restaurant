@@ -39,6 +39,9 @@ export type MobileScreen =
   | 'feed'
   | 'platform-preview'
   | 'profile'
+  | 'profile-posts'
+
+export type ProfilePostsMode = 'posts' | 'reels' | 'stories';
 
 export type NavTab = 'feed' | 'missions' | 'brand';
 
@@ -82,6 +85,9 @@ interface MobileStore {
   openReview: (id: string) => void;
   openMissionFactory: (missionId: string, nodeKey: string) => void;
   openPlatformPreview: (artifactId: string) => void;
+  /** Instagram profile grid/reel/highlight → native posts / Reels / stories viewer. */
+  openProfilePosts: (artifactId: string, mode?: ProfilePostsMode) => void;
+  profilePostsMode: ProfilePostsMode;
   openFeedForMission: (missionId: string | null) => void;
   clearFeedMissionFilter: () => void;
   enqueueBriefProduction: (job: PendingBriefJob) => void;
@@ -108,6 +114,7 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
   pendingBriefJobs: [],
   feedRefreshNonce: 0,
   brandHomeNonce: 0,
+  profilePostsMode: 'posts',
 
   setFeedListLimit: (limit) => set((s) => (s.feedListLimit === limit ? s : { feedListLimit: limit })),
 
@@ -224,6 +231,15 @@ export const useMobileStore = create<MobileStore>((set, get) => ({
       screen: 'platform-preview',
       history: [...s.history, 'platform-preview'],
       navTransition: 'modal-in',
+    })),
+
+  openProfilePosts: (artifactId, mode = 'posts') =>
+    set((s) => ({
+      selectedArtifactId: artifactId,
+      profilePostsMode: mode,
+      screen: 'profile-posts',
+      history: [...s.history, 'profile-posts'],
+      navTransition: 'forward',
     })),
 
   openFeedForMission: (missionId) =>

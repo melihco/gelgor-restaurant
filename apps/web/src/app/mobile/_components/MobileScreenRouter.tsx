@@ -39,6 +39,7 @@ import {
   PlatformFeed,
   PlatformPreviewStudio,
   InstagramProfile,
+  ProfilePostsFeed,
 } from './mobile-screen-loaders';
 
 const TAB_CONFIG: { id: NavTab; screen: MobileScreen }[] = [
@@ -75,6 +76,7 @@ function renderScreenContent(screen: MobileScreen): ReactNode {
     case 'feed':             return <PlatformFeed />;
     case 'platform-preview': return <PlatformPreviewStudio />;
     case 'profile':          return <InstagramProfile />;
+    case 'profile-posts':    return <ProfilePostsFeed />;
     default:                 return <AICommandCenter />;
   }
 }

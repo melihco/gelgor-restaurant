@@ -135,6 +135,7 @@ import { CommentsBottomSheet } from '../feed/CommentsBottomSheet';
 import { ShareBottomSheet } from '../feed/ShareBottomSheet';
 import { ReelsScreen } from '../feed/ReelsScreen';
 import { FlowHeaderActions } from '../feed/FlowHeaderActions';
+import { IgStoryChrome } from '../feed/IgStoryChrome';
 import type { FeedEngagementState } from '../feed/types';
 import {
   formatPublishScheduleLabel,
@@ -2027,6 +2028,16 @@ function PlatformFeedInner() {
       setGloballyPaused(false);
     }
   }, [commentsOpen, shareOpen, reelViewerArtifact, storyViewIdx, setGloballyPaused, pauseAll]);
+
+  React.useEffect(() => {
+    if (storyViewIdx === null) return;
+    document.documentElement.classList.add('sa-reels-open');
+    document.body.classList.add('sa-reels-open');
+    return () => {
+      document.documentElement.classList.remove('sa-reels-open');
+      document.body.classList.remove('sa-reels-open');
+    };
+  }, [storyViewIdx]);
   // Auto-trigger the mission pipeline on mount (fire-and-forget).
   // Kicks off propose → approve → task_graph_executor → content_ideation
   // → auto-produce → Feed artifacts without any manual interaction.
@@ -2425,6 +2436,10 @@ function PlatformFeedInner() {
   const feedLogoUrl = tenantBrand.logoUrl
     ? (resolveClientMediaUrl(tenantBrand.logoUrl) ?? tenantBrand.logoUrl)
     : undefined;
+  const storyAvatarRaw = tenantBrand.instagramProfilePicUrl || tenantBrand.logoUrl || '';
+  const storyAvatarUrl = storyAvatarRaw
+    ? (resolveClientMediaUrl(storyAvatarRaw) ?? storyAvatarRaw)
+    : feedLogoUrl;
 
   // Story bubble bar — per-idea rings (not headline-deduped feed list)
   const storyArtifacts = React.useMemo(() => {
@@ -2557,7 +2572,7 @@ function PlatformFeedInner() {
     if (storyViewIdx === null) return;
     const item = storyBarItems[storyViewIdx];
     if (!item) return;
-    if (storyPaused) return;
+    if (storyPaused || commentsOpen || shareOpen) return;
     const dur = storySlideDurationMs(item, scheduledMediaIdx);
     let elapsed = (storyProgress / 100) * dur;
     const interval = setInterval(() => {
@@ -2568,7 +2583,7 @@ function PlatformFeedInner() {
     }, 100);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storyViewIdx, scheduledMediaIdx, storyBarItems, storyPaused]);
+  }, [storyViewIdx, scheduledMediaIdx, storyBarItems, storyPaused, commentsOpen, shareOpen]);
 
   // Auto-switch to pending view when new items arrive while user is in galeri view
   React.useEffect(() => {
@@ -3439,103 +3454,6 @@ function PlatformFeedInner() {
           <div className="ig-story-viewer-backdrop" style={{ animation: 'fadeIn 120ms ease both' }}>
             <div className="ig-story-viewer-column">
             <div className="ig-story-viewer-stage">
-              {/* Progress bars */}
-              <div style={{
-                position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-                display: 'flex', gap: 3,
-                padding: 'max(10px, env(safe-area-inset-top)) 10px 0',
-              }}>
-                {(() => {
-                  const item = storyBarItems[storyViewIdx!]!;
-                  const slideCount = item.kind === 'scheduled'
-                    ? Math.max(1, item.template.media_items.length)
-                    : 1;
-                  return Array.from({ length: slideCount }, (_, si) => (
-                    <div key={si} style={{
-                      flex: 1, height: 2.5, borderRadius: 2,
-                      background: 'rgba(255,255,255,0.25)', overflow: 'hidden',
-                    }}>
-                      <div style={{
-                        height: '100%', borderRadius: 2, background: '#fff',
-                        width: si < scheduledMediaIdx ? '100%'
-                          : si === scheduledMediaIdx ? `${storyProgress}%` : '0%',
-                        transition: si === scheduledMediaIdx ? 'none' : undefined,
-                      }} />
-                    </div>
-                  ));
-                })()}
-              </div>
-
-              {/* Header */}
-              <div style={{
-                position: 'absolute', top: 'max(28px, calc(env(safe-area-inset-top) + 16px))',
-                left: 0, right: 0, zIndex: 10,
-                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '8px 14px',
-              }}>
-                {(() => {
-                  const item = storyBarItems[storyViewIdx!]!;
-                  if (item.kind === 'scheduled') {
-                    const media = item.template.media_items[scheduledMediaIdx] ?? item.template.media_items[0];
-                    const thumb = media ? resolveScheduledMediaUrl(media.url) : null;
-                    return (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
-                          border: '1.5px solid rgba(16,185,129,0.8)' }}>
-                          {thumb ? (
-                            media?.type === 'video' ? (
-                              <video src={thumb} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted />
-                            ) : (
-                              <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            )
-                          ) : (
-                            <div style={{ width: '100%', height: '100%', background: '#065f46',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                              {item.template.name.slice(0, 2).toUpperCase()}
-                            </div>
-                          )}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{item.template.name}</div>
-                          <div style={{ fontSize: 10, color: 'rgba(16,185,129,0.9)' }}>
-                            Zamanlanmış · {item.template.schedule_time}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  }
-                  const art = item.artifact;
-                  const poster = resolveStoryPoster(art);
-                  const meta = (art.metadata ?? {}) as Record<string, unknown>;
-                  const brandName = String(meta.brandName || 'Story');
-                  const ago = timeAgo(art.createdAt);
-                  return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden',
-                        border: '1.5px solid rgba(255,255,255,0.6)' }}>
-                        {poster
-                          ? <img src={poster} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <div style={{ width: '100%', height: '100%', background: '#333',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 12, fontWeight: 800, color: '#fff' }}>
-                              {brandName.slice(0, 2).toUpperCase()}
-                            </div>
-                        }
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{brandName}</div>
-                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>{ago}</div>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <button onClick={closeStory} style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#fff', fontSize: 22, padding: 6, lineHeight: 1,
-                }}>✕</button>
-              </div>
-
               {/* Story content — full-bleed 9:16 cover (IG-style, no side bars) */}
               {(() => {
                 const item = storyBarItems[storyViewIdx!]!;
@@ -3702,169 +3620,73 @@ function PlatformFeedInner() {
                   </>
                 );
               })()}
-            </div>
-
-            {/* Action dock — below story, never covers content */}
-            <div className="ig-story-viewer-dock" style={{
-              flexShrink: 0, zIndex: 20,
-              padding: '10px 14px max(12px, env(safe-area-inset-bottom))',
-              background: 'rgba(8,8,10,0.98)',
-              borderTop: '0.5px solid rgba(255,255,255,0.08)',
-              display: 'flex', flexDirection: 'column', gap: 8,
-            }}>
               {(() => {
                 const item = storyBarItems[storyViewIdx!]!;
-                if (item.kind === 'scheduled') {
-                  const tpl = item.template;
-                  const endLabel = tpl.schedule_end_time ? ` – ${tpl.schedule_end_time}` : '';
-                  return (
-                    <div style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 4px',
-                    }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>
-                          Zamanlanmış {tpl.format === 'reel' ? 'Reel' : 'Story'}
-                        </div>
-                        <div style={{ fontSize: 11, color: 'rgba(16,185,129,0.85)', marginTop: 2 }}>
-                          Her planlı günde {tpl.schedule_time}{endLabel} arası feed&apos;de görünür
-                        </div>
-                      </div>
-                      <span style={{
-                        fontSize: 10, padding: '4px 10px', borderRadius: 20,
-                        background: 'rgba(16,185,129,0.2)', color: '#34d399', fontWeight: 700,
-                      }}>
-                        CANLI
-                      </span>
-                    </div>
-                  );
+                const storyId = item.kind === 'artifact' ? item.artifact.id : item.template.template_id;
+                const engagement = engagementApi.get(storyId);
+                const slideCount = item.kind === 'scheduled'
+                  ? Math.max(1, item.template.media_items.length)
+                  : 1;
+                const combinedProgress = slideCount <= 1
+                  ? storyProgress
+                  : ((scheduledMediaIdx + storyProgress / 100) / slideCount) * 100;
+                const subtitle = item.kind === 'artifact'
+                  ? timeAgo(item.artifact.createdAt)
+                  : item.template.schedule_time;
+                const moreActions: { id: string; label: string; onClick: () => void }[] = [];
+                if (operatorMode && item.kind === 'artifact') {
+                  const art = item.artifact;
+                  const isPending = art.status === 'pending_review';
+                  const vid = resolveStoryVideo(art);
+                  const canApprove = isPending && !isBundleRendering(art)
+                    && (Boolean(vid) || !isProductionBundleStory(art));
+                  if (canApprove) {
+                    moreActions.push({
+                      id: 'approve',
+                      label: 'Story paylaş',
+                      onClick: () => {
+                        void approveMutation.mutateAsync(art).then(() => nextStory()).catch(() => undefined);
+                      },
+                    });
+                  }
+                  moreActions.push({
+                    id: 'edit',
+                    label: isPending ? 'Düzenle' : 'İncele',
+                    onClick: () => {
+                      closeStory();
+                      openApproval(art.id);
+                    },
+                  });
+                  if (canRetryStoryRender(art)) {
+                    moreActions.push({
+                      id: 'retry',
+                      label: 'Yeniden üret',
+                      onClick: () => { void retryStoryRender(art.id); },
+                    });
+                  }
                 }
-                const art = item.artifact;
-                const isPending = art.status === 'pending_review';
-                const c = parseArtifactContent(art.content);
-                const m = (art.metadata ?? {}) as Record<string, unknown>;
-                const vid = resolveStoryVideo(art);
-                const isStoryVideoReady = Boolean(vid);
-                const isRendering = isBundleRendering(art);
-                const canApprove = isPending && !isRendering && (isStoryVideoReady || !isProductionBundleStory(art));
-                const grafiker = typeof m.grafiker_score === 'number' ? m.grafiker_score : null;
-                const compositionId = String((c as any)?.compositionId || m?.compositionId || '');
-
                 return (
-                  <>
-                    {/* Remotion info bar */}
-                    {debugMode && isStoryVideoReady && (
-                      <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '6px 10px', borderRadius: 10,
-                        background: 'rgba(138,171,189,0.20)', border: '0.5px solid rgba(138,171,189,0.4)',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 11, color: '#9DBECE', fontWeight: 700 }}>
-                            ▶ Story {compositionId.replace('Story', '')}
-                          </span>
-                          {debugMode && grafiker !== null && (
-                            <span style={{
-                              fontSize: 10, padding: '2px 7px', borderRadius: 10,
-                              background: grafiker >= 8 ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)',
-                              color: grafiker >= 8 ? '#10B981' : '#F59E0B', fontWeight: 700,
-                            }}>
-                              ★ {grafiker}/10
-                            </span>
-                          )}
-                        </div>
-                        {/* Download button for Instagram */}
-                        {vid && (
-                          <a href={vid} download={`story-${art.id?.slice(0,8)}.mp4`}
-                            style={{
-                              fontSize: 10, padding: '4px 10px', borderRadius: 8,
-                              background: 'rgba(255,255,255,0.15)', color: '#fff',
-                              fontWeight: 700, textDecoration: 'none',
-                              display: 'flex', alignItems: 'center', gap: 4,
-                            }}>
-                            ↓ İndir
-                          </a>
-                        )}
-                      </div>
-                    )}
-
-                    {isRendering && (
-                      <div style={{
-                        fontSize: 11, color: 'rgba(255,255,255,0.75)', textAlign: 'center',
-                        padding: '8px 12px', borderRadius: 10,
-                        background: 'rgba(245,158,11,0.18)', border: '0.5px solid rgba(245,158,11,0.35)',
-                      }}>
-                        Video hazırlanıyor… (~2 dk)
-                      </div>
-                    )}
-
-                    {publishErrors[art.id] && (
-                      <div style={{
-                        fontSize: 11, color: '#FCA5A5', textAlign: 'center',
-                        padding: '8px 12px', borderRadius: 10,
-                        background: 'rgba(239,68,68,0.18)', border: '0.5px solid rgba(239,68,68,0.35)',
-                      }}>
-                        {publishErrors[art.id]}
-                      </div>
-                    )}
-
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', position: 'relative', zIndex: 31 }}>
-                    {canRetryStoryRender(art) && (
-                      <StoryRetryButton
-                        artifact={art}
-                        retrying={retryingStoryId === art.id}
-                        onRetry={() => { void retryStoryRender(art.id); }}
-                        variant="viewer"
-                      />
-                    )}
-                    {canApprove && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void approveMutation.mutateAsync(art)
-                            .then(() => nextStory())
-                            .catch(() => undefined);
-                        }}
-                        disabled={approveMutation.isPending}
-                        style={{
-                          flex: 1, minWidth: 0, padding: '11px 12px', borderRadius: 12, border: 'none',
-                          background: '#10B981', color: '#fff', fontSize: 13, fontWeight: 700,
-                          cursor: approveMutation.isPending ? 'wait' : 'pointer',
-                          display: 'flex', alignItems: 'center',
-                          justifyContent: 'center', gap: 6,
-                          opacity: approveMutation.isPending ? 0.85 : 1,
-                          whiteSpace: 'nowrap',
-                        }}>
-                        {approveMutation.isPending ? (
-                          <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTop: '2px solid #fff', animation: 'spinSlow 0.8s linear infinite' }} />Paylaşılıyor…</>
-                        ) : (
-                          <>{isStoryVideoReady ? '▶ Story paylaş' : '✓ Onayla'}</>
-                        )}
-                      </button>
-                    )}
-                    <button type="button" onClick={(e) => { e.stopPropagation(); closeStory(); openApproval(art.id); }}
-                      style={{
-                        flex: canApprove ? '0 0 auto' : 1, padding: '11px 16px', borderRadius: 12,
-                        border: 'none',
-                        background: 'rgba(255,255,255,0.10)', color: '#fff',
-                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                      }}>
-                      {canApprove ? 'Düzenle' : isPending ? 'İncele' : '···'}
-                    </button>
-                    {!isPending && (
-                      <button onClick={nextStory}
-                        style={{
-                          flex: '0 0 auto', padding: '11px 14px', borderRadius: 12, border: 'none',
-                          background: 'rgba(255,255,255,0.10)', color: '#fff',
-                          fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                        }}>
-                        Sonraki →
-                      </button>
-                    )}
-                    </div>
-                  </>
+                  <IgStoryChrome
+                    barCount={storyBarItems.length}
+                    activeIndex={storyViewIdx ?? 0}
+                    activeProgress={combinedProgress}
+                    avatarUrl={storyAvatarUrl}
+                    title={feedHandle}
+                    subtitle={subtitle}
+                    liked={engagement.isLiked}
+                    onClose={closeStory}
+                    onLike={() => { void engagementApi.toggleLike(storyId); }}
+                    onShare={() => {
+                      setSheetTargetId(storyId);
+                      setShareMode('content');
+                      setShareOpen(true);
+                    }}
+                    onReply={() => {
+                      setSheetTargetId(storyId);
+                      setCommentsOpen(true);
+                    }}
+                    moreActions={moreActions.length > 0 ? moreActions : undefined}
+                  />
                 );
               })()}
             </div>
@@ -3888,8 +3710,12 @@ function PlatformFeedInner() {
             : [reelViewerArtifact]}
           initialId={reelViewerArtifact.id}
           handle={feedHandle}
-          logoUrl={feedLogoUrl}
+          logoUrl={storyAvatarUrl ?? feedLogoUrl}
           onClose={() => setReelViewerArtifact(null)}
+          onOpenCamera={() => {
+            setReelViewerArtifact(null);
+            navigate('new-brief');
+          }}
           getEngagement={engagementApi.get}
           onToggleLike={(id) => { void engagementApi.toggleLike(id); }}
           onToggleSave={(id) => { void engagementApi.toggleSave(id); }}

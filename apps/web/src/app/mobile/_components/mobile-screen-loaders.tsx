@@ -318,6 +318,16 @@ export function InstagramProfile() {
     />
   );
 }
+export function ProfilePostsFeed() {
+  return (
+    <LazyMobileScreen
+      loadKey="ProfilePostsFeed"
+      screenLabel="Gönderiler"
+      loading={null}
+      importer={() => import('./screens/ProfilePostsFeed').then((m) => ({ default: m.ProfilePostsFeed }))}
+    />
+  );
+}
 export const LoginScreen = dynamic(
   importWithChunkRetry('LoginScreen', () =>
     import('./screens/LoginScreen').then((m) => ({ default: m.LoginScreen }))),
