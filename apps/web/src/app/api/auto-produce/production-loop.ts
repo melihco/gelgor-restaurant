@@ -311,6 +311,7 @@ import {
   refreshProductionProviderCircuitsFromRedis,
 } from '@/lib/production-provider-preflight';
 import {
+  persistIfPublishReady,
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
@@ -6041,6 +6042,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     });
     Object.assign(metadata, stampPublishReadyMetadata(metadata, publishDecision));
 
+    const persistGate = persistIfPublishReady(publishDecision);
+    if (!persistGate.persist) {
+      console.warn(
+        `[auto-produce] persist withheld ${persistGate.errorCode} "${headline.slice(0, 50)}"`,
+      );
+      results.push({
+        title,
+        imageUrl: '',
+        error: persistGate.error,
+        errorCode: persistGate.errorCode,
+        publishReady: false,
+        slotKey,
+        metadata,
+      });
+      continue;
+    }
+
     const saved = await nexusClient.saveArtifact(workspaceId, {
       title,
       contentUrl: persistContentUrl,
@@ -6104,6 +6122,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ideaId,
         ideaIndex,
         templateUseCase: String(idea.template_use_case || ideaRecord?.template_use_case || ''),
+        sourcePublishReady: true,
       };
     }
 
@@ -6476,6 +6495,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         nexusClient,
       });
       if (!guaranteeResult) continue;
+
+      if (!guaranteeResult.publishReady || !guaranteeResult.artifactId) {
+        results.push({
+          title: guaranteeResult.title,
+          imageUrl: '',
+          error: guaranteeResult.error,
+          errorCode: guaranteeResult.errorCode,
+          publishReady: false,
+          slotKey: `${gi}:${guaranteeAssignment.slot_role}`,
+          metadata: guaranteeResult.metadata,
+        });
+        continue;
+      }
 
       existingArtifactKeys.add(guaranteeDedupeKey);
       markSourceGalleryUsed(galleryUsage, batchUsedByType, guaranteeSourceUrl, postType);

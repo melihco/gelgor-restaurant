@@ -24,18 +24,26 @@ from app.services import production_trigger as _production_trigger  # noqa: F401
 # ── Pure outcome helpers ─────────────────────────────────────────────────────
 
 
-def test_slot_succeeded_counts_produced_rendering_or_publishready() -> None:
-    assert pfs._slot_succeeded({"produced": 1}) is True
+def test_slot_succeeded_counts_rendering_or_publishready_not_produced() -> None:
+    assert pfs._slot_succeeded({"produced": 1}) is False
     assert pfs._slot_succeeded({"rendering": 2}) is True
     assert pfs._slot_succeeded({"publishReady": 1}) is True
+    assert pfs._slot_succeeded({"produced": 1, "publishReady": 0}) is False
     assert pfs._slot_succeeded({"produced": 0, "rendering": 0, "publishReady": 0}) is False
     assert pfs._slot_succeeded(None) is False
     assert pfs._slot_succeeded({}) is False
 
 
-def test_artifact_id_from_returns_first_row_with_id() -> None:
-    data = {"results": [{"error": "x"}, {"id": "art-1"}, {"id": "art-2"}]}
-    assert pfs._artifact_id_from(data) == "art-1"
+def test_artifact_id_from_returns_first_publish_ready_id() -> None:
+    data = {
+        "results": [
+            {"error": "x"},
+            {"id": "art-hidden", "publishReady": False},
+            {"id": "art-ready", "publishReady": True},
+        ]
+    }
+    assert pfs._artifact_id_from(data) == "art-ready"
+    assert pfs._artifact_id_from({"results": [{"id": "art-1"}]}) is None
     assert pfs._artifact_id_from({"results": []}) is None
     assert pfs._artifact_id_from(None) is None
 
@@ -43,15 +51,54 @@ def test_artifact_id_from_returns_first_row_with_id() -> None:
 def test_succeeded_slot_map_keys_by_slotkey_skipping_errors_and_idless() -> None:
     data = {
         "results": [
-            {"slotKey": "0:story", "id": "art-0"},
+            {"slotKey": "0:story", "id": "art-0", "publishReady": True},
             {"slotKey": "1:post", "error": "withheld"},  # skipped (error)
             {"slotKey": "2:reel"},  # skipped (no id)
-            {"id": "art-3"},  # skipped (no slotKey)
-            {"slotKey": "3:carousel", "id": "art-3b"},
+            {"id": "art-3", "publishReady": True},  # skipped (no slotKey)
+            {"slotKey": "3:carousel", "id": "art-3b", "publishReady": True},
+            {"slotKey": "4:post", "id": "art-hidden", "publishReady": False},
         ]
     }
     assert pfs._succeeded_slot_map(data) == {"0:story": "art-0", "3:carousel": "art-3b"}
     assert pfs._succeeded_slot_map(None) == {}
+
+
+def test_succeeded_slot_map_shop_and_beach_quality_block_not_ready() -> None:
+    data = {
+        "results": [
+            {
+                "slotKey": "0:fal_designed_post",
+                "id": "art-shop",
+                "publishReady": False,
+                "errorCode": "quality_hard_block",
+            },
+            {
+                "slotKey": "1:fal_designed_post",
+                "id": "art-beach",
+                "publishReady": True,
+            },
+            {
+                "slotKey": "2:fal_designed_story",
+                "error": "Tasarım kalitesi onay için yeterli değil",
+                "errorCode": "quality_hard_block",
+            },
+        ]
+    }
+    assert pfs._succeeded_slot_map(data) == {"1:fal_designed_post": "art-beach"}
+    assert pfs._slot_failure_map(data) == {
+        "0:fal_designed_post": "quality_hard_block",
+        "2:fal_designed_story": "Tasarım kalitesi onay için yeterli değil",
+    }
+    assert pfs._is_non_retryable_slot_failure(
+        "Tasarım kalitesi onay için yeterli değil",
+        produce_data=data,
+        slot_key="2:fal_designed_story",
+    ) is False
+    assert pfs._is_non_retryable_slot_failure(
+        "quality_hard_block",
+        produce_data=data,
+        slot_key="0:fal_designed_post",
+    ) is False
 
 
 def test_succeeded_slot_map_treats_duplicate_skipped_as_ready() -> None:
@@ -76,7 +123,7 @@ def test_slot_failure_map_extracts_per_slot_errors() -> None:
     data = {
         "results": [
             {"slotKey": "0:organic_post", "error": "Remotion 422: photo unreachable"},
-            {"slotKey": "1:fal_only_post", "id": "art-1"},
+            {"slotKey": "1:fal_only_post", "id": "art-1", "publishReady": True},
             {"slotKey": "2:designed_post", "error": "withheld_quality_gate"},
         ]
     }
@@ -204,6 +251,86 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert pfs._is_non_retryable_slot_failure(shop_credits) is True
     assert pfs._is_ops_defer_reason(shop_pack) is False
     assert pfs._is_ops_defer_reason(beach_billing) is False
+
+
+def test_publish_code_map_shop_and_beach() -> None:
+    from app.services.production_job_service import (
+        is_retryable_publish_error,
+        is_terminal_produce_error,
+    )
+
+    shop_quality = "Tasarım kalitesi onay için yeterli değil"
+    beach_type = "Görseldeki metin doğrulanamadı veya yarım kaldı"
+    shop_pack = "Paket yarım — vitrine düşmez"
+    beach_pack = "incomplete_pack"
+    shop_cohere = "Yazı, foto ve başlık aynı işi anlatmıyor"
+    beach_reel = "Reel için video gerekli"
+
+    assert is_retryable_publish_error(shop_quality) is True
+    assert is_retryable_publish_error(beach_type) is True
+    assert is_retryable_publish_error(shop_cohere) is True
+    assert is_retryable_publish_error("quality_hard_block") is True
+    assert is_terminal_produce_error(shop_quality) is False
+    assert is_terminal_produce_error("quality_hard_block") is False
+    assert is_terminal_produce_error("caption_design_incoherent") is False
+    assert is_terminal_produce_error(shop_pack) is True
+    assert is_terminal_produce_error(beach_pack) is True
+
+    shop_hidden = {
+        "results": [
+            {
+                "slotKey": "0:fal_designed_post",
+                "error": shop_quality,
+                "errorCode": "quality_hard_block",
+            },
+        ],
+    }
+    beach_hidden = {
+        "results": [
+            {
+                "slotKey": "1:fal_designed_story",
+                "error": beach_type,
+                "errorCode": "quality_hard_block",
+            },
+        ],
+    }
+    shop_half = {
+        "results": [
+            {
+                "slotKey": "2:fal_designed_post",
+                "error": shop_pack,
+                "errorCode": "incomplete_pack",
+            },
+        ],
+    }
+    beach_half = {
+        "results": [
+            {
+                "slotKey": "3:fal_designed_story",
+                "error": "Paket yarım — vitrine düşmez",
+                "errorCode": "incomplete_pack",
+            },
+        ],
+    }
+    assert pfs._is_non_retryable_slot_failure(
+        shop_quality, produce_data=shop_hidden, slot_key="0:fal_designed_post"
+    ) is False
+    assert pfs._is_non_retryable_slot_failure(
+        beach_type, produce_data=beach_hidden, slot_key="1:fal_designed_story"
+    ) is False
+    assert pfs._is_non_retryable_slot_failure(
+        shop_pack, produce_data=shop_half, slot_key="2:fal_designed_post"
+    ) is True
+    assert pfs._is_non_retryable_slot_failure(
+        "Paket yarım — vitrine düşmez",
+        produce_data=beach_half,
+        slot_key="3:fal_designed_story",
+    ) is True
+    assert pfs._is_non_retryable_slot_failure(shop_cohere) is False
+    assert pfs._is_non_retryable_slot_failure(beach_reel) is False
+    assert pfs._is_ops_defer_reason("quality_hard_block") is False
+    assert pfs._is_ops_defer_reason("caption_design_incoherent") is False
+    assert pfs._is_ops_defer_reason(shop_pack) is False
 
 
 def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
@@ -367,7 +494,7 @@ async def test_drain_inline_marks_ready_and_failed_by_slotkey(
     # Only the story slot produced a persisted artifact; the post slot was withheld.
     trigger_result = {
         "results": [
-            {"slotKey": "0:story", "id": "art-story"},
+            {"slotKey": "0:story", "id": "art-story", "publishReady": True},
             {"slotKey": "1:post", "error": "withheld"},
         ]
     }
@@ -384,6 +511,81 @@ async def test_drain_inline_marks_ready_and_failed_by_slotkey(
     assert jobs.running == [batch[0]["id"], batch[1]["id"]]
     assert jobs.ready == [(batch[0]["id"], "art-story")]
     assert [jid for jid, _, _ in jobs.failed] == [batch[1]["id"]]
+
+
+async def test_drain_shop_and_beach_quality_hard_block_failed_not_ready(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=False)
+    shop = _job(0, "fal_designed_post")
+    beach = _job(1, "fal_designed_story")
+    jobs = _JobsRecorder(
+        claim_batches=[[shop, beach]],
+        summary={"total": 2, "complete": False, "active": 0, "failed": 2, "ready": 0},
+    )
+    trigger_result = {
+        "results": [
+            {
+                "slotKey": "0:fal_designed_post",
+                "id": "art-shop-hidden",
+                "publishReady": False,
+                "errorCode": "quality_hard_block",
+            },
+            {
+                "slotKey": "1:fal_designed_story",
+                "error": "Tasarım kalitesi onay için yeterli değil",
+                "errorCode": "quality_hard_block",
+            },
+        ],
+    }
+    _install_drain_doubles(
+        monkeypatch, jobs=jobs, trigger_result=trigger_result, brand=brand_stub
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["ready"] == 0
+    assert out["failed"] == 2
+    assert jobs.ready == []
+    assert [retryable for _, _, retryable in jobs.failed] == [True, True]
+    assert jobs.failed[0][1] == "quality_hard_block"
+    assert jobs.failed[1][1] == "Tasarım kalitesi onay için yeterli değil"
+
+
+async def test_drain_shop_and_beach_incomplete_pack_exhausted(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=False)
+    shop = _job(0, "fal_designed_post")
+    beach = _job(1, "fal_designed_story")
+    jobs = _JobsRecorder(
+        claim_batches=[[shop, beach]],
+        summary={"total": 2, "complete": False, "active": 0, "failed": 2, "ready": 0},
+    )
+    trigger_result = {
+        "results": [
+            {
+                "slotKey": "0:fal_designed_post",
+                "error": "Paket yarım — vitrine düşmez",
+                "errorCode": "incomplete_pack",
+            },
+            {
+                "slotKey": "1:fal_designed_story",
+                "error": "incomplete_pack",
+                "errorCode": "incomplete_pack",
+            },
+        ],
+    }
+    _install_drain_doubles(
+        monkeypatch, jobs=jobs, trigger_result=trigger_result, brand=brand_stub
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["ready"] == 0
+    assert out["failed"] == 2
+    assert jobs.ready == []
+    assert [retryable for _, _, retryable in jobs.failed] == [False, False]
 
 
 async def test_drain_marks_gallery_theme_mismatch_non_retryable(
@@ -536,7 +738,7 @@ async def test_apply_bullmq_completion_marks_by_slotkey_and_rekicks_when_open(
     rekicks: list = []
     monkeypatch.setattr(pfs, "schedule_drain", lambda *a, **k: rekicks.append((a, k)), raising=True)
 
-    produce_data = {"results": [{"slotKey": "0:story", "id": "art-0"}]}
+    produce_data = {"results": [{"slotKey": "0:story", "id": "art-0", "publishReady": True}]}
     out = await pfs.apply_bullmq_completion(mission_id, workspace_id, factory_jobs, produce_data)
 
     assert out["ready"] == 1
@@ -630,7 +832,7 @@ async def test_drain_follow_up_schedules_with_force(
     rekicks = _install_drain_doubles(
         monkeypatch,
         jobs=jobs,
-        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0"}]},
+        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0", "publishReady": True}]},
         brand=brand_stub,
     )
 
@@ -668,7 +870,7 @@ async def test_drain_skips_follow_up_when_only_deferred_jobs_remain(
     rekicks = _install_drain_doubles(
         monkeypatch,
         jobs=jobs,
-        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0"}]},
+        trigger_result={"results": [{"slotKey": "0:story", "id": "art-0", "publishReady": True}]},
         brand=brand_stub,
     )
 

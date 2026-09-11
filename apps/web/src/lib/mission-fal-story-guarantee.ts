@@ -17,13 +17,17 @@ import { runFalStoryPosterProduction } from '@/app/api/auto-produce/pipelines/fa
 import { nexusPersistableContentUrl } from '@/app/api/auto-produce/caption-publish-resolver';
 import type { NexusClient } from '@/app/api/auto-produce/nexus-client';
 import { serverConfig } from '@/lib/server-config';
+import { decideArtifactPersist } from '@/lib/artifact-publish-ready';
 
 export type MissionFalStoryGuaranteeResult = {
-  artifactId: string;
+  artifactId?: string;
   imageUrl: string;
   title: string;
   metadata: Record<string, unknown>;
   costUsd: number;
+  publishReady: boolean;
+  error?: string;
+  errorCode?: string;
 };
 
 function isStoryProductionRow(row: ProductionRunResultRow): boolean {
@@ -215,24 +219,45 @@ export async function produceAndSaveMissionFalStoryGuarantee(input: {
       mission_fal_story_guarantee: true,
     };
 
+    const content = {
+      kind: 'instagram_story',
+      contentType: 'story',
+      caption: caption.slice(0, 2200),
+      headline,
+      imageUrl: poster.imageUrl,
+      posterUrl: poster.imageUrl,
+      videoUrl: null,
+      idea_index: ideaIndex,
+      production_bundle: true,
+      bundle_status: 'ready',
+      idea_id: ideaId,
+      source: 'fal_story',
+      ai_gallery_enhanced: aiGalleryEnhanced,
+    };
+    const persistGate = decideArtifactPersist({
+      meta: metadata,
+      content,
+      format: 'story',
+      designedVisualReady: true,
+    });
+    Object.assign(metadata, persistGate.stamped);
+    const title = headline || `${resolvedBrandName} — story`;
+    if (!persistGate.persist.persist) {
+      return {
+        title,
+        imageUrl: '',
+        metadata,
+        costUsd: 0.08,
+        publishReady: false,
+        error: persistGate.persist.error,
+        errorCode: persistGate.persist.errorCode,
+      };
+    }
+
     const saved = await nexusClient.saveArtifact(workspaceId, {
-      title: headline || `${resolvedBrandName} — story`,
+      title,
       contentUrl: persistContentUrl,
-      content: JSON.stringify({
-        kind: 'instagram_story',
-        contentType: 'story',
-        caption: caption.slice(0, 2200),
-        headline,
-        imageUrl: poster.imageUrl,
-        posterUrl: poster.imageUrl,
-        videoUrl: null,
-        idea_index: ideaIndex,
-        production_bundle: true,
-        bundle_status: 'ready',
-        idea_id: ideaId,
-        source: 'fal_story',
-        ai_gallery_enhanced: aiGalleryEnhanced,
-      }),
+      content: JSON.stringify(content),
       platform: 'instagram',
       contentType: 'story',
       metadata,
@@ -243,9 +268,10 @@ export async function produceAndSaveMissionFalStoryGuarantee(input: {
     return {
       artifactId: saved.id,
       imageUrl: persistContentUrl,
-      title: headline || `${resolvedBrandName} — story`,
+      title,
       metadata,
       costUsd: 0.08,
+      publishReady: true,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

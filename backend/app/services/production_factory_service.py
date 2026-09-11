@@ -333,30 +333,51 @@ async def _load_drain_inputs(
     return brand, node_key, summary, fd_report
 
 
+def _truthy_result_flag(value: Any) -> bool | None:
+    if value is True or value == 1 or value == "true":
+        return True
+    if value is False or value == 0 or value == "false":
+        return False
+    return None
+
+
+def _result_row_succeeded(row: dict[str, Any]) -> bool:
+    """A slot is ready iff it is publishable (or still rendering) — id is not enough."""
+    err = str(row.get("error") or "").strip().lower()
+    if err == "duplicate_skipped":
+        return True
+    if err:
+        return False
+    if row.get("rendering") is True:
+        return True
+    if not row.get("id"):
+        return False
+    return _truthy_result_flag(row.get("publishReady")) is True
+
+
 def _slot_succeeded(produce_data: dict | None) -> bool:
+    """Batch-level success for the single-slot fallback. ``produced`` is not enough."""
     if not produce_data:
         return False
     return (
-        int(produce_data.get("produced") or 0) > 0
-        or int(produce_data.get("rendering") or 0) > 0
+        int(produce_data.get("rendering") or 0) > 0
         or int(produce_data.get("publishReady") or 0) > 0
     )
 
 
 def _artifact_id_from(produce_data: dict | None) -> str | None:
     for row in (produce_data or {}).get("results") or []:
-        if isinstance(row, dict) and row.get("id"):
+        if isinstance(row, dict) and row.get("id") and _result_row_succeeded(row):
             return str(row["id"])
     return None
 
 
 def _succeeded_slot_map(produce_data: dict | None) -> dict[str, str | None]:
-    """Map each successfully-produced slot key → its artifact id.
+    """Map each publish-ready slot key → its artifact id.
 
-    A batched backfill call returns one ``results`` row per attempted slot; rows that
-    produced a persisted artifact carry ``slotKey`` (``"ideaIndex:slot_role"``) and an
-    ``id``. Rows that were withheld carry an ``error`` and no ``id``, so they are absent
-    from this map and their jobs are failed/retried by elimination.
+    ``id`` without ``publishReady`` is the old leak (hidden JPEG, job ready).
+    Withheld rows carry an ``error`` and no ``id``. Hidden persisted rows carry
+    ``id`` + ``publishReady: false`` — both stay out of this map.
     """
     out: dict[str, str | None] = {}
     for row in (produce_data or {}).get("results") or []:
@@ -365,13 +386,9 @@ def _succeeded_slot_map(produce_data: dict | None) -> dict[str, str | None]:
         key = row.get("slotKey")
         if not isinstance(key, str) or not key:
             continue
-        err = str(row.get("error") or "").strip().lower()
-        if err == "duplicate_skipped":
-            out[key] = str(row["id"]) if row.get("id") else None
+        if not _result_row_succeeded(row):
             continue
-        if err or not row.get("id"):
-            continue
-        out[key] = str(row["id"])
+        out[key] = str(row["id"]) if row.get("id") else None
     return out
 
 
@@ -384,9 +401,14 @@ def _slot_failure_map(produce_data: dict | None) -> dict[str, str]:
         key = row.get("slotKey")
         if not isinstance(key, str) or not key:
             continue
-        if row.get("id") and not row.get("error"):
+        if _result_row_succeeded(row):
             continue
-        err = row.get("error") or row.get("skip_reason")
+        err = (
+            row.get("error")
+            or row.get("skip_reason")
+            or row.get("errorCode")
+            or ("quality_hard_block" if row.get("id") else None)
+        )
         if err:
             out[key] = str(err)[:500]
     return out
@@ -408,6 +430,22 @@ def _slot_error_code_map(produce_data: dict | None) -> dict[str, str]:
 
 GALLERY_THEME_MISMATCH_CODE = "gallery_theme_mismatch"
 GALLERY_VOLUME_SHORTFALL_CODE = "gallery_volume_shortfall"
+
+# Kapı kodu → iş. ready ⇔ persist. Same inputs vs new paint.
+_TERMINAL_PUBLISH_CODES = frozenset({
+    "incomplete_pack",
+    GALLERY_THEME_MISMATCH_CODE,
+    GALLERY_VOLUME_SHORTFALL_CODE,
+})
+_RETRYABLE_PUBLISH_CODES = frozenset({
+    "quality_hard_block",
+    "caption_design_incoherent",
+    "designed_visual_required",
+    "reel_video_required",
+    "bundle_failed",
+    "not_ready",
+})
+
 _NON_RETRYABLE_FAILURE_MARKERS = (
     "caption–görsel tema çatışması",
     "caption-görsel tema çatışması",
@@ -418,8 +456,31 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "no persistable content url",
     "designed_image_persist_failed",
     "paket yok",
+    "paket yarım",
+    "incomplete_pack",
     "bakış yapılamadı",
 )
+
+
+def _publish_code_for_slot(
+    reason: str,
+    *,
+    produce_data: dict | None = None,
+    slot_key: str = "",
+) -> str:
+    lower = (reason or "").strip().lower()
+    for code in _TERMINAL_PUBLISH_CODES | _RETRYABLE_PUBLISH_CODES:
+        if code in lower:
+            return code
+    if not slot_key:
+        return ""
+    code = _slot_error_code_map(produce_data).get(slot_key, "").strip().lower()
+    if not code:
+        return ""
+    row_error = _slot_failure_map(produce_data).get(slot_key, "")
+    if row_error and (reason or "").strip() == row_error.strip():
+        return code
+    return ""
 
 
 def _is_non_retryable_slot_failure(
@@ -428,23 +489,22 @@ def _is_non_retryable_slot_failure(
     produce_data: dict | None = None,
     slot_key: str = "",
 ) -> bool:
-    """Gallery theme, empty pack, or empty wallet — retrying the same inputs cannot succeed."""
+    """Empty pack / wallet / gallery gap — retrying the same inputs cannot succeed.
+
+    quality_hard_block and other retryable publish codes stay in the failed lane.
+    """
+    if jobs.is_retryable_publish_error(reason):
+        return False
+    code = _publish_code_for_slot(reason, produce_data=produce_data, slot_key=slot_key)
+    if code in _RETRYABLE_PUBLISH_CODES:
+        return False
+    if code in _TERMINAL_PUBLISH_CODES:
+        return True
     if jobs.is_terminal_produce_error(reason):
         return True
     lower = (reason or "").strip().lower()
     if any(marker in lower for marker in _NON_RETRYABLE_FAILURE_MARKERS):
         return True
-    if slot_key:
-        failures = _slot_failure_map(produce_data)
-        row_error = failures.get(slot_key, "")
-        codes = _slot_error_code_map(produce_data)
-        if (
-            row_error
-            and (reason or "").strip() == row_error.strip()
-            and codes.get(slot_key, "").strip().lower()
-            in {GALLERY_THEME_MISMATCH_CODE, GALLERY_VOLUME_SHORTFALL_CODE}
-        ):
-            return True
     return False
 
 
@@ -991,6 +1051,8 @@ def _defer_counts_attempt(reason: str) -> bool:
 
 def _is_ops_defer_reason(reason: str) -> bool:
     """Blocks that re-queue instead of failing outright (line must not clog)."""
+    if jobs.is_retryable_publish_error(reason):
+        return False
     if jobs.is_terminal_produce_error(reason):
         return False
     lower = (reason or "").strip().lower()

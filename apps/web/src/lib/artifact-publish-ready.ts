@@ -287,6 +287,46 @@ export function resolveArtifactPublishReadyFromArtifact(
   return resolveArtifactPublishReady({ artifact, meta, content });
 }
 
+export type PersistPublishDecision =
+  | { persist: true }
+  | { persist: false; error: string; errorCode: PublishReadyBlockCode };
+
+/**
+ * Customer-table persist valve. ready ⇔ persist.
+ * A blocked paint must not write an OutputArtifact; the factory sees
+ * error + no id and marks the job failed (quality retry) or exhausted.
+ */
+export function persistIfPublishReady(
+  decision: PublishReadyDecision,
+): PersistPublishDecision {
+  if (decision.ready) {
+    return { persist: true };
+  }
+  const errorCode: PublishReadyBlockCode =
+    decision.code === 'ready' ? 'not_ready' : decision.code;
+  const error = decision.reason?.trim() || errorCode;
+  return { persist: false, error, errorCode };
+}
+
+/** Stamp + persist valve for side paths (story adapt, ads, story guarantee). */
+export function decideArtifactPersist(input: {
+  meta: Record<string, unknown>;
+  content?: Record<string, unknown> | null;
+  designedVisualReady?: boolean;
+  requireDesignedVisuals?: boolean;
+  format?: string;
+  hasPlayableVideo?: boolean;
+}): {
+  stamped: Record<string, unknown>;
+  persist: PersistPublishDecision;
+} {
+  const decision = resolveArtifactPublishReady(input);
+  return {
+    stamped: stampPublishReadyMetadata(input.meta, decision),
+    persist: persistIfPublishReady(decision),
+  };
+}
+
 /** Stamp produce-time metadata so feed filters stay aligned with the run. */
 export function stampPublishReadyMetadata(
   meta: Record<string, unknown>,

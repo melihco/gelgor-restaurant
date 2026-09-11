@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   isDesignedVisualPipeline,
+  decideArtifactPersist,
+  persistIfPublishReady,
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
@@ -499,5 +501,121 @@ describe('resolveArtifactPublishReady', () => {
     expect(stamped.publish_blocked).toBe(true);
     expect(stamped.publish_ready).toBe(false);
     expect(stamped.publish_block_code).toBe('designed_visual_required');
+  });
+});
+
+describe('persistIfPublishReady', () => {
+  const shopDesigned = {
+    pipeline: 'fal_design',
+    production_role: 'fal_designed_post',
+    fal_designer_produced: true,
+    fal_design_engine: 'gpt_image_designed',
+    agency_produced: true,
+    gallery_match_score: 70,
+  };
+  const beachDesigned = {
+    pipeline: 'fal_design',
+    production_role: 'fal_designed_post',
+    fal_designer_produced: true,
+    agency_produced: true,
+    gallery_match_score: 68,
+  };
+
+  it('local_products_shop: grafiker 4 withholds persist', () => {
+    const gate = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: { ...shopDesigned, grafiker_score: 4, grafiker_pass: false },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/oil.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    expect(gate.persist).toBe(false);
+    if (!gate.persist) {
+      expect(gate.errorCode).toBe('quality_hard_block');
+    }
+  });
+
+  it('local_products_shop: grafiker 9 persists; soft 6 also persists', () => {
+    const ready = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: { ...shopDesigned, grafiker_score: 9, grafiker_pass: true },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    const soft = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: { ...shopDesigned, grafiker_score: 6, grafiker_pass: false },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    expect(ready.persist).toBe(true);
+    expect(soft.persist).toBe(true);
+  });
+
+  it('beach_club: grafiker 3 withholds; typography fail withholds', () => {
+    const broken = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: { ...beachDesigned, grafiker_score: 3, grafiker_pass: false },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/pier.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    const type = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: {
+        ...beachDesigned,
+        grafiker_score: 6,
+        grafiker_pass: false,
+        typography_text_valid: false,
+        text_validated: true,
+      },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    expect(broken.persist).toBe(false);
+    expect(type.persist).toBe(false);
+    if (!broken.persist) expect(broken.errorCode).toBe('quality_hard_block');
+    if (!type.persist) expect(type.errorCode).toBe('quality_hard_block');
+  });
+
+  it('beach_club: publish-ready designed post persists', () => {
+    const gate = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: { ...beachDesigned, grafiker_score: 8, grafiker_pass: true },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    expect(gate.persist).toBe(true);
+  });
+
+  it('story guarantee: shop grafiker 3 withholds; beach 8 persists', () => {
+    const shop = decideArtifactPersist({
+      meta: {
+        pipeline: 'fal_story',
+        production_role: 'campaign_story_motion',
+        fal_designer_produced: true,
+        fal_design_engine: 'gpt_image_designed',
+        grafiker_score: 3,
+        grafiker_pass: false,
+        mission_fal_story_guarantee: true,
+      },
+      content: { kind: 'instagram_story' },
+      format: 'story',
+      designedVisualReady: true,
+    });
+    const beach = decideArtifactPersist({
+      meta: {
+        pipeline: 'fal_story',
+        production_role: 'organic_story_still',
+        fal_designer_produced: true,
+        grafiker_score: 8,
+        grafiker_pass: true,
+        mission_fal_story_guarantee: true,
+      },
+      content: { kind: 'instagram_story' },
+      format: 'story',
+      designedVisualReady: true,
+    });
+    expect(shop.persist.persist).toBe(false);
+    if (!shop.persist.persist) expect(shop.persist.errorCode).toBe('quality_hard_block');
+    expect(beach.persist.persist).toBe(true);
   });
 });

@@ -30,6 +30,7 @@ import { resolveFalAdCreativeDirectives } from '@/lib/fal-ad-creative-prompt';
 import { serverConfig } from '@/lib/server-config';
 import { produceFalDesignedPost } from './pipelines/fal-designed-post-pipeline';
 import type { NexusClient } from './nexus-client';
+import { decideArtifactPersist } from '@/lib/artifact-publish-ready';
 
 export interface DesignedPostSnapshot {
   imageUrl: string;
@@ -43,6 +44,8 @@ export interface DesignedPostSnapshot {
   ideaId: string;
   ideaIndex: number;
   templateUseCase?: string;
+  /** False when the source still was quality-blocked — do not derive or persist. */
+  sourcePublishReady?: boolean;
 }
 
 export interface AdDeriveRenderContext {
@@ -92,7 +95,13 @@ async function renderAdCreativeWithFal(
   brandName: string,
   renderCtx: AdDeriveRenderContext,
   role: string,
-): Promise<{ imageUrl: string; engine: string | null; costUsd: number }> {
+): Promise<{
+  imageUrl: string;
+  engine: string | null;
+  costUsd: number;
+  grafikerScore: number | null;
+  grafikerPass: boolean;
+}> {
   const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
   const operatingProfile = renderCtx.operatingProfile ?? resolveBrandOperatingProfile({
     businessType: renderCtx.brandBusinessType,
@@ -180,6 +189,8 @@ async function renderAdCreativeWithFal(
     imageUrl: falResult.imageUrl,
     engine: falResult.falDesignEngine,
     costUsd: falResult.costDelta || 0.05,
+    grafikerScore: falResult.falGrafikerScore,
+    grafikerPass: falResult.falGrafikerPass,
   };
 }
 
@@ -191,7 +202,15 @@ export async function deriveAdCreativesFromDesignedPost(
   brandName: string,
   renderCtx: AdDeriveRenderContext,
   nexusClient: NexusClient,
-): Promise<Array<{ id?: string; title: string; imageUrl: string; error?: string }>> {
+): Promise<Array<{
+  id?: string;
+  title: string;
+  imageUrl: string;
+  error?: string;
+  errorCode?: string;
+  publishReady?: boolean;
+}>> {
+  if (snapshot.sourcePublishReady === false) return [];
   if (!shouldDeriveWeeklyAdPair(missionType)) return [];
 
   const photoUrl = (snapshot.referencePhotoUrl?.trim() || snapshot.imageUrl?.trim());
@@ -213,7 +232,14 @@ export async function deriveAdCreativesFromDesignedPost(
   });
 
   const channels: AdPublishChannel[] = ['meta_ads', 'google_ads'];
-  const derived: Array<{ id?: string; title: string; imageUrl: string; error?: string }> = [];
+  const derived: Array<{
+    id?: string;
+    title: string;
+    imageUrl: string;
+    error?: string;
+    errorCode?: string;
+    publishReady?: boolean;
+  }> = [];
   const usedTemplateIds = [...(renderCtx.usedTemplateIds ?? [])];
   const useFalPrimary = serverConfig.fal.configured;
   const reuseDesignedPostStill = serverConfig.autoProduce.reuseDesignedPostStill;
@@ -230,6 +256,8 @@ export async function deriveAdCreativesFromDesignedPost(
     let adDedicatedRender = false;
     let adRenderEngine: 'fal' | 'reuse' = 'reuse';
     let falDesignEngine: string | null = null;
+    let grafikerScore: number | null = null;
+    let grafikerPass: boolean | null = null;
     let costUsd = 0.001;
 
     // Cost-safe default: reuse the designed_post still (skip Meta+Google fal redesign).
@@ -256,6 +284,8 @@ export async function deriveAdCreativesFromDesignedPost(
         adDedicatedRender = true;
         adRenderEngine = 'fal';
         falDesignEngine = fal.engine;
+        grafikerScore = fal.grafikerScore;
+        grafikerPass = fal.grafikerPass;
         costUsd = fal.costUsd;
         console.log(
           `[auto-produce] Ad creative FAL (${channel}): engine=${fal.engine ?? 'fal'} "${adHeadline.slice(0, 40)}"`,
@@ -310,9 +340,13 @@ export async function deriveAdCreativesFromDesignedPost(
       publish_package: 'primary',
       publish_priority: 'extended',
       cost_usd_estimate: costUsd,
+      fal_designer_produced: Boolean(adImageUrl),
+      agency_produced: true,
+      ...(grafikerScore != null ? { grafiker_score: grafikerScore } : {}),
+      ...(grafikerPass != null ? { grafiker_pass: grafikerPass } : {}),
     };
 
-    const contentJson = JSON.stringify({
+    const content = {
       kind: 'ad_creative',
       contentType: 'ad',
       caption: snapshot.caption,
@@ -324,18 +358,41 @@ export async function deriveAdCreativesFromDesignedPost(
       mission_id: snapshot.missionId || undefined,
       node_key: snapshot.nodeKey || undefined,
       ad_platform: channel,
+    };
+    const persistGate = decideArtifactPersist({
+      meta: metadata,
+      content,
+      format: 'post',
+      designedVisualReady: Boolean(adImageUrl),
     });
+    Object.assign(metadata, persistGate.stamped);
+    if (!persistGate.persist.persist) {
+      derived.push({
+        title: `${adHeadline} — ${platformLabel}`,
+        imageUrl: '',
+        error: persistGate.persist.error,
+        errorCode: persistGate.persist.errorCode,
+        publishReady: false,
+      });
+      continue;
+    }
 
     const saved = await nexusClient.saveArtifact(workspaceId, {
       title: `${adHeadline || brandName} — ${platformLabel}`,
       contentUrl: adImageUrl,
-      content: contentJson,
+      content: JSON.stringify(content),
       platform: channel === 'google_ads' ? 'google_ads' : 'meta_ads',
       contentType: 'ad',
       metadata,
     });
 
-    derived.push({ id: saved.id, title: `${adHeadline} — ${platformLabel}`, imageUrl: adImageUrl, error: saved.error });
+    derived.push({
+      id: saved.id,
+      title: `${adHeadline} — ${platformLabel}`,
+      imageUrl: adImageUrl,
+      error: saved.error,
+      publishReady: Boolean(saved.id && !saved.error),
+    });
     if (saved.id) {
       console.log(`[auto-produce] Derived ${channel} ad: ${saved.id.slice(0, 8)} "${adHeadline.slice(0, 40)}"`);
     }

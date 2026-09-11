@@ -16,6 +16,11 @@ import type { BrandTemplateLibrary } from '@/lib/brand-template-library';
 import type { ProductionSlotRole } from '@/lib/mission-production-manifest';
 import type { NexusClient } from './nexus-client';
 import type { OutputArtifact } from '@/types';
+import {
+  decideArtifactPersist,
+  persistIfPublishReady,
+  resolveArtifactPublishReadyFromArtifact,
+} from '@/lib/artifact-publish-ready';
 
 /** Post slot roles eligible as story adaptation sources. */
 const POST_ADAPT_SOURCE_ROLES = new Set<ProductionSlotRole>([
@@ -40,6 +45,9 @@ export interface PostAdaptSource {
   missionId: string;
   productionRole: string;
   hashtags?: string[];
+  grafikerScore?: number | null;
+  grafikerPass?: boolean | null;
+  falDesignerProduced?: boolean;
 }
 
 export interface StoryAdaptPlan {
@@ -78,7 +86,7 @@ function isStoryFormatQueueItem(item: ManifestProductionQueueItem): boolean {
 }
 
 function isPostAdaptSourceRow(row: ProductionRunResultRow): boolean {
-  if (!row.id || row.error) return false;
+  if (!row.id || row.error || row.publishReady !== true) return false;
   const meta = row.metadata ?? {};
   if (meta.format_adaptation === 'post_to_story') return false;
   if (meta.adapted_from_artifact_id) return false;
@@ -109,7 +117,7 @@ export function artifactToProductionRunRow(artifact: OutputArtifact): Production
     title: artifact.title ?? '',
     imageUrl,
     error: undefined,
-    publishReady: meta.bundle_status !== 'rendering' && meta.bundle_status !== 'failed',
+    publishReady: persistIfPublishReady(resolveArtifactPublishReadyFromArtifact(artifact)).persist,
     rendering: meta.bundle_status === 'rendering',
     slotKey: ideaIdx >= 0 && role ? `${ideaIdx}:${role}` : undefined,
     metadata: meta,
@@ -147,6 +155,9 @@ export function collectPostAdaptSources(rows: ProductionRunResultRow[]): PostAda
       hashtags: Array.isArray(meta.hashtags)
         ? meta.hashtags.map((h) => String(h))
         : undefined,
+      grafikerScore: metaNumber(meta, 'grafiker_score', 'grafikerScore'),
+      grafikerPass: typeof meta.grafiker_pass === 'boolean' ? meta.grafiker_pass : null,
+      falDesignerProduced: meta.fal_designer_produced === true,
     });
   }
   return out;
@@ -308,9 +319,12 @@ export async function deriveStoriesFromPostsForEmptySlots(
       cost_usd_estimate: 0.002,
       ...(source.mood ? { mood: source.mood } : {}),
       ...(source.treatment ? { treatment: source.treatment } : {}),
+      ...(source.grafikerScore != null ? { grafiker_score: source.grafikerScore } : {}),
+      ...(source.grafikerPass != null ? { grafiker_pass: source.grafikerPass } : {}),
+      ...(source.falDesignerProduced ? { fal_designer_produced: true } : {}),
     };
 
-    const contentJson = JSON.stringify({
+    const content = {
       kind: effectiveKind,
       contentType: effectiveFmt,
       caption,
@@ -322,7 +336,27 @@ export async function deriveStoriesFromPostsForEmptySlots(
       mission_id: ctx.missionId,
       format_adaptation: 'post_to_story',
       adapted_from_artifact_id: source.artifactId,
+    };
+    const persistGate = decideArtifactPersist({
+      meta: metadata,
+      content,
+      format: 'story',
+      designedVisualReady: Boolean(source.falDesignerProduced || persistUrl),
     });
+    Object.assign(metadata, persistGate.stamped);
+    if (!persistGate.persist.persist) {
+      results.push({
+        title: headline,
+        imageUrl: '',
+        error: persistGate.persist.error,
+        slotKey: missionSlotRunKey(slot.ideaIndex, assignment.slot_role),
+        metadata,
+        publishReady: false,
+      });
+      continue;
+    }
+
+    const contentJson = JSON.stringify(content);
 
     const saved = await ctx.nexusClient.saveArtifact(ctx.workspaceId, {
       title: `${headline} — Story`,

@@ -124,4 +124,42 @@ describe('deriveAdCreativesFromDesignedPost', () => {
     expect(metaMeta.ad_render_engine).toBe('fal');
     expect(String(metaMeta.ad_headline)).not.toMatch(/gece/i);
   });
+
+  it('does not derive when the source still was quality-blocked', async () => {
+    const saveArtifact = vi.fn().mockResolvedValue({ id: 'art-should-not' });
+    const derived = await deriveAdCreativesFromDesignedPost(
+      'tenant-shop',
+      { ...baseSnapshot, sourcePublishReady: false },
+      'weekly_content',
+      'Karaman',
+      { ...baseCtx, brandBusinessType: 'local_products_shop' } as unknown as import('@/app/api/auto-produce/ad-derive').AdDeriveRenderContext,
+      { saveArtifact } as unknown as import('@/app/api/auto-produce/nexus-client').NexusClient,
+    );
+    expect(derived).toHaveLength(0);
+    expect(saveArtifact).not.toHaveBeenCalled();
+    expect(produceFalDesignedPost).not.toHaveBeenCalled();
+  });
+
+  it('beach_club: grafiker 3 ad still is not persisted', async () => {
+    vi.mocked(produceFalDesignedPost).mockResolvedValue({
+      imageUrl: 'https://cdn.example.com/fal-ad-bad.jpg',
+      falGrafikerScore: 3,
+      falGrafikerPass: false,
+      falDesignEngine: 'gpt_image_designed',
+      costDelta: 0.04,
+    });
+    const saveArtifact = vi.fn().mockResolvedValue({ id: 'art-1' });
+    const derived = await deriveAdCreativesFromDesignedPost(
+      'tenant-beach',
+      { ...baseSnapshot, sourcePublishReady: true },
+      'weekly_content',
+      'Sarnıç',
+      { ...baseCtx, brandBusinessType: 'beach_club' } as unknown as import('@/app/api/auto-produce/ad-derive').AdDeriveRenderContext,
+      { saveArtifact } as unknown as import('@/app/api/auto-produce/nexus-client').NexusClient,
+    );
+    expect(saveArtifact).not.toHaveBeenCalled();
+    expect(derived.length).toBeGreaterThan(0);
+    expect(derived.every((row) => !row.id && row.publishReady === false)).toBe(true);
+    expect(derived[0]?.errorCode).toBe('quality_hard_block');
+  });
 });

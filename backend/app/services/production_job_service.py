@@ -30,6 +30,8 @@ ACTIVE_STATUSES = {"pending", "failed", "claimed", "running"}
 # claim_batch / requeue / watchdog must not send these through auto-produce again.
 TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "paket yok",
+    "paket yarım",
+    "incomplete_pack",
     "bakış yapılamadı",
     "provider_billing_circuit_open",
     "skip-no-fal-quota",
@@ -44,8 +46,29 @@ TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "ops-terminated",
 )
 
+# A new paint can differ — never treat these as terminal, even if a marker overlaps.
+RETRYABLE_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
+    "quality_hard_block",
+    "caption_design_incoherent",
+    "tasarım kalitesi onay için yeterli değil",
+    "görseldeki metin doğrulanamadı",
+    "yazı, foto ve başlık",
+    "yazı, şablon ve başlık",
+    "reel_video_required",
+    "reel için video gerekli",
+    "designed_visual_required",
+    "bundle_failed",
+)
+
+
+def is_retryable_publish_error(reason: str | None) -> bool:
+    lower = (reason or "").strip().lower()
+    return bool(lower) and any(marker in lower for marker in RETRYABLE_PRODUCE_ERROR_MARKERS)
+
 
 def is_terminal_produce_error(reason: str | None) -> bool:
+    if is_retryable_publish_error(reason):
+        return False
     lower = (reason or "").strip().lower()
     return bool(lower) and any(marker in lower for marker in TERMINAL_PRODUCE_ERROR_MARKERS)
 
@@ -842,6 +865,8 @@ async def requeue_exhausted(
                   AND COALESCE(last_error, '') NOT ILIKE '%caption_design_incoherent%'
                   AND COALESCE(last_error, '') NOT ILIKE '%ops-terminated%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%paket yarım%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%incomplete_pack%'
                   AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
     """
     if not include_billing_retry:
@@ -1078,6 +1103,8 @@ async def requeue_failed(
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%paket yarım%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%incomplete_pack%'
                   AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
                   {billing_filter}
                 RETURNING id

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { ManifestProductionQueueItem } from '@/lib/auto-produce/build-production-queue';
 import type { ProductionRunResultRow } from '@/lib/mission-slot-backfill';
 import {
+  artifactToProductionRunRow,
   collectPostAdaptSources,
   findEmptyStorySlotItems,
   planPostToStoryAdaptations,
 } from '../post-story-adapt';
+import type { OutputArtifact } from '@/types';
 
 function queueItem(
   ideaIndex: number,
@@ -101,6 +103,53 @@ describe('post-story-adapt', () => {
     expect(plans).toHaveLength(2);
     expect(plans[0]?.source.ideaIndex).toBe(1);
     expect(plans[1]?.source.ideaIndex).toBe(0);
+  });
+
+  it('local_products_shop and beach_club: blocked posts are not adapt sources', () => {
+    const shopBlocked: ProductionRunResultRow = {
+      ...postResult(0, 'shop-hidden'),
+      publishReady: false,
+      metadata: {
+        ...postResult(0, 'shop-hidden').metadata,
+        production_role: 'fal_designed_post',
+        grafiker_score: 3,
+      },
+    };
+    const beachBlocked: ProductionRunResultRow = {
+      ...postResult(1, 'beach-hidden'),
+      publishReady: false,
+      metadata: {
+        ...postResult(1, 'beach-hidden').metadata,
+        production_role: 'fal_designed_post',
+        typography_text_valid: false,
+        text_validated: true,
+      },
+    };
+    const shopReady = postResult(2, 'shop-ok');
+    expect(collectPostAdaptSources([shopBlocked, beachBlocked, shopReady])).toHaveLength(1);
+    expect(collectPostAdaptSources([shopBlocked, beachBlocked])).toHaveLength(0);
+  });
+
+  it('artifactToProductionRunRow withholds shop quality_hard_block', () => {
+    const artifact = {
+      id: 'art-shop',
+      title: 'Dükkan post',
+      status: 'pending_review',
+      contentUrl: 'https://cdn.example.com/oil.jpg',
+      content: JSON.stringify({ kind: 'instagram_post', imageUrl: 'https://cdn.example.com/oil.jpg' }),
+      metadata: JSON.stringify({
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 4,
+        grafiker_pass: false,
+        auto_produced: true,
+        idea_index: 0,
+      }),
+    } as OutputArtifact;
+    const row = artifactToProductionRunRow(artifact);
+    expect(row.publishReady).toBe(false);
+    expect(collectPostAdaptSources([row])).toHaveLength(0);
   });
 
   it('does not plan when story slots are already filled', () => {
