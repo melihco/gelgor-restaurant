@@ -60,6 +60,10 @@ RETRYABLE_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "reel için video gerekli",
     "designed_visual_required",
     "bundle_failed",
+    "bakış çağrısı",
+    "fotoğraf açılamadı",
+    "look_call_failed",
+    "look_vision_blocked",
 )
 
 

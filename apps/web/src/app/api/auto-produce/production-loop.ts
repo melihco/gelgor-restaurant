@@ -339,6 +339,7 @@ import {
 } from '@/lib/gallery-first-production';
 import {
   describeFeedSlotLookIssues,
+  describeLookPersistError,
   isLookedFeedSlotPersistable,
   shouldLookFeedSlotPack,
   shouldSkipFeedMeaningRematch,
@@ -2072,7 +2073,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         results.push({
           title: headline || '(empty idea)',
           imageUrl: '',
-          error: `Paket yok (${describeFeedSlotLookIssues(gf.lookIssues ?? [])})`,
+          error: describeLookPersistError(gf.lookIssues ?? []),
           slotKey,
         });
         continue;

@@ -268,6 +268,23 @@ export function describeFeedSlotLookIssues(issues: FeedSlotLookIssue[]): string 
   return issues.map((id) => LOOK_ISSUE_TR[id] ?? id).join('; ');
 }
 
+/** Vision / API flake — same inputs can succeed on retry. Pack quality misses cannot. */
+const LOOK_OPS_ISSUES = new Set<FeedSlotLookIssue>([
+  'look_call_failed',
+  'look_vision_blocked',
+]);
+
+export function isLookOpsFailure(issues: readonly FeedSlotLookIssue[]): boolean {
+  return issues.some((id) => LOOK_OPS_ISSUES.has(id));
+}
+
+/** Persist error: ops stay retryable; empty pack stays terminal. */
+export function describeLookPersistError(issues: FeedSlotLookIssue[]): string {
+  const text = describeFeedSlotLookIssues(issues);
+  if (isLookOpsFailure(issues)) return text;
+  return `Paket yok (${text})`;
+}
+
 function visionImageUrl(candidate: FeedSlotLookCandidate): string | null {
   const target = (candidate.visionUrl ?? candidate.url).trim();
   return isAttachableVisionUrl(target) ? target : null;

@@ -22,6 +22,7 @@ import {
   buildCatalogAwareGalleryMatchFields,
   filterGalleryUrlsByPreferredAssetTypes,
   isStrongIdeationCaption,
+  photoMatchesPreferredAssetTypes,
   resolveCatalogSlotGalleryHints,
 } from '@/lib/catalog-slot-gallery';
 import { kindToPostType, normalizeGalleryUrl, type PostTypeBucket } from '@/lib/gallery-usage-tracker';
@@ -35,11 +36,13 @@ import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator'
 import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
 import {
   lookFeedSlotPack,
+  lookJobKind,
   shouldLookFeedSlotPack,
   slotJobFromCatalogKey,
   type FeedSlotLookInput,
   type FeedSlotLookIssue,
   type FeedSlotLookResult,
+  type LookJobKind,
 } from '@/lib/feed-slot-look';
 import { groundFeedSlotCopy, parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
 import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
@@ -362,6 +365,41 @@ const LOOK_CANDIDATE_LIMIT = 4;
 /** Drop look tails that lose the caption winner by more than this. */
 const CAPTION_LOOK_SCORE_GAP = 8;
 
+/** Place / process jobs — products cannot prove the slot. */
+const PLACE_PROCESS_LOOK_TYPES = [
+  'venue_reference',
+  'event_photo',
+  'team_photo',
+  'hero_image',
+  'brand_background',
+] as const;
+
+function isFallbackGalleryMeta(meta?: GalleryPhotoMeta | null): boolean {
+  if (!meta) return true;
+  return /metadata fallback analysis/i.test(String(meta.description ?? ''));
+}
+
+function photoCanProveLookJob(
+  meta: GalleryPhotoMeta | undefined,
+  jobKind: LookJobKind,
+): boolean {
+  if (jobKind !== 'place' && jobKind !== 'process') return true;
+  if (isFallbackGalleryMeta(meta)) return true;
+  const types = jobKind === 'process'
+    ? [...PLACE_PROCESS_LOOK_TYPES, 'food_drink_photo']
+    : [...PLACE_PROCESS_LOOK_TYPES];
+  return photoMatchesPreferredAssetTypes(meta?.suggestedAssetType, types);
+}
+
+function lookJobKindFromAssignment(assignment: ProductionAssignment): LookJobKind {
+  return lookJobKind({
+    slotJob: String(assignment.catalog_slot_label ?? '').trim()
+      || slotJobFromCatalogKey(assignment.catalog_slot_key)
+      || slotLabelTr(assignment),
+    catalogSlotKey: String(assignment.catalog_slot_key ?? '').trim(),
+  });
+}
+
 function trimLookShortlistToCaptionFit(
   picked: Array<{ url: string; score: number }>,
 ): Array<{ url: string; score: number }> {
@@ -410,6 +448,17 @@ function collectFeedSlotLookUrls(input: {
 }): Array<{ url: string; score: number }> {
   const usedBases = new Set(input.excludeUrls.map(normalizeGalleryUrl));
   const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
+  const jobKind = lookJobKindFromAssignment(input.assignment);
+  const jobKindPool = (jobKind === 'place' || jobKind === 'process')
+    ? input.galleryPhotos.filter((url) => {
+      const meta = input.galleryMeta[normalizeGalleryUrl(url)]
+        ?? input.galleryMeta[url]
+        ?? Object.entries(input.galleryMeta).find(
+          ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(url),
+        )?.[1];
+      return photoCanProveLookJob(meta, jobKind);
+    })
+    : [];
   const captionIsStrong = isStrongIdeationCaption(input.ideationCaption);
   const preferredPool = !captionIsStrong && input.matchInput.preferredAssetTypes?.length
     ? filterGalleryUrlsByPreferredAssetTypes(
@@ -418,7 +467,11 @@ function collectFeedSlotLookUrls(input: {
       input.matchInput.preferredAssetTypes,
     )
     : [];
-  const pool = preferredPool.length > 0 ? preferredPool : input.galleryPhotos;
+  const pool = jobKindPool.length > 0
+    ? jobKindPool
+    : preferredPool.length > 0
+      ? preferredPool
+      : input.galleryPhotos;
   const ranked = input.tieBreakSeed != null
     ? rankPhotosForContentSeeded(
       input.matchInput,
@@ -436,6 +489,13 @@ function collectFeedSlotLookUrls(input: {
       input.galleryMeta,
     );
 
+  const skipCaptionTrim = jobKind === 'place' || jobKind === 'process';
+  const finish = (rows: Array<{ url: string; score: number }>) => (
+    skipCaptionTrim
+      ? rows.slice(0, LOOK_CANDIDATE_LIMIT)
+      : trimLookShortlistToCaptionFit(rows)
+  );
+
   const picked: Array<{ url: string; score: number }> = [];
   const seen = new Set<string>();
   for (const row of ranked) {
@@ -444,20 +504,21 @@ function collectFeedSlotLookUrls(input: {
     picked.push({ url: row.url, score: row.score });
     seen.add(key);
     if (picked.length >= LOOK_CANDIDATE_LIMIT) {
-      return trimLookShortlistToCaptionFit(picked);
+      return finish(picked);
     }
   }
   if (picked.length > 0) {
-    return trimLookShortlistToCaptionFit(picked);
+    return finish(picked);
   }
-  for (const url of input.galleryPhotos) {
+  const fallbackPool = jobKindPool.length > 0 ? jobKindPool : input.galleryPhotos;
+  for (const url of fallbackPool) {
     const key = normalizeGalleryUrl(url);
     if (seen.has(key) || usedBases.has(key) || !isUsableGalleryPhotoUrl(url)) continue;
     picked.push({ url, score: 0 });
     seen.add(key);
     if (picked.length >= LOOK_CANDIDATE_LIMIT) break;
   }
-  return trimLookShortlistToCaptionFit(picked);
+  return finish(picked);
 }
 
 /** Caption-ranked look shortlist. Batch force only leads when it also fits the caption. */

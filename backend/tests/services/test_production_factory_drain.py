@@ -232,7 +232,8 @@ def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
 def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     from app.services.production_job_service import is_terminal_produce_error
 
-    shop_pack = "Paket yok (Bakış yapılamadı (bakış çağrısı))"
+    shop_look_call = "Bakış yapılamadı (bakış çağrısı)"
+    shop_pack = "Paket yok (Aday fotoğraflar bu işi kanıtlamıyor)"
     beach_pack = "Paket yok"
     beach_billing = (
         'fal_only_video: All typography models failed. Ideogram: Ideogram enqueue '
@@ -241,6 +242,7 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     shop_credits = (
         "429 You have no credits remaining. Add credits to continue using the API"
     )
+    assert is_terminal_produce_error(shop_look_call) is False
     assert is_terminal_produce_error(shop_pack) is True
     assert is_terminal_produce_error(beach_pack) is True
     assert is_terminal_produce_error(beach_billing) is True
@@ -256,6 +258,7 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert pfs._is_non_retryable_slot_failure(shop_shell) is True
     assert pfs._is_non_retryable_slot_failure(beach_shell) is True
     assert pfs._is_ops_defer_reason(shop_shell) is False
+    assert pfs._is_non_retryable_slot_failure(shop_look_call) is False
     assert pfs._is_non_retryable_slot_failure(shop_pack) is True
     assert pfs._is_non_retryable_slot_failure(beach_pack) is True
     assert pfs._is_non_retryable_slot_failure(beach_billing) is True

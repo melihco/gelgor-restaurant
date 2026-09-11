@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type OpenAI from 'openai';
 import {
+  describeLookPersistError,
   isCampaignSentenceLock,
   isLookedFeedSlotPersistable,
   lookFeedSlotPack,
@@ -396,6 +397,15 @@ describe('feed-slot-look — shop + beach', () => {
       pipeline: 'fal_design',
       catalog_slot_key: 'local_products_shop_offer_campaign_post',
     }, null)).toBe(true);
+    expect(describeLookPersistError(['look_call_failed'])).toBe(
+      'Bakış yapılamadı (bakış çağrısı)',
+    );
+    expect(describeLookPersistError(['no_pick'])).toBe(
+      'Paket yok (Aday fotoğraflar bu işi kanıtlamıyor)',
+    );
+    expect(describeLookPersistError(['missing_caption'])).toBe(
+      'Paket yok (Alt yazı yok veya çok kısa)',
+    );
   });
 
   it('does not look at reels and locks meaning rematch after a valid pack', () => {

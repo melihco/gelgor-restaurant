@@ -248,6 +248,51 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(JAM);
   });
 
+  it('shop: place slot sees unanalyzed shop photo even when caption is jam', () => {
+    const SHOP = 'https://cdn.example.com/gallery/whatsapp-interior.jpg';
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        idea_index: 2,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'copy_a',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'local_products_shop_market_day_post',
+        catalog_slot_label: 'pazar günü',
+      },
+      galleryPhotos: [OIL, JAM, SHOP],
+      galleryMeta: {
+        ...shopMeta(),
+        [SHOP]: {
+          description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: content, whatsapp.',
+          suggestedAssetType: 'brand_background',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Doğal reçeller ile yaz sonu pikniği. İncir kavanozda, bir kaşık yeter.',
+      ideationHeadline: 'Yaz sonu pikniği',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(SHOP);
+    expect(shortlist.map((row) => row.url)).not.toContain(JAM);
+  });
+
+  it('beach: place slot keeps the terrace when the weekly caption is a lunch plate', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [PLATE, TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Plaj',
+      businessType: 'beach_club',
+      ideationCaption: 'Öğle tabağımızda mevsim salata, deniz kenarında bir öğün.',
+      ideationHeadline: 'Öğle tabağı',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(TABLE);
+    expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
+  });
+
   it('beach: sunset caption ranks the terrace over a forced lunch plate', () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: beachAssignment(),
