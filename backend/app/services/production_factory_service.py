@@ -279,14 +279,8 @@ async def run_mission_completion_pass(
     if summary.get("complete"):
         return result
 
-    requeued = await jobs.requeue_exhausted(mission_id)
-    if requeued > 0 and await jobs.has_open_jobs(mission_id):
-        schedule_drain(mission_id, workspace_id, delay_sec=30.0, force=True)
-        logger.info(
-            "production_factory.completion_pass_requeued",
-            mission_id=str(mission_id),
-            requeued=requeued,
-        )
+    # Do not requeue exhausted here. That raised max_attempts toward 12 and
+    # repainted the same slot (7–8 worker runs). Operator kick is the only reopen.
     return result
 
 
@@ -458,6 +452,11 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "paket yok",
     "paket yarım",
     "incomplete_pack",
+    "galeri eşleşmesi yok",
+    "galeri–caption eşleşmesi",
+    "galeri-caption eşleşmesi",
+    "uyumlu marka fotoğrafı bulunamadı",
+    "hero reel slot assigned",
     "bakış yapılamadı",
     "library_template_replica_required",
 )
@@ -1091,12 +1090,10 @@ def _should_keep_running_for_inflight(
 
 
 def _defer_counts_attempt(reason: str) -> bool:
-    """In-flight lock and quality gates both burn attempts — a flat 45s
-    defer with attempts stuck at 0/12 repaints the same slot for hours.
+    """Every deferred produce burns a slot. Free defers (fetch failed,
+    stale reclaim, in-flight) were 7 paints on a 3-attempt story.
     """
-    if _is_inflight_defer_reason(reason):
-        return True
-    return _is_quality_defer_reason(reason)
+    return True
 
 
 def _is_ops_defer_reason(reason: str) -> bool:

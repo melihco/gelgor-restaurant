@@ -386,11 +386,11 @@ async def kick_feed_production(
                 ),
             }
 
-        # Operator kick: exhausted slots should re-enter the factory queue automatically
-        # (same behaviour as POST requeue-factory-jobs — never expose internal endpoints in UI).
+        # Resume open slots only. Gallery-empty / pack-empty stay exhausted —
+        # kick must not invent a second pipeline (fal_only) for the same idea.
         requeued = await pj.requeue_exhausted(
             mission_id,
-            include_gallery_theme_retry=True,
+            include_gallery_theme_retry=False,
         )
         requeued += await pj.requeue_failed(mission_id)
         if requeued or await pj.has_open_jobs(mission_id):

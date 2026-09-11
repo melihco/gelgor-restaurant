@@ -251,6 +251,18 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert "not ilike" in look_sql.lower()
     assert is_terminal_produce_error(shop_pack) is True
     assert is_terminal_produce_error(beach_pack) is True
+    shop_gallery = "Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı"
+    beach_gallery = (
+        "Galeri–caption eşleşmesi yetersiz (0/55) — "
+        "\"Bodrum'da eşsiz gün batımı\" için uygun galeri fotoğrafı yok"
+    )
+    assert is_terminal_produce_error(shop_gallery) is True
+    assert is_terminal_produce_error(beach_gallery) is True
+    assert pfs._is_non_retryable_slot_failure(shop_gallery) is True
+    assert pfs._is_non_retryable_slot_failure(beach_gallery) is True
+    assert is_terminal_produce_error(
+        "Hero reel slot assigned to another idea — publish as story"
+    ) is True
     assert is_terminal_produce_error(beach_billing) is True
     assert is_terminal_produce_error(shop_credits) is True
     shop_shell = (
@@ -376,6 +388,16 @@ def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     assert pfs._should_keep_running_for_inflight(beach_timeout, "production_in_flight") is True
     assert pfs._should_keep_running_for_inflight({}, "production_in_flight") is False
 
+    assert pfs._defer_counts_attempt("fetch failed") is True
+    assert pfs._defer_counts_attempt("auto_produce_unreachable") is True
+    from app.services.production_job_service import (
+        HARD_SLOT_ATTEMPT_CAP,
+        _attempts_under_cap_sql,
+    )
+
+    assert HARD_SLOT_ATTEMPT_CAP == 3
+    assert "LEAST" in _attempts_under_cap_sql("j")
+    assert "3" in _attempts_under_cap_sql("j")
     # Both categories still get a wall-clock backstop; nothing defers forever.
     assert pfs._defer_max_age_sec(quality) == pfs._quality_defer_max_age_sec()
     assert pfs._defer_max_age_sec(ops) == pfs._ops_defer_max_age_sec()

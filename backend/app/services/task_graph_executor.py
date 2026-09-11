@@ -2198,70 +2198,11 @@ async def _reconcile_completed_missions_missing_feed() -> int:
 
 
 async def _reconcile_production_factory_gaps() -> int:
-    """Bounded guaranteed-fill: requeue exhausted slots at most once per 6h per mission.
+    """Scheduler used to reopen exhausted slots every 6h (max_attempts → 12).
 
-    Prevents scheduler ticks from repeatedly hammering fal.ai on missions that already
-    failed all slot attempts. Operators can still use POST requeue-factory-jobs."""
-    from app.services.production_automation import auto_feed_production_allowed
-
-    if not auto_feed_production_allowed():
-        return 0
-
-    from datetime import datetime, timedelta, timezone
-
-    from sqlalchemy import select, update
-
-    from app.models.mission import Mission
-    from app.services import production_job_service as pj
-    from app.services.production_factory_service import schedule_drain
-
-    missions = await pj.list_missions_with_exhausted_incomplete(limit=10)
-    count = 0
-    factory = _get_session_factory()
-    cooldown = timedelta(hours=6)
-    now = datetime.now(timezone.utc)
-
-    for mission_id_s, workspace_id_s in missions:
-        try:
-            mission_id = uuid.UUID(mission_id_s)
-            async with factory() as db:
-                r = await db.execute(
-                    select(Mission.performance_summary).where(Mission.id == mission_id)
-                )
-                row = r.first()
-                perf = dict(row[0] or {}) if row else {}
-            last_at_raw = (perf.get("factory_reconcile_at") or {}).get("at")
-            if last_at_raw:
-                try:
-                    last_at = datetime.fromisoformat(str(last_at_raw).replace("Z", "+00:00"))
-                    if last_at.tzinfo is None:
-                        last_at = last_at.replace(tzinfo=timezone.utc)
-                    if now - last_at < cooldown:
-                        continue
-                except ValueError:
-                    pass
-
-            requeued = await pj.requeue_exhausted(mission_id)
-            if requeued:
-                async with factory() as db:
-                    perf["factory_reconcile_at"] = {"at": now.isoformat(), "requeued": requeued}
-                    await db.execute(
-                        update(Mission)
-                        .where(Mission.id == mission_id)
-                        .values(performance_summary=perf)
-                    )
-                    await db.commit()
-                schedule_drain(mission_id, uuid.UUID(workspace_id_s), delay_sec=0.0, force=True)
-                count += 1
-                if count >= 2:
-                    break
-        except Exception as exc:
-            logger.warning(
-                "production_factory_requeue_failed",
-                mission_id=mission_id_s,
-                error=str(exc)[:200],
-            )
-    return count
+    Same inputs do not get a second pipeline. Operator requeue is the only reopen.
+    """
+    return 0
 
 
 async def _trigger_content_production_pipeline(

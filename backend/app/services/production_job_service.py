@@ -25,6 +25,17 @@ logger = structlog.get_logger()
 # Terminal states — a job in one of these is never re-claimed by the drainer.
 TERMINAL_STATUSES = {"ready", "exhausted", "skipped"}
 ACTIVE_STATUSES = {"pending", "failed", "claimed", "running"}
+# Product cap. Requeue / kick used to raise max_attempts to 12 so the same
+# slot painted 7–8 times while attempts still read 3/12.
+HARD_SLOT_ATTEMPT_CAP = 3
+
+
+def _attempts_under_cap_sql(alias: str = "j") -> str:
+    col = f"{alias}." if alias else ""
+    return (
+        f"{col}attempts < LEAST(COALESCE({col}max_attempts, {HARD_SLOT_ATTEMPT_CAP}), "
+        f"{HARD_SLOT_ATTEMPT_CAP})"
+    )
 
 # Same inputs cannot succeed: empty wallet, missing pack, look failed.
 # claim_batch / requeue / watchdog must not send these through auto-produce again.
@@ -32,6 +43,12 @@ TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "paket yok",
     "paket yarım",
     "incomplete_pack",
+    "galeri eşleşmesi yok",
+    "galeri–caption eşleşmesi",
+    "galeri-caption eşleşmesi",
+    "uyumlu marka fotoğrafı bulunamadı",
+    "tema çatışması",
+    "hero reel slot assigned",
     "bakış yapılamadı",
     "provider_billing_circuit_open",
     "skip-no-fal-quota",
@@ -146,7 +163,7 @@ async def upsert_jobs(
     node_key: str | None,
     slots: list[dict[str, Any]],
     *,
-    max_attempts: int = 3,
+    max_attempts: int = HARD_SLOT_ATTEMPT_CAP,
 ) -> int:
     """Idempotently insert one job per slot descriptor.
 
@@ -205,7 +222,7 @@ async def upsert_jobs(
                     "pipeline": pipeline,
                     "library_slot_key": library_slot_key,
                     "slot_key": str(catalog_slot_key) if catalog_slot_key else None,
-                    "max_attempts": int(max_attempts),
+                    "max_attempts": min(int(max_attempts), HARD_SLOT_ATTEMPT_CAP),
                     "payload": json.dumps(payload) if payload is not None else None,
                 },
             )
@@ -294,6 +311,7 @@ async def claim_batch(
                       )
                       AND NOT ({_terminal_error_sql("j.last_error")})
                       AND NOT ({_live_inflight_exists_sql("j")})
+                      AND {_attempts_under_cap_sql("j")}
                     ORDER BY COALESCE(j.priority, 0) DESC, j.run_after ASC
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
@@ -872,6 +890,7 @@ async def has_runnable_jobs(mission_id: uuid.UUID) -> bool:
                         AND j.claimed_at < now() - make_interval(secs => :stale_sec))
                   )
                   AND NOT ({_live_inflight_exists_sql("j")})
+                  AND {_attempts_under_cap_sql("j")}
                 LIMIT 1
                 """
             ),
@@ -904,7 +923,7 @@ async def list_missions_with_exhausted_incomplete(limit: int = 25) -> list[tuple
 async def requeue_exhausted(
     mission_id: uuid.UUID,
     *,
-    attempts_ceiling: int = 12,
+    attempts_ceiling: int = HARD_SLOT_ATTEMPT_CAP,
     include_gallery_theme_retry: bool = False,
     include_billing_retry: bool = False,
 ) -> int:
@@ -924,6 +943,11 @@ async def requeue_exhausted(
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yarım%'
                   AND COALESCE(last_error, '') NOT ILIKE '%incomplete_pack%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri eşleşmesi yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri–caption eşleşmesi%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri-caption eşleşmesi%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%uyumlu marka fotoğrafı bulunamadı%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%hero reel slot assigned%'
                   AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
     """
     if not include_billing_retry:
@@ -950,6 +974,7 @@ async def requeue_exhausted(
         " [gallery-retry]" if include_gallery_theme_retry
         else (" [billing-retry]" if include_billing_retry else " [requeued]")
     )
+    ceiling = min(int(attempts_ceiling), HARD_SLOT_ATTEMPT_CAP)
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
@@ -961,10 +986,10 @@ async def requeue_exhausted(
                         WHEN :gallery_retry OR :billing_retry THEN 0
                         ELSE attempts
                     END,
-                    max_attempts = CASE
-                        WHEN :gallery_retry OR :billing_retry THEN GREATEST(max_attempts, :ceiling)
-                        ELSE GREATEST(max_attempts, LEAST(:ceiling, attempts + 1))
-                    END,
+                    max_attempts = LEAST(
+                        GREATEST(COALESCE(max_attempts, :ceiling), 1),
+                        :ceiling
+                    ),
                     run_after = now(),
                     claimed_at = NULL,
                     claimed_by = NULL,
@@ -982,7 +1007,7 @@ async def requeue_exhausted(
             ),
             {
                 "mission_id": str(mission_id),
-                "ceiling": int(attempts_ceiling),
+                "ceiling": ceiling,
                 "gallery_retry": bool(include_gallery_theme_retry),
                 "billing_retry": bool(include_billing_retry),
                 "requeue_suffix": requeue_suffix,
@@ -1000,7 +1025,6 @@ async def requeue_exhausted(
         )
     if include_gallery_theme_retry and rows:
         await _clear_gallery_urls_from_job_payloads(mission_id, [str(r[0]) for r in rows])
-        await _escalate_gallery_failed_jobs_to_fal_only(mission_id, [str(r[0]) for r in rows])
     return len(rows)
 
 
@@ -1028,7 +1052,10 @@ async def requeue_billing_exhausted_recent(
                 UPDATE production_jobs
                 SET status = 'pending',
                     attempts = 0,
-                    max_attempts = GREATEST(max_attempts, 3),
+                    max_attempts = LEAST(
+                        GREATEST(COALESCE(max_attempts, :cap), 1),
+                        :cap
+                    ),
                     run_after = now(),
                     claimed_at = NULL,
                     claimed_by = NULL,
@@ -1055,6 +1082,7 @@ async def requeue_billing_exhausted_recent(
             {
                 "hours": int(lookback_hours),
                 "lim": int(limit),
+                "cap": HARD_SLOT_ATTEMPT_CAP,
                 **({"workspace_id": str(workspace_id)} if workspace_id is not None else {}),
             },
         )
@@ -1069,36 +1097,6 @@ async def requeue_billing_exhausted_recent(
             workspace_id=str(workspace_id) if workspace_id else None,
         )
     return pairs
-
-
-async def _escalate_gallery_failed_jobs_to_fal_only(
-    mission_id: uuid.UUID,
-    job_ids: list[str],
-) -> None:
-    """Reroute gallery-veto exhausted slots to fal_only so the next drain skips gallery gates."""
-    if not job_ids:
-        return
-    factory = _get_session_factory()
-    async with factory() as db:
-        await db.execute(
-            text(
-                """
-                UPDATE production_jobs
-                SET pipeline = CASE
-                    WHEN format = 'story' THEN 'fal_only_story'
-                    WHEN format = 'reel' THEN 'fal_only_reel'
-                    WHEN format IN ('post', 'feed') THEN 'fal_only_post'
-                    ELSE pipeline
-                END,
-                    updated_at = now()
-                WHERE mission_id = CAST(:mission_id AS UUID)
-                  AND id = ANY(CAST(:ids AS UUID[]))
-                  AND COALESCE(last_error, '') ILIKE '%tema çatışması%'
-                """
-            ),
-            {"mission_id": str(mission_id), "ids": job_ids},
-        )
-        await db.commit()
 
 
 async def _clear_gallery_urls_from_job_payloads(
@@ -1155,7 +1153,10 @@ async def requeue_failed(
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status = 'failed'
-                  AND (attempts < max_attempts OR :billing_retry)
+                  AND (
+                    {_attempts_under_cap_sql("")}
+                    OR :billing_retry
+                  )
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
@@ -1163,6 +1164,11 @@ async def requeue_failed(
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yarım%'
                   AND COALESCE(last_error, '') NOT ILIKE '%incomplete_pack%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri eşleşmesi yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri–caption eşleşmesi%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%galeri-caption eşleşmesi%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%uyumlu marka fotoğrafı bulunamadı%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%hero reel slot assigned%'
                   AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
                   {billing_filter}
                 RETURNING id
@@ -1202,9 +1208,13 @@ async def list_missions_with_open_jobs(limit: int = 50) -> list[str]:
     async with factory() as db:
         res = await db.execute(
             text(
-                """
+                f"""
                 SELECT DISTINCT mission_id FROM production_jobs
-                WHERE (status IN ('pending', 'failed') AND run_after <= now())
+                WHERE (
+                    status IN ('pending', 'failed')
+                    AND run_after <= now()
+                    AND {_attempts_under_cap_sql("")}
+                  )
                    OR (status IN ('claimed', 'running')
                        AND claimed_at < now() - make_interval(secs => :stale_sec))
                 LIMIT :limit
@@ -1229,14 +1239,16 @@ async def list_missions_with_open_jobs_fair_share(limit: int = 50) -> list[str]:
     async with factory() as db:
         res = await db.execute(
             text(
-                """
+                f"""
                 WITH runnable AS (
                     SELECT mission_id, workspace_id,
                            MIN(COALESCE(run_after, updated_at)) AS oldest_wait,
                            MAX(COALESCE(priority, 0)) AS max_priority
                     FROM production_jobs
                     WHERE (
-                        status IN ('pending', 'failed') AND run_after <= now()
+                        status IN ('pending', 'failed')
+                        AND run_after <= now()
+                        AND {_attempts_under_cap_sql("")}
                     ) OR (
                         status IN ('claimed', 'running')
                         AND claimed_at < now() - make_interval(secs => :stale_sec)
