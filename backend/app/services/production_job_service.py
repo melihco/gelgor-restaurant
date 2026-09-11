@@ -80,10 +80,21 @@ def is_terminal_produce_error(reason: str | None) -> bool:
 
 
 def _terminal_error_sql(column: str = "last_error") -> str:
-    return " OR ".join(
+    """SQL mirror of ``is_terminal_produce_error`` — retryable markers win.
+
+    ``Bakış yapılamadı (bakış çağrısı)`` contains both a terminal stem
+    (bakış yapılamadı) and a retryable stem (bakış çağrısı). Without the
+    exclusion, the sweeper ops-terminates a flaky look call on attempt 1.
+    """
+    terminal = " OR ".join(
         f"COALESCE({column}, '') ILIKE '%{marker}%'"
         for marker in TERMINAL_PRODUCE_ERROR_MARKERS
     )
+    retryable = " AND ".join(
+        f"COALESCE({column}, '') NOT ILIKE '%{marker}%'"
+        for marker in RETRYABLE_PRODUCE_ERROR_MARKERS
+    )
+    return f"(({terminal}) AND ({retryable}))"
 
 # SQL fragment — permanent gallery-theme failures must not re-enter the retry loop.
 _PERMANENT_FAILURE_REQUEUE_FILTER = """

@@ -14,9 +14,10 @@ export function slotNeedsSceneBrief(input: {
   willStoryOverlay: boolean;
   designedPosterSync: boolean;
 }): boolean {
-  // Gallery-only stills never need a Product Scene Director call (~$0.15).
-  // Check before adaptiveScene — otherwise venue adaptive flags void the skip.
-  if (input.galleryOnlyVisual && !input.isHeroReel && !input.willStoryOverlay) {
+  // Gallery-locked visuals already have the photo. Scene Director (~$0.15)
+  // used to fire for story overlays and hero reels anyway — skip those too.
+  // Hero reel may still pay once when the still is not gallery-only.
+  if (input.galleryOnlyVisual) {
     return false;
   }
   if (input.designedPosterSync) return false;

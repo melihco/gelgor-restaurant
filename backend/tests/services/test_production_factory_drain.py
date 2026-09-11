@@ -230,7 +230,10 @@ def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
 
 
 def test_empty_wallet_and_missing_pack_are_terminal() -> None:
-    from app.services.production_job_service import is_terminal_produce_error
+    from app.services.production_job_service import (
+        _terminal_error_sql,
+        is_terminal_produce_error,
+    )
 
     shop_look_call = "Bakış yapılamadı (bakış çağrısı)"
     shop_pack = "Paket yok (Aday fotoğraflar bu işi kanıtlamıyor)"
@@ -243,6 +246,9 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
         "429 You have no credits remaining. Add credits to continue using the API"
     )
     assert is_terminal_produce_error(shop_look_call) is False
+    look_sql = _terminal_error_sql("last_error")
+    assert "bakış çağrısı" in look_sql.lower()
+    assert "not ilike" in look_sql.lower()
     assert is_terminal_produce_error(shop_pack) is True
     assert is_terminal_produce_error(beach_pack) is True
     assert is_terminal_produce_error(beach_billing) is True

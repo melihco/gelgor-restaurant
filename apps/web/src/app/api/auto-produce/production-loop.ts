@@ -6416,25 +6416,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       if (missionId && existingArtifactKeys.has(guaranteeDedupeKey)) {
         continue;
       }
+      // Gallery photo is already chosen. Do not buy a $0.15 scene brief
+      // just because no earlier slot needed one.
       let guaranteeSceneBrief = sceneBriefCache.get(gi);
       if (guaranteeSceneBrief === undefined) {
-        if (missionSceneBrief === undefined && aiVisualStandard.enabled) {
-          const guaranteeSceneCaption = [
-            missionVisualBrief ? `Mission: ${missionVisualBrief}` : '',
-            headline ? `Headline: ${headline}` : '',
-            caption ? `Caption: ${caption}` : '',
-          ].filter(Boolean).join('\n') || headline || caption;
-          missionSceneBrief = await fetchProductSceneBrief({
-            workspaceId,
-            missionId: missionId || undefined,
-            caption: guaranteeSceneCaption.slice(0, 1000),
-            productType: String(idea.product_type ?? idea.subject ?? ''),
-            sector: brandBusinessType,
-            mood,
-            enhanceLevel: aiPhotoEnhanceLevel,
-            visualSubject: resolvedVisualSubject as 'venue_ambiance' | 'product_hero' | undefined,
-          });
-        }
         guaranteeSceneBrief = missionSceneBrief ?? null;
         sceneBriefCache.set(gi, guaranteeSceneBrief);
       }
