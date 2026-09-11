@@ -2071,14 +2071,22 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
     sector: input.sector,
     pipeline: input.pipeline,
   });
+  const { isUsableScenePhotoUrl } = await import('@/lib/media-url');
+  const scenePhoto = isUsableScenePhotoUrl(input.referencePhotoUrl)
+    ? input.referencePhotoUrl
+    : undefined;
+  if (groundedRequired && !scenePhoto) {
+    throw new Error('fal designer video: no venue/product gallery photo — will not invent a scene for Kling');
+  }
   const still = await produceFalDesignerStill({
     ...input,
+    referencePhotoUrl: scenePhoto,
     aspectRatio: '9:16',
     pipeline: input.pipeline,
     captionAwareHeadline: input.captionAwareHeadline === true,
-    backgroundStyle: input.referencePhotoUrl?.trim()
+    backgroundStyle: scenePhoto
       ? 'photo_overlay'
-      : resolveBackgroundStyle(input.backgroundStyle, input.referencePhotoUrl),
+      : resolveBackgroundStyle(input.backgroundStyle, scenePhoto),
     backgroundOnlyPlate: false,
     deferLogoComposite: Boolean(input.logoUrl?.trim()),
     requireGroundedGallery: groundedRequired,

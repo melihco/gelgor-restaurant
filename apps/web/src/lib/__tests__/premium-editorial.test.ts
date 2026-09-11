@@ -410,6 +410,40 @@ describe('premium-editorial slot wiring', () => {
   });
 });
 
+describe('premium-editorial gallery pin', () => {
+  it('does not treat a beach or shop logo as the scene photo', async () => {
+    const { resolvePremiumEditorialGalleryMatch } = await import(
+      '@/lib/premium-editorial/gallery-match'
+    );
+    const beach = resolvePremiumEditorialGalleryMatch({
+      headline: 'Day pass',
+      caption: 'Gün batımında iskele',
+      businessType: 'beach_club',
+      outputType: 'story',
+      preferredUrl: 'https://www.sarnicbeach.com/images/logo.png',
+      candidateUrls: [
+        'https://www.sarnicbeach.com/images/logo.png',
+        'https://www.sarnicbeach.com/images/galeri/24.jpg',
+      ],
+    });
+    expect(beach.primaryUrl).toBe('https://www.sarnicbeach.com/images/galeri/24.jpg');
+    expect(beach.match?.reason).not.toBe('preferred_pin');
+
+    const shop = resolvePremiumEditorialGalleryMatch({
+      headline: 'Sızma',
+      caption: 'Sızma zeytinyağı rafta',
+      businessType: 'local_products_shop',
+      outputType: 'post',
+      preferredUrl: 'https://karamandatca.com.tr/wp-content/uploads/logo.png',
+      candidateUrls: [
+        'https://karamandatca.com.tr/wp-content/uploads/logo.png',
+        'https://cdn.example.com/gallery/sizma.jpg',
+      ],
+    });
+    expect(shop.primaryUrl).toBe('https://cdn.example.com/gallery/sizma.jpg');
+  });
+});
+
 describe('premium-editorial retry bounds', () => {
   it('max attempts is 3', () => {
     expect(MAX_IMAGE_GENERATION_ATTEMPTS).toBe(3);

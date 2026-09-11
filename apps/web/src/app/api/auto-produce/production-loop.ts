@@ -3572,13 +3572,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && brandLogoUrl
       && !falGroundedPipeline
     ) {
-      referenceUrl = brandLogoUrl;
-      resolvedReferenceUrl = brandLogoUrl;
-      galleryPreviewUrl = toFeedPreviewUrl(brandLogoUrl) ?? brandLogoUrl;
-      referenceIsStock = false;
-      pickedFromBrandGallery = false;
-      console.log(
-        `[auto-produce] weak gallery (${galleryMatchScore}%) → logo hero fallback: "${headline.slice(0, 40)}"`,
+      console.warn(
+        `[auto-produce] weak gallery — not pinning logo as a scene photo (fal would invent a venue): "${headline.slice(0, 40)}"`,
       );
     } else if (
       weakGallery

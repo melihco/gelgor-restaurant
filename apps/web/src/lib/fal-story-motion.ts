@@ -344,8 +344,14 @@ export async function generateStoryMotionPlate(input: {
   const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) throw new Error('FAL_API_KEY not set — story motion plates unavailable');
 
-  const { resolveExternallyAccessibleUrl, isFalAccessibleMediaUrl } = await import('@/lib/media-url');
+  const { isLikelyBrandLogoUrl, resolveExternallyAccessibleUrl, isFalAccessibleMediaUrl } = await import('@/lib/media-url');
+  if (isLikelyBrandLogoUrl(input.imageUrl)) {
+    throw new Error('fal story motion refused a logo file — I2V would invent a fake venue');
+  }
   const resolvedImageUrl = await resolveExternallyAccessibleUrl(input.imageUrl);
+  if (isLikelyBrandLogoUrl(resolvedImageUrl)) {
+    throw new Error('fal story motion refused a logo file — I2V would invent a fake venue');
+  }
   if (!isFalAccessibleMediaUrl(resolvedImageUrl)) {
     throw new Error(
       `Image URL not accessible to fal.ai (need HTTPS or data URI): ${resolvedImageUrl.slice(0, 120)}`,

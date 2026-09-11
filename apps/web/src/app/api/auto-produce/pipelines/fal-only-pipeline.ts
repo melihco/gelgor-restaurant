@@ -29,7 +29,7 @@ import {
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { serverConfig } from '@/lib/server-config';
-import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { isUsableGalleryPhotoUrl, isUsableScenePhotoUrl } from '@/lib/media-url';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
@@ -142,9 +142,11 @@ export async function produceFalOnlySlot(
       input.brandColors,
       binding?.brandColors,
     );
-    const photoUrl = binding?.referencePhotoUrl
-      ?? input.referencePhotoUrl
-      ?? input.brandReferenceImageUrls?.find((u) => isUsableGalleryPhotoUrl(u));
+    const photoUrl = [
+      binding?.referencePhotoUrl,
+      input.referencePhotoUrl,
+      input.brandReferenceImageUrls?.find((u) => isUsableScenePhotoUrl(u)),
+    ].find((u) => isUsableScenePhotoUrl(u)) ?? null;
     const styleRefs = templateStyleReferenceUrls(
       binding ?? {
         matched: null,
@@ -167,6 +169,19 @@ export async function produceFalOnlySlot(
       hasRealBrandGallery: input.hasRealBrandGallery,
       captionDrivenGenerated: input.captionDrivenGenerated,
     });
+
+    if (groundedRequired && !photoUrl) {
+      return {
+        imageUrl: null,
+        videoUrl: null,
+        falGrafikerScore: null,
+        falGrafikerPass: false,
+        falDesignEngine: null,
+        videoProduceMeta: null,
+        costDelta: 0,
+        failureReason: 'fal_only_video: no venue/product gallery photo — will not invent a scene for Kling',
+      };
+    }
 
     let designFailMsg = '';
     try {
@@ -336,9 +351,11 @@ export async function produceFalOnlySlot(
       input.brandColors,
       binding?.brandColors,
     );
-      const photoUrl = binding?.referencePhotoUrl
-        ?? input.referencePhotoUrl
-        ?? input.brandReferenceImageUrls?.find((u) => isUsableGalleryPhotoUrl(u));
+      const photoUrl = [
+        binding?.referencePhotoUrl,
+        input.referencePhotoUrl,
+        input.brandReferenceImageUrls?.find((u) => isUsableScenePhotoUrl(u)),
+      ].find((u) => isUsableScenePhotoUrl(u)) ?? null;
       const styleRefs = templateStyleReferenceUrls(
         binding ?? {
           matched: null,

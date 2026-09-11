@@ -33,6 +33,7 @@ import {
 } from '@/lib/fal-reel-agency-directives';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
+import { isUsableScenePhotoUrl } from '@/lib/media-url';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
 import {
@@ -141,7 +142,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
     return Boolean(ctx.inputs.referenceUrl);
   },
   run: async ({ inputs, state }) => {
-    const referenceUrl = inputs.referenceUrl;
+    const referenceUrl = isUsableScenePhotoUrl(inputs.referenceUrl)
+      ? inputs.referenceUrl
+      : null;
     if (inputs.hasRealBrandGallery && !referenceUrl) {
       state.pipelineFailureReason =
         'Brand gallery photo required — headline-matched venue photo missing for fal video slot';
@@ -239,7 +242,15 @@ export const falVideoHandler: ProductionPipelineHandler = {
         ),
       });
 
-    const photoUrl = templateBinding.referencePhotoUrl ?? referenceUrl;
+    const photoUrl = [
+      templateBinding.referencePhotoUrl,
+      referenceUrl,
+    ].find((u) => isUsableScenePhotoUrl(u)) ?? null;
+    if (inputs.hasRealBrandGallery && !photoUrl) {
+      state.pipelineFailureReason =
+        'Brand gallery photo required — headline-matched venue photo missing for fal video slot';
+      return;
+    }
     const styleRefs = templateStyleReferenceUrls(templateBinding, inputs.brandReferenceImageUrls);
     const lockOpts = resolveFalTemplateLockOptions({
       binding: templateBinding,

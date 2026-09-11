@@ -13,7 +13,7 @@ import {
   isHardCaptionPhotoConflict,
 } from '@/lib/caption-photo-alignment';
 import { isSlotPhotoNeedUnmet } from '@/lib/catalog-slot-photo-fit';
-import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { isUsableScenePhotoUrl } from '@/lib/media-url';
 
 export interface PremiumEditorialGalleryMatchInput {
   headline: string;
@@ -55,7 +55,7 @@ export function resolvePremiumEditorialGalleryMatch(
   const warnings: string[] = [];
   const candidates = (input.candidateUrls ?? [])
     .map((u) => String(u).trim())
-    .filter((u) => isUsableGalleryPhotoUrl(u));
+    .filter((u) => isUsableScenePhotoUrl(u));
 
   if (!candidates.length) {
     warnings.push('No usable gallery candidates for Premium Editorial.');
@@ -63,7 +63,7 @@ export function resolvePremiumEditorialGalleryMatch(
   }
 
   const preferred = input.preferredUrl?.trim();
-  const preferredUsable = preferred && isUsableGalleryPhotoUrl(preferred) ? preferred : null;
+  const preferredUsable = preferred && isUsableScenePhotoUrl(preferred) ? preferred : null;
 
   const headline = (input.headline || input.contentTopic || '').trim();
   const caption = [
@@ -199,7 +199,7 @@ export function collectGalleryCandidates(opts: {
   const out: string[] = [];
   for (const u of [...pins, ...fromAnalysis, ...fromCtx]) {
     const t = String(u).trim();
-    if (!t || seen.has(t) || !isUsableGalleryPhotoUrl(t)) continue;
+    if (!t || seen.has(t) || !isUsableScenePhotoUrl(t)) continue;
     seen.add(t);
     out.push(t);
   }

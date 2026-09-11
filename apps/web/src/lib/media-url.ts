@@ -394,8 +394,40 @@ export function isUsableGalleryPhotoUrl(url: string | null | undefined): boolean
   return hasLikelyImageAssetPath(trimmed);
 }
 
+/**
+ * Brand mark files (logo.png) are images but not scene photos.
+ * Pinning them as gallery / I2V source makes fal invent a fake venue.
+ */
+export function isLikelyBrandLogoUrl(url: string | null | undefined): boolean {
+  if (!url || typeof url !== 'string') return false;
+  const trimmed = url.trim();
+  const proxied = unwrapMediaProxyTargetUrl(trimmed);
+  if (proxied) return isLikelyBrandLogoUrl(proxied);
+  const hay = decodeURIComponent(trimmed).toLowerCase();
+  if (/\/logo\.(png|jpe?g|webp|svg|gif|avif)(\?|#|$)/i.test(hay)) return true;
+  if (/images\/logo\./i.test(hay)) return true;
+  if (/(^|\/)(brand[-_]?mark|wordmark)(\/|\.|$)/i.test(hay)) return true;
+  try {
+    const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://local.invalid${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`);
+    const key = decodeURIComponent(parsed.searchParams.get('key') ?? '').toLowerCase();
+    if (/\/logo\.(png|jpe?g|webp|svg|gif|avif)$/i.test(key)) return true;
+  } catch {
+    /* not a URL */
+  }
+  return false;
+}
+
+/** Gallery / I2V / look shortlist — logo files stay out of the scene pool. */
+export function isUsableScenePhotoUrl(url: string | null | undefined): boolean {
+  return isUsableGalleryPhotoUrl(url) && !isLikelyBrandLogoUrl(url);
+}
+
 export function filterUsableGalleryPhotoUrls(urls: string[]): string[] {
   return urls.filter(isUsableGalleryPhotoUrl);
+}
+
+export function filterUsableScenePhotoUrls(urls: string[]): string[] {
+  return urls.filter(isUsableScenePhotoUrl);
 }
 
 /** Rendered story/reel MP4 — HEAD-only routes reject these probes. */

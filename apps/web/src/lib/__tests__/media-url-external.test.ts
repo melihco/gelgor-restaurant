@@ -5,6 +5,8 @@ import {
   confirmGalleryPhotoReachableForRender,
   ensureProductionGalleryPhotoUrl,
   isFalAccessibleMediaUrl,
+  isLikelyBrandLogoUrl,
+  isUsableScenePhotoUrl,
   mirrorGalleryPhotoToTenantStorage,
   resolveExternallyAccessibleUrl,
   resolveExternalGalleryPhotoTarget,
@@ -35,6 +37,16 @@ const SARNIC_HTTPS = 'https://www.sarnicbeach.com/images/galeri/23.jpg';
 const LOCALHOST_PROXY =
   `http://localhost:3000/api/media-proxy?url=${encodeURIComponent(SARNIC_HTTPS)}`;
 const RELATIVE_PROXY = `/api/media-proxy?url=${encodeURIComponent(SARNIC_HTTPS)}`;
+
+describe('scene photo vs brand logo', () => {
+  it('rejects beach and shop logo files as scene photos', () => {
+    expect(isLikelyBrandLogoUrl('https://www.sarnicbeach.com/images/logo.png')).toBe(true);
+    expect(isUsableScenePhotoUrl('https://www.sarnicbeach.com/images/logo.png')).toBe(false);
+    expect(isLikelyBrandLogoUrl('https://karamandatca.com.tr/wp-content/uploads/logo.png')).toBe(true);
+    expect(isUsableScenePhotoUrl('https://www.sarnicbeach.com/images/galeri/24.jpg')).toBe(true);
+    expect(isUsableScenePhotoUrl('https://cdn.example.com/gallery/honey-jar.jpg')).toBe(true);
+  });
+});
 
 describe('resolveExternallyAccessibleUrl', () => {
   afterEach(() => {
