@@ -186,7 +186,7 @@ export function buildMoreMenuGroups(opts: {
   if (opts.showAds) {
     growthItems.push({
       label: 'Reklamlar',
-      sub: 'Meta ve Google kampanyaları',
+      sub: 'Meta ve Google kreatifleri',
       iconBg: '#f59e0b',
       iconText: '📣',
       screen: 'ads',

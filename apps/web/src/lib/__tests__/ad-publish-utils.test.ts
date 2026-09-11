@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isDerivedAdCreative, isOrganicFeedArtifact } from '@/lib/ad-publish-utils';
+import {
+  adCreativeCopy,
+  filterPaidAdCreatives,
+  isDerivedAdCreative,
+  isOrganicFeedArtifact,
+} from '@/lib/ad-publish-utils';
 import type { OutputArtifact } from '@/types';
 
 function artifact(meta: Record<string, unknown>, title = 'Post'): OutputArtifact {
@@ -33,5 +38,41 @@ describe('isDerivedAdCreative', () => {
     });
     expect(isDerivedAdCreative(post)).toBe(false);
     expect(isOrganicFeedArtifact(post)).toBe(true);
+  });
+});
+
+describe('filterPaidAdCreatives', () => {
+  it('splits Meta and Google copies with the same card fields (shop + beach)', () => {
+    const shopMeta = artifact({
+      derived_from: 'designed_post',
+      publish_channel: 'meta_ads',
+      production_role: 'paid_ad_creative',
+      ad_headline: 'Erken hasat',
+      ad_primary_text: 'Datça zeytinyağı',
+    }, 'Erken hasat — Meta Ads');
+    const shopGoogle = artifact({
+      derived_from: 'designed_post',
+      publish_channel: 'google_ads',
+      production_role: 'paid_ad_google_creative',
+      ad_headline: 'Erken hasat',
+      ad_primary_text: 'Datça zeytinyağı',
+    }, 'Erken hasat — Google Ads');
+    const beachMeta = artifact({
+      derived_from: 'designed_post',
+      ad_platform: 'meta_ads',
+      production_role: 'paid_ad_creative',
+      ad_headline: 'Gün batımı',
+    }, 'Gün batımı — Meta Ads');
+    const organic = artifact({
+      production_role: 'fal_designed_post',
+      publish_channel: 'instagram_organic',
+    });
+
+    const all = filterPaidAdCreatives([shopMeta, shopGoogle, beachMeta, organic], 'all');
+    expect(all).toHaveLength(3);
+    expect(filterPaidAdCreatives(all, 'google_ads')).toEqual([shopGoogle]);
+    expect(filterPaidAdCreatives(all, 'meta_ads')).toHaveLength(2);
+    expect(adCreativeCopy(shopGoogle).headline).toBe('Erken hasat');
+    expect(adCreativeCopy(beachMeta).headline).toBe('Gün batımı');
   });
 });

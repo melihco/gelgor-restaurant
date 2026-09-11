@@ -148,6 +148,7 @@ async function callVisionCanvasValidator(
     '- Transcribe detected text EXACTLY as painted, including any apostrophes, hyphens, or broken words',
     '- Reject if any word is misspelled, split incorrectly, or contains a misplaced apostrophe (e.g. "Koktey\'ller" instead of "Kokteyller")',
     '- Reject if ANY letter is cut by the frame edge (partial Ö/K/S, truncated first letter). Example FAIL: intended "Sınırlı Süre" but painted/OCR "ınırlı Süre"',
+    '- Reject if word spaces were dropped (e.g. "Visitustoday" vs "Visit us today", "Bitezinhuzuru" vs "Bitez\'in huzuru")',
     '- Reject if detected text is mostly platform/meta words: STORY, REEL, POST, INSTAGRAM, TIKTOK, ÜNLÜ, VIRAL',
     '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
     '- Reject if the text looks like an internal production note (e.g. "…göstereceğiz", "…paylaşacağız") rather than consumer copy',
@@ -220,13 +221,17 @@ async function callVisionCanvasValidator(
   const lowHeadlineSimilarity = detectedHeadline.length >= 4 && headlineSimilarity < 0.55;
   const spellingDeviation = hasWordLevelSpellingDeviation(detectedHeadline, intendedHeadline);
   const edgeClippedHeadline = hasEdgeClippedLeadingGlyph(detectedHeadline, intendedHeadline);
+  const collapsedHeadline = hasCollapsedWordSpacing(detectedHeadline, intendedHeadline);
+  const diacriticHeadline = hasTurkishDiacriticMiss(detectedHeadline, intendedHeadline);
   const headlineValid = (parsed.headline_matches ?? parsed.matches) !== false
     && !incompleteHeadline
     && !metaLeak
     && !metaOnly
     && !lowHeadlineSimilarity
     && !spellingDeviation
-    && !edgeClippedHeadline;
+    && !edgeClippedHeadline
+    && !collapsedHeadline
+    && !diacriticHeadline;
 
   let subtitleValid = true;
   if (intendedSubtitle) {
@@ -234,10 +239,16 @@ async function callVisionCanvasValidator(
     const subtitleSimilarity = quickTextSimilarity(detectedSubtitle, intendedSubtitle);
     const lowSubtitleSimilarity = detectedSubtitle.length >= 4 && subtitleSimilarity < 0.72;
     const edgeClippedSubtitle = hasEdgeClippedLeadingGlyph(detectedSubtitle, intendedSubtitle);
+    const collapsedSubtitle = hasCollapsedWordSpacing(detectedSubtitle, intendedSubtitle);
+    const spellingSubtitle = hasWordLevelSpellingDeviation(detectedSubtitle, intendedSubtitle);
+    const diacriticSubtitle = hasTurkishDiacriticMiss(detectedSubtitle, intendedSubtitle);
     subtitleValid = parsed.subtitle_matches !== false
       && !incompleteSubtitle
       && !lowSubtitleSimilarity
-      && !edgeClippedSubtitle;
+      && !edgeClippedSubtitle
+      && !collapsedSubtitle
+      && !spellingSubtitle
+      && !diacriticSubtitle;
   }
 
   return {
@@ -256,7 +267,11 @@ async function callVisionCanvasValidator(
             ? 'detected meta-only canvas text'
             : metaLeak
               ? 'detected platform meta word'
-              : spellingDeviation
+              : collapsedHeadline
+                ? `collapsed word spacing (detected="${detectedHeadline.slice(0, 40)}")`
+          : diacriticHeadline
+                ? `turkish diacritic miss (detected="${detectedHeadline.slice(0, 40)}")`
+          : spellingDeviation
                 ? `word-level spelling deviation (detected="${detectedHeadline.slice(0, 40)}")`
                 : lowHeadlineSimilarity
                   ? `headline too different (similarity=${headlineSimilarity.toFixed(2)})`
@@ -267,6 +282,46 @@ async function callVisionCanvasValidator(
           : `subtitle mismatch (detected="${detectedSubtitle.slice(0, 30)}")`)
         : parsed.reason,
   };
+}
+
+/**
+ * Painted line dropped the spaces the pack wrote.
+ * Global similarity ignores whitespace, so "Visitustoday" ≈ "Visit us today".
+ */
+export function hasCollapsedWordSpacing(detected: string, intended: string): boolean {
+  const intendedWords = intended.trim().split(/\s+/).filter(Boolean);
+  if (intendedWords.length < 2) return false;
+  const detectedWords = detected.trim().split(/\s+/).filter(Boolean);
+  if (detectedWords.length === 0) return false;
+  const letters = (s: string) => s.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]/gu, '');
+  const intendedJoined = letters(intendedWords.join(''));
+  const detectedJoined = letters(detected);
+  if (intendedJoined.length < 8 || detectedJoined.length < 8) return false;
+  if (intendedJoined !== detectedJoined) return false;
+  return detectedWords.length < intendedWords.length;
+}
+
+/**
+ * Same letters after ASCII-fold, different Turkish marks.
+ * Similarity lets "Sinirli Süre" through against "Sınırlı Süre".
+ */
+export function hasTurkishDiacriticMiss(detected: string, intended: string): boolean {
+  const letters = (s: string) => s.toLocaleLowerCase('tr-TR').replace(/[^\p{L}\p{N}]/gu, '');
+  const a = letters(detected);
+  const b = letters(intended);
+  if (!a || !b || a === b) return false;
+  if (a.length < 5 || b.length < 5) return false;
+  return foldTurkishMarks(a) === foldTurkishMarks(b);
+}
+
+function foldTurkishMarks(s: string): string {
+  return s
+    .replace(/ı/g, 'i')
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c');
 }
 
 /**

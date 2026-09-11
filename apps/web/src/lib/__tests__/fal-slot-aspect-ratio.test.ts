@@ -20,6 +20,12 @@ describe('resolveFalSlotAspectRatio', () => {
   it('keeps feed posts at 4:5', () => {
     expect(resolveFalSlotAspectRatio({ pipeline: 'fal_designed_post' })).toBe('4:5');
     expect(resolveFalSlotAspectRatio({ slotRole: 'designed_post' })).toBe('4:5');
+    expect(resolveFalSlotAspectRatio({
+      pipeline: 'fal_design',
+      slotRole: 'fal_designed_post',
+      kind: 'instagram_reel',
+      formatHint: 'reel',
+    })).toBe('4:5');
   });
 
   it('paid ads stay 4:5 even if reel-like keywords appear elsewhere', () => {

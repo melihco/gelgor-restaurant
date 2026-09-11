@@ -338,6 +338,7 @@ import {
 } from '@/lib/gallery-first-production';
 import {
   describeFeedSlotLookIssues,
+  isLookedFeedSlotPersistable,
   shouldLookFeedSlotPack,
   shouldSkipFeedMeaningRematch,
 } from '@/lib/feed-slot-look';
@@ -446,6 +447,7 @@ import {
   CAROUSEL_MIN_SLIDES,
   CAROUSEL_TARGET_SLIDES,
   isCarouselAssignment,
+  keepAsInstagramCarousel,
   fillCarouselPhotoPool,
   attachReelPhotoRefs,
 } from './handlers/slot-utils';
@@ -2125,6 +2127,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
 
     if (!caption && !headline && !preassignedGalleryUrl) {
       results.push({ title: '(empty idea)', imageUrl: '', error: 'No caption or headline', slotKey });
+      continue;
+    }
+
+    if (!isLookedFeedSlotPersistable(assignment, lockedFeedSlotPack)) {
+      results.push({
+        title: headline || '(empty idea)',
+        imageUrl: '',
+        error: 'Paket yok',
+        slotKey,
+      });
       continue;
     }
 
@@ -5197,14 +5209,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && Boolean(referenceUrl && imageUrl && imageUrl !== referenceUrl)
       && !designedPosterReady;
 
-    // Carousel degradation: <2 slides, or branded composite → single feed post (not IG carousel)
-    const carouselPublishAsFeed = isCarousel
-      && carouselUrls.length >= 2
-      && (markyBranded || designedPosterReady);
-    let effectiveKind = (isCarousel && carouselUrls.length < 2) || carouselPublishAsFeed
+    // ≥2 slides stay a swipe carousel. Designed hero is slide 1 — do not
+    // flatten the rest into a single feed post.
+    const carouselPublishAsFeed = isCarousel && !keepAsInstagramCarousel(carouselUrls.length);
+    let effectiveKind = carouselPublishAsFeed
       ? 'instagram_post'
       : kind;
-    let effectiveFmt = (isCarousel && carouselUrls.length < 2) || carouselPublishAsFeed
+    let effectiveFmt = carouselPublishAsFeed
       ? 'post'
       : fmt;
     if (adHocBrief && pkgFmt === 'story') {

@@ -23,6 +23,8 @@ const PACK_ISSUE_TO_BIND: Record<FeedSlotPackIssue, BindFailureCode> = {
   prop_cannot_sell: 'prop_cannot_sell',
   product_needs_identity: 'product_needs_identity',
   place_cannot_sell: 'place_cannot_sell',
+  copy_misses_evidence: 'copy_misses_evidence',
+  empty_place_command: 'empty_place_command',
 };
 
 const BIND_MESSAGE: Record<BindFailureCode, string> = {
@@ -35,6 +37,8 @@ const BIND_MESSAGE: Record<BindFailureCode, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
+  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  empty_place_command: 'Yer kartında emir slogan yok',
   look_unavailable: 'Bakış yapılamadı',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',
   incomplete_headline: 'Üst yazı yarım kaldı',

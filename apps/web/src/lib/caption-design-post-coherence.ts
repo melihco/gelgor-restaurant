@@ -58,6 +58,11 @@ export interface CaptionDesignPostCoherenceInput {
   channel?: 'reel' | 'feed_post' | 'story';
   /** Catalog slot — hiring/plated families fail-closed on the wrong photo class. */
   catalogSlotKey?: string | null;
+  /**
+   * Paint-time may rebias an ungrounded overlay. Publish-time must judge the
+   * painted headline as-is — a repaired line is not what the customer sees.
+   */
+  allowRepair?: boolean;
 }
 
 export interface CaptionDesignPostCoherenceResult {
@@ -145,8 +150,9 @@ export function evaluateCaptionDesignPostCoherence(
   let repaired = false;
 
   const channel = input.channel ?? 'feed_post';
+  const allowRepair = input.allowRepair !== false;
 
-  if (caption.length >= 24 && overlay) {
+  if (allowRepair && caption.length >= 24 && overlay) {
     if (
       hasCaptionHeadlineThemeConflict(caption, overlay)
       || !overlayHeadlineGroundedInCaption(overlay, caption)
@@ -173,7 +179,11 @@ export function evaluateCaptionDesignPostCoherence(
 
   // Second pass — force a caption-derived punchline so overlay_ungrounded does not
   // exhaust the factory slot when a short theme line exists in the publish caption.
-  if (overlayLooksBad(overlay, brandName, caption, input.businessType) && caption.length >= 24) {
+  if (
+    allowRepair
+    && overlayLooksBad(overlay, brandName, caption, input.businessType)
+    && caption.length >= 24
+  ) {
     const maxLen = channel === 'reel' ? 22 : channel === 'story' ? 28 : 32;
     const themePunch = extractCaptionThemePunchline({
       caption,
@@ -311,4 +321,67 @@ export function canShipCaptionDesignPost(
 export function isHardDesignWithholdBreak(breaks: readonly CoherenceBreak[]): boolean {
   return breaks.includes('photo_theme_conflict')
     || breaks.includes('design_sample_theme_conflict');
+}
+
+/**
+ * Publish-time: caption ↔ painted headline fights also hide the card.
+ * Overlay-only "meaningless/ungrounded" may still have a photo-first still.
+ */
+export function isPublishCoherenceBlock(breaks: readonly CoherenceBreak[]): boolean {
+  return isHardDesignWithholdBreak(breaks)
+    || breaks.includes('overlay_theme_conflict')
+    || breaks.includes('overlay_ungrounded');
+}
+
+function readGalleryMeta(raw: unknown): GalleryPhotoMeta | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  return raw as GalleryPhotoMeta;
+}
+
+/** Bound package on a produced artifact — null when there is nothing to judge. */
+export function coherenceInputFromPublishArtifact(
+  meta: Record<string, unknown>,
+  content: Record<string, unknown>,
+): CaptionDesignPostCoherenceInput | null {
+  const caption = String(content.caption ?? meta.caption ?? '').trim();
+  const overlayHeadline = String(
+    content.design_overlay_headline
+    ?? meta.design_overlay_headline
+    ?? content.headline
+    ?? meta.headline
+    ?? '',
+  ).trim();
+  if (caption.length < 12 && !overlayHeadline) return null;
+
+  const galleryMeta = readGalleryMeta(meta.gallery_photo_meta);
+  const photoUrl = String(
+    meta.reference_photo_url
+    ?? meta.gallery_photo_url
+    ?? '',
+  ).trim() || (galleryMeta ? 'bound://gallery' : '');
+  const matchQuality = String(meta.brand_design_template_match_quality ?? '').toLowerCase();
+
+  return {
+    caption,
+    overlayHeadline,
+    brandName: String(meta.brand_name ?? '').trim() || undefined,
+    businessType: String(meta.business_type ?? meta.sector ?? '').trim() || undefined,
+    photoUrl: photoUrl || undefined,
+    galleryMeta,
+    designSampleHeadline: String(
+      meta.brand_design_template_sample_headline ?? '',
+    ).trim() || undefined,
+    designMatchIsSoft: matchQuality === 'soft' || matchQuality === 'format_fallback',
+    catalogSlotKey: String(meta.catalog_slot_key ?? '').trim() || undefined,
+  };
+}
+
+/** Re-run the paint gate on a saved artifact. Null = not enough package fields. */
+export function evaluateArtifactPublishCoherence(
+  meta: Record<string, unknown>,
+  content: Record<string, unknown>,
+): CaptionDesignPostCoherenceResult | null {
+  const input = coherenceInputFromPublishArtifact(meta, content);
+  if (!input) return null;
+  return evaluateCaptionDesignPostCoherence({ ...input, allowRepair: false });
 }

@@ -10,6 +10,11 @@
 
 import { buildProductionQualityScorecard } from '@/lib/production-quality-scorecard';
 import { GALLERY_THEME_MISMATCH_CODE } from '@/lib/production-slot-failures';
+import {
+  evaluateArtifactPublishCoherence,
+  isPublishCoherenceBlock,
+} from '@/lib/caption-design-post-coherence';
+import { isStampedFeedSlotPackVisible } from '@/lib/feed-slot-pack';
 import type { OutputArtifact } from '@/types';
 
 export type PublishReadyBlockCode =
@@ -17,10 +22,12 @@ export type PublishReadyBlockCode =
   | 'publish_blocked'
   | 'quality_hard_block'
   | 'gallery_theme_mismatch'
+  | 'caption_design_incoherent'
   | 'designed_visual_required'
   | 'reel_video_required'
   | 'bundle_failed'
-  | 'not_ready';
+  | 'not_ready'
+  | 'incomplete_pack';
 
 export type PublishReadyDecision = {
   ready: boolean;
@@ -145,7 +152,8 @@ export function resolveArtifactPublishReady(input: {
       stampedCode === 'not_ready' && hasDesignedOrAgencyVisual(meta);
     // Quality stamps freeze the produce-time scorecard. Grafiker floor and
     // typography keys moved; a 9/10 post stayed hidden as "metin yarım".
-    const recomputeQuality = stampedCode === 'quality_hard_block';
+    const recomputeQuality = stampedCode === 'quality_hard_block'
+      || stampedCode === 'caption_design_incoherent';
     if (!staleNotReady && !recomputeQuality) {
       return {
         ready: false,
@@ -154,6 +162,15 @@ export function resolveArtifactPublishReady(input: {
         code: 'publish_blocked',
       };
     }
+  }
+
+  if (!isStampedFeedSlotPackVisible(meta)) {
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: 'Paket yarım — vitrine düşmez',
+      code: 'incomplete_pack',
+    };
   }
 
   const mismatch =
@@ -175,6 +192,19 @@ export function resolveArtifactPublishReady(input: {
     content: JSON.stringify(content),
     metadata: meta,
   } as OutputArtifact);
+  const coherence = evaluateArtifactPublishCoherence(meta, content);
+  if (coherence && isPublishCoherenceBlock(coherence.breaks)) {
+    const photoFight = coherence.breaks.includes('photo_theme_conflict');
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: photoFight
+        ? 'Yazı, foto ve başlık aynı işi anlatmıyor'
+        : 'Yazı, şablon ve başlık aynı işi anlatmıyor',
+      code: 'caption_design_incoherent',
+    };
+  }
+
   const scorecard = buildProductionQualityScorecard(stub, meta);
   if (scorecard.hardBlock) {
     return {

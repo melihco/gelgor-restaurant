@@ -125,7 +125,9 @@ export function MoreMenuPanel({
     connectedCount,
     integrationTotal,
     showGoogleReviews: growthGates.showGoogleReviews,
-    showAds: growthGates.showAds,
+    // Weekly missions always mint Meta+Google copies — menu is the viewing home.
+    // Connection only gates send, not the screen.
+    showAds: true,
     notificationCount,
   });
 

@@ -89,6 +89,9 @@ describe('library template production standard', () => {
     expect(allowSoftTemplateFallbackForCatalogPin(null)).toBe(true);
     expect(allowSoftTemplateFallbackForCatalogPin('')).toBe(true);
     expect(allowSoftTemplateFallbackForCatalogPin('beach_club_atmosphere_reel')).toBe(false);
+    expect(allowSoftTemplateFallbackForCatalogPin('beach_club_atmosphere_reel', 'post')).toBe(false);
+    expect(allowSoftTemplateFallbackForCatalogPin('local_products_shop_product_detail_reel', 'reel')).toBe(false);
+    expect(allowSoftTemplateFallbackForCatalogPin('local_products_shop_product_detail_reel', 'post')).toBe(true);
   });
 
   it('requires replica for hard/soft matches only', () => {

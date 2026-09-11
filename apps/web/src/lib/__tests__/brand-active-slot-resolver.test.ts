@@ -1519,6 +1519,9 @@ describe('alignAssignmentToCatalogSlotKey', () => {
     expect(inferFormatFromCatalogSlotKey('beach_club_day_pass_story')).toBe('story');
     expect(inferFormatFromCatalogSlotKey('beach_club_event_aftermovie_reel')).toBe('reel');
     expect(inferFormatFromCatalogSlotKey('local_products_shop_harvest_post')).toBe('post');
+    expect(inferFormatFromCatalogSlotKey('local_products_shop_product_detail_reel')).toBe('post');
+    expect(inferFormatFromCatalogSlotKey('local_products_shop_shop_tour_reel')).toBe('post');
+    expect(inferFormatFromCatalogSlotKey('local_products_shop_craft_process_reel')).toBe('post');
   });
 
   it('repairs fal_reel + day_pass_story drift to fal_story', () => {
@@ -1547,10 +1550,116 @@ describe('alignAssignmentToCatalogSlotKey', () => {
         copy_bundle_id: 'week',
         publish_channel: 'instagram_organic',
       },
-      'local_products_shop_atelier_process_reel',
+      'beach_club_event_aftermovie_reel',
     );
     expect(aligned.pipeline).toBe('fal_reel');
     expect(String(aligned.slot_role)).toMatch(/reel/);
+  });
+
+  it('paints shop catalog reels as designed posts; beach reels stay reels', () => {
+    const shop = alignAssignmentToCatalogSlotKey(
+      {
+        idea_index: 4,
+        slot_role: 'organic_reel',
+        pipeline: 'fal_reel',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+      },
+      'local_products_shop_product_detail_reel',
+    );
+    expect(shop.pipeline).toBe('fal_design');
+    expect(shop.slot_role).toBe('fal_designed_post');
+    expect(shop.catalog_slot_key).toBe('local_products_shop_product_detail_reel');
+    expect(shop.rationale).toMatch(/catalog_reel_as_designed_post/);
+
+    const beach = alignAssignmentToCatalogSlotKey(
+      {
+        idea_index: 5,
+        slot_role: 'organic_reel',
+        pipeline: 'fal_reel',
+        copy_bundle_id: 'week',
+        publish_channel: 'instagram_organic',
+      },
+      'beach_club_venue_walkthrough_reel',
+    );
+    expect(beach.pipeline).toBe('fal_reel');
+    expect(String(beach.slot_role)).toMatch(/reel/);
+  });
+});
+
+describe('enrich shop catalog reels as designed posts', () => {
+  it('stamps produce format post on shop reel keys; beach reel stays reel', () => {
+    const shopSlot = mockSlot('local_products_shop_product_detail_reel', 'reel', {
+      design_template_type: 'menu_highlight',
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+    });
+    const beachSlot = mockSlot('beach_club_venue_walkthrough_reel', 'reel', {
+      design_template_type: 'venue_showcase',
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+    });
+    const shopSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-shop-reel-as-post',
+      sector: 'local_products_shop',
+      sectorSlots: [shopSlot],
+      tenantAssignments: [mockAssignment(shopSlot.slot_key, true, shopSlot)],
+    });
+    const beachSet = resolveBrandActiveSlotKeys({
+      workspaceId: 'ws-beach-reel',
+      sector: 'beach_club',
+      sectorSlots: [beachSlot],
+      tenantAssignments: [mockAssignment(beachSlot.slot_key, true, beachSlot)],
+    });
+
+    const shopQueue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Ürün detay',
+          content_type: 'instagram_reel',
+          catalog_slot_key: shopSlot.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'organic_reel',
+          pipeline: 'fal_reel',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: shopSlot.slot_key,
+        },
+      }],
+      shopSet,
+    );
+    expect(shopQueue[0]!.assignment.slot_role).toBe('fal_designed_post');
+    expect(shopQueue[0]!.assignment.pipeline).toBe('fal_design');
+    expect(shopQueue[0]!.idea.format).toBe('post');
+    expect(shopQueue[0]!.idea.content_type).toBe('instagram_post');
+
+    const beachQueue = enrichProductionQueueWithBrandSlots(
+      [{
+        queueIndex: 0,
+        ideaIndex: 0,
+        idea: {
+          headline: 'Mekan turu',
+          content_type: 'instagram_reel',
+          catalog_slot_key: beachSlot.slot_key,
+        },
+        assignment: {
+          idea_index: 0,
+          slot_role: 'organic_reel',
+          pipeline: 'fal_reel',
+          copy_bundle_id: 'week',
+          publish_channel: 'instagram_organic',
+          catalog_slot_key: beachSlot.slot_key,
+        },
+      }],
+      beachSet,
+    );
+    expect(String(beachQueue[0]!.assignment.slot_role)).toMatch(/reel/);
+    expect(beachQueue[0]!.assignment.pipeline).toBe('fal_reel');
+    expect(beachQueue[0]!.idea.format).toBe('reel');
   });
 });
 

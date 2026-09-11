@@ -66,6 +66,45 @@ export function adPlatformShortLabel(channel: AdPublishChannel | null | undefine
   return 'Reklam';
 }
 
+export type AdCreativePlatformFilter = 'all' | AdPublishChannel;
+
+/** Weekly Meta/Google copies — same list, optional platform chip. */
+export function filterPaidAdCreatives(
+  artifacts: OutputArtifact[],
+  platform: AdCreativePlatformFilter = 'all',
+): OutputArtifact[] {
+  return artifacts.filter((artifact) => {
+    if (!isPaidAdArtifact(artifact)) return false;
+    if (platform === 'all') return true;
+    return adChannelFromArtifact(artifact) === platform;
+  });
+}
+
+export function adCreativeCopy(artifact: OutputArtifact): {
+  headline: string;
+  primaryText: string;
+} {
+  const meta = parseArtifactMetadata(artifact.metadata);
+  const content = parseArtifactContent(artifact.content);
+  const headline = String(
+    meta.ad_headline
+    ?? content.headline
+    ?? artifact.title
+    ?? '',
+  ).trim();
+  const primaryText = String(
+    meta.ad_primary_text
+    ?? content.caption
+    ?? '',
+  ).trim();
+  return { headline, primaryText };
+}
+
+export function adPlatformAccent(channel: AdPublishChannel | null | undefined): string {
+  if (channel === 'google_ads') return '#4285F4';
+  return '#1877F2';
+}
+
 export function adPublishReady(meta: Record<string, unknown>, channel: AdPublishChannel): boolean {
   if (channel === 'meta_ads') return meta.meta_ads_ready === true;
   if (channel === 'google_ads') return meta.google_ads_ready === true;

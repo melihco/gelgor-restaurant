@@ -53,6 +53,36 @@ describe('design-spec-shell-compose', () => {
     expect(plan.texts[0]!.box.width).toBeGreaterThan(200);
   });
 
+  it('shop: unused product footer scrim drops when there is no subtitle', () => {
+    const layout = resolveShellLayout({
+      archetypeId: 'product_hero_card',
+      format: 'post',
+    });
+    const plan = planDesignSpecShell({
+      layout: layout!,
+      headline: 'Ayva reçeli',
+      brandColors: { primary: '#3d2b1f', accent: '#6b8f3e' },
+    });
+    expect(plan.panels.every((p) => p.box.y < layout!.canvas.height * 0.4)).toBe(true);
+    expect(plan.panels[0]!.box.width).toBeLessThan(layout!.canvas.width * 0.72);
+  });
+
+  it('beach: cinematic scrim hugs Deniz duruyor, not a half-frame slab', () => {
+    const layout = resolveShellLayout({
+      archetypeId: 'cinematic_full_bleed',
+      format: 'post',
+    });
+    const plan = planDesignSpecShell({
+      layout: layout!,
+      headline: 'Deniz duruyor',
+      brandColors: { primary: '#0b4f6c', accent: '#e8c07a' },
+    });
+    const scrim = plan.panels.find((p) => p.role === 'scrim');
+    expect(scrim).toBeTruthy();
+    expect(scrim!.box.width).toBeLessThan(layout!.canvas.width * 0.55);
+    expect(scrim!.box.height).toBeLessThan(layout!.canvas.height * 0.14);
+  });
+
   it('scrim text is cream; product color block uses readable ink or cream', () => {
     expect(textColorForPanel('scrim', { primary: '#3d2b1f', accent: '#6b8f3e' })).toBe('#F4EFE6');
     expect(panelFillForRole('scrim', { primary: '#0b4f6c', accent: '#e8c07a' })).toMatch(/rgba\(12,10,8/);

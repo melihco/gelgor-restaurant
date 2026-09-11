@@ -15,6 +15,7 @@ import {
   rankPhotosForContent,
   buildGalleryLookup,
   pickScoredCarouselSlides,
+  catalogSlotWantsRangeSlides,
   isHardGalleryThemeMismatch,
   resolveGalleryPhotoMeta,
   preferSubjectAlignedCandidates,
@@ -735,6 +736,33 @@ describe('local product carousel — honey caption must not pick olive oil', () 
     expect(slides.length).toBeGreaterThanOrEqual(2);
     expect(slides.every((s) => s.url !== OIL_PHOTO)).toBe(true);
     expect(new Set(slides.map((s) => s.url)).size).toBe(slides.length);
+  });
+
+  it('catalogSlotWantsRangeSlides is true for shop range and beach moments', () => {
+    expect(catalogSlotWantsRangeSlides('local_products_shop_product_range_carousel')).toBe(true);
+    expect(catalogSlotWantsRangeSlides('beach_club_guest_moments_carousel')).toBe(true);
+    expect(catalogSlotWantsRangeSlides('local_products_shop_product_hero_post')).toBe(false);
+  });
+
+  it('range carousel keeps the caption hero then fills a different product', () => {
+    const slides = pickScoredCarouselSlides(
+      {
+        caption: 'Datça\'nın en özel süzme çiçek balını keşfedin',
+        headline: 'Saf Lezzet',
+        businessType: 'local_products_shop',
+        subjectKey: 'honey',
+        contentType: 'carousel',
+      },
+      [OIL_PHOTO, HONEY_PHOTO],
+      gallery,
+      [],
+      4,
+      STRONG_MATCH_SCORE,
+      { minCount: 2, diversityAfterFirst: true },
+    );
+    expect(slides[0]?.url).toBe(HONEY_PHOTO);
+    expect(slides.some((s) => s.url === OIL_PHOTO)).toBe(true);
+    expect(slides.length).toBeGreaterThanOrEqual(2);
   });
 
   it('preferSubjectAlignedCandidates keeps only primarySubject matches', () => {

@@ -1,6 +1,7 @@
 import { shouldPreserveVenuePhotos, shouldUpscaleSmallGalleryPhoto } from '@/lib/venue-photo-policy';
 import {
   pickScoredCarouselSlides,
+  catalogSlotWantsRangeSlides,
   MIN_ACCEPT_SCORE,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
@@ -627,7 +628,10 @@ export async function generateVibeCarousel(opts: {
     localUsed,
     opts.count,
     opts.minScore ?? MIN_ACCEPT_SCORE,
-    { minCount: minSlides },
+    {
+      minCount: minSlides,
+      diversityAfterFirst: catalogSlotWantsRangeSlides(opts.catalogSlotKey),
+    },
   );
   let picked = scored.map((r) => r.url);
 
@@ -642,7 +646,10 @@ export async function generateVibeCarousel(opts: {
       localUsed,
       opts.count,
       MIN_ACCEPT_SCORE,
-      { minCount: minSlides },
+      {
+        minCount: minSlides,
+        diversityAfterFirst: catalogSlotWantsRangeSlides(opts.catalogSlotKey),
+      },
     );
     if (relaxed.length > picked.length) {
       picked = relaxed.map((r) => r.url);
@@ -658,7 +665,11 @@ export async function generateVibeCarousel(opts: {
       localUsed,
       Math.max(opts.count, minSlides),
       MIN_ACCEPT_SCORE,
-      { minCount: minSlides, secondaryMinScore: 16 },
+      {
+        minCount: minSlides,
+        secondaryMinScore: 16,
+        diversityAfterFirst: catalogSlotWantsRangeSlides(opts.catalogSlotKey),
+      },
     );
     if (retry.length > picked.length) {
       picked = retry.map((r) => r.url);

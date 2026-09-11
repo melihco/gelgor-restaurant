@@ -104,8 +104,15 @@ export function buildProductionQualityScorecard(
   // Raising this back to the pass threshold needs the scorer's agreement with
   // human review measured first.
   if (!hardBlock && grafikerScore != null && grafikerScore <= GRAFIKER_HARD_FLOOR) {
-    hardBlock = true;
-    hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
+    const galleryCarousel = String(meta.pipeline ?? '').toLowerCase() === 'carousel_gallery'
+      && String(meta.production_role ?? '').toLowerCase() === 'organic_carousel'
+      && meta.fal_designer_produced !== true;
+    if (galleryCarousel) {
+      softWarnings.push('Carousel henüz kapak tasarımı olmadan galeri slaytları');
+    } else {
+      hardBlock = true;
+      hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
+    }
   }
 
   if (

@@ -533,6 +533,46 @@ describe('selectBrandDesignTemplate — format gate', () => {
     expect(beachSel?.record.id).toBe('moments_carousel');
   });
 
+  it('archived shop carousel shell still hard-pins when no active row exists', () => {
+    const archived = [
+      tpl({
+        id: 'range_archived',
+        template_type: 'menu_highlight',
+        format: 'post',
+        status: 'archived',
+        catalog_slot_key: 'local_products_shop_product_range_carousel',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(archived, {
+      slotRole: 'organic_carousel',
+      format: 'carousel',
+      catalogSlotKey: 'local_products_shop_product_range_carousel',
+    });
+    expect(sel?.matchQuality).toBe('hard');
+    expect(sel?.record.id).toBe('range_archived');
+  });
+
+  it('archived beach carousel shell still hard-pins when no active row exists', () => {
+    const archived = [
+      tpl({
+        id: 'moments_archived',
+        template_type: 'venue_showcase',
+        format: 'post',
+        status: 'archived',
+        catalog_slot_key: 'beach_club_guest_moments_carousel',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const sel = selectBrandDesignTemplate(archived, {
+      slotRole: 'organic_carousel',
+      format: 'carousel',
+      catalogSlotKey: 'beach_club_guest_moments_carousel',
+    });
+    expect(sel?.matchQuality).toBe('hard');
+    expect(sel?.record.id).toBe('moments_archived');
+  });
+
   it('legacy carousel key stored as post still hard-pins; foreign post shells do not', () => {
     const active = [
       tpl({
@@ -622,6 +662,63 @@ describe('selectBrandDesignTemplate — off-season special-day exclude', () => {
       announcementType: 'event_teaser',
     });
     expect(sel?.record.id).toBe('imminent');
+  });
+});
+
+describe('selectBrandDesignTemplate — shop catalog reel as post', () => {
+  it('soft-binds a post shell when the shop reel key has no post replica (beach stays fail-closed)', () => {
+    const shop = [
+      tpl({
+        id: 'hero_post',
+        template_type: 'menu_highlight',
+        format: 'post',
+        catalog_slot_key: 'local_products_shop_product_hero_post',
+        design_spec: purposeSpec(),
+        usage_count: 20,
+      }),
+      tpl({
+        id: 'detail_reel_cover',
+        template_type: 'menu_highlight',
+        format: 'reel_cover',
+        catalog_slot_key: 'local_products_shop_product_detail_reel',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    const shopSel = selectBrandDesignTemplate(shop, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'local_products_shop_product_detail_reel',
+    });
+    expect(shopSel?.record.id).toBe('hero_post');
+    expect(shopSel?.matchQuality).toBe('soft');
+
+    const beach = [
+      tpl({
+        id: 'sunset_post',
+        template_type: 'venue_showcase',
+        format: 'post',
+        catalog_slot_key: 'beach_club_sunset_golden_post',
+        design_spec: purposeSpec(),
+        usage_count: 40,
+      }),
+      tpl({
+        id: 'walk_reel',
+        template_type: 'venue_showcase',
+        format: 'reel_cover',
+        catalog_slot_key: 'beach_club_venue_walkthrough_reel',
+        design_spec: purposeSpec(),
+      }),
+    ];
+    expect(selectBrandDesignTemplate(beach, {
+      slotRole: 'organic_reel',
+      format: 'reel',
+      catalogSlotKey: 'beach_club_venue_walkthrough_reel',
+    })?.record.id).toBe('walk_reel');
+    expect(selectBrandDesignTemplate(beach, {
+      slotRole: 'fal_designed_post',
+      format: 'post',
+      catalogSlotKey: 'beach_club_venue_walkthrough_reel',
+    })).toBeNull();
   });
 });
 

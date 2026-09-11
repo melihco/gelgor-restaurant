@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type OpenAI from 'openai';
 import {
   isCampaignSentenceLock,
+  isLookedFeedSlotPersistable,
   lookFeedSlotPack,
   lookSystemPrompt,
   shouldLookFeedSlotPack,
@@ -255,6 +256,52 @@ describe('feed-slot-look — shop + beach', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('shop + beach: looked stills persist only with a full pack; reel/campaign do not need one', () => {
+    const shopWeekly = {
+      slot_role: 'fal_designed_post',
+      pipeline: 'fal_design',
+      catalog_slot_key: 'local_products_shop_product_hero_post',
+      publish_channel: 'instagram_organic',
+    };
+    const beachWeekly = {
+      slot_role: 'fal_designed_post',
+      pipeline: 'fal_design',
+      catalog_slot_key: 'beach_club_sunset_ambiance_story',
+      publish_channel: 'instagram_organic',
+    };
+    const fullShop = {
+      slotJob: 'ürün hero',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      photoRole: 'product_for_sale' as const,
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+      headline: 'Sızma zeytinyağımız raflarda',
+      shellDirection: 'product_hero' as const,
+      evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+    };
+    const fullBeach = {
+      slotJob: 'gün batımı',
+      photoUrl: 'https://cdn.example.com/pier.jpg',
+      photoRole: 'venue' as const,
+      caption: 'Deniz duruyor. Kenarda kalın.',
+      headline: 'Deniz duruyor',
+      shellDirection: 'venue_ambiance' as const,
+      evidenceNote: 'iskele, açık deniz ufku',
+    };
+    expect(isLookedFeedSlotPersistable(shopWeekly, fullShop)).toBe(true);
+    expect(isLookedFeedSlotPersistable(shopWeekly, null)).toBe(false);
+    expect(isLookedFeedSlotPersistable(beachWeekly, fullBeach)).toBe(true);
+    expect(isLookedFeedSlotPersistable(beachWeekly, null)).toBe(false);
+    expect(isLookedFeedSlotPersistable({
+      slot_role: 'organic_reel',
+      pipeline: 'fal_reel',
+    }, null)).toBe(true);
+    expect(isLookedFeedSlotPersistable({
+      slot_role: 'offer_campaign_post',
+      pipeline: 'fal_design',
+      catalog_slot_key: 'local_products_shop_offer_campaign_post',
+    }, null)).toBe(true);
+  });
+
   it('does not look at reels and locks meaning rematch after a valid pack', () => {
     expect(shouldLookFeedSlotPack({ slot_role: 'organic_reel', pipeline: 'fal_reel' })).toBe(false);
     expect(shouldLookFeedSlotPack({
@@ -307,18 +354,30 @@ describe('feed-slot-look — shop + beach', () => {
       catalog_slot_key: 'beach_club_weekend_hours_story',
       publish_channel: 'instagram_organic',
     })).toBe(true);
-  });
-
-  it('does not mix a locked campaign sentence into the weekly pack', () => {
-    expect(isCampaignSentenceLock({
-      slot_role: 'premium_editorial_campaign_post',
+    expect(shouldLookFeedSlotPack({
+      slot_role: 'premium_editorial_campaign_story',
       pipeline: 'premium_editorial',
-      catalog_slot_key: 'local_products_shop_premium_editorial_campaign_post',
+      catalog_slot_key: 'local_products_shop_premium_editorial_campaign_story',
+      publish_channel: 'instagram_organic',
     })).toBe(true);
     expect(shouldLookFeedSlotPack({
       slot_role: 'premium_editorial_campaign_post',
       pipeline: 'premium_editorial',
-      catalog_slot_key: 'local_products_shop_premium_editorial_campaign_post',
+      catalog_slot_key: 'beach_club_premium_editorial_campaign_post',
+      publish_channel: 'instagram_organic',
+    })).toBe(true);
+  });
+
+  it('does not mix a locked campaign sentence into the weekly pack', () => {
+    expect(isCampaignSentenceLock({
+      slot_role: 'offer_campaign_post',
+      pipeline: 'fal_design',
+      catalog_slot_key: 'local_products_shop_offer_campaign_post',
+    })).toBe(true);
+    expect(shouldLookFeedSlotPack({
+      slot_role: 'offer_campaign_post',
+      pipeline: 'fal_design',
+      catalog_slot_key: 'local_products_shop_offer_campaign_post',
     })).toBe(false);
     expect(shouldLookFeedSlotPack({
       slot_role: 'fal_designed_post',
@@ -397,6 +456,56 @@ describe('feed-slot-look — shop + beach', () => {
       expect(result.pack.headline).toMatch(/Sızma zeytinyağımız raflarda/i);
       expect(result.pack.headline.toLowerCase()).not.toMatch(/üretim sürecine/);
     }
+  });
+
+  it('shop: refuses scene_fill when a gallery bottle was picked', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        language: 'Turkish',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'scene_fill',
+          evidenceNote: 'Üretilmiş ayva reçeli kavanozu',
+          caption: 'Yeni lezzetleri keşfet. Ayva reçeli rafta.',
+          headline: 'Yeni lezzetleri keşfet',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
+  it('beach: refuses scene_fill when a venue still was picked', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı ambiyans',
+        language: 'Turkish',
+        candidates: [{
+          url: 'https://cdn.example.com/pier.jpg',
+          description: 'Pier umbrellas open sea',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'scene_fill',
+          evidenceNote: 'Üretilmiş gün batımı',
+          caption: 'Deniz duruyor. Kenarda kalın.',
+          headline: 'Deniz duruyor',
+          shellDirection: 'venue_ambiance',
+        }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 });
 

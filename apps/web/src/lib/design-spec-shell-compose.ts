@@ -85,7 +85,7 @@ export function panelFillForRole(
 ): string {
   switch (role) {
     case 'scrim':
-      return 'rgba(12,10,8,0.40)';
+      return 'rgba(12,10,8,0.28)';
     case 'frosted':
       return 'rgba(255,248,240,0.42)';
     case 'color_block':
@@ -172,40 +172,112 @@ export function planDesignSpecShell(input: {
   const subtitlePanel = layout.panels.find((p) => p.role === 'scrim' && p.id !== headlinePanel.id)
     ?? headlinePanel;
 
+  const texts = [
+    fit.headline
+      ? {
+        role: 'headline',
+        lines: fit.headline.fit.lines,
+        fontSize: fit.headline.fit.fontSize,
+        align: headlineSlot?.align ?? 'left' as const,
+        color: textColorForPanel(headlinePanel.role, input.brandColors),
+        box: fit.headline.zonePx,
+      }
+      : null,
+    fit.subtitle
+      ? {
+        role: 'subtitle',
+        lines: fit.subtitle.fit.lines,
+        fontSize: fit.subtitle.fit.fontSize,
+        align: layout.textSlots.find((s) => s.role === 'subtitle')?.align ?? 'left' as const,
+        color: textColorForPanel(subtitlePanel.role, input.brandColors),
+        box: fit.subtitle.zonePx,
+      }
+      : null,
+  ].filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+  const rawPanels = layout.panels.map((p) => ({
+    id: p.id,
+    role: p.role,
+    fill: panelFillForRole(p.role, input.brandColors),
+    box: zonePx(p.zone, width, height),
+  }));
+  const panels = clipShellPanelsToCopy(rawPanels, texts);
+
   return {
     canvas: { width, height },
     photo: zonePx(layout.photoSlot, width, height),
-    panels: layout.panels.map((p) => ({
-      id: p.id,
-      role: p.role,
-      fill: panelFillForRole(p.role, input.brandColors),
-      box: zonePx(p.zone, width, height),
-    })),
-    texts: [
-      fit.headline
-        ? {
-          role: 'headline',
-          lines: fit.headline.fit.lines,
-          fontSize: fit.headline.fit.fontSize,
-          align: headlineSlot?.align ?? 'left',
-          color: textColorForPanel(headlinePanel.role, input.brandColors),
-          box: fit.headline.zonePx,
-        }
-        : null,
-      fit.subtitle
-        ? {
-          role: 'subtitle',
-          lines: fit.subtitle.fit.lines,
-          fontSize: fit.subtitle.fit.fontSize,
-          align: layout.textSlots.find((s) => s.role === 'subtitle')?.align ?? 'left',
-          color: textColorForPanel(subtitlePanel.role, input.brandColors),
-          box: fit.subtitle.zonePx,
-        }
-        : null,
-    ].filter((row): row is NonNullable<typeof row> => Boolean(row)),
+    panels,
+    texts,
     fit,
     layout,
   };
+}
+
+type ShellBox = { x: number; y: number; width: number; height: number };
+type PlannedText = {
+  role: string;
+  lines: string[];
+  fontSize: number;
+  align: 'left' | 'center' | 'right';
+  color: string;
+  box: ShellBox;
+};
+type PlannedPanel = {
+  id: string;
+  role: DesignSpecPanelRole;
+  fill: string;
+  box: ShellBox;
+};
+
+function boxesOverlap(a: ShellBox, b: ShellBox, pad = 12): boolean {
+  return a.x < b.x + b.width + pad
+    && a.x + a.width + pad > b.x
+    && a.y < b.y + b.height + pad
+    && a.y + a.height + pad > b.y;
+}
+
+function chipBoxForText(text: PlannedText): ShellBox {
+  const charW = text.fontSize * 0.58;
+  const lineW = Math.max(...text.lines.map((line) => line.length * charW), 24);
+  const padX = 22;
+  const padY = 12;
+  const width = Math.min(text.box.width, Math.ceil(lineW + padX * 2));
+  const height = Math.min(
+    text.box.height,
+    Math.ceil(text.lines.length * text.fontSize * 1.2 + padY * 2),
+  );
+  let x = text.box.x;
+  if (text.align === 'center') x = text.box.x + Math.round((text.box.width - width) / 2);
+  if (text.align === 'right') x = text.box.x + text.box.width - width;
+  const y = text.box.y + Math.round((text.box.height - height) / 2);
+  return { x, y, width, height };
+}
+
+/** Empty footer bands stay off. Scrim hugs the painted line, not the full slot. */
+export function clipShellPanelsToCopy(
+  panels: PlannedPanel[],
+  texts: PlannedText[],
+): PlannedPanel[] {
+  if (texts.length === 0) return [];
+  const next: PlannedPanel[] = [];
+  for (const panel of panels) {
+    const hits = texts.filter((text) => boxesOverlap(panel.box, text.box));
+    if (hits.length === 0) continue;
+    if (panel.role === 'scrim' || panel.role === 'frosted' || panel.role === 'banner') {
+      const chips = hits.map(chipBoxForText);
+      const x0 = Math.min(...chips.map((c) => c.x));
+      const y0 = Math.min(...chips.map((c) => c.y));
+      const x1 = Math.max(...chips.map((c) => c.x + c.width));
+      const y1 = Math.max(...chips.map((c) => c.y + c.height));
+      next.push({
+        ...panel,
+        box: { x: x0, y: y0, width: x1 - x0, height: y1 - y0 },
+      });
+      continue;
+    }
+    next.push(panel);
+  }
+  return next;
 }
 
 function alignToFlex(align: 'left' | 'center' | 'right'): 'flex-start' | 'center' | 'flex-end' {

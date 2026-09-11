@@ -130,6 +130,14 @@ export interface SectorProductionProfile {
    * Used in isProductContent() to avoid triggering food-product mode.
    */
   menuIsServiceList: boolean;
+
+  /**
+   * Temporary: catalog reel slots produce as designed feed posts.
+   * Use when the sector has no renderable reel_cover library yet — keep
+   * the catalog key (slot identity) but paint a 4:5 post instead of
+   * exhausting on library_template_required.
+   */
+  produceCatalogReelsAsDesignedPosts?: boolean;
 }
 
 // ─── Sector Profile Table ────────────────────────────────────────────────────
@@ -402,6 +410,7 @@ const SECTOR_PROFILES: SectorProductionProfile[] = [
     headlineFallback: 'Yerel Lezzet',
     recommendedEnhanceLevelLabel: 'Moderate — artisan packaging locked, BG staging',
     menuIsServiceList: false,
+    produceCatalogReelsAsDesignedPosts: true,
   },
 
   // ── Handmade / Artisan Brand ─────────────────────────────────────────────
@@ -732,6 +741,10 @@ const SECTOR_ALIASES: Record<string, string> = {
   logistics: 'moving_logistics',
   moving: 'moving_logistics',
   nakliyat: 'moving_logistics',
+  local_shop: 'local_products_shop',
+  artisan_shop: 'local_products_shop',
+  farm_shop: 'local_products_shop',
+  handmade_shop: 'local_products_shop',
   // Fashion — pack id fashion_boutique; playbook key fashion_retail
   fashion: 'fashion_boutique',
   fashion_retail: 'fashion_boutique',
@@ -895,6 +908,36 @@ export function getSectorHeadlineFallback(sector: string | null | undefined): st
 /** Reel pacing for this sector. */
 export function getSectorReelPacing(sector: string | null | undefined): ReelPacing {
   return getSectorProfile(sector).reelPacing;
+}
+
+/** True when this sector paints catalog reel slots as designed posts. */
+export function shouldProduceCatalogReelsAsDesignedPosts(
+  sector: string | null | undefined,
+): boolean {
+  return getSectorProfile(sector).produceCatalogReelsAsDesignedPosts === true;
+}
+
+function catalogKeyLooksReel(catalogSlotKey: string): boolean {
+  return catalogSlotKey.endsWith('_reel') || catalogSlotKey.includes('_reel_');
+}
+
+/**
+ * Catalog reel identity that must produce as a designed post.
+ * Sector argument is optional — the key prefix (`local_products_shop_…`)
+ * is enough when alignment runs before brand sector is in scope.
+ */
+export function catalogReelProducesAsDesignedPost(
+  catalogSlotKey?: string | null,
+  sector?: string | null,
+): boolean {
+  const key = String(catalogSlotKey ?? '').trim().toLowerCase();
+  if (!key || !catalogKeyLooksReel(key)) return false;
+  if (shouldProduceCatalogReelsAsDesignedPosts(sector)) return true;
+  for (const profile of SECTOR_PROFILES) {
+    if (!profile.produceCatalogReelsAsDesignedPosts) continue;
+    if (key.startsWith(`${profile.sectorId}_`)) return true;
+  }
+  return false;
 }
 
 /** Returns all registered sector profiles (for UI sector picker, admin tools, etc.). */

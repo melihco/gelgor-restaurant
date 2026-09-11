@@ -2202,6 +2202,18 @@ export interface PickScoredCarouselSlidesOptions {
   minCount?: number;
   /** Relaxed bar used only to reach minCount / fill remaining slots after strict pass. */
   secondaryMinScore?: number;
+  /**
+   * Range / menu / moments carousels: keep slide 1 caption-tight, then fill
+   * remaining slots from other analyzed photos (different SKU / scene).
+   */
+  diversityAfterFirst?: boolean;
+}
+
+/** Catalog keys whose job is a set of items, not four angles of one subject. */
+export function catalogSlotWantsRangeSlides(catalogSlotKey: string | null | undefined): boolean {
+  const key = String(catalogSlotKey ?? '').toLowerCase();
+  if (!key) return false;
+  return /(?:^|_)(range|moments|menu|gallery|portfolio|collection|highlights|options|tasting|yelpaze)(?:_|$)/.test(key);
 }
 
 /**
@@ -2270,6 +2282,24 @@ export function pickScoredCarouselSlides(
       if (!best) break;
       picked.push(best);
       usedBases.add(normalizeGalleryUrl(best.url));
+    }
+  }
+
+  if (options?.diversityAfterFirst && picked.length >= 1 && picked.length < count) {
+    const rangeLookup = buildGalleryLookup(galleryAnalysis, candidateUrls);
+    for (const url of candidateUrls) {
+      if (picked.length >= count) break;
+      const base = normalizeGalleryUrl(url);
+      if (usedBases.has(base)) continue;
+      const meta = rangeLookup.get(base)?.meta ?? galleryAnalysis[url];
+      if (!isGalleryPhotoAnalyzed(meta)) continue;
+      picked.push({
+        url,
+        score: 14,
+        reason: 'carousel_range_diversity',
+        confidence: 0.4,
+      });
+      usedBases.add(base);
     }
   }
 

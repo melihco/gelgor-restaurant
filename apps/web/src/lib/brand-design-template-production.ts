@@ -34,6 +34,7 @@ import {
   buildPhotoSpatialPromptLock,
   type GalleryPhotoSpatial,
 } from '@/lib/gallery-photo-spatial';
+import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
 import {
   buildRecipeReplicaPrompt,
   formatTemplateRecipeLock,
@@ -99,8 +100,13 @@ export function resolveFalTemplateLockOptions(input: {
  */
 export function allowSoftTemplateFallbackForCatalogPin(
   catalogSlotKey?: string | null,
+  format?: 'story' | 'post' | 'reel' | 'carousel',
 ): boolean {
-  return !String(catalogSlotKey ?? '').trim();
+  const key = String(catalogSlotKey ?? '').trim();
+  if (!key) return true;
+  // Shop catalog reels paint as posts — there is no post shell on the reel key.
+  if (format === 'post' && catalogReelProducesAsDesignedPost(key)) return true;
+  return false;
 }
 
 /** Hard/soft library match — production must clone layout + swap photo/copy. */
@@ -318,6 +324,7 @@ export async function bindBrandTemplateForFalProduction(input: {
       // Soft same-format match only when the slot has no catalog key.
       allowSoftFallbackWhenHardMiss: allowSoftTemplateFallbackForCatalogPin(
         input.catalogSlotKey,
+        input.format,
       ),
     });
     if (!matched) {

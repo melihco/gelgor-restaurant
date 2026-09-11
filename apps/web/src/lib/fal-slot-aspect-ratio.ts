@@ -51,6 +51,20 @@ export function resolveFalSlotAspectRatio(input: {
     return input.explicit;
   }
   if (input.isPaidAd) return '4:5';
+  const role = String(input.slotRole ?? '').toLowerCase();
+  const pipe = String(input.pipeline ?? '').toLowerCase();
+  // Designed feed posts stay 4:5 even when the idea/catalog key still says reel
+  // (local shop catalog reels temporarily produce as posts).
+  if (
+    role === 'designed_post'
+    || role === 'fal_designed_post'
+    || role === 'organic_post'
+    || pipe === 'fal_design'
+    || pipe === 'fal_designed_post'
+    || pipe === 'gallery_photo'
+  ) {
+    return '4:5';
+  }
   if (isReelLikeSlot(input) || isStoryLikeSlot(input)) return '9:16';
   return '4:5';
 }

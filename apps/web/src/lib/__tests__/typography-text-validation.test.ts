@@ -5,7 +5,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  hasCollapsedWordSpacing,
   hasEdgeClippedLeadingGlyph,
+  hasTurkishDiacriticMiss,
   hasWordLevelSpellingDeviation,
   quickTextSimilarity,
 } from '../typography-text-validation';
@@ -20,6 +22,17 @@ describe('hasWordLevelSpellingDeviation', () => {
   it('rejects near-miss painted typos (1-2 edit distance)', () => {
     expect(hasWordLevelSpellingDeviation('Ferahlatan Koktyller', 'Ferahlatan Kokteyller')).toBe(true);
     expect(hasWordLevelSpellingDeviation('Yaz Lezetleri', 'Yaz Lezzetleri')).toBe(true);
+  });
+
+  it('beach: Sinirli vs Sınırlı is a diacritic miss, not a new word', () => {
+    expect(quickTextSimilarity('Sinirli Süre', 'Sınırlı Süre')).toBeGreaterThan(0.72);
+    expect(hasTurkishDiacriticMiss('Sinirli Süre', 'Sınırlı Süre')).toBe(true);
+    expect(hasTurkishDiacriticMiss('Sınırlı Süre', 'Sınırlı Süre')).toBe(false);
+  });
+
+  it('shop: Sizma vs Sızma is a diacritic miss', () => {
+    expect(hasTurkishDiacriticMiss('Sizma zeytinyagi', 'Sızma zeytinyağı')).toBe(true);
+    expect(hasTurkishDiacriticMiss('Sızma zeytinyağı', 'Sızma zeytinyağı')).toBe(false);
   });
 
   it('accepts exact matches including diacritics', () => {
@@ -40,6 +53,27 @@ describe('hasWordLevelSpellingDeviation', () => {
     // so this gate stays silent; quickTextSimilarity catches the mismatch instead.
     expect(hasWordLevelSpellingDeviation('Mutfak Hikayesi', 'Ferahlatan Kokteyller')).toBe(false);
     expect(quickTextSimilarity('Mutfak Hikayesi', 'Ferahlatan Kokteyller')).toBeLessThan(0.55);
+  });
+});
+
+describe('hasCollapsedWordSpacing — shop + beach', () => {
+  it('shop: rejects smashed early-harvest letters that similarity would pass', () => {
+    const intended = 'Erken hasat zeytinyağımız';
+    const painted = 'Erkenhasatzeytinyağımız';
+    expect(quickTextSimilarity(painted, intended)).toBeGreaterThan(0.7);
+    expect(hasCollapsedWordSpacing(painted, intended)).toBe(true);
+  });
+
+  it('beach: rejects Visitustoday against Visit us today', () => {
+    expect(quickTextSimilarity('Visitustoday', 'Visit us today')).toBe(1);
+    expect(hasCollapsedWordSpacing('Visitustoday', 'Visit us today')).toBe(true);
+    expect(hasCollapsedWordSpacing("Bitez'inhuzurunubugünyaşayın", "Bitez'in huzurunu bugün yaşayın")).toBe(true);
+  });
+
+  it('keeps spaced shop and beach mottos', () => {
+    expect(hasCollapsedWordSpacing('Sızma zeytinyağımız raflarda', 'Sızma zeytinyağımız raflarda')).toBe(false);
+    expect(hasCollapsedWordSpacing('Deniz duruyor', 'Deniz duruyor')).toBe(false);
+    expect(hasCollapsedWordSpacing('Visit us today', 'Visit us today')).toBe(false);
   });
 });
 

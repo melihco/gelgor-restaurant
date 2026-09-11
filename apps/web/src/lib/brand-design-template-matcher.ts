@@ -14,6 +14,7 @@ import {
 } from '@/lib/brand-active-slot-resolver';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
+import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
 import {
   formatChannelFromTemplateFormat,
   parseResolvedFalLogoPlacement,
@@ -543,7 +544,11 @@ export function selectBrandDesignTemplate(
   // Soft only when allowSoftFallbackWhenHardMiss is explicitly true (migration/debug).
   if (catalogKey) {
     const miss = diagnoseCatalogHardPinMiss(active, opts.format, catalogKey);
-    const softOk = opts.allowSoftFallbackWhenHardMiss === true;
+    const softOk = opts.allowSoftFallbackWhenHardMiss === true
+      || (
+        opts.format === 'post'
+        && catalogReelProducesAsDesignedPost(catalogKey)
+      );
     console.warn(
       `[design-matcher] hard pin MISS catalog_slot_key=${catalogKey} reason=${miss.reason}` +
         (miss.foundFormats.length ? ` found_formats=${miss.foundFormats.join(',')}` : '') +
@@ -633,14 +638,18 @@ const TEMPLATE_LIST_CACHE_TTL_MS = 60_000;
 
 async function fetchDesignTemplateList(
   workspaceId: string,
+  includeArchived = false,
 ): Promise<BrandDesignTemplateRecord[] | null> {
-  const cached = templateListCache.get(workspaceId);
+  const cacheKey = includeArchived ? `${workspaceId}:archived` : workspaceId;
+  const cached = templateListCache.get(cacheKey);
   if (cached && Date.now() - cached.at < TEMPLATE_LIST_CACHE_TTL_MS) {
     return cached.data;
   }
 
   const res = await fetchCrewBackendJson<BrandDesignTemplateRecord[]>(
-    `/api/v1/design-templates/${workspaceId}`,
+    includeArchived
+      ? `/api/v1/design-templates/${workspaceId}?include_archived=true`
+      : `/api/v1/design-templates/${workspaceId}`,
     { workspaceId, timeoutMs: 30_000 },
   );
   if (!res.ok) {
@@ -655,14 +664,18 @@ async function fetchDesignTemplateList(
     return cached?.data ?? null;
   }
   const data = Array.isArray(res.data) ? res.data : [];
-  templateListCache.set(workspaceId, { at: Date.now(), data });
+  templateListCache.set(cacheKey, { at: Date.now(), data });
   return data;
 }
 
 /** Test/ops hook — drop the cached template list (e.g. after template CRUD). */
 export function invalidateDesignTemplateCache(workspaceId?: string): void {
-  if (workspaceId) templateListCache.delete(workspaceId);
-  else templateListCache.clear();
+  if (workspaceId) {
+    templateListCache.delete(workspaceId);
+    templateListCache.delete(`${workspaceId}:archived`);
+  } else {
+    templateListCache.clear();
+  }
 }
 
 /** Public loader for produce coverage / brief stamp (uses the same TTL cache). */
@@ -703,9 +716,9 @@ export async function matchDesignTemplateToSlot(
   if (opts.brandActiveSlots) {
     active = filterDesignTemplatesToActiveSlots(active, opts.brandActiveSlots);
   }
-  if (active.length === 0) return null;
 
   const catalogKey = String(opts.catalogSlotKey ?? '').trim() || null;
+  if (active.length === 0 && !catalogKey) return null;
   if (
     !catalogKey
     && opts.brandActiveSlots
@@ -718,7 +731,7 @@ export async function matchDesignTemplateToSlot(
     );
   }
 
-  const selection = selectBrandDesignTemplate(active, {
+  const selectOpts = {
     slotRole: opts.slotRole,
     librarySlotKey: opts.librarySlotKey,
     format: opts.format,
@@ -728,7 +741,30 @@ export async function matchDesignTemplateToSlot(
     templateUseCase: opts.templateUseCase,
     catalogSlotKey: opts.catalogSlotKey,
     allowSoftFallbackWhenHardMiss: opts.allowSoftFallbackWhenHardMiss,
-  });
+  };
+  let selection = active.length ? selectBrandDesignTemplate(active, selectOpts) : null;
+  // Same catalog key archived (format often still `post` on carousel shells).
+  // Live regenerate waves archive the slot's only row — fail-closed then
+  // skipped the hero paint and the carousel never reached Akış.
+  if (!selection && catalogKey) {
+    const all = await fetchDesignTemplateList(workspaceId, true);
+    const keyedArchived = (all ?? []).filter((t) => (
+      String(t.status ?? '').toLowerCase() === 'archived'
+      && catalogKeyOf(t) === catalogKey
+    ));
+    if (keyedArchived.length) {
+      selection = selectBrandDesignTemplate(keyedArchived, {
+        ...selectOpts,
+        allowSoftFallbackWhenHardMiss: false,
+      });
+      if (selection) {
+        console.log(
+          `[design-matcher] archived hard pin catalog_slot_key=${catalogKey} → `
+          + `"${selection.record.template_name}" (${selection.record.format})`,
+        );
+      }
+    }
+  }
   if (!selection) return null;
 
   const { matchQuality } = selection;

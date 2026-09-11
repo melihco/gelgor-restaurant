@@ -37,6 +37,7 @@ import {
 import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaults';
 import { intentFamilyFromSignals } from '@/lib/catalog-slot-ai-picker';
 import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
+import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
 
 /** Soft penalty per prior use of the same catalog slot (reuse pass only). */
 const CATALOG_SLOT_REUSE_PENALTY = 22;
@@ -57,7 +58,9 @@ export function inferFormatFromCatalogSlotKey(
 ): BrandActiveSlot['format'] | null {
   const key = String(catalogSlotKey ?? '').trim().toLowerCase();
   if (!key) return null;
-  if (key.endsWith('_reel') || key.includes('_reel_')) return 'reel';
+  if (key.endsWith('_reel') || key.includes('_reel_')) {
+    return catalogReelProducesAsDesignedPost(key) ? 'post' : 'reel';
+  }
   if (key.endsWith('_story') || key.includes('_story_')) return 'story';
   if (key.endsWith('_carousel') || key.includes('_carousel_')) return 'carousel';
   if (key.endsWith('_post') || key.includes('_post_')) return 'post';
@@ -108,17 +111,36 @@ export function alignAssignmentToCatalogSlotKey(
       slotRole = (pipeline === 'fal_only_reel' ? 'fal_only_reel' : 'fal_reel_motion') as ProductionSlotRole;
     }
   } else if (format === 'post') {
+    const remappedReel = catalogReelProducesAsDesignedPost(key)
+      && (
+        String(slotRole).includes('reel')
+        || String(pipeline).includes('reel')
+      );
     if (
-      pipeline === 'fal_reel'
+      remappedReel
+      || pipeline === 'fal_reel'
       || pipeline === 'fal_story'
       || pipeline === 'fal_only_reel'
       || pipeline === 'fal_only_story'
+      || pipeline === 'runway_reel'
     ) {
       // Keep designed-post track when a post catalog key lands on a video pipeline.
-      pipeline = pipeline.startsWith('fal_only') ? 'fal_only_post' : 'fal_design';
+      pipeline = String(pipeline).startsWith('fal_only') ? 'fal_only_post' : 'fal_design';
     }
     if (String(slotRole).includes('reel') || String(slotRole).includes('story')) {
       slotRole = (pipeline === 'fal_only_post' ? 'fal_only_post' : 'fal_designed_post') as ProductionSlotRole;
+    }
+    if (remappedReel) {
+      return {
+        ...assignment,
+        catalog_slot_key: key,
+        slot_role: slotRole,
+        pipeline,
+        publish_channel: publishChannelForRole(slotRole),
+        rationale: assignment.rationale
+          ? `${assignment.rationale}; catalog_reel_as_designed_post`
+          : 'catalog_reel_as_designed_post',
+      };
     }
   }
 
@@ -1317,6 +1339,9 @@ export function enrichProductionQueueWithBrandSlots(
       item.idea as Record<string, unknown>,
       matched.promptPack,
     );
+    const produceFormat = inferFormatFromCatalogSlotKey(matched.slotKey)
+      ?? formatFromSlotRole(assignment.slot_role)
+      ?? matched.format;
     out.push({
       ...item,
       idea: {
@@ -1327,9 +1352,11 @@ export function enrichProductionQueueWithBrandSlots(
         catalog_slot_source: assignment.catalog_slot_source,
         // Keep idea format fields in sync so rematch / detectIdeaPackageFormat
         // do not re-drift toward the old carousel/story label.
-        format: matched.format,
-        publish_schedule_format: matched.format,
-        content_type: contentTypeForCatalogFormat(matched.format),
+        // Shop catalog reels produce as posts — stamp the produce format, not
+        // the catalog row's stored `reel` format.
+        format: produceFormat,
+        publish_schedule_format: produceFormat,
+        content_type: contentTypeForCatalogFormat(produceFormat),
       },
       assignment,
     });

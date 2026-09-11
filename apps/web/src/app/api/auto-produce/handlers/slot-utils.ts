@@ -5,6 +5,11 @@ import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 export const CAROUSEL_MIN_SLIDES = 2;
 export const CAROUSEL_TARGET_SLIDES = 4;
 
+/** ≥2 slides stay an Instagram carousel — never collapse a designed hero to a single post. */
+export function keepAsInstagramCarousel(slideCount: number): boolean {
+  return slideCount >= CAROUSEL_MIN_SLIDES;
+}
+
 export function isCarouselAssignment(
   kind: string,
   assignment: { slot_role?: string; pipeline?: string },

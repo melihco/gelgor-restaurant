@@ -3,6 +3,8 @@
  * Prevents day_pass_story from binding reel_cover (and the reverse).
  */
 
+import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
+
 export type FalIntensityChannel = 'story' | 'reel' | 'post';
 
 /** Infer intensity/format channel from catalog_slot_key suffixes. */
@@ -11,7 +13,9 @@ export function falChannelFromCatalogSlotKey(
 ): FalIntensityChannel | null {
   const key = String(catalogSlotKey ?? '').trim().toLowerCase();
   if (!key) return null;
-  if (key.endsWith('_reel') || key.includes('_reel_')) return 'reel';
+  if (key.endsWith('_reel') || key.includes('_reel_')) {
+    return catalogReelProducesAsDesignedPost(key) ? 'post' : 'reel';
+  }
   if (key.endsWith('_story') || key.includes('_story_')) return 'story';
   if (key.endsWith('_carousel') || key.includes('_carousel_')) return 'post';
   if (key.endsWith('_post') || key.includes('_post_')) return 'post';

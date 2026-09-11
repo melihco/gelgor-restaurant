@@ -10,6 +10,7 @@ describe('fal-catalog-format', () => {
     expect(falChannelFromCatalogSlotKey('beach_club_day_pass_story')).toBe('story');
     expect(falChannelFromCatalogSlotKey('beach_club_event_aftermovie_reel')).toBe('reel');
     expect(falChannelFromCatalogSlotKey('local_products_shop_shelf_vitrine_post')).toBe('post');
+    expect(falChannelFromCatalogSlotKey('local_products_shop_product_detail_reel')).toBe('post');
   });
 
   it('catalog story key beats fal_reel pipeline drift', () => {
@@ -30,9 +31,14 @@ describe('fal-catalog-format', () => {
       'fal_story',
     )).toBe('fal_reel');
     expect(resolveFalIntensityChannel({
-      catalogSlotKey: 'local_products_shop_atelier_process_reel',
+      catalogSlotKey: 'beach_club_venue_walkthrough_reel',
       pipeline: 'fal_only_story',
       slotRole: 'campaign_story_motion',
     })).toBe('reel');
+    expect(resolveFalIntensityChannel({
+      catalogSlotKey: 'local_products_shop_atelier_process_reel',
+      pipeline: 'fal_reel',
+      slotRole: 'organic_reel',
+    })).toBe('post');
   });
 });

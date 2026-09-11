@@ -118,6 +118,37 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     });
     expect(card.hardBlock).toBe(false);
   });
+
+  it('shop gallery carousel: undesigned swipe is not hard-blocked at score 3', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      pipeline: 'carousel_gallery',
+      production_role: 'organic_carousel',
+      fal_designer_produced: false,
+      grafiker_score: 3,
+      grafiker_pass: true,
+    });
+    expect(card.hardBlock).toBe(false);
+    expect(card.softWarnings.join(' ')).toMatch(/carousel|kapak/i);
+  });
+
+  it('beach gallery carousel: undesigned swipe is not hard-blocked at score 3', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      pipeline: 'carousel_gallery',
+      production_role: 'organic_carousel',
+      grafiker_score: 3,
+    });
+    expect(card.hardBlock).toBe(false);
+  });
+
+  it('designed carousel cover still hard-blocks at the floor', () => {
+    const card = buildProductionQualityScorecard(stubArtifact({}), {
+      pipeline: 'carousel_gallery',
+      production_role: 'organic_carousel',
+      fal_designer_produced: true,
+      grafiker_score: 3,
+    });
+    expect(card.hardBlock).toBe(true);
+  });
 });
 
 describe('resolveApprovalQualityGateFromMeta', () => {

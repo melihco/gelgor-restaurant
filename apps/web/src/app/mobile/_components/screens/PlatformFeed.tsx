@@ -3051,7 +3051,13 @@ function PlatformFeedInner() {
               : tab.id === 'post' ? '#60A5FA'
               : t.textPrimary;
             return (
-              <button key={tab.id} onClick={() => setFilter(tab.id)} style={{
+              <button key={tab.id} onClick={() => {
+                if (tab.id === 'ad') {
+                  navigate('ads');
+                  return;
+                }
+                setFilter(tab.id);
+              }} style={{
                 flexShrink: 0, padding: '7px 14px', borderRadius: 20, cursor: 'pointer',
                 background: active ? `${tabColor}18` : 'transparent',
                 border: `0.5px solid ${active ? `${tabColor}40` : t.isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)'}`,

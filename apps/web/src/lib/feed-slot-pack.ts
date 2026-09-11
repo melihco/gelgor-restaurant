@@ -51,7 +51,9 @@ export type FeedSlotPackIssue =
   | 'headline_not_from_caption'
   | 'prop_cannot_sell'
   | 'product_needs_identity'
-  | 'place_cannot_sell';
+  | 'place_cannot_sell'
+  | 'copy_misses_evidence'
+  | 'empty_place_command';
 
 const PHOTO_ROLES = new Set<FeedPhotoRole>([
   'product_for_sale',
@@ -241,8 +243,34 @@ export function validateFeedSlotPack(
   ) {
     issues.push('place_cannot_sell');
   }
+  if (
+    sellingCopyMissesEvidence({
+      caption,
+      evidenceNote: evidence,
+      photoRole: role,
+      shellDirection: shell,
+    })
+  ) {
+    issues.push('copy_misses_evidence');
+  }
+  if (isEmptyPlaceCommand(headline, role, shell)) {
+    issues.push('empty_place_command');
+  }
 
   return [...new Set(issues)];
+}
+
+/** Yer kartında iki kelimelik emir slogan (“Gölgede kalın”) paket olmaz. */
+export function isEmptyPlaceCommand(
+  headline: string,
+  role?: FeedPhotoRole | null,
+  shell?: FeedShellDirection | null,
+): boolean {
+  if (role !== 'venue' && shell !== 'venue_ambiance') return false;
+  const words = filled(headline).split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 2) return false;
+  const last = words[words.length - 1]!.toLocaleLowerCase('tr-TR').replace(/[^a-zçğıöşü]/g, '');
+  return /(?:ayın|eyin|uyun|üyün|ın|in|un|ün)$/.test(last);
 }
 
 export function parseFeedSlotPack(
@@ -298,6 +326,8 @@ const ISSUE_TR: Record<FeedSlotPackIssue, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
+  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  empty_place_command: 'Yer kartında emir slogan yok',
 };
 
 const ROLE_TR: Record<FeedPhotoRole, string> = {
@@ -482,7 +512,12 @@ function labelsSupportedByCaption(caption: string, labels: string[]): number {
   return supported;
 }
 
-function productCopyMissesEvidence(input: {
+/**
+ * Satılık kart: yazı kanıttaki kimliği taşımalı.
+ * Tek ortak aile kelimesi (ör. zeytinyağı) yetmez — kanıtın çoğunluğu
+ * yazıda durmalı. Yağ / hasat sözlüğü yok.
+ */
+export function sellingCopyMissesEvidence(input: {
   caption: string;
   evidenceNote: string;
   photoRole?: FeedPhotoRole;
@@ -490,6 +525,17 @@ function productCopyMissesEvidence(input: {
 }): boolean {
   const selling = input.photoRole === 'product_for_sale' || input.shellDirection === 'product_hero';
   if (!selling) return false;
+  const scene = fold(input.caption);
+  if (
+    scene.includes('uretim')
+    || scene.includes('is basi')
+    || scene.includes('isbasi')
+    || scene.includes('behind the scenes')
+    || scene.includes('workshop')
+    || scene.includes('atolye')
+  ) {
+    return false;
+  }
   const labels = quotedEvidenceLabels(input.evidenceNote);
   if (labels.length) {
     return labelsSupportedByCaption(input.caption, labels) === 0;
@@ -497,7 +543,9 @@ function productCopyMissesEvidence(input: {
   const claims = evidenceClaimTokens(input.evidenceNote);
   if (claims.length === 0) return false;
   const cap = fold(input.caption);
-  return claims.filter((t) => tokenHitsCaption(cap, t)).length === 0;
+  const hits = claims.filter((t) => tokenHitsCaption(cap, t)).length;
+  const need = claims.length >= 3 ? 2 : 1;
+  return hits < need;
 }
 
 function compactQuotedLabels(labels: string[]): string[] {
@@ -555,12 +603,12 @@ function rebuildPlaceCaption(input: {
   const english = looksEnglishCopy(blob);
   const family = placeFamilyIn(blob);
   if (family === 'sea') {
-    return english ? 'The sea stays. Stay.' : 'Deniz duruyor. Kenarda kalın.';
+    return english ? 'The sea is still. The pier holds.' : 'Deniz duruyor. İskele yerinde.';
   }
   if (family === 'lake') {
-    return english ? 'The lake stays. Stay.' : 'Göl duruyor. Kenarda kalın.';
+    return english ? 'The water is still. The edge is open.' : 'Su duruyor. Kenar açık.';
   }
-  return english ? 'Stay. The place is open.' : 'Kenarda kalın. Alan açık.';
+  return english ? 'The place is open. The ground holds.' : 'Alan açık. Yer duruyor.';
 }
 
 export type FeedSlotCopyGroundInput = {
@@ -599,7 +647,7 @@ export function groundFeedSlotCopy(input: FeedSlotCopyGroundInput): {
     headline = swapLakeToSea(headline, english);
   }
 
-  if (productCopyMissesEvidence({ ...input, caption, evidenceNote })) {
+  if (sellingCopyMissesEvidence({ ...input, caption, evidenceNote })) {
     caption = rebuildProductCaption(evidenceNote, input.slotJob);
     headline = deriveHeadlineFromCaption(caption);
   } else if (

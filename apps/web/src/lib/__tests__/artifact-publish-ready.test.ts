@@ -4,6 +4,7 @@ import {
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
+import { stampFeedSlotPackMetadata } from '@/lib/feed-slot-pack';
 import {
   filterFeedPublishableArtifacts,
   isArtifactFeedReady,
@@ -316,6 +317,42 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.code).toBe('quality_hard_block');
   });
 
+  it('shop gallery carousel with slides reaches the feed after stale quality stamp', () => {
+    const urls = [
+      '/api/media?key=tenant/image/a.jpg',
+      '/api/media?key=tenant/image/b.jpg',
+      '/api/media?key=tenant/image/c.jpg',
+      '/api/media?key=tenant/image/d.jpg',
+    ];
+    const artifact = {
+      id: 'art-shop-carousel',
+      title: 'Ürün yelpazesi',
+      status: 'pending_review',
+      contentUrl: urls[0],
+      content: JSON.stringify({
+        kind: 'instagram_carousel',
+        imageUrl: urls[0],
+        carousel_urls: urls,
+        mission_id: 'mission-shop',
+        source: 'auto-produce',
+      }),
+      metadata: JSON.stringify({
+        pipeline: 'carousel_gallery',
+        production_role: 'organic_carousel',
+        auto_produced: true,
+        source: 'auto-produce',
+        mission_id: 'mission-shop',
+        grafiker_score: 3,
+        grafiker_pass: true,
+        publish_blocked: true,
+        publish_block_code: 'quality_hard_block',
+        publish_block_reason: 'Tasarım kalitesi onay için yeterli değil',
+        gallery_match_score: 70,
+      }),
+    } as OutputArtifact;
+    expect(isArtifactFeedReady(artifact)).toBe(true);
+  });
+
   it('hard-blocks grafiker fail even when a still exists', () => {
     const d = resolveArtifactPublishReady({
       meta: {
@@ -361,6 +398,92 @@ describe('resolveArtifactPublishReady', () => {
     });
     expect(d.code).toBe('gallery_theme_mismatch');
     expect(d.blockFeed).toBe(true);
+  });
+
+  it('shop: half pack is not publish-ready; full pack is', () => {
+    const designed = {
+      pipeline: 'fal_design',
+      production_role: 'fal_designed_post',
+      fal_designer_produced: true,
+      fal_design_engine: 'gpt_image_designed',
+      grafiker_pass: true,
+      grafiker_score: 9,
+      agency_produced: true,
+      gallery_match_score: 70,
+    };
+    const full = resolveArtifactPublishReady({
+      meta: {
+        ...designed,
+        ...stampFeedSlotPackMetadata({
+          slotJob: 'ürün hero',
+          photoUrl: 'https://cdn.example.com/oil.jpg',
+          photoRole: 'product_for_sale',
+          caption: 'Yağın en sakin hali. Natürel sızma.',
+          headline: 'Yağın en sakin hali',
+          shellDirection: 'product_hero',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+        }),
+      },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    const half = resolveArtifactPublishReady({
+      meta: { ...designed, feed_slot_pack_ok: false },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(full.ready).toBe(true);
+    expect(full.blockFeed).toBe(false);
+    expect(half.ready).toBe(false);
+    expect(half.blockFeed).toBe(true);
+    expect(half.code).toBe('incomplete_pack');
+  });
+
+  it('beach: half pack hides; unstamped still and reel stay ready', () => {
+    const designed = {
+      pipeline: 'fal_design',
+      production_role: 'fal_designed_post',
+      fal_designer_produced: true,
+      grafiker_pass: true,
+      grafiker_score: 8,
+      agency_produced: true,
+      gallery_match_score: 68,
+    };
+    const half = resolveArtifactPublishReady({
+      meta: {
+        ...designed,
+        ...stampFeedSlotPackMetadata({
+          slotJob: 'gün batımı',
+          photoUrl: 'https://cdn.example.com/lawn.jpg',
+          photoRole: 'table_prop',
+          caption: 'Gün batımında masada kal.',
+          headline: 'Gün batımında masada kal',
+          shellDirection: 'product_hero',
+          evidenceNote: 'yazı yok, masa dekoru',
+        }),
+      },
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    const old = resolveArtifactPublishReady({
+      meta: designed,
+      content: { kind: 'instagram_post' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    const reel = resolveArtifactPublishReady({
+      meta: { pipeline: 'fal_reel', production_role: 'organic_reel' },
+      content: { kind: 'instagram_reel', videoUrl: 'https://cdn.example.com/x.mp4' },
+      format: 'reel',
+      hasPlayableVideo: true,
+    });
+    expect(half.ready).toBe(false);
+    expect(half.code).toBe('incomplete_pack');
+    expect(old.ready).toBe(true);
+    expect(reel.ready).toBe(true);
   });
 
   it('stampPublishReadyMetadata sets publish_blocked for feed filters', () => {

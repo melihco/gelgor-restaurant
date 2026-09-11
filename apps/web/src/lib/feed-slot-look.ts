@@ -144,18 +144,12 @@ export function isCampaignSentenceLock(assignment: {
 }): boolean {
   if (assignment.publish_channel === 'instagram_campaign') return true;
   if (String(assignment.rationale ?? '').startsWith('ad_hoc_brief')) return true;
-  const role = String(assignment.slot_role ?? '').trim();
-  // Weekly motion roles are named campaign_* — that is not a campaign lock.
-  const roleForLock = /^(campaign_story_motion|campaign_reel_motion|fal_story_motion|fal_reel_motion)$/.test(role)
-    ? ''
-    : role;
   const bag = [
-    roleForLock,
+    assignment.slot_role,
     assignment.pipeline,
-    assignment.catalog_slot_key,
-    assignment.library_slot_key,
+    assignment.rationale,
   ].join(' ').toLowerCase();
-  return /offer_campaign|campaign_offer|campaign_announcement|premium_editorial|(?:^|[\s_])campaign(?:$|[\s_])/.test(bag);
+  return /offer_campaign|campaign_offer|campaign_announcement/.test(bag);
 }
 
 /** Feed stilleri. Reel ikinci bir hareket hattı — bakış yok. Kampanya ayrı kapı. */
@@ -207,6 +201,15 @@ export function shouldSkipFeedMeaningRematch(pack: FeedSlotPack | null | undefin
   return Boolean(pack && parseFeedSlotPack(pack).ok);
 }
 
+/** Haftalık still: paket yoksa kart yazılmaz. Reel / reklam / kilitli cümle serbest. */
+export function isLookedFeedSlotPersistable(
+  assignment: Parameters<typeof shouldLookFeedSlotPack>[0],
+  pack: Partial<FeedSlotPack> | null | undefined,
+): boolean {
+  if (!shouldLookFeedSlotPack(assignment)) return true;
+  return parseFeedSlotPack(pack).ok;
+}
+
 const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   missing_slot_job: 'Kartın işi boş',
   missing_photo: 'Fotoğraf yok',
@@ -217,6 +220,8 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
+  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  empty_place_command: 'Yer kartında emir slogan yok',
   look_unavailable: 'Bakış yapılamadı',
   look_no_key: 'Bakış yapılamadı (anahtar yok)',
   look_vision_blocked: 'Bakış yapılamadı (fotoğraf açılamadı)',
@@ -296,6 +301,7 @@ function draftFromLookJson(
 
   let photoRole = asRole(parsed.photoRole ?? parsed.photo_role);
   if (photoRole === 'scene_fill' && pickIndex != null) {
+    pickIndex = null;
     photoRole = undefined;
   }
 

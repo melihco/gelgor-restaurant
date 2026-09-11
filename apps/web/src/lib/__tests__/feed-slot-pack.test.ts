@@ -45,6 +45,19 @@ describe('feed-slot-pack — local_products_shop', () => {
     });
     expect(issues).toContain('product_needs_identity');
   });
+
+  it('rejects early-harvest copy when the bottle evidence is mixed flavor', () => {
+    const issues = validateFeedSlotPack({
+      slotJob: 'ürün hero',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      photoRole: 'product_for_sale',
+      caption: 'Erken hasat zeytinyağımız, hem taze hem de zengin bir lezzet sunar.',
+      headline: 'Erken hasat zeytinyağımız',
+      shellDirection: 'product_hero',
+      evidenceNote: 'Karışık çeşnili zeytinyağı şişesi, 500ml etiket',
+    });
+    expect(issues).toContain('copy_misses_evidence');
+  });
 });
 
 describe('feed-slot-pack — beach_club', () => {
@@ -85,6 +98,45 @@ describe('feed-slot-pack — beach_club', () => {
       evidenceNote: 'Etiket: DATÇA NATUREL SIZMA ZEYTİNYAĞI',
     });
     expect(issues).toContain('place_cannot_sell');
+  });
+
+  it('beach: rejects a two-word stay-in-the-shade command as the headline', () => {
+    const issues = validateFeedSlotPack({
+      slotJob: 'şezlong gölge',
+      photoUrl: 'https://cdn.example.com/lounger.jpg',
+      photoRole: 'venue',
+      caption: 'Gölgede kalın. Şezlong ve kapalı şemsiye, deniz açık.',
+      headline: 'Gölgede kalın',
+      shellDirection: 'venue_ambiance',
+      evidenceNote: 'şezlong, kapalı şemsiye, açık deniz',
+    });
+    expect(issues).toContain('empty_place_command');
+  });
+
+  it('shop: a labeled jam name is not a place command', () => {
+    const parsed = parseFeedSlotPack({
+      slotJob: 'ürün hero',
+      photoUrl: 'https://cdn.example.com/jam.jpg',
+      photoRole: 'product_for_sale',
+      caption: 'Ayva reçelimiz raflarda. Etikette Ayva Reçeli yazıyor.',
+      headline: 'Ayva reçeli',
+      shellDirection: 'product_hero',
+      evidenceNote: 'Etiket: AYVA REÇELİ',
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
+  it('keeps a venue pack when the sea is in evidence, not a product grade', () => {
+    const parsed = parseFeedSlotPack({
+      slotJob: 'gün batımı ambiyans',
+      photoUrl: 'https://cdn.example.com/pier.jpg',
+      photoRole: 'venue',
+      caption: 'Bitez iskelesinde durun. Deniz açık.',
+      headline: 'Bitez iskelesinde durun',
+      shellDirection: 'venue_ambiance',
+      evidenceNote: 'İskele, şemsiye, açık deniz ufku',
+    });
+    expect(parsed.ok).toBe(true);
   });
 
   it('rejects an English event headline on a Turkish sunset caption', () => {
@@ -132,6 +184,21 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
     });
     expect(r.caption.toLowerCase()).not.toMatch(/erken hasat/);
     expect(r.caption).toMatch(/sızma|sizma/i);
+  });
+
+  it('shop: mixed-flavor evidence drops early-harvest leftover', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'ürün hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: 'Karışık çeşnili zeytinyağı şişesi, 500ml etiket',
+      caption: 'Erken hasat zeytinyağımız, hem taze hem de zengin bir lezzet sunar.',
+      headline: 'Erken hasat zeytinyağımız',
+    });
+    expect(r.changed).toBe(true);
+    expect(r.caption.toLowerCase()).not.toMatch(/erken hasat/);
+    expect(r.caption.toLowerCase()).toMatch(/karisik|karışık|cesnili|çeşnili/);
+    expect(headlineTakenFromCaption(r.headline, r.caption)).toBe(true);
   });
 
   it('shop: keeps early harvest when the label proves it', () => {

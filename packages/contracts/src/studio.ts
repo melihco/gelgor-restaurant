@@ -45,6 +45,8 @@ export type BindFailureCode =
   | 'prop_cannot_sell'
   | 'product_needs_identity'
   | 'place_cannot_sell'
+  | 'copy_misses_evidence'
+  | 'empty_place_command'
   | 'look_unavailable'
   | 'no_pick'
   | 'incomplete_headline';
