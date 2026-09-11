@@ -353,7 +353,14 @@ def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     # Quality gates re-run the same inputs — bound by attempts, not just wall clock.
     assert pfs._defer_counts_attempt(quality) is True
     assert pfs._defer_counts_attempt(template) is True
-    assert pfs._defer_counts_attempt(ops) is False
+    shop_lock = "production_in_flight"
+    beach_lock = "production_in_flight [route_still_running]"
+    assert pfs._defer_counts_attempt(ops) is True
+    assert pfs._defer_counts_attempt(shop_lock) is True
+    assert pfs._defer_counts_attempt(beach_lock) is True
+    assert pfs._is_inflight_defer_reason(shop_lock) is True
+    assert pfs._bullmq_defer_delay_sec("production_in_flight") == 240.0
+    assert pfs._bullmq_defer_delay_sec("route_still_running") == 240.0
 
     # Both categories still get a wall-clock backstop; nothing defers forever.
     assert pfs._defer_max_age_sec(quality) == pfs._quality_defer_max_age_sec()

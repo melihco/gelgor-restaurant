@@ -648,6 +648,7 @@ async def drain_production_jobs(
         jobs._BULLMQ_WATCHDOG_STALE_SEC if use_bullmq else jobs._STALE_CLAIM_SEC
     )
     claimed_total = ready_total = failed_total = enqueued_total = 0
+    saw_lock_defer = False
     while claimed_total < max_slots:
         limit = min(batch_size, max_slots - claimed_total)
         batch = await jobs.claim_batch(mission_id, limit=limit, stale_sec=claim_stale_sec)
@@ -713,6 +714,8 @@ async def drain_production_jobs(
             # Enqueue failed — defer transient lock/queue errors; fail hard only on unknown.
             eq_reason = str((eq or {}).get("reason") or "bullmq enqueue failed")
             if eq_reason in _bullmq_defer_reasons() or eq is None:
+                if "production_in_flight" in eq_reason:
+                    saw_lock_defer = True
                 delay = _bullmq_defer_delay_sec(eq_reason)
                 for job in batch:
                     await jobs.mark_deferred(
@@ -850,6 +853,7 @@ async def drain_production_jobs(
 
         # Another drain pass is already in flight — do not claim more slots this round.
         if batch_reason in ("production_in_flight", "enqueued_to_factory"):
+            saw_lock_defer = True
             break
 
     summary_after = await _finalize_mission_production_state(mission_id)
@@ -869,7 +873,10 @@ async def drain_production_jobs(
     # drain when open jobs remain so slots do not freeze if the callback never arrives.
     if use_bullmq:
         if await jobs.has_runnable_jobs(mission_id):
-            delay = 45.0 if enqueued_total > 0 else 2.0
+            if saw_lock_defer:
+                delay = _bullmq_defer_delay_sec("production_in_flight")
+            else:
+                delay = 45.0 if enqueued_total > 0 else 2.0
             schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
         elif (
             not summary_after.get("complete")
@@ -1045,8 +1052,17 @@ def _defer_max_age_sec(reason: str) -> float | None:
     return _ops_defer_max_age_sec() if _is_ops_defer_reason(reason) else None
 
 
+def _is_inflight_defer_reason(reason: str) -> bool:
+    lower = (reason or "").strip().lower()
+    return "production_in_flight" in lower or "route_still_running" in lower
+
+
 def _defer_counts_attempt(reason: str) -> bool:
-    """Quality gates retry the same inputs — bound them by attempts, not just age."""
+    """In-flight lock and quality gates both burn attempts — a flat 45s
+    defer with attempts stuck at 0/12 repaints the same slot for hours.
+    """
+    if _is_inflight_defer_reason(reason):
+        return True
     return _is_quality_defer_reason(reason)
 
 
@@ -1117,8 +1133,10 @@ def _bullmq_defer_delay_sec(reason: str) -> float:
         or "caption_design_incoherent" in lower
     ):
         return 60.0
-    if reason == "production_in_flight":
-        return 45.0
+    if reason == "production_in_flight" or "route_still_running" in lower:
+        # Next.js design cards often run 2–4 min after the client times out.
+        # Reclaiming at 45s starts a second paint on the same slot.
+        return 240.0
     if reason == "auto_produce_unreachable":
         return 20.0
     if reason == "production_worker_offline":
