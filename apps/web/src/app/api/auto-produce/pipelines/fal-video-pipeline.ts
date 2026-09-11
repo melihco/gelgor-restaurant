@@ -483,6 +483,16 @@ export const falVideoHandler: ProductionPipelineHandler = {
 
       const designer = await produceFalDesignerVideo({
         workspaceId: inputs.workspaceId,
+        missionId: inputs.missionId,
+        catalogSlotKey: inputs.catalogSlotKey,
+        slotRole: inputs.slotRole,
+        brandMotionStyle: (() => {
+          const raw = inputs.brandTheme?.motion_profile ?? inputs.brandTheme?.motionProfile;
+          if (!raw || typeof raw !== 'object') return null;
+          const style = String((raw as Record<string, unknown>).motion_style
+            ?? (raw as Record<string, unknown>).motionStyle ?? '').trim();
+          return style || null;
+        })(),
         headline: inputs.headline,
         subtitle: inputs.cta || undefined,
         caption: inputs.caption,

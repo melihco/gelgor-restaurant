@@ -224,6 +224,10 @@ export interface FalDesignerInput {
    * Prevents paying for a full locked-graphics clip that is immediately discarded.
    */
   skipMotion?: boolean;
+  missionId?: string | null;
+  catalogSlotKey?: string | null;
+  slotRole?: string | null;
+  brandMotionStyle?: string | null;
 }
 
 export interface FalDesignerStillResult {
@@ -2131,9 +2135,39 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
 
   let motion: StoryMotionResult;
   try {
+    const { buildReelGenerationRequest } = await import('@/lib/reel-creative-director');
+    const headline = still.resolvedHeadline ?? input.headline;
+    const textHeavy = recipe?.onCanvasDensity === 'hook_sub'
+      || String(headline ?? '').length > 28;
+    const logoHeavy = Boolean(input.logoUrl?.trim())
+      && recipe?.logoPolicy === 'baked_allowed';
+    const reelRequest = input.pipeline === 'fal_reel'
+      ? buildReelGenerationRequest({
+        sourceImageUrl: motionSourceUrl,
+        directorInput: {
+          sector: input.sector,
+          slotRole: input.slotRole,
+          catalogSlotKey: input.catalogSlotKey,
+          headline,
+          recipe,
+          motionStyle: input.brandMotionStyle,
+          productionTier: input.productionTier,
+          durationSecs,
+          hasLogo: Boolean(input.logoUrl?.trim()),
+          textHeavy,
+          logoHeavy,
+        },
+        designerMotionCue: input.designerMotionCue,
+        missionId: input.missionId,
+        creativeId: still.imageUrl,
+        slotId: input.catalogSlotKey ?? input.slotRole,
+        brandId: input.workspaceId,
+      })
+      : undefined;
+
     motion = await generateStoryMotionPlateWithRetry({
       imageUrl: motionSourceUrl,
-      headline: still.resolvedHeadline ?? input.headline,
+      headline,
       sector: input.sector,
       brandName: input.brandName,
       mood: input.mood,
@@ -2144,6 +2178,11 @@ export async function produceFalDesignerVideo(input: Omit<FalDesignerInput, 'asp
       designerMotionCue: input.designerMotionCue,
       productionTier: input.productionTier,
       durationSecs,
+      reelRequest,
+      catalogSlotKey: input.catalogSlotKey,
+      motionStyle: input.brandMotionStyle,
+      textHeavy,
+      logoHeavy,
     });
   } catch (motionErr) {
     const message = motionErr instanceof Error ? motionErr.message : String(motionErr);

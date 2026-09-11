@@ -66,6 +66,7 @@ export interface SlotProductionState {
  */
 export interface SlotProductionInputs {
   workspaceId: string;
+  missionId?: string | null;
   pipeline: string;
   slotRole: string;
   ideaIndex: number;

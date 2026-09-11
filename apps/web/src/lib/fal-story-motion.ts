@@ -16,6 +16,14 @@ import {
   resolveFalI2vModelChain,
 } from '@/lib/fal-i2v-models';
 import { finalizeFalPrompt } from '@/lib/fal-prompt';
+import {
+  buildReelGenerationRequest,
+  buildReelShotPlan,
+  generateReelCreativeDirection,
+} from '@/lib/reel-creative-director';
+import type { ReelGenerationRequest } from '@/lib/reel-creative-direction';
+import { logReelGenerationRequest } from '@/lib/reel-generation-request';
+import { composeReelPrompt } from '@/lib/reel-prompt-composer';
 import { resolveFalReelMotionAttemptBudget } from '@/lib/video-tier-scope';
 import { serverConfig } from './server-config';
 
@@ -99,9 +107,39 @@ export function buildStoryMotionPrompt(input: {
   pipeline?: 'fal_story' | 'fal_reel';
   /** Agent designer brief motion cue — appended to Kling prompt. */
   designerMotionCue?: string;
+  durationSecs?: number;
+  reelRequest?: ReelGenerationRequest;
+  catalogSlotKey?: string | null;
+  motionStyle?: string | null;
+  productionTier?: string | null;
+  textHeavy?: boolean;
+  logoHeavy?: boolean;
 }): string {
+  if (input.reelRequest) {
+    return input.reelRequest.prompt;
+  }
+
+  if (input.pipeline === 'fal_reel') {
+    const direction = generateReelCreativeDirection({
+      sector: input.sector,
+      catalogSlotKey: input.catalogSlotKey,
+      headline: input.headline,
+      motionStyle: input.motionStyle,
+      productionTier: input.productionTier,
+      durationSecs: input.durationSecs ?? 5,
+      textHeavy: input.textHeavy,
+      logoHeavy: input.logoHeavy,
+    });
+    const shotPlan = buildReelShotPlan(direction, input.durationSecs ?? 5);
+    return composeReelPrompt({
+      direction,
+      shotPlan,
+      designerMotionCue: input.designerMotionCue,
+    });
+  }
+
   const base = MOTION_PROMPTS[input.style];
-  const isReelGraphics = input.style === 'social_reel_graphics' || input.pipeline === 'fal_reel';
+  const isReelGraphics = input.style === 'social_reel_graphics';
 
   if (input.preserveExistingText) {
     // Do NOT pass headline/copy into I2V — models rewrite letters into gibberish.
@@ -172,6 +210,7 @@ async function runMotionModel(
   timeoutMs: number,
   preserveExistingText = false,
   durationSecs = 5,
+  opts?: { negativePrompt?: string; reelRequest?: ReelGenerationRequest },
 ): Promise<string | null> {
   const pollBudgetMs = resolveMotionPollTimeoutMs(modelId, timeoutMs);
   const payload = buildFalI2vEnqueuePayload(modelId, {
@@ -180,6 +219,7 @@ async function runMotionModel(
     durationSecs,
     aspectRatio: '9:16',
     preserveExistingText,
+    negativePrompt: opts?.negativePrompt,
     lumaResolution: serverConfig.ai.tier === 'premium' ? '720p' : '540p',
   });
 
@@ -215,6 +255,13 @@ async function runMotionModel(
     model: modelId,
     kind: 'video',
   });
+  if (opts?.reelRequest) {
+    logReelGenerationRequest(opts.reelRequest, {
+      model: modelId,
+      generationId: queued.request_id,
+      phase: 'enqueued',
+    });
+  }
   const statusUrl = queued.status_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}/status`;
   const resultUrl = queued.response_url ?? `${FAL_QUEUE_BASE}/${modelId}/requests/${queued.request_id}`;
 
@@ -340,6 +387,12 @@ export async function generateStoryMotionPlate(input: {
   designerMotionCue?: string;
   /** Kling/Luma duration hint from reel recipe (default 5). */
   durationSecs?: number;
+  reelRequest?: ReelGenerationRequest;
+  catalogSlotKey?: string | null;
+  motionStyle?: string | null;
+  productionTier?: string | null;
+  textHeavy?: boolean;
+  logoHeavy?: boolean;
 }): Promise<StoryMotionResult> {
   const apiKey = serverConfig.fal.apiKey;
   if (!apiKey) throw new Error('FAL_API_KEY not set — story motion plates unavailable');
@@ -360,7 +413,26 @@ export async function generateStoryMotionPlate(input: {
   console.log(`[fal-story-motion] start_image_url → ${resolvedImageUrl.slice(0, 120)}`);
 
   const style = input.style ?? resolveMotionStyle(input.sector, input.mood);
-  const prompt = buildStoryMotionPrompt({
+  const durationSecs = input.durationSecs && input.durationSecs > 0 ? input.durationSecs : 5;
+  const reelRequest = input.reelRequest ?? (
+    input.pipeline === 'fal_reel'
+      ? buildReelGenerationRequest({
+        sourceImageUrl: resolvedImageUrl,
+        directorInput: {
+          sector: input.sector,
+          catalogSlotKey: input.catalogSlotKey,
+          headline: input.headline,
+          motionStyle: input.motionStyle,
+          productionTier: input.productionTier,
+          durationSecs,
+          textHeavy: input.textHeavy,
+          logoHeavy: input.logoHeavy,
+        },
+        designerMotionCue: input.designerMotionCue,
+      })
+      : undefined
+  );
+  const prompt = reelRequest?.prompt ?? buildStoryMotionPrompt({
     style,
     headline: input.headline,
     sector: input.sector,
@@ -368,10 +440,19 @@ export async function generateStoryMotionPlate(input: {
     preserveExistingText: input.preserveExistingText,
     pipeline: input.pipeline,
     designerMotionCue: input.designerMotionCue,
+    durationSecs,
+    reelRequest,
+    catalogSlotKey: input.catalogSlotKey,
+    motionStyle: input.motionStyle,
+    productionTier: input.productionTier,
+    textHeavy: input.textHeavy,
+    logoHeavy: input.logoHeavy,
   });
   console.log(`[fal-story-motion] prompt_chars=${prompt.length}`);
+  if (reelRequest) {
+    logReelGenerationRequest(reelRequest, { phase: 'planned' });
+  }
   const timeoutMs = input.timeoutMs ?? 120_000;
-  const durationSecs = input.durationSecs && input.durationSecs > 0 ? input.durationSecs : 5;
   const storyMotionModels = resolveFalI2vModelChain(
     input.preserveExistingText === true ? 'story_motion' : 'raw_gallery',
     serverConfig.ai.tier,
@@ -389,6 +470,10 @@ export async function generateStoryMotionPlate(input: {
         timeoutMs,
         input.preserveExistingText === true,
         durationSecs,
+        {
+          negativePrompt: reelRequest?.negativePrompt,
+          reelRequest,
+        },
       );
       if (url) {
         console.log(`[fal-story-motion] success: ${modelId} → ${url.slice(0, 80)}`);

@@ -4458,6 +4458,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       const slotCtx: SlotProductionContext = {
         inputs: {
           workspaceId,
+          missionId,
           pipeline: assignment.pipeline,
           slotRole: assignment.slot_role,
           ideaIndex,

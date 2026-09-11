@@ -69,6 +69,8 @@ export interface FalI2vEnqueueInput {
   durationSecs?: number;
   aspectRatio?: '9:16' | '16:9';
   preserveExistingText?: boolean;
+  /** Domain-level negative prompt; overrides the built-in locked-text default. */
+  negativePrompt?: string;
   /** Luma Ray-2/3 — starter/agency default 540p to match test cost profile. */
   lumaResolution?: '540p' | '720p';
 }
@@ -91,17 +93,19 @@ export function buildFalI2vEnqueuePayload(
     };
   }
 
-  const negativePrompt = preserveText
-    ? [
-        'text distortion, letter mutation, blurred text, cropped letters, missing characters, extra characters',
-        'rewritten text, OCR rewrite, gibberish text, invented words, language swap, typography change, font change',
-        'text movement, kinetic text, bouncing letters, text warp, text bend, subtitle crawl',
-        'logo distortion, logo redraw, logo morph, logo recolor, logo replacement, fake brand mark',
-        'camera pan, camera tilt, whip pan, shake, heavy zoom, reframing, composition change',
-        'neon flashes, particle storm, sticker spam, emoji overlays, busy motion graphics, carnival energy',
-        'low quality, artifacts, morphing shapes',
-      ].join(', ')
-    : 'text, typography, letters, words, captions, subtitles, watermarks, logos, brand names, numbers, signs, labels, blur, distort, low quality, fast motion, zoom, shake';
+  const negativePrompt = input.negativePrompt?.trim()
+    ? input.negativePrompt.trim()
+    : preserveText
+      ? [
+          'text distortion, letter mutation, blurred text, cropped letters, missing characters, extra characters',
+          'rewritten text, OCR rewrite, gibberish text, invented words, language swap, typography change, font change',
+          'text movement, kinetic text, bouncing letters, text warp, text bend, subtitle crawl',
+          'logo distortion, logo redraw, logo morph, logo recolor, logo replacement, fake brand mark',
+          'camera pan, camera tilt, whip pan, shake, heavy zoom, reframing, composition change',
+          'neon flashes, particle storm, sticker spam, emoji overlays, busy motion graphics, carnival energy',
+          'low quality, artifacts, morphing shapes',
+        ].join(', ')
+      : 'text, typography, letters, words, captions, subtitles, watermarks, logos, brand names, numbers, signs, labels, blur, distort, low quality, fast motion, zoom, shake';
 
   if (modelId.includes('/v3/')) {
     return {

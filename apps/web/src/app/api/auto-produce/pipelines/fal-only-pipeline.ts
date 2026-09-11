@@ -79,6 +79,9 @@ export interface FalOnlySlotInput {
   hasRealBrandGallery?: boolean;
   captionDrivenGenerated?: boolean;
   productionTier?: string | null;
+  missionId?: string | null;
+  catalogSlotKey?: string | null;
+  slotRole?: string | null;
 }
 
 export interface FalOnlySlotResult {
@@ -187,6 +190,9 @@ export async function produceFalOnlySlot(
     try {
       const designer = await produceFalDesignerVideo({
         workspaceId: input.workspaceId,
+        missionId: input.missionId,
+        catalogSlotKey: input.catalogSlotKey,
+        slotRole: input.slotRole,
         headline: input.headline,
         subtitle: input.cta || undefined,
         caption: input.caption,
@@ -285,9 +291,13 @@ export async function produceFalOnlySlot(
           sector: input.sector,
           brandName: input.brandName,
           mood: input.mood,
-          style: 'product_hero',
+          style: falPipeline === 'fal_reel' ? 'social_reel_graphics' : 'product_hero',
           timeoutMs: 150_000,
           preserveExistingText: true,
+          pipeline: falPipeline,
+          catalogSlotKey: input.catalogSlotKey,
+          productionTier: input.productionTier,
+          designerMotionCue: input.designerMotionCue,
         });
         console.log(
           `[auto-produce] [fal-only] ${input.pipeline} 9:16 poster→motion fallback: "${input.headline.slice(0, 40)}"`,
@@ -592,6 +602,9 @@ export const falOnlyHandler: ProductionPipelineHandler = {
     const falOnly = await produceFalOnlySlot({
       pipeline: inputs.pipeline,
       workspaceId: inputs.workspaceId,
+      missionId: inputs.missionId,
+      catalogSlotKey: inputs.catalogSlotKey,
+      slotRole: inputs.slotRole,
       isFalOnlyPost: inputs.isFalOnlyPost,
       isFalOnlyVideo: inputs.isFalOnlyVideo,
       existingImageUrl: state.imageUrl,

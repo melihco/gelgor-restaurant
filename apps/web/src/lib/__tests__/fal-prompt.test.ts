@@ -42,6 +42,9 @@ describe('buildStoryMotionPrompt', () => {
     expect(prompt).not.toContain('Our happy customers');
     expect(prompt.endsWith('distor')).toBe(false);
     expect(prompt).toContain('LOCKED LOGO');
-    expect(prompt).toContain('Art director motion');
+    expect(prompt).toMatch(/Art-direction cue|Gentle push-in/i);
+    expect(prompt.toLowerCase()).not.toContain('animate this');
+    expect(prompt.toLowerCase()).not.toContain('make cinematic');
+    expect(prompt.toLowerCase()).not.toContain('create a dynamic video');
   });
 });
