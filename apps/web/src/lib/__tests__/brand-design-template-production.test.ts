@@ -19,6 +19,8 @@ import {
   bindBrandTemplateForFalProduction,
   allowSoftTemplateFallbackForCatalogPin,
   catalogTemplateWithholdReason,
+  librarySlotPaintLocked,
+  librarySlotShellMissingReason,
   dropConflictingLayoutDirectives,
   normalizeLibraryPromptForFormat,
   requiresLibraryTemplateReplica,
@@ -128,7 +130,23 @@ describe('resolveFalTemplateLockOptions', () => {
     });
     expect(opts.captionAwareHeadline).toBe(false);
     expect(opts.grafikerMaxRetries).toBe(1);
-    expect(opts.requireTemplateStyleRef).toBe(false);
+    expect(opts.requireTemplateStyleRef).toBe(true);
+  });
+
+  it('shop + beach: locked slot cannot paint without the saved shell', () => {
+    expect(librarySlotPaintLocked(matched)).toBe(true);
+    expect(librarySlotShellMissingReason(matched, null)).toMatch(/library_template_replica_required/);
+    expect(librarySlotShellMissingReason(matched, matched.thumbnailUrl)).toBeNull();
+    expect(librarySlotPaintLocked(null)).toBe(false);
+    expect(librarySlotShellMissingReason(null, null)).toBeNull();
+    expect(catalogTemplateWithholdReason(
+      'local_products_shop_product_hero_post',
+      matched,
+    )).toBeNull();
+    expect(catalogTemplateWithholdReason(
+      'beach_club_sunset_ambiance_story',
+      null,
+    )).toMatch(/library_template_required/);
   });
 
   it('keeps defaults when no template matched', () => {

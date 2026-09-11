@@ -1106,7 +1106,7 @@ async function generateWithOpenAI(
         if (isDesignCard && templateLayoutImageUrl?.trim()) {
           templateFile = await fetchUrlAsOpenAIUpload(templateLayoutImageUrl.trim());
           if (!templateFile) {
-            console.warn('[generate-instagram-image] template layout ref unreachable — proceeding without replica lock');
+            throw new Error('library_template_replica_required: saved shell preview unreachable');
           }
         }
 

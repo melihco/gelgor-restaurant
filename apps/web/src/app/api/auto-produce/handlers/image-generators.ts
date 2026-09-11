@@ -382,6 +382,11 @@ export async function generateDesignedPostImage(opts: {
     if (!res) throw lastFetchErr ?? new Error('generate-instagram-image fetch failed');
     if (!res.ok) {
       const err = await res.text().catch(() => '');
+      if (/library_template_replica_required/i.test(err)) {
+        throw new Error(
+          'library_template_replica_required: saved shell preview unreachable',
+        );
+      }
       console.warn(
         `[auto-produce] designed post (gpt-image) failed ${res.status} refs=${refs.map((u) => u.split('/').pop()).join(',')} ` +
         err.slice(0, 200),
@@ -391,6 +396,8 @@ export async function generateDesignedPostImage(opts: {
     const data = await res.json().catch(() => ({})) as { imageUrl?: string };
     return typeof data.imageUrl === 'string' ? data.imageUrl : null;
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/library_template_replica_required/i.test(msg)) throw err;
     console.warn('[auto-produce] designed post (gpt-image) error', err);
     return null;
   }

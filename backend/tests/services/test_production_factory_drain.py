@@ -245,6 +245,17 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert is_terminal_produce_error(beach_pack) is True
     assert is_terminal_produce_error(beach_billing) is True
     assert is_terminal_produce_error(shop_credits) is True
+    shop_shell = (
+        "library_template_replica_required: saved shell preview missing for Ürün hero"
+    )
+    beach_shell = (
+        "library_template_replica_required: saved shell preview missing for Gün batımı"
+    )
+    assert is_terminal_produce_error(shop_shell) is True
+    assert is_terminal_produce_error(beach_shell) is True
+    assert pfs._is_non_retryable_slot_failure(shop_shell) is True
+    assert pfs._is_non_retryable_slot_failure(beach_shell) is True
+    assert pfs._is_ops_defer_reason(shop_shell) is False
     assert pfs._is_non_retryable_slot_failure(shop_pack) is True
     assert pfs._is_non_retryable_slot_failure(beach_pack) is True
     assert pfs._is_non_retryable_slot_failure(beach_billing) is True

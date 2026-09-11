@@ -15,6 +15,7 @@ import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal
 import {
   bindBrandTemplateForFalProduction,
   catalogTemplateWithholdReason,
+  librarySlotShellMissingReason,
   dropConflictingLayoutDirectives,
   requiresLibraryTemplateReplica,
   resolveFalTemplateLockOptions,
@@ -307,7 +308,11 @@ export const falVideoHandler: ProductionPipelineHandler = {
     // Fail closed rather than inventing a generic Ideogram/Satori layout.
     const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
     const libraryReplicaRequired = catalogPinned || requiresLibraryTemplateReplica(templateBinding.matched);
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+      ?? librarySlotShellMissingReason(
+        templateBinding.matched,
+        templateLayoutReferenceUrl(templateBinding),
+      );
     if (withhold) {
       state.pipelineFailureReason = withhold;
       console.warn(

@@ -15,6 +15,21 @@ vi.mock('@/lib/brand-design-template-production', () => ({
     if (m && (m.matchQuality === 'hard' || m.matchQuality === 'soft')) return null;
     return `library_template_required: no renderable template for catalog_slot_key=${key}`;
   },
+  templateLayoutReferenceUrl: (
+    binding: { matched?: { matchQuality?: string } | null; styleReferenceUrl?: string | null } | null,
+  ) => {
+    const m = binding?.matched;
+    if (!m || (m.matchQuality !== 'hard' && m.matchQuality !== 'soft')) return undefined;
+    return binding?.styleReferenceUrl ?? undefined;
+  },
+  librarySlotShellMissingReason: (
+    m: { matchQuality?: string } | null | undefined,
+    layoutUrl?: string | null,
+  ) => {
+    if (!m || (m.matchQuality !== 'hard' && m.matchQuality !== 'soft')) return null;
+    if (String(layoutUrl ?? '').trim()) return null;
+    return 'library_template_replica_required: saved shell preview missing';
+  },
 }));
 
 vi.mock('@/lib/premium-editorial', () => ({
@@ -83,6 +98,7 @@ describe('premiumEditorialHandler template lock', () => {
         templateName: 'Sunset editorial',
         matchQuality: 'hard',
       },
+      styleReferenceUrl: 'https://cdn.example.com/shell.png',
     });
     runCampaign.mockResolvedValue({
       finalImageUrl: 'https://cdn.example.com/out.jpg',
@@ -102,6 +118,25 @@ describe('premiumEditorialHandler template lock', () => {
     });
     expect(state.brandDesignTemplateId).toBe('tpl-beach');
     expect(state.imageUrl).toBe('https://cdn.example.com/out.jpg');
-    expect(runCampaign).toHaveBeenCalledOnce();
+    expect(runCampaign).toHaveBeenCalledWith(expect.objectContaining({
+      forceNewComposition: false,
+      templateLayoutImageUrl: 'https://cdn.example.com/shell.png',
+    }));
+  });
+
+  it('shop: withholds when the locked slot has no saved shell preview', async () => {
+    bind.mockResolvedValue({
+      matched: {
+        id: 'tpl-shop',
+        templateType: 'campaign_announcement',
+        templateName: 'Editorial',
+        matchQuality: 'hard',
+      },
+      styleReferenceUrl: null,
+    });
+    const state = emptyState();
+    await premiumEditorialHandler.run({ inputs: baseInputs, state });
+    expect(state.pipelineFailureReason).toMatch(/library_template_replica_required/);
+    expect(runCampaign).not.toHaveBeenCalled();
   });
 });

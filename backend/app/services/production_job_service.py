@@ -44,6 +44,8 @@ TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "budget_exhausted",
     "token_wallet",
     "ops-terminated",
+    "library_template_required",
+    "library_template_replica_required",
 )
 
 # A new paint can differ — never treat these as terminal, even if a marker overlaps.
@@ -861,6 +863,7 @@ async def requeue_exhausted(
     # inputs; requeuing raises max_attempts and restarts the same loop at full cost.
     permanent_filter = """
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_replica_required%'
                   AND COALESCE(last_error, '') NOT ILIKE '%tutarsız%'
                   AND COALESCE(last_error, '') NOT ILIKE '%caption_design_incoherent%'
                   AND COALESCE(last_error, '') NOT ILIKE '%ops-terminated%'
@@ -1102,6 +1105,7 @@ async def requeue_failed(
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%library_template_replica_required%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
                   AND COALESCE(last_error, '') NOT ILIKE '%paket yarım%'
                   AND COALESCE(last_error, '') NOT ILIKE '%incomplete_pack%'

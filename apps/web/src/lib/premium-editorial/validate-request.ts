@@ -101,6 +101,9 @@ export function validatePremiumEditorialRequest(
     qualityPreset: 'PremiumMediterraneanEditorialV1',
     numberOfVariations,
     forceNewComposition: raw.forceNewComposition === true,
+    templateLayoutImageUrl: raw.templateLayoutImageUrl != null
+      ? String(raw.templateLayoutImageUrl).trim() || null
+      : null,
     recentVariationKeys: Array.isArray(raw.recentVariationKeys)
       ? (raw.recentVariationKeys as CreativeVariationKey[])
       : [],

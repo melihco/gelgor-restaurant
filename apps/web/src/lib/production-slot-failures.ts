@@ -91,6 +91,9 @@ export function humanizeProductionSlotError(error?: string | null): string | nul
   if (lower.includes('library_template_required') || lower.includes('no renderable template')) {
     return 'Marka şablonu yok — Şablon Kütüphanesi’nden önizleme üretin';
   }
+  if (lower.includes('library_template_replica_required') || lower.includes('saved shell preview')) {
+    return 'Kayıtlı şablon kabuğu yok — slot o kabuğa kilitli, yeni afiş yok';
+  }
   if (lower.includes('erişilemiyor') || lower.includes('expired') || lower.includes('geçersiz url')) {
     return 'Galeri fotoğrafı erişilemiyor — Galeri’den yenileyin';
   }

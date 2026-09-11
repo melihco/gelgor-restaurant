@@ -264,6 +264,8 @@ export interface PremiumEditorialCampaignRequest {
   qualityPreset?: typeof PREMIUM_EDITORIAL_QUALITY_PRESET | null;
   numberOfVariations?: number;
   forceNewComposition?: boolean;
+  /** Saved catalog shell — paint clones this layout. Missing = withhold. */
+  templateLayoutImageUrl?: string | null;
   recentVariationKeys?: CreativeVariationKey[];
   workspaceId?: string | null;
   /** Brand context snapshot — avoids extra DB roundtrip when available. */

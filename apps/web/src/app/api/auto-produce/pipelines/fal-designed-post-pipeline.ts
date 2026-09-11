@@ -26,6 +26,8 @@ import {
   buildTemplateReplicaPrompt,
   pickTemplateReferenceUrls,
   catalogTemplateWithholdReason,
+  librarySlotPaintLocked,
+  librarySlotShellMissingReason,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
   templateLayoutReferenceUrl,
@@ -367,7 +369,8 @@ export async function produceFalDesignedPost(
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
-      const shellMode = input.shellCompose ?? 'auto';
+      const replicaLocked = librarySlotPaintLocked(binding?.matched);
+      const shellMode = replicaLocked ? 'off' : (input.shellCompose ?? 'auto');
       if (shellMode !== 'off' && referenceUrl) {
         const shell = await composeDesignSpecShell({
           headline: canvasHeadline,
@@ -516,6 +519,18 @@ export async function produceFalDesignedPost(
       // Template replica: the approved library preview is the layout law for
       // hard/soft matched slots — GPT copies its geometry, swaps photo + text.
       const templateLayoutImageUrl = templateLayoutReferenceUrl(binding);
+      const shellMissing = librarySlotShellMissingReason(binding?.matched, templateLayoutImageUrl);
+      if (shellMissing) {
+        console.warn(`[auto-produce] [fal-design] withheld: ${shellMissing}`);
+        return {
+          imageUrl: null,
+          falGrafikerScore: null,
+          falGrafikerPass: false,
+          falDesignEngine: null,
+          costDelta: 0,
+          failureReason: shellMissing,
+        };
+      }
       const { resolveGroundedDesignMaxAttempts, shouldKeepGroundedInsteadOfIdeogram } = await import(
         '@/lib/mission-production-cost-guards'
       );
@@ -936,7 +951,11 @@ export const falDesignHandler: ProductionPipelineHandler = {
       matchedShowSubline: templateBinding.matched?.showSubline,
     });
 
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+      ?? librarySlotShellMissingReason(
+        templateBinding.matched,
+        templateLayoutReferenceUrl(templateBinding),
+      );
     if (withhold) {
       state.pipelineFailureReason = withhold;
       console.warn(`[auto-produce] [fal-design] withheld: ${state.pipelineFailureReason}`);
@@ -1081,6 +1100,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       && satoriFallbackPhoto
       && !inputs.adHocBrief
       && !studioForbidsSatoriEscape(inputs)
+      && !librarySlotPaintLocked(templateBinding.matched)
     ) {
       const paintFallback = resolveSlotPaintOverlay({
         headline: inputs.headline,

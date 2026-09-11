@@ -84,11 +84,30 @@ export function resolveFalTemplateLockOptions(input: {
   }
   // Library template lock (post/story/reel): mission/ideation copy is SSOT.
   // Caption-aware rewrite fights replica "sample → mission" text swap.
+  // The saved shell preview is required — GPT must not invent a new poster.
   return {
     captionAwareHeadline: false,
     grafikerMaxRetries: Math.min(2, Math.max(base, 1)),
-    requireTemplateStyleRef: false,
+    requireTemplateStyleRef: true,
   };
+}
+
+/** Catalog or matched library row — paint must clone that shell, not invent one. */
+export function librarySlotPaintLocked(
+  matched: MatchedDesignTemplate | null | undefined,
+): boolean {
+  return requiresLibraryTemplateReplica(matched);
+}
+
+export function librarySlotShellMissingReason(
+  matched: MatchedDesignTemplate | null | undefined,
+  layoutUrl?: string | null,
+): string | null {
+  if (!librarySlotPaintLocked(matched)) return null;
+  const url = String(layoutUrl ?? '').trim();
+  if (url && isUsableGalleryPhotoUrl(url)) return null;
+  const name = String(matched?.templateName ?? matched?.id ?? 'slot').trim();
+  return `library_template_replica_required: saved shell preview missing for ${name}`;
 }
 
 /**

@@ -459,6 +459,7 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "paket yarım",
     "incomplete_pack",
     "bakış yapılamadı",
+    "library_template_replica_required",
 )
 
 

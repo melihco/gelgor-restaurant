@@ -12,6 +12,8 @@ import {
 import {
   bindBrandTemplateForFalProduction,
   catalogTemplateWithholdReason,
+  librarySlotShellMissingReason,
+  templateLayoutReferenceUrl,
 } from '@/lib/brand-design-template-production';
 import type {
   ProductionPipelineHandler,
@@ -67,7 +69,9 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: null,
     });
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    const layoutUrl = templateLayoutReferenceUrl(templateBinding);
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+      ?? librarySlotShellMissingReason(templateBinding.matched, layoutUrl);
     if (withhold) {
       state.pipelineFailureReason = withhold;
       console.warn(`[premium_editorial] withheld: ${state.pipelineFailureReason}`);
@@ -100,7 +104,8 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       addTextOverlay: true,
       addLogoOverlay: Boolean(inputs.brandLogoUrl),
       numberOfVariations: 1,
-      forceNewComposition: true,
+      forceNewComposition: false,
+      templateLayoutImageUrl: layoutUrl,
       galleryAnalysis: inputs.galleryAnalysis ?? null,
       brandReferenceImageUrls: inputs.brandReferenceImageUrls,
       brandContext: {

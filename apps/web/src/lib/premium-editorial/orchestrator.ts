@@ -186,8 +186,8 @@ export async function runPremiumEditorialCampaign(
         referenceUrls: refs,
         workspaceId,
         signal: request.signal,
-        // Social slot: always prefer gallery-grounded edit when a photo exists.
         preferGalleryGrounding: true,
+        templateLayoutImageUrl: request.templateLayoutImageUrl,
       });
       backgroundImageUrl = bg.imageUrl;
       backgroundBuffer = bg.imageBuffer;

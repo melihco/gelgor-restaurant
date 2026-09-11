@@ -107,6 +107,8 @@ export async function generateEditorialBackground(opts: {
    * false: allow from-scratch generate (discouraged for this slot).
    */
   preferGalleryGrounding?: boolean;
+  /** Catalog shell preview — required second edit image when the slot is locked. */
+  templateLayoutImageUrl?: string | null;
 }): Promise<BackgroundGenerationResult> {
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
@@ -135,24 +137,42 @@ export async function generateEditorialBackground(opts: {
     .map((u) => String(u).trim())
     .filter((u) => isUsableGalleryPhotoUrl(u));
 
+  const layoutUrl = String(opts.templateLayoutImageUrl ?? '').trim();
+  const templateFile = layoutUrl && isUsableGalleryPhotoUrl(layoutUrl)
+    ? await fetchAsUpload(layoutUrl)
+    : null;
+  if (layoutUrl && !templateFile) {
+    throw new Error('library_template_replica_required: saved shell preview unreachable');
+  }
+
   if (preferGallery && refs[0] && !model.toLowerCase().includes('dall-e')) {
     const file = await fetchAsUpload(refs[0]!);
     if (file) {
       try {
         const editPrompt = [
-          '═══ VENUE-GROUNDED SOCIAL DESIGN ═══',
-          'IMAGE 1 is a REAL photograph from the brand\'s venue/gallery.',
-          'Design a premium Instagram social frame ON this photo.',
-          'Keep the venue recognizable. Add restrained editorial design + contracted typography.',
-          'Do not invent a different location.',
+          templateFile
+            ? [
+              '═══ LIBRARY SHELL REPLICA ═══',
+              'IMAGE 1 is the mission photo. IMAGE 2 is the brand\'s saved template.',
+              'Copy IMAGE 2 layout, type zones, and colors exactly. Swap only the photo zone and contracted text.',
+              'Do not invent a new poster.',
+            ].join('\n')
+            : [
+              '═══ VENUE-GROUNDED SOCIAL DESIGN ═══',
+              'IMAGE 1 is a REAL photograph from the brand\'s venue/gallery.',
+              'Design a premium Instagram social frame ON this photo.',
+              'Keep the venue recognizable. Add restrained editorial design + contracted typography.',
+              'Do not invent a different location.',
+            ].join('\n'),
           '',
           designPrompt,
         ].join('\n').slice(0, limit);
 
         const supportsInputFidelity = /^gpt-image(?!-2)/i.test(model);
+        const imageInput = templateFile ? [file, templateFile] : file;
         const editedRaw = await openai.images.edit({
           model,
-          image: file,
+          image: imageInput as Parameters<typeof openai.images.edit>[0]['image'],
           prompt: editPrompt,
           n: 1,
           size,
@@ -177,6 +197,10 @@ export async function generateEditorialBackground(opts: {
         console.warn('[premium-editorial] venue edit failed, falling back:', err);
       }
     }
+  }
+
+  if (templateFile) {
+    throw new Error('library_template_replica_required: gallery photo missing for locked shell');
   }
 
   if (preferGallery && !refs[0]) {

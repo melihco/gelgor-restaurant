@@ -28,6 +28,19 @@ describe('humanizeProductionSlotError', () => {
       ),
     ).toMatch(/Marka şablonu yok/);
   });
+
+  it('maps locked slot without saved shell (shop + beach)', () => {
+    expect(
+      humanizeProductionSlotError(
+        'library_template_replica_required: saved shell preview missing for Ürün hero',
+      ),
+    ).toMatch(/Kayıtlı şablon kabuğu yok/);
+    expect(
+      humanizeProductionSlotError(
+        'library_template_replica_required: saved shell preview unreachable',
+      ),
+    ).toMatch(/slot o kabuğa kilitli/);
+  });
 });
 
 describe('isNonRetryableProductionFailure', () => {

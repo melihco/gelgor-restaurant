@@ -126,6 +126,17 @@ vi.mock('@/lib/brand-design-template-production', () => ({
     if (m && (m.matchQuality === 'hard' || m.matchQuality === 'soft')) return null;
     return `library_template_required: no renderable template for catalog_slot_key=${key}`;
   },
+  librarySlotPaintLocked: (
+    m: { matchQuality?: string } | null | undefined,
+  ) => !!m && (m.matchQuality === 'hard' || m.matchQuality === 'soft'),
+  librarySlotShellMissingReason: (
+    m: { matchQuality?: string } | null | undefined,
+    layoutUrl?: string | null,
+  ) => {
+    if (!m || (m.matchQuality !== 'hard' && m.matchQuality !== 'soft')) return null;
+    if (String(layoutUrl ?? '').trim()) return null;
+    return 'library_template_replica_required: saved shell preview missing';
+  },
   allowSoftTemplateFallbackForCatalogPin: (catalogSlotKey?: string | null) =>
     !String(catalogSlotKey ?? '').trim(),
   templateReplicaSpecFromBinding: (
@@ -409,6 +420,57 @@ describe('falVideoHandler.run', () => {
       h.serverConfig.localTypography.enabled = false;
     }
   });
+
+  it('shop + beach: locked catalog slot withholds invent when the shell preview is missing', async () => {
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-shop',
+        templateType: 'menu_highlight',
+        templateName: 'Ürün hero',
+        matchQuality: 'hard',
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/oil.jpg',
+      styleReferenceUrl: null,
+      brandDirectives: [],
+      brandColors: null,
+      logoUrl: undefined,
+      occasion: undefined,
+    } as never);
+
+    const shop = makeCtx({
+      isFalDesignPost: true,
+      pipeline: 'fal_design',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+    });
+    await falDesignHandler.run(shop);
+    expect(shop.state.pipelineFailureReason).toMatch(/library_template_replica_required/);
+    expect(h.generateDesignedPostImage).not.toHaveBeenCalled();
+
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-beach',
+        templateType: 'venue_showcase',
+        templateName: 'Gün batımı',
+        matchQuality: 'hard',
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/pier.jpg',
+      styleReferenceUrl: null,
+      brandDirectives: [],
+      brandColors: null,
+      logoUrl: undefined,
+      occasion: undefined,
+    } as never);
+    const beach = makeCtx({
+      isFalMissionVideo: true,
+      pipeline: 'fal_story',
+      catalogSlotKey: 'beach_club_sunset_ambiance_story',
+    });
+    await falVideoHandler.run(beach);
+    expect(beach.state.pipelineFailureReason).toMatch(/library_template_replica_required/);
+    expect(h.produceFalDesignedPostStill).not.toHaveBeenCalled();
+  });
 });
 
 describe('productShowcaseHandler.run', () => {
@@ -584,7 +646,7 @@ describe('falDesignHandler.run', () => {
         },
         lockedVibe: null,
         referencePhotoUrl: 'https://x/photo.jpg',
-        styleReferenceUrl: null,
+        styleReferenceUrl: 'https://x/product-hero-shell.png',
         brandDirectives: ['dir-1'],
         brandColors: null,
         logoUrl: 'https://x/logo.png',
@@ -647,9 +709,10 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designed-url');
   });
 
-  it('paints Satori on the gallery photo when GPT replica returns empty', async () => {
+  it('locked shop slot does not invent a Satori poster when GPT replica returns empty', async () => {
     h.isUsableGalleryPhotoUrl.mockReturnValue(true);
     h.generateDesignedPostImage.mockResolvedValue(null);
+    h.produceFalDesignedPostStill.mockResolvedValue({ imageUrl: null });
     h.renderLocalTypography.mockResolvedValue({
       imageUrl: 'satori-fallback',
       grafikerScore: 8,
@@ -667,7 +730,7 @@ describe('falDesignHandler.run', () => {
       },
       lockedVibe: null,
       referencePhotoUrl: 'https://x/photo.jpg',
-      styleReferenceUrl: null,
+      styleReferenceUrl: 'https://x/product-hero-shell.png',
       brandDirectives: ['dir-1'],
       brandColors: null,
       logoUrl: 'https://x/logo.png',
@@ -685,14 +748,50 @@ describe('falDesignHandler.run', () => {
     });
     await falDesignHandler.run(ctx);
 
-    expect(ctx.state.imageUrl).toBe('satori-fallback');
-    expect(ctx.state.falDesignEngine).toBe('satori_local');
-    expect(ctx.state.pipelineFailureReason).toBeFalsy();
-    expect(h.renderLocalTypography).toHaveBeenCalledWith(
-      expect.objectContaining({
-        referencePhotoUrl: 'https://x/photo.jpg',
-      }),
-    );
+    expect(h.renderLocalTypography).not.toHaveBeenCalled();
+    expect(ctx.state.imageUrl).toBeNull();
+    expect(ctx.state.falDesignEngine).not.toBe('satori_local');
+  });
+
+  it('unlocked beach slot may still paint Satori when there is no library shell', async () => {
+    h.serverConfig.localTypography.enabled = true;
+    try {
+      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+      h.generateDesignedPostImage.mockResolvedValue(null);
+      h.renderLocalTypography.mockResolvedValue({
+        imageUrl: 'satori-fallback',
+        grafikerScore: 8,
+        grafikerPass: true,
+        layoutFamily: 'hero_footer',
+      });
+      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+        matched: null,
+        lockedVibe: null,
+        referencePhotoUrl: 'https://x/pier.jpg',
+        styleReferenceUrl: null,
+        brandDirectives: ['dir-1'],
+        brandColors: null,
+        logoUrl: 'https://x/logo.png',
+        occasion: undefined,
+      } as never);
+
+      const ctx = makeCtx({
+        isFalDesignPost: true,
+        slotRole: 'fal_designed_post',
+        pipeline: 'fal_design',
+        catalogSlotKey: '',
+        brandBusinessType: 'beach_club',
+        headline: 'Gün batımı',
+        caption: 'İskelede altın saat — gelin.',
+        punchlineLockSource: 'caption_pair',
+      });
+      await falDesignHandler.run(ctx);
+
+      expect(ctx.state.imageUrl).toBe('satori-fallback');
+      expect(ctx.state.falDesignEngine).toBe('satori_local');
+    } finally {
+      h.serverConfig.localTypography.enabled = false;
+    }
   });
 });
 

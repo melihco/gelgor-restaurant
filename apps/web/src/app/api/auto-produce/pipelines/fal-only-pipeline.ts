@@ -21,6 +21,7 @@ import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal
 import {
   bindBrandTemplateForFalProduction,
   catalogTemplateWithholdReason,
+  librarySlotShellMissingReason,
   dropConflictingLayoutDirectives,
   resolveFalTemplateLockOptions,
   templateLayoutReferenceUrl,
@@ -490,7 +491,11 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
     });
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched);
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+      ?? librarySlotShellMissingReason(
+        templateBinding.matched,
+        templateLayoutReferenceUrl(templateBinding),
+      );
     if (withhold) {
       state.pipelineFailureReason = withhold;
       console.warn(`[auto-produce] [fal-only] withheld: ${state.pipelineFailureReason}`);
