@@ -26,6 +26,7 @@ import {
   areFalOverlayTextsRedundant,
   resolveFalOverlayCopy,
   detectOverlayLocale,
+  overlayMatchesBrandLanguage,
   containsFalCanvasMetaLeak,
   isFalCanvasMetaOnlyHeadline,
   isBareGenericOverlayCta,
@@ -194,6 +195,29 @@ describe('detectOverlayLocale', () => {
 
   it('detects Turkish caption', () => {
     expect(detectOverlayLocale('Bodrum mandalinasının ferahlığını keşfedin')).toBe('tr');
+  });
+
+  it('detects English photo-analysis labels', () => {
+    expect(detectOverlayLocale('Turkish breakfast')).toBe('en');
+  });
+});
+
+describe('overlayMatchesBrandLanguage', () => {
+  it('rejects TR samples on EN brands and EN analysis labels on TR brands', () => {
+    expect(overlayMatchesBrandLanguage('Gün Batımı', 'en')).toBe(false);
+    expect(overlayMatchesBrandLanguage('Sunset Glow', 'en')).toBe(true);
+    expect(overlayMatchesBrandLanguage('Turkish breakfast', 'tr')).toBe(false);
+    expect(overlayMatchesBrandLanguage('Kahvaltı Keyfi', 'tr')).toBe(true);
+    expect(overlayMatchesBrandLanguage('DJ Night', 'tr')).toBe(true);
+  });
+
+  it('keeps theme punchline on brand language when caption analysis is English', () => {
+    const punch = extractCaptionThemePunchline({
+      caption: 'Turkish breakfast spread photographed in the garden this morning.',
+      language: 'tr',
+    });
+    expect(punch.toLowerCase()).not.toContain('turkish breakfast');
+    expect(overlayMatchesBrandLanguage(punch, 'tr')).toBe(true);
   });
 });
 

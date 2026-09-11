@@ -90,6 +90,8 @@ services:
         value: "8192"
       - key: CREWAI_CONTENT_ITERATIONS
         value: "1"
+      - key: CREWAI_CONTENT_IDEATION_MAX_ITER
+        value: "2"
       - key: DEDUP_GALLERY_BACKSTORY
         value: "true"
       - key: ANTHROPIC_API_KEY

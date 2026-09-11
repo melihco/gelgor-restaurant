@@ -38,6 +38,7 @@ import { applyCatalogSlotVisualDefaults } from '@/lib/catalog-slot-visual-defaul
 import { intentFamilyFromSignals } from '@/lib/catalog-slot-ai-picker';
 import { hasTemplateSlotCreativeBrief } from '@/lib/slot-creative-customization';
 import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
+import { withCatalogReelPolicy } from '@/lib/reel-production-recipe';
 
 /** Soft penalty per prior use of the same catalog slot (reuse pass only). */
 const CATALOG_SLOT_REUSE_PENALTY = 22;
@@ -318,7 +319,7 @@ function slotFromDefinition(
     labelEn: slot.label_en,
     format: slot.format,
     designTemplateType: slot.design_template_type,
-    librarySlotKey: slot.library_slot_key,
+    librarySlotKey: slot.format === 'reel' ? 'reel_cover' : slot.library_slot_key,
     slotRole: slot.slot_role,
     pipeline: slot.pipeline,
     priority,
@@ -326,7 +327,13 @@ function slotFromDefinition(
     hasTemplate: Boolean(template),
     templateId: template?.id ?? null,
     // Brand overlay (creative brief) wins over sector pack keys of the same name.
-    promptPack: { ...basePack, ...overlay },
+    // Reel slots always carry Fal reel_policy — stale DB rows get it here.
+    promptPack: withCatalogReelPolicy({ ...basePack, ...overlay }, {
+      catalogSlotKey: slot.slot_key,
+      sector: slot.sector_id,
+      templateType: slot.design_template_type,
+      format: slot.format,
+    }),
     matchSignals: (slot.match_signals && typeof slot.match_signals === 'object'
       ? slot.match_signals
       : {}) as Record<string, unknown>,

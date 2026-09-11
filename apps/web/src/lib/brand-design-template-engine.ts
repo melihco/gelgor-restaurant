@@ -504,6 +504,7 @@ function resolveCopy(
     slotLabel: preset.name,
     showSubline: showSub,
     sector: input.sector,
+    language: input.locale,
   });
   // Prefer slot-key / label punchline; fall back to tightened preset sample.
   const headline = slotCopy.headline
@@ -1339,6 +1340,7 @@ async function generateOne(
                 sector: input.sector,
                 headline,
                 caption: subtitle,
+                slotPromptPack: preset.slotPromptPack ?? null,
                 brandReelParams: resolveBrandReelProductionParams(
                   parseMotionProfileFromTheme(theme, { sector: input.sector }),
                   input.sector,

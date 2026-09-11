@@ -172,6 +172,37 @@ describe('sector-slot-pack coverage', () => {
     }
   });
 
+  it('reel catalog slots carry Fal reel_policy and reel_cover library key (beach + shop)', () => {
+    const beach = synthesizeSectorSlotDefinitions('beach_club');
+    const shop = synthesizeSectorSlotDefinitions('local_products_shop');
+    const atmosphere = beach.find((s) => s.slot_key === 'beach_club_atmosphere_reel');
+    const craft = beach.find((s) => s.slot_key === 'beach_club_cocktail_craft_reel');
+    const sunsetStory = beach.find((s) => s.slot_key === 'beach_club_sunset_golden_story');
+    const productReel = shop.find((s) => s.slot_key === 'local_products_shop_product_detail_reel');
+
+    expect(atmosphere?.format).toBe('reel');
+    expect(atmosphere?.pipeline).toBe('fal_reel');
+    expect(atmosphere?.library_slot_key).toBe('reel_cover');
+    expect(atmosphere?.prompt_pack.reel_policy).toMatchObject({
+      reel_job: 'venue_mood',
+      camera: 'slow_pan',
+    });
+
+    expect(craft?.library_slot_key).toBe('reel_cover');
+    expect(craft?.prompt_pack.reel_policy).toMatchObject({
+      reel_job: 'menu_highlight',
+    });
+
+    expect(productReel?.library_slot_key).toBe('reel_cover');
+    expect(productReel?.prompt_pack.reel_policy).toMatchObject({
+      reel_job: 'menu_highlight',
+    });
+
+    expect(sunsetStory?.format).toBe('story');
+    expect(sunsetStory?.library_slot_key).not.toBe('reel_cover');
+    expect(sunsetStory?.prompt_pack.reel_policy).toBeUndefined();
+  });
+
   it('beach_club and restaurant_cafe expose story poster slots with pipeline overrides', () => {
     for (const sectorId of ['beach_club', 'restaurant_cafe'] as const) {
       const pack = getSectorSlotPack(sectorId)!;

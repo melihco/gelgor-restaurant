@@ -389,6 +389,7 @@ describe('template replica prompt', () => {
     );
     expect(prompt).toContain('HEADLINE: "Sunset Glow"');
     expect(prompt).toContain('1="Sunset" · 2="Glow"');
+    expect(prompt).toContain('English — do not translate to Turkish');
     expect(prompt).not.toMatch(/1="DJ" · 2="Night"/);
   });
 

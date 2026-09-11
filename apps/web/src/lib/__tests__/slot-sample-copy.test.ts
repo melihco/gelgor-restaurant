@@ -172,4 +172,32 @@ describe('slot-sample-copy', () => {
     expect(copy.headline).toBe('Canlı Müzik');
     expect(copy.headline).not.toMatch(/Bayram|Ekim|Noel/i);
   });
+
+  it('paints EN samples for EN brands and TR samples by default (brunch + sunset)', () => {
+    const brunchTr = resolveSlotSampleCopy({
+      catalogSlotKey: 'restaurant_cafe_brunch_offer_post',
+      sector: 'restaurant_cafe',
+    });
+    expect(brunchTr.headline).toBe('Kahvaltı');
+
+    const brunchEn = resolveSlotSampleCopy({
+      catalogSlotKey: 'restaurant_cafe_brunch_offer_post',
+      sector: 'restaurant_cafe',
+      language: 'en',
+    });
+    expect(brunchEn.headline).toBe('Breakfast');
+
+    const sunsetTr = resolveSlotSampleCopy({
+      catalogSlotKey: 'beach_club_sunset_ambiance_post',
+      sector: 'beach_club',
+    });
+    expect(sunsetTr.headline).toBe('Gün Batımı');
+
+    const sunsetEn = resolveSlotSampleCopy({
+      catalogSlotKey: 'beach_club_sunset_ambiance_post',
+      sector: 'beach_club',
+      language: 'en',
+    });
+    expect(sunsetEn.headline).toBe('Sunset');
+  });
 });

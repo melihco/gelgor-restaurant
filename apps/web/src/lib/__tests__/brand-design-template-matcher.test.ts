@@ -87,6 +87,17 @@ describe('resolveDesignTemplateCandidateTypes', () => {
     expect(types[0]).toBe('reel_cover');
   });
 
+  it('maps reel_cover library key to reel_cover types (not daily_story)', () => {
+    const types = resolveDesignTemplateCandidateTypes({
+      librarySlotKey: 'reel_cover',
+      slotRole: 'fal_reel_motion',
+      format: 'reel',
+    });
+    expect(types[0]).toBe('reel_cover');
+    expect(types).toContain('venue_showcase');
+    expect(types).not.toContain('daily_story');
+  });
+
   it('overrides social_proof announcement when caption is DJ event (beach_club)', () => {
     const types = resolveDesignTemplateCandidateTypes({
       announcementType: 'social_proof',

@@ -10,6 +10,7 @@ import {
 } from '../fal-design-copy';
 import {
   isIncompleteOverlayPhrase,
+  overlayMatchesBrandLanguage,
   resolveOverlayHeadlineWordBudget,
 } from '../fal-caption-headline';
 
@@ -549,5 +550,35 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(beach.headline).toMatch(/Daybed Rezervasyonuna Davet/i);
     expect(beach.headline.toLocaleLowerCase('tr-TR')).not.toBe('davet');
     expect(isIncompleteOverlayPhrase(beach.headline)).toBe(false);
+  });
+
+  it('locks overlay to brand language (beach_club EN + restaurant_cafe TR)', () => {
+    const scorpios = resolveMissionFalDesignCopy({
+      idea: { headline: 'Gün Batımı' },
+      ideationHeadline: 'Gün Batımı',
+      caption: 'Golden hour at the bay. Join us for sunset cocktails tonight.',
+      brandName: 'Scorpios Bodrum',
+      channel: 'feed_post',
+      businessType: 'beach_club',
+      language: 'en',
+      sampleHeadline: 'Gün Batımı',
+      designIntensity: 'balanced',
+    });
+    expect(scorpios.headline.toLowerCase()).not.toMatch(/gün|batım|kahvalt|rezervasyon/);
+    expect(overlayMatchesBrandLanguage(scorpios.headline, 'en')).toBe(true);
+
+    const gelgor = resolveMissionFalDesignCopy({
+      idea: { headline: 'Turkish breakfast' },
+      ideationHeadline: 'Turkish breakfast',
+      caption: 'Serpme kahvaltı bahçede. Misafirler vazgeçemiyor, her sabah geliyor.',
+      brandName: 'gel gör',
+      channel: 'feed_post',
+      businessType: 'restaurant_cafe',
+      language: 'tr',
+      sampleHeadline: 'Turkish breakfast',
+      designIntensity: 'balanced',
+    });
+    expect(gelgor.headline.toLowerCase()).not.toContain('turkish breakfast');
+    expect(overlayMatchesBrandLanguage(gelgor.headline, 'tr')).toBe(true);
   });
 });

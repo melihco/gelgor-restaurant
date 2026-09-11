@@ -103,4 +103,5 @@ def test_executor_timeout_budgets_the_topup_passes() -> None:
 
     per_run = resolve_content_ideation_agent_timeout_seconds(16)
     total = resolve_content_ideation_executor_timeout_seconds(16, 1)
+    assert CONTENT_IDEATION_MAX_TOPUPS == 1
     assert total >= per_run + (per_run // 3) * CONTENT_IDEATION_MAX_TOPUPS

@@ -99,6 +99,7 @@ def build_service_env(merged: dict[str, str]) -> dict[str, dict[str, str]]:
         "SKIP_ENHANCE_FOR_DESIGNED_GRADE": merged.get("SKIP_ENHANCE_FOR_DESIGNED_GRADE", "true"),
         "VIDEO_TIER_SCOPE": merged.get("VIDEO_TIER_SCOPE", "true"),
         "CREWAI_CONTENT_ITERATIONS": merged.get("CREWAI_CONTENT_ITERATIONS", "1"),
+        "CREWAI_CONTENT_IDEATION_MAX_ITER": merged.get("CREWAI_CONTENT_IDEATION_MAX_ITER", "2"),
         "DEDUP_GALLERY_BACKSTORY": merged.get("DEDUP_GALLERY_BACKSTORY", "true"),
         "VENUE_PHOTO_PRESERVE": merged.get("VENUE_PHOTO_PRESERVE", "true"),
         "AUTO_PRODUCE_SUBTLE_ENHANCE": merged.get("AUTO_PRODUCE_SUBTLE_ENHANCE", "false"),

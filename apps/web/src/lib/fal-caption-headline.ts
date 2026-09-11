@@ -21,6 +21,7 @@ import {
   rebiasUngroundedOverlayCopy,
 } from './overlay-caption-grounding';
 import type { TemplateTypeBudget } from './template-type-budget';
+import { resolveBrandLanguageCode } from './cta-localization';
 
 // ── Turkish Spell-Check Dictionary ────────────────────────────────────────────
 
@@ -97,7 +98,8 @@ export type OverlayLocale = 'tr' | 'en' | 'unknown';
 
 const TR_CHAR_RX = /[ğüşöçıİĞÜŞÖÇ]/;
 const TR_WORD_RX = /\b(ve|için|icin|ile|burada|şimdi|simdi|hemen|yerini|ayirt|ayırt|rezervasyon|lezzet|deneyim|gecesi|hafta|sonu|kokteyl|mekan|davet)\b/i;
-const EN_WORD_RX = /\b(the|and|for|with|your|share|details|book|now|discover|join|experience|meet|maker|artisan|citrus|fresh|this|weekend)\b/i;
+const EN_WORD_RX = /\b(the|and|for|with|your|share|details|book|now|discover|join|experience|meet|maker|artisan|citrus|fresh|this|weekend|breakfast|sunset|cocktail|turkish|guest|signature|flavou?rs?)\b/i;
+const OVERLAY_LOANWORD_RX = /^(happy\s*hour|dj(\s*night)?|vip|spa|brunch)$/i;
 
 /** Rough locale detector for overlay copy — drives CTA/headline language lock. */
 export function detectOverlayLocale(text: string | undefined | null): OverlayLocale {
@@ -109,7 +111,35 @@ export function detectOverlayLocale(text: string | undefined | null): OverlayLoc
   if (hasTrChar || (hasTrWord && !hasEnWord)) return 'tr';
   if (hasEnWord && !hasTrChar && !hasTrWord) return 'en';
   if (hasEnWord && hasTrWord) return 'unknown';
+  if (OVERLAY_LOANWORD_RX.test(t)) return 'unknown';
   return 'unknown';
+}
+
+/**
+ * Brand `languages` is SSOT for on-canvas copy.
+ * Rejects TR samples on EN brands and EN photo-analysis leaks ("Turkish breakfast") on TR brands.
+ */
+export function overlayMatchesBrandLanguage(
+  text: string | null | undefined,
+  brandLanguage?: string | null,
+): boolean {
+  const line = String(text ?? '').trim();
+  if (!line) return true;
+  if (OVERLAY_LOANWORD_RX.test(line)) return true;
+  const brand = resolveBrandLanguageCode(brandLanguage);
+  const loc = detectOverlayLocale(line);
+  if (loc === 'unknown') {
+    const words = line.split(/\s+/).filter((w) => /[a-zA-ZÀ-ÿ]{3,}/.test(w));
+    const asciiOnly = !TR_CHAR_RX.test(line);
+    if (brand === 'tr' && asciiOnly && words.length >= 2 && EN_WORD_RX.test(line)) {
+      return false;
+    }
+    if (brand === 'tr' && asciiOnly && words.length >= 2 && !TR_WORD_RX.test(line)) {
+      return false;
+    }
+    return true;
+  }
+  return loc === brand;
 }
 
 /**
@@ -354,6 +384,8 @@ interface CaptionHeadlineInput {
   cta?: string;
   /** Max character length for the display headline */
   maxLen?: number;
+  /** Brand content language — keeps theme hooks on-canvas language. */
+  language?: string | null;
 }
 
 type FalHeadlineSource =
@@ -388,13 +420,21 @@ export function extractCaptionThemePunchline(input: {
       && isMeaningfulFalOverlayText(s)
       && !isIncompleteOverlayPhrase(s),
     );
-  if (spoken && caption.length >= 40) return spoken;
+  const brandLang = input.language
+    ? resolveBrandLanguageCode(input.language)
+    : null;
+  if (
+    spoken
+    && caption.length >= 40
+    && (!brandLang || overlayMatchesBrandLanguage(spoken, brandLang))
+  ) {
+    return spoken;
+  }
   const maxWords = input.maxWords ?? 3;
   const lower = caption.toLowerCase();
   const missionLower = String(input.missionTitle ?? '').toLowerCase();
-  const lang = String(input.language ?? '').trim().toLowerCase();
-  const looksEnglish = lang.startsWith('en')
-    || ((!lang || lang === 'unknown')
+  const looksEnglish = brandLang === 'en'
+    || (!brandLang
       && (
         /\b(the|with|our|your|discover|join|meet|taste|breakfast|cocktail|sunset|ready|night|glow)\b/i.test(caption)
         || /\b(get|for|like|under|stars|music|dance)\b/i.test(caption)
@@ -406,8 +446,8 @@ export function extractCaptionThemePunchline(input: {
   const themeHooks: Array<{ pattern: RegExp; tr: string; en: string; missionBoost?: RegExp }> = [
     { pattern: /sunset|gün\s*batım|gun\s*batim|golden\s*hour|altın\s*saat/i, tr: 'Altın Saat', en: 'Sunset Glow', missionBoost: /sunset|batım|batim|golden|altın|altin/i },
     { pattern: /\bdj\b|gece\s*perform|night\s*life|\bnightlife\b/i, tr: 'DJ Gecesi', en: 'DJ Night', missionBoost: /\bdj\b|gece|night|perform/i },
-    { pattern: /serpme[\s\S]{0,40}kahvalt/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
-    { pattern: /kahvalt/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
+    { pattern: /serpme[\s\S]{0,40}kahvalt|garden\s+breakfast/i, tr: 'Bahçede Serpme Keyfi', en: 'Garden Breakfast Spread' },
+    { pattern: /kahvalt|breakfast/i, tr: 'Serpme Kahvaltı Keyfi', en: 'Breakfast Worth Sharing' },
     { pattern: /vazgeçemiyor|bayılıyor|favorimiz|favori\s+lezzet/i, tr: 'Vazgeçilmez Lezzet', en: 'They Keep Coming Back' },
     { pattern: /guest|misafir|community|heart of|unforgettable memor|make us who/i, tr: 'Misafir Anları', en: 'Guest Moments', missionBoost: /guest|misafir|community|social/i },
     { pattern: /signature\s+dish|signature\s+menu|rich flavors|flavours of our|imza\s+lezzet/i, tr: 'İmza Lezzetler', en: 'Signature Flavors', missionBoost: /signature|dish|menu|lezzet|flavor|flavour/i },
@@ -472,6 +512,7 @@ export function resolveFalDisplayHeadline(input: CaptionHeadlineInput): {
     maxLen,
     maxWords: 3,
     missionTitle,
+    language: input.language,
   });
   if (
     themePunch
@@ -2043,7 +2084,7 @@ export function buildFalOnCanvasTextContract(input: {
     'FORBIDDEN on canvas: gibberish, invented words, misspellings, partial words, apostrophes inside words, extra slogans, URLs, hashtags, dates, auto-translation, mixed-language lines, or any text not listed above.',
     'FORBIDDEN META WORDS on canvas: never paint "STORY", "REEL", "POST", "INSTAGRAM", "TIKTOK", "FEED", "ÜNLÜ", "VIRAL", "SHARE", or any platform/format label — only the quoted headline/subtitle above.',
     'FORBIDDEN FILLER SLOGANS: never invent brand-wait lines like "sizi bekliyoruz", "özlemle", "buradayız", or paraphrase the headline into a different marketing sentence.',
-    'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording.',
+    'LANGUAGE LOCK: Render headline and subtitle in the SAME language as the quoted strings — do NOT translate EN↔TR or invent alternate wording. Never paint photo-analysis English labels (or Turkish library samples) in place of the quoted line.',
     'THEME LOCK: Headline/subtitle must stay on the same topic as the Instagram caption for this post — never invent kitchen/menu copy for a nightlife/DJ caption, nightlife copy for a food caption, or food-plate copy for a cocktail caption.',
     'TURKISH DIACRITICS: When Turkish copy is listed, preserve İ/ı/Ş/ş/Ğ/ğ/Ü/ü/Ö/ö/Ç/ç exactly — never ASCII-only approximations like "Iletigime Gec" or "Sinirli sure".',
     'If space is tight, shrink typography — never invent alternate wording, never keep only the last two words of a longer headline, never truncate mid-word.',

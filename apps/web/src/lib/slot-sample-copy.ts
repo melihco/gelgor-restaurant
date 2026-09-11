@@ -7,6 +7,8 @@
  */
 
 import type { DesignTemplateFormat, DesignTemplateType } from '@/lib/brand-design-template-presets';
+import { resolveBrandLanguageCode } from '@/lib/cta-localization';
+import { overlayMatchesBrandLanguage } from '@/lib/fal-caption-headline';
 
 export type SlotSampleCopy = {
   headline: string;
@@ -47,11 +49,26 @@ function pair(headline: string, subtitle?: string): SlotSampleCopy {
   return s ? { headline: h || headline, subtitle: s } : { headline: h || headline };
 }
 
+function loc(
+  trH: string,
+  enH: string,
+  language?: string | null,
+  trS?: string,
+  enS?: string,
+): SlotSampleCopy {
+  return resolveBrandLanguageCode(language) === 'en'
+    ? pair(enH, enS)
+    : pair(trH, trS);
+}
+
 /**
  * Prefer a short, punchy slot label over generic type defaults
  * ("Şef özel" → "Şef Özel", not "Özel Kampanya").
  */
-function punchlineFromSlotLabel(label?: string | null): SlotSampleCopy | null {
+function punchlineFromSlotLabel(
+  label?: string | null,
+  language?: string | null,
+): SlotSampleCopy | null {
   const raw = String(label ?? '').trim();
   if (!raw) return null;
   // Drop trailing format noise: "… post", "… story", "… reel"
@@ -64,6 +81,7 @@ function punchlineFromSlotLabel(label?: string | null): SlotSampleCopy | null {
   if (/premium|editorial|campaign|template|şablon/i.test(fitted) && fitted.split(/\s+/).length >= 2) {
     return null;
   }
+  if (language && !overlayMatchesBrandLanguage(fitted, language)) return null;
   return { headline: fitted };
 }
 
@@ -79,10 +97,13 @@ export function resolveSlotSampleCopy(input: {
   /** When false, never return a subtitle. When true, ensure a short support line if type has one. */
   showSubline?: boolean | null;
   sector?: string | null;
+  /** Brand content language — EN brands must not get TR library samples. */
+  language?: string | null;
 }): SlotSampleCopy {
   const key = String(input.catalogSlotKey ?? '').toLowerCase();
   const type = String(input.templateType ?? '').toLowerCase();
   const sector = String(input.sector ?? '').toLowerCase();
+  const lang = input.language;
   const blob = `${key} ${type}`;
   const isHospitalityFood =
     /restaurant|cafe|hotel|local_products/.test(sector) || /restaurant_cafe|local_products/.test(key);
@@ -91,81 +112,97 @@ export function resolveSlotSampleCopy(input: {
 
   // ── Slot-key specifics first (before templateType catch-alls) ─────────────
   if (/social_proof|yorum|review|testimonial|misafir/.test(blob)) {
-    copy = pair('Harika', 'Misafir');
+    copy = loc('Harika', 'Great', lang, 'Misafir', 'Guests');
   } else if (/daybed/.test(blob)) {
-    copy = pair('Daybed', 'Rezervasyon');
+    copy = loc('Daybed', 'Daybed', lang, 'Rezervasyon', 'Reserve');
   } else if (/weekend|hafta.?sonu/.test(blob) && /book|rezerv|booking/.test(blob)) {
     copy = isHospitalityFood
-      ? pair('Hafta Sonu', 'Rezervasyon')
-      : pair('Hafta Sonu', 'Gel');
+      ? loc('Hafta Sonu', 'Weekend', lang, 'Rezervasyon', 'Reserve')
+      : loc('Hafta Sonu', 'Weekend', lang, 'Gel', 'Come');
   } else if (/(^|_)(book|booking|rezerv)/.test(key) || /reservation_cta|rezervasyon/.test(blob)) {
-    copy = pair('Rezervasyon', isHospitalityFood ? 'Masa' : 'Gel');
+    copy = loc('Rezervasyon', 'Reserve', lang, isHospitalityFood ? 'Masa' : 'Gel', isHospitalityFood ? 'Table' : 'Come');
   } else if (/chef_special|şef.?özel|sef.?ozel/.test(blob)) {
-    copy = pair('Şef Özel', 'Bugün');
+    copy = loc('Şef Özel', 'Chef Special', lang, 'Bugün', 'Today');
   } else if (/signature|imza.?tabak|imza.?yemek/.test(blob)) {
-    copy = pair('İmza Tabak', 'Menü');
+    copy = loc('İmza Tabak', 'Signature Dish', lang, 'Menü', 'Menu');
   } else if (/brunch|kahvalt|serpme/.test(blob)) {
-    copy = pair('Kahvaltı', 'Bahçe');
+    copy = loc('Kahvaltı', 'Breakfast', lang, 'Bahçe', 'Garden');
   } else if (/farm.?to.?table|çiftlik|bahçeden|bahceden/.test(blob)) {
-    copy = pair('Bahçeden', 'Sofraya');
+    copy = loc('Bahçeden', 'Garden', lang, 'Sofraya', 'Table');
   } else if (/seasonal.?ingredient|mevsimsel.?malzeme|harvest/.test(blob)) {
-    copy = pair('Mevsim', 'Taze');
+    copy = loc('Mevsim', 'Season', lang, 'Taze', 'Fresh');
   } else if (/happy.?hour/.test(blob)) {
-    copy = pair('Happy Hour', 'Bugün');
+    copy = loc('Happy Hour', 'Happy Hour', lang, 'Bugün', 'Today');
   } else if (/private.?dining|özel.?yemek|ozel.?yemek/.test(blob)) {
-    copy = pair('Özel Masa', 'Davet');
+    copy = loc('Özel Masa', 'Private Table', lang, 'Davet', 'Invite');
   } else if (/kitchen|mutfak|plating|bts/.test(blob)) {
-    copy = pair('Mutfak', 'Kulis');
+    copy = loc('Mutfak', 'Kitchen', lang, 'Kulis', 'Backstage');
   } else if (/dining.?ambiance|yemek.?atmosfer|ambiance|atmosphere/.test(blob) && /venue|showcase|dining/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Bahçe Sofrası' : 'Seni Bekliyoruz');
+    copy = isHospitalityFood
+      ? loc('Bahçe Sofrası', 'Garden Table', lang)
+      : loc('Seni Bekliyoruz', 'Waiting For You', lang);
   } else if (/new.?menu|yeni.?menü|yeni.?menu|menu.?tasting|tadım/.test(blob)) {
-    copy = pair('Yeni Menü', 'Tat');
+    copy = loc('Yeni Menü', 'New Menu', lang, 'Tat', 'Taste');
   } else if (/menu.?highlight|menü.?öne|menu_highlight/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Sofrada' : 'Öne Çıkan', isHospitalityFood ? 'Taze' : 'Taze');
+    copy = loc(
+      isHospitalityFood ? 'Sofrada' : 'Öne Çıkan',
+      isHospitalityFood ? 'On The Table' : 'Featured',
+      lang,
+      'Taze',
+      'Fresh',
+    );
   } else if (/cocktail|kokteyl|drink|bar|wine|şarap/.test(blob)) {
-    copy = pair('İmza Kokteyl', 'Menü');
+    copy = loc('İmza Kokteyl', 'Signature Cocktail', lang, 'Menü', 'Menu');
   } else if (/dj|night|gece|party|event_ticket/.test(blob) && !/restaurant_cafe/.test(key)) {
-    copy = pair('DJ Night', 'Bu Gece');
+    copy = loc('DJ Night', 'DJ Night', lang, 'Bu Gece', 'Tonight');
   } else if (/live_music_event|canlı.?müzik|canli.?muzik/.test(blob)) {
-    copy = pair('Canlı Müzik', 'Bu Gece');
+    copy = loc('Canlı Müzik', 'Live Music', lang, 'Bu Gece', 'Tonight');
   } else if (/event_announcement|etkinlik.?duyuru|private_event/.test(blob)) {
-    copy = pair('Bu Gece', 'Etkinlik');
+    copy = loc('Bu Gece', 'Tonight', lang, 'Etkinlik', 'Event');
   } else if (/sunset|gün.?bat|golden/.test(blob)) {
-    copy = pair('Gün Batımı', 'Altın Saat');
+    copy = loc('Gün Batımı', 'Sunset', lang, 'Altın Saat', 'Golden Hour');
   } else if (/aerial|havadan|drone/.test(blob)) {
-    copy = pair('Atmosfer');
+    copy = loc('Atmosfer', 'Atmosphere', lang);
   } else if (/venue|mekan|showcase/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Bahçede' : 'Seni Bekliyoruz');
+    copy = isHospitalityFood
+      ? loc('Bahçede', 'In The Garden', lang)
+      : loc('Seni Bekliyoruz', 'Waiting For You', lang);
   } else if (/menu|menü|food|seafood|product|dish|tabak/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Sofrada' : 'Öne Çıkan', 'Taze');
+    copy = loc(
+      isHospitalityFood ? 'Sofrada' : 'Öne Çıkan',
+      isHospitalityFood ? 'On The Table' : 'Featured',
+      lang,
+      'Taze',
+      'Fresh',
+    );
   } else if (/typography.?poster|tipografi/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Lezzet' : 'Tipografi');
+    copy = loc(isHospitalityFood ? 'Lezzet' : 'Tipografi', isHospitalityFood ? 'Flavor' : 'Type', lang);
   } else if (/campaign|kampanya|offer|promo|seasonal|sezon/.test(blob)) {
     // Hospitality: never default to "Özel Kampanya" flyer language.
     copy = isHospitalityFood
-      ? pair('Davet', 'Bugün')
-      : pair('Özel Kampanya', 'Sınırlı Süre');
+      ? loc('Davet', 'Invite', lang, 'Bugün', 'Today')
+      : loc('Özel Kampanya', 'Special Offer', lang, 'Sınırlı Süre', 'Limited');
   } else if (/bayram|özel.?gün/.test(blob)) {
-    copy = pair('Mutlu Bayramlar', 'Kutlama');
+    copy = loc('Mutlu Bayramlar', 'Happy Holidays', lang, 'Kutlama', 'Celebrate');
   } else if (type === 'event_special' && /event/.test(blob)) {
-    copy = pair('Bu Gece', 'Etkinlik');
+    copy = loc('Bu Gece', 'Tonight', lang, 'Etkinlik', 'Event');
   } else if (/daily|günaydın|kitchen_bts/.test(blob) && (type === 'daily_story' || /story/.test(blob))) {
-    copy = pair(isHospitalityFood ? 'Bugün' : 'Günaydın');
+    copy = loc(isHospitalityFood ? 'Bugün' : 'Günaydın', isHospitalityFood ? 'Today' : 'Good Morning', lang);
   } else if (/announcement|duyuru|formal/.test(blob)) {
-    copy = pair('Duyuru', 'Bilgi');
+    copy = loc('Duyuru', 'Notice', lang, 'Bilgi', 'Info');
   } else if (/reel|kapak/.test(blob)) {
-    copy = pair(isHospitalityFood ? 'Lezzet' : 'İzle');
+    copy = loc(isHospitalityFood ? 'Lezzet' : 'İzle', isHospitalityFood ? 'Flavor' : 'Watch', lang);
   } else if (/brand_identity|kimlik/.test(blob)) {
-    copy = pair('Marka');
+    copy = loc('Marka', 'Brand', lang);
   }
 
   // Slot label beats still-generic type defaults when key matching was soft.
-  const fromLabel = punchlineFromSlotLabel(input.slotLabel);
+  const fromLabel = punchlineFromSlotLabel(input.slotLabel, lang);
   if (
     fromLabel
     && (
       !copy
-      || /^(Özel Kampanya|Öne Çıkan|İzle|Keşfet|Davet)$/i.test(copy.headline)
+      || /^(Özel Kampanya|Öne Çıkan|İzle|Keşfet|Davet|Special Offer|Featured|Watch|Discover|Invite)$/i.test(copy.headline)
     )
   ) {
     copy = fromLabel.subtitle || !copy?.subtitle
@@ -174,14 +211,14 @@ export function resolveSlotSampleCopy(input: {
   }
 
   if (!copy) {
-    copy = sampleCopyForTemplateType(type, isHospitalityFood);
+    copy = sampleCopyForTemplateType(type, isHospitalityFood, lang);
   }
 
   if (input.showSubline === false) {
     return { headline: copy.headline };
   }
   if (input.showSubline === true && !copy.subtitle) {
-    const withSupport = sampleCopyForTemplateType(type, isHospitalityFood);
+    const withSupport = sampleCopyForTemplateType(type, isHospitalityFood, lang);
     if (withSupport.subtitle) {
       return {
         headline: copy.headline,
@@ -192,32 +229,54 @@ export function resolveSlotSampleCopy(input: {
   return copy;
 }
 
-function sampleCopyForTemplateType(templateType: string, hospitalityFood = false): SlotSampleCopy {
+function sampleCopyForTemplateType(
+  templateType: string,
+  hospitalityFood = false,
+  language?: string | null,
+): SlotSampleCopy {
   switch (templateType) {
     case 'social_proof':
-      return pair('Harika', 'Misafir');
+      return loc('Harika', 'Great', language, 'Misafir', 'Guests');
     case 'venue_showcase':
-      return pair(hospitalityFood ? 'Bahçede' : 'Seni Bekliyoruz');
+      return hospitalityFood
+        ? loc('Bahçede', 'In The Garden', language)
+        : loc('Seni Bekliyoruz', 'Waiting For You', language);
     case 'menu_highlight':
-      return pair(hospitalityFood ? 'Sofrada' : 'Öne Çıkan', 'Taze');
+      return loc(
+        hospitalityFood ? 'Sofrada' : 'Öne Çıkan',
+        hospitalityFood ? 'On The Table' : 'Featured',
+        language,
+        'Taze',
+        'Fresh',
+      );
     case 'campaign_announcement':
       return hospitalityFood
-        ? pair('Davet', 'Bugün')
-        : pair('Özel Kampanya', 'Sınırlı Süre');
+        ? loc('Davet', 'Invite', language, 'Bugün', 'Today')
+        : loc('Özel Kampanya', 'Special Offer', language, 'Sınırlı Süre', 'Limited');
     case 'seasonal_promo':
-      return pair(hospitalityFood ? 'Mevsim' : 'Yeni Sezon', hospitalityFood ? 'Taze' : 'Özel');
+      return loc(
+        hospitalityFood ? 'Mevsim' : 'Yeni Sezon',
+        hospitalityFood ? 'Season' : 'New Season',
+        language,
+        hospitalityFood ? 'Taze' : 'Özel',
+        hospitalityFood ? 'Fresh' : 'Special',
+      );
     case 'event_special':
-      return pair('Mutlu Bayramlar', 'Kutlama');
+      return loc('Mutlu Bayramlar', 'Happy Holidays', language, 'Kutlama', 'Celebrate');
     case 'daily_story':
-      return pair(hospitalityFood ? 'Bugün' : 'Günaydın');
+      return loc(
+        hospitalityFood ? 'Bugün' : 'Günaydın',
+        hospitalityFood ? 'Today' : 'Good Morning',
+        language,
+      );
     case 'announcement_formal':
-      return pair('Duyuru', 'Bilgi');
+      return loc('Duyuru', 'Notice', language, 'Bilgi', 'Info');
     case 'reel_cover':
-      return pair(hospitalityFood ? 'Lezzet' : 'İzle');
+      return loc(hospitalityFood ? 'Lezzet' : 'İzle', hospitalityFood ? 'Flavor' : 'Watch', language);
     case 'brand_identity':
-      return pair('Marka');
+      return loc('Marka', 'Brand', language);
     default:
-      return pair('Keşfet');
+      return loc('Keşfet', 'Discover', language);
   }
 }
 

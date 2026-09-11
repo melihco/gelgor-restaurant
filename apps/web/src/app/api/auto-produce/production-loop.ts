@@ -1848,6 +1848,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           catalogSlotKey: assignment.catalog_slot_key,
           showSubline: falDesignLibrarySlot?.showSubline,
           sector: brandBusinessType,
+          language: brandLanguageCode,
         });
         const designCopy = resolveMissionFalDesignCopy({
           idea: idea as FalDesignCopyIdea,

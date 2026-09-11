@@ -188,6 +188,7 @@ const LIBRARY_SLOT_TO_TEMPLATE_TYPES: Record<string, string[]> = {
   social_proof: ['social_proof'],
   social_proof_post: ['social_proof', 'announcement_formal'],
   ad_creative_post: ['campaign_announcement', 'announcement_formal'],
+  reel_cover: ['reel_cover', 'venue_showcase', 'menu_highlight', 'event_special'],
 };
 
 export type DesignTemplateMatchFormat = 'story' | 'post' | 'reel' | 'carousel';

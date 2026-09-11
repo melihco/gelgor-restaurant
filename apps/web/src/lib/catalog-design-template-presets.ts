@@ -108,6 +108,9 @@ export function buildDesignPresetFromCatalogSlot(
     matchKeywords: keywords.slice(0, 220),
     prominentLogo: LOGO_FORWARD_TYPES.has(templateType),
     catalogSlotKey: slot.slot_key,
+    slotPromptPack: slot.prompt_pack && typeof slot.prompt_pack === 'object'
+      ? slot.prompt_pack
+      : undefined,
   };
   return constitution ? applyConstitutionToPreset(preset, constitution) : preset;
 }

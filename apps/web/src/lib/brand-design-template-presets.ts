@@ -52,6 +52,8 @@ export interface DesignTemplatePreset {
   prominentLogo: boolean;
   /** Catalog slot key when preset is derived from production_slot_definitions. */
   catalogSlotKey?: string;
+  /** Catalog prompt_pack — reel_policy seeds fal_reel recipe on reel_cover templates. */
+  slotPromptPack?: Record<string, unknown>;
 }
 
 /** Sector-tailored noun for the brand's primary "product" surface. */

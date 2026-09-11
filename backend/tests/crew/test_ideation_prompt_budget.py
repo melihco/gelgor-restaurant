@@ -1,5 +1,7 @@
 import json
 
+from crewai import Agent
+
 from app.crew.agents.content_agent import ideation_research_tools_enabled
 from app.crew.context import (
     BrandInfo,
@@ -14,6 +16,7 @@ from app.crew.prompts.content_prompts import (
     trial_and_saas_mix_block,
 )
 from app.crew.tasks.content_tasks import (
+    GALLERY_SCENE_MAX_PHOTOS,
     _build_gallery_scene_block,
     create_content_ideation_task,
     _is_fallback_gallery_description,
@@ -133,8 +136,6 @@ def _analyzed_brand(sector: str, url: str, desc: str, tags: list[str]) -> BrandI
 
 
 def test_ideation_context_drops_raw_json_keeps_scene_block_two_sectors() -> None:
-    from crewai import Agent
-
     cases = (
         (
             "local_products_shop",
@@ -172,3 +173,38 @@ def test_ideation_context_drops_raw_json_keeps_scene_block_two_sectors() -> None
         body = str(task.description or "")
         assert url in body
         assert brand.gallery_analysis not in body
+
+
+def test_ideation_loop_defaults_are_two_iters_and_one_topup() -> None:
+    from app.config import Settings
+    from app.services.package_weekly_geometry import CONTENT_IDEATION_MAX_TOPUPS
+
+    assert Settings.model_fields["crewai_content_ideation_max_iter"].default == 2
+    assert CONTENT_IDEATION_MAX_TOPUPS == 1
+
+
+def test_gallery_scene_caps_fat_inventory_two_sectors() -> None:
+    dummy = Agent(role="x", goal="x", backstory="x")
+    for sector, tag, desc in (
+        ("local_products_shop", "olive_oil", "Labeled olive oil bottle"),
+        ("beach_club", "sunset", "Bitez pier at golden hour"),
+    ):
+        gallery = {
+            f"https://cdn.example.com/{sector}/{i}.jpg": {
+                "contentTags": [tag, f"shot_{i}"],
+                "description": f"{desc} variant {i}. " + ("image_edit_prompt leak " * 8),
+                "usageContext": "hero",
+                "image_edit_prompt": "NEVER PASTE THIS RAW PROMPT " * 20,
+            }
+            for i in range(40)
+        }
+        brand = _brand(sector)
+        brand.gallery_analysis = json.dumps(gallery, ensure_ascii=False)
+        scene = _build_gallery_scene_block(brand)
+        urls = [u for u in gallery if u in scene]
+        assert 1 <= len(urls) <= GALLERY_SCENE_MAX_PHOTOS
+        assert "NEVER PASTE THIS RAW PROMPT" not in scene
+        assert brand.gallery_analysis not in scene
+        body = str(create_content_ideation_task(dummy, brand, count=4).description or "")
+        assert brand.gallery_analysis not in body
+        assert "NEVER PASTE THIS RAW PROMPT" not in body

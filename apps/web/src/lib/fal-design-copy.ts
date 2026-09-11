@@ -9,6 +9,7 @@
 import {
   clampMissionTaglineForCanvas,
   detectOverlayLocale,
+  overlayMatchesBrandLanguage,
   extractCaptionThemePunchline,
   FAL_FEED_OVERLAY_MAX_CHARS,
   areFalOverlayTextsRedundant,
@@ -185,6 +186,7 @@ export function extractCaptionAlignedPunchline(input: {
       && !isIncompleteOverlayPhrase(tight)
       && !isDeadOnCanvasHeadline(tight)
       && !isLabelStyleHeadline(tight)
+      && (!input.language || overlayMatchesBrandLanguage(tight, input.language))
     ) {
       return tight;
     }
@@ -197,6 +199,7 @@ function isPublishableOverlayLine(
   line: string,
   brandName: string,
   captionLoc: OverlayLocale,
+  brandLanguage?: string | null,
 ): boolean {
   const clean = unwrapQuotedOverlayLine(line);
   // Punchy calendar quotes may be short (e.g. "Tadına bak!") — keep ≥6 chars / 2+ words.
@@ -206,7 +209,8 @@ function isPublishableOverlayLine(
   if (isLabelStyleHeadline(clean)) return false;
   if (isMeaninglessBrandEchoHeadline(clean, brandName)) return false;
   if (isIncompleteOverlayPhrase(clean)) return false;
-  if (localesClash(captionLoc, detectOverlayLocale(clean))) return false;
+  if (brandLanguage && !overlayMatchesBrandLanguage(clean, brandLanguage)) return false;
+  if (!brandLanguage && localesClash(captionLoc, detectOverlayLocale(clean))) return false;
   return true;
 }
 
@@ -482,6 +486,7 @@ export function resolveMissionFalDesignCopy(input: {
       missionTagline,
       brandName,
       taglineLoc === 'unknown' ? captionLoc : taglineLoc,
+      input.language,
     )
   ) {
     const ideationTitle = unwrapQuotedOverlayLine(
@@ -495,7 +500,7 @@ export function resolveMissionFalDesignCopy(input: {
     const subtitleSeed = ideationTitle
       && ideationTitle.length <= 36
       && !areFalOverlayTextsRedundant(plannedHeadline, ideationTitle)
-      && isPublishableOverlayLine(ideationTitle, brandName, captionLoc)
+      && isPublishableOverlayLine(ideationTitle, brandName, captionLoc, input.language)
       && !isMeaninglessBrandEchoHeadline(ideationTitle, brandName)
       ? resolvePlannedOverlayLine(
         ideationTitle,
@@ -552,7 +557,11 @@ export function resolveMissionFalDesignCopy(input: {
       : (firstSpoken && acceptPlannedOverlayLine(firstSpoken)
         ? firstSpoken
         : '');
-    if (pairedRaw && acceptPlannedOverlayLine(pairedRaw)) {
+    if (
+      pairedRaw
+      && acceptPlannedOverlayLine(pairedRaw)
+      && (!input.language || overlayMatchesBrandLanguage(pairedRaw, input.language))
+    ) {
       const subtitle = resolveFalSubtitle({
         caption,
         headline: pairedRaw,
@@ -564,7 +573,7 @@ export function resolveMissionFalDesignCopy(input: {
 
   // 2) Purpose-built overlay from canva_field_copy / text_layers.
   const extracted = extractIdeationDesignCopy(input.idea);
-  if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc)) {
+  if (extracted.headline && isPublishableOverlayLine(extracted.headline, brandName, captionLoc, input.language)) {
     const headline = resolvePlannedOverlayLine(
       extracted.headline,
       [],
@@ -608,7 +617,7 @@ export function resolveMissionFalDesignCopy(input: {
     ) {
       continue;
     }
-    if (!isPublishableOverlayLine(agentLine, brandName, captionLoc)) continue;
+    if (!isPublishableOverlayLine(agentLine, brandName, captionLoc, input.language)) continue;
     if (
       extracted.headline
       && unwrapQuotedOverlayLine(extracted.headline).toLowerCase() === agentLine.toLowerCase()
@@ -627,7 +636,7 @@ export function resolveMissionFalDesignCopy(input: {
     const subtitleRaw = input.cta || String(input.idea.subline ?? '').trim();
     const subtitle = subtitleRaw
       && !areFalOverlayTextsRedundant(headline, subtitleRaw)
-      && isPublishableOverlayLine(subtitleRaw, brandName, captionLoc)
+      && isPublishableOverlayLine(subtitleRaw, brandName, captionLoc, input.language)
       ? resolvePlannedOverlayLine(
         subtitleRaw,
         [headline],
@@ -674,6 +683,7 @@ export function resolveMissionFalDesignCopy(input: {
       brandName,
       cta: input.cta,
       maxLen: Math.min(maxLen + 12, FAL_FEED_OVERLAY_MAX_CHARS + 12),
+      language: input.language,
     });
     const themePunch = extractCaptionThemePunchline({
       caption,
@@ -711,7 +721,12 @@ export function resolveMissionFalDesignCopy(input: {
         budget,
       );
     }
-    if (headline && !isDeadOnCanvasHeadline(headline) && !isLabelStyleHeadline(headline)) {
+    if (
+      headline
+      && !isDeadOnCanvasHeadline(headline)
+      && !isLabelStyleHeadline(headline)
+      && (!input.language || overlayMatchesBrandLanguage(headline, input.language))
+    ) {
       const subtitle = resolveFalSubtitle({
         caption,
         headline,
@@ -736,7 +751,7 @@ export function resolveMissionFalDesignCopy(input: {
   // 4) Punchy ideation / concept title (not series labels) — last resort.
   const ideation = input.ideationHeadline.trim()
     || String(input.idea.concept_title ?? input.idea.title ?? input.idea.headline ?? '').trim();
-  if (isPublishableOverlayLine(ideation, brandName, captionLoc)) {
+  if (isPublishableOverlayLine(ideation, brandName, captionLoc, input.language)) {
     const overlay = finalizeMissionOverlay({
       headline: ideation,
       cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
@@ -777,8 +792,14 @@ export function resolveMissionFalDesignCopy(input: {
       brandName,
       maxWords: budget.maxWords,
       maxLen,
+      language: input.language,
     });
-    if (punch && !isLabelStyleHeadline(punch) && !isDeadOnCanvasHeadline(punch)) {
+    if (
+      punch
+      && !isLabelStyleHeadline(punch)
+      && !isDeadOnCanvasHeadline(punch)
+      && (!input.language || overlayMatchesBrandLanguage(punch, input.language))
+    ) {
       return lockToTemplate({
         headline: punch,
         subtitle: resolveFalSubtitle({ caption, headline: punch, cta: input.cta }) ?? undefined,
@@ -791,6 +812,7 @@ export function resolveMissionFalDesignCopy(input: {
       brandName,
       cta: input.cta,
       maxLen,
+      language: input.language,
     });
     const headline = resolveFalProductionOverlayHeadline(
       forced.headline,
@@ -804,6 +826,7 @@ export function resolveMissionFalDesignCopy(input: {
       && !isLabelStyleHeadline(headline)
       && !isDeadOnCanvasHeadline(headline)
       && !isIncompleteOverlayPhrase(headline)
+      && (!input.language || overlayMatchesBrandLanguage(headline, input.language))
     ) {
       return lockToTemplate({
         headline,
@@ -815,11 +838,16 @@ export function resolveMissionFalDesignCopy(input: {
 
   // Catalog slot sample punchline — same short phrases as template library.
   const sample = String(input.sampleHeadline ?? '').trim();
+  const overlayLangOk = !input.language
+    || !overlay.headline
+    || overlayMatchesBrandLanguage(overlay.headline, input.language);
   if (
     sample
     && acceptPlannedOverlayLine(sample)
+    && (!input.language || overlayMatchesBrandLanguage(sample, input.language))
     && (
       !overlay.headline
+      || !overlayLangOk
       || !isMeaningfulFalOverlayText(overlay.headline)
       || isLabelStyleHeadline(overlay.headline)
       || isDeadOnCanvasHeadline(overlay.headline)
@@ -831,6 +859,25 @@ export function resolveMissionFalDesignCopy(input: {
       subtitle: String(input.sampleSubtitle ?? '').trim() || undefined,
       source: 'catalog_sample',
     });
+  }
+
+  if (input.language && overlay.headline && !overlayLangOk) {
+    const punch = extractCaptionAlignedPunchline({
+      caption,
+      brandName,
+      maxWords: budget.maxWords,
+      maxLen,
+      language: input.language,
+      missionTitle: input.ideationHeadline,
+    });
+    if (punch && overlayMatchesBrandLanguage(punch, input.language) && acceptPlannedOverlayLine(punch)) {
+      return lockToTemplate({
+        headline: punch,
+        subtitle: resolveFalSubtitle({ caption, headline: punch, cta: input.cta }) ?? undefined,
+        source: 'caption_punchline',
+      });
+    }
+    return lockToTemplate({ headline: '', subtitle: undefined, source: 'language_mismatch' });
   }
 
   return lockToTemplate({ ...overlay, source: 'ideation_locked' });

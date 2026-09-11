@@ -7,7 +7,9 @@ import {
   resolveReelProductionRecipe,
   reelRecipeToJson,
   seedReelRecipeForTemplate,
+  withCatalogReelPolicy,
 } from '../reel-production-recipe';
+import { synthesizeSectorSlotDefinitions } from '../sector-slot-pack';
 
 describe('reel-production-recipe', () => {
   it('infers menu_highlight recipe for cocktail reel slots', () => {
@@ -86,6 +88,38 @@ describe('reel-production-recipe', () => {
     const parsed = parseReelRecipePartial(json);
     expect(parsed.motionMode).toBe('photo_plate');
     expect(parsed.reelJob).toBe('menu_highlight');
+  });
+
+  it('does not overwrite an operator reel_policy already on the pack', () => {
+    const kept = withCatalogReelPolicy(
+      { reel_policy: { camera: 'static', reel_job: 'offer' } },
+      { catalogSlotKey: 'beach_club_atmosphere_reel', format: 'reel', sector: 'beach_club' },
+    );
+    expect(kept.reel_policy).toEqual({ camera: 'static', reel_job: 'offer' });
+  });
+
+  it('catalog reel prompt_pack drives Fal recipe for beach atmosphere vs shop product', () => {
+    const beach = synthesizeSectorSlotDefinitions('beach_club')
+      .find((s) => s.slot_key === 'beach_club_atmosphere_reel');
+    const shop = synthesizeSectorSlotDefinitions('local_products_shop')
+      .find((s) => s.slot_key === 'local_products_shop_product_detail_reel');
+    expect(beach?.prompt_pack).toBeTruthy();
+    expect(shop?.prompt_pack).toBeTruthy();
+
+    const beachRecipe = resolveReelProductionRecipe({
+      sector: 'beach_club',
+      catalogSlotKey: 'beach_club_atmosphere_reel',
+      slotPromptPack: beach!.prompt_pack,
+    });
+    const shopRecipe = resolveReelProductionRecipe({
+      sector: 'local_products_shop',
+      catalogSlotKey: 'local_products_shop_product_detail_reel',
+      slotPromptPack: shop!.prompt_pack,
+    });
+    expect(beachRecipe.reelJob).toBe('venue_mood');
+    expect(beachRecipe.camera).toBe('slow_pan');
+    expect(shopRecipe.reelJob).toBe('menu_highlight');
+    expect(shopRecipe.reelJob).not.toBe(beachRecipe.reelJob);
   });
 
   it('defaults photo_plate for generic slots across sectors', () => {

@@ -7,6 +7,7 @@
 
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 import { buildDesignedStoryPromptPack } from '@/lib/catalog-slot-visual-defaults';
+import { withCatalogReelPolicy } from '@/lib/reel-production-recipe';
 
 export type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 
@@ -353,7 +354,15 @@ function inferSlotRole(format: SlotFormat): string {
   return 'fal_designed_post';
 }
 
-function inferLibrarySlotKey(slotKey: string, designType: string): string | null {
+function inferLibrarySlotKey(
+  slotKey: string,
+  designType: string,
+  format: SlotFormat,
+): string | null {
+  // Reel catalog rows bind reel_cover shells — never daily_story / editorial_story.
+  if (format === 'reel' || catalogSlotPurposeKey(slotKey).endsWith('_reel')) {
+    return 'reel_cover';
+  }
   if (designType === 'event_special') return 'event_story';
   if (designType === 'campaign_announcement' || designType === 'seasonal_promo') return 'campaign_post';
   if (designType === 'social_proof') return 'social_proof_post';
@@ -1180,20 +1189,28 @@ export function instanceToSlotDefinition(
     pipeline: instance.pipeline ?? inferPipeline(instance.format),
     slot_role: instance.slotRole ?? inferSlotRole(instance.format),
     design_template_type: designType,
-    library_slot_key: inferLibrarySlotKey(slotKey, designType),
+    library_slot_key: inferLibrarySlotKey(slotKey, designType, instance.format),
     tier: instance.tier ?? (instance.format === 'reel' || instance.format === 'carousel' ? 'premium' : 'standard'),
     match_signals: buildMatchSignals(slotKey, designType),
-    prompt_pack: {
-      ...(instance.requiresPremiumComposition
-        ? {
-          ...buildDesignedStoryPromptPack(instance.labelEn),
-          scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
-        }
-        : {
-          scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
-        }),
-      ...(instance.promptPackExtras ?? {}),
-    },
+    prompt_pack: withCatalogReelPolicy(
+      {
+        ...(instance.requiresPremiumComposition
+          ? {
+            ...buildDesignedStoryPromptPack(instance.labelEn),
+            scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+          }
+          : {
+            scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
+          }),
+        ...(instance.promptPackExtras ?? {}),
+      },
+      {
+        catalogSlotKey: slotKey,
+        sector: pack.sectorId,
+        templateType: designType,
+        format: instance.format,
+      },
+    ),
     optional_tags: instance.optionalTags ?? [],
     // Reel catalog paused platform-wide until reel production is re-enabled.
     enabled_by_default: instance.enabledByDefault

@@ -9,7 +9,7 @@ import time as _time
 from datetime import datetime, timezone
 from crewai import Agent, Task
 
-from app.crew.context import BrandInfo, build_urgency_directive
+from app.crew.context import BrandInfo, build_urgency_directive, omit_raw_gallery_analysis
 from app.crew.prompts.content_prompts import (
     CONTENT_CALENDAR_TASK,
     CONTENT_IDEATION_TASK,
@@ -17,6 +17,10 @@ from app.crew.prompts.content_prompts import (
     trial_and_saas_mix_block,
 )
 from app.services.slot_purpose import slot_purpose_job
+
+
+# Compact scene inventory — full gallery_analysis JSON stays out of the prompt.
+GALLERY_SCENE_MAX_PHOTOS = 18
 
 
 def _is_fallback_gallery_description(description: str) -> bool:
@@ -235,7 +239,21 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
             if not used_types:
                 unused_photos.append(entry)
 
-        sorted_scenes = sorted(scene_map.items(), key=lambda x: len(x[1]), reverse=True)[:15]
+        picked: list[dict] = []
+        seen_urls: set[str] = set()
+        for entry in unused_photos + [p for photos in scene_map.values() for p in photos]:
+            url = str(entry.get("url") or "")
+            if not url or url in seen_urls:
+                continue
+            seen_urls.add(url)
+            picked.append(entry)
+            if len(picked) >= GALLERY_SCENE_MAX_PHOTOS:
+                break
+        display_map: dict = _dd(list)
+        for entry in picked:
+            label = (entry.get("tags") or ["venue"])[0]
+            display_map[label].append(entry)
+        sorted_scenes = sorted(display_map.items(), key=lambda x: len(x[1]), reverse=True)
         total = len(gallery_data)
         used_count = sum(1 for u in gallery_data if u.split("?")[0] in used_bases)
         unused_count = total - used_count
@@ -287,9 +305,9 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
             for photo in photos:
                 used_types = photo.get("used_types") or []
                 status = "✓ " + ", ".join(used_types) if used_types else "✨"
-                desc_str = (photo.get("desc") or "")[:120]
+                desc_str = (photo.get("desc") or "")[:80]
                 mood_str = photo.get("mood") or ""
-                usage_str = (photo.get("usage") or "")[:80]
+                usage_str = (photo.get("usage") or "")[:60]
                 line = f"  {status} {photo['url']}"
                 if desc_str:
                     line += f"\n      📝 {desc_str}"
@@ -298,17 +316,6 @@ def _build_gallery_scene_block(brand: BrandInfo) -> str:
                 if usage_str:
                     line += f"\n      → {usage_str}"
                 lines.append(line)
-
-        if unused_photos and used_count > 0:
-            lines += [
-                "",
-                "### UNUSED PHOTOS (prioritize for new content):",
-            ]
-            for p in unused_photos[:12]:
-                tags_str = ", ".join(p["tags"])
-                desc_short = (p.get("desc") or "")[:80]
-                desc_part = f" → {desc_short}" if desc_short else ""
-                lines.append(f"  ✨ {p['url']} | {tags_str} ({p['mood']}){desc_part}")
 
         lines += [
             "",
@@ -702,6 +709,8 @@ def create_content_ideation_task(
     slot_plan_block = _catalog_slot_plan_block(catalog_slot_plan, output_language)
     if slot_plan_block:
         description = slot_plan_block + "\n\n---\n\n" + description
+
+    description = omit_raw_gallery_analysis(description, brand.gallery_analysis)
 
     return Task(
         name="Haftalık içerik fikirleri",

@@ -35,6 +35,8 @@ import {
   type GalleryPhotoSpatial,
 } from '@/lib/gallery-photo-spatial';
 import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
+import { resolveBrandLanguageCode } from '@/lib/cta-localization';
+import { detectOverlayLocale } from '@/lib/fal-caption-headline';
 import {
   buildRecipeReplicaPrompt,
   formatTemplateRecipeLock,
@@ -196,7 +198,14 @@ export function buildTemplateLayoutDirectives(
   }
 
   if (missionHeadline) {
-    out.push(`MISSION HEADLINE (render exactly, Turkish diacritics preserved): "${missionHeadline}"`);
+    const loc = detectOverlayLocale(missionHeadline);
+    out.push(
+      loc === 'en'
+        ? `MISSION HEADLINE (render exactly, English — do not translate to Turkish): "${missionHeadline}"`
+        : loc === 'tr'
+          ? `MISSION HEADLINE (render exactly, Turkish diacritics preserved): "${missionHeadline}"`
+          : `MISSION HEADLINE (render exactly — do not translate or substitute): "${missionHeadline}"`,
+    );
   }
   if (missionSubtitle) {
     out.push(`MISSION SUBTITLE (render exactly): "${missionSubtitle}"`);
@@ -607,7 +616,11 @@ export function appendPhotoSpatialToReplicaPrompt(
 export function buildTemplateReplicaPrompt(
   spec: TemplateReplicaSpec,
   mission: { headline: string; subtitle?: string | null },
-  opts?: { showSubline?: boolean | null; photoSpatial?: GalleryPhotoSpatial | null },
+  opts?: {
+    showSubline?: boolean | null;
+    photoSpatial?: GalleryPhotoSpatial | null;
+    language?: string | null;
+  },
 ): string {
   let prompt = spec.prompt.trim();
   const missionSubtitle = resolveSlotSublineForRender(mission.subtitle, {
@@ -640,9 +653,22 @@ export function buildTemplateReplicaPrompt(
   const sampleH = String(spec.sampleHeadline ?? '').trim();
   const sampleS = String(spec.sampleSubtitle ?? '').trim();
   const typeBudgetLines = formatTypeBudgetPromptLines(spec.typeBudget);
+  const detectedHeadlineLoc = detectOverlayLocale(mission.headline);
+  const brandLang = opts?.language
+    ? resolveBrandLanguageCode(opts.language)
+    : detectedHeadlineLoc === 'en'
+      ? 'en'
+      : detectedHeadlineLoc === 'tr'
+        ? 'tr'
+        : null;
+  const headlineExact = brandLang === 'en'
+    ? `ON-CANVAS HEADLINE (exact, English — do not translate to Turkish): "${mission.headline}"`
+    : brandLang === 'tr'
+      ? `ON-CANVAS HEADLINE (exact, Turkish diacritics preserved): "${mission.headline}"`
+      : `ON-CANVAS HEADLINE (exact — do not translate or substitute): "${mission.headline}"`;
   const header = [
     '═══ MISSION COPY OVERRIDE (FINAL AUTHORITY) ═══',
-    `ON-CANVAS HEADLINE (exact, Turkish diacritics preserved): "${mission.headline}"`,
+    headlineExact,
     missionSubtitle
       ? `ON-CANVAS SUBTITLE (exact): "${missionSubtitle}"`
       : 'NO SUBTITLE — render only the headline above.',
@@ -662,6 +688,11 @@ export function buildTemplateReplicaPrompt(
     spec.forbiddenTexts.length
       ? `FORBIDDEN TEXT (template placeholders — never render): ${spec.forbiddenTexts.map((t) => `"${t}"`).join(', ')}`
       : '',
+    brandLang === 'en'
+      ? 'LANGUAGE LOCK: Brand content language is English. Paint ONLY the quoted headline. Never translate to Turkish. Never substitute photo-analysis labels or Turkish library sample copy.'
+      : brandLang === 'tr'
+        ? 'LANGUAGE LOCK: Brand content language is Turkish. Paint ONLY the quoted headline. Never translate to English. Never substitute photo-analysis English labels (e.g. dish names from gallery tags).'
+        : 'LANGUAGE LOCK: Paint ONLY the quoted headline. Never translate. Never substitute photo-analysis labels or library sample copy.',
     ...(spec.recipe ? formatTemplateRecipeLock(spec.recipe) : []),
     'This is the brand\'s SAVED template spec re-issued: keep its layout, typography system, and colors exactly — only the text above and the mission photo change. Copy must fit the reserved type zone without overflow/clipping.',
     opts?.photoSpatial ? buildPhotoSpatialPromptLock(opts.photoSpatial) : '',

@@ -427,7 +427,7 @@ def _drop_gallery_inventory_section(text: str) -> str:
 def build_ideation_brand_context(brand: BrandInfo) -> str:
     """Ideation backstory: DNA + profile. Photo evidence lives in the task scene block.
 
-    Does not change max_iter or top-ups. Does not shrink the scene block.
+    Photo evidence stays in the compact task scene block, not raw JSON.
     """
     text = build_brand_context_prompt(brand, include_gallery_inventory=False)
     text = _drop_gallery_inventory_section(text)

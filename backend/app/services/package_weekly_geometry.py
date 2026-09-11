@@ -109,7 +109,8 @@ def resolve_content_ideation_agent_timeout_seconds(count: int) -> int:
 
 
 #: Top-up passes `_ensure_distinct_ideation_batch` may spend to fill the package.
-CONTENT_IDEATION_MAX_TOPUPS = 4
+#: One fill pass is enough; extra full kickoffs reprint the same ~15k-token prompt.
+CONTENT_IDEATION_MAX_TOPUPS = 1
 
 
 def resolve_content_ideation_executor_timeout_seconds(count: int, iterations: int) -> int:

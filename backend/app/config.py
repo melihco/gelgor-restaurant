@@ -177,7 +177,7 @@ class Settings(BaseSettings):
     # Opt into 2 via CREWAI_CONTENT_ITERATIONS=2 when a tenant needs the quality pass.
     crewai_content_iterations: int = 1
     crewai_content_max_iter: int = 7
-    crewai_content_ideation_max_iter: int = 5
+    crewai_content_ideation_max_iter: int = 2
     # Ideation task already embeds a rich gallery scene block — drop the duplicate
     # inventory from the agent backstory (large input-token win). Set false to restore.
     dedup_gallery_backstory: bool = True

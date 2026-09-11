@@ -177,6 +177,7 @@ export function buildSlotGalleryMatchInput(input: {
   mood?: string;
   visualDirection?: string;
   strategicPurpose?: string;
+  language?: string;
 }): MatchPhotoInput {
   const format = slotFormatFromAssignment(input.assignment);
   const hint = String(input.visualSubjectHint ?? '').trim();
@@ -215,6 +216,7 @@ export function buildSlotGalleryMatchInput(input: {
       templateType: catalogHints?.templateType,
       sector: sectorId,
       showSubline: false,
+      language: input.language,
     }).headline
     : '';
 
@@ -604,6 +606,7 @@ export async function resolveGalleryFirstForSlot(input: {
     mood,
     visualDirection,
     strategicPurpose,
+    language: input.language,
   });
 
   if (shouldLookFeedSlotPack(input.assignment)) {

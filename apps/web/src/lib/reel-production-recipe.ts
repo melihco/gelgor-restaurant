@@ -426,6 +426,38 @@ export function resolveReelProductionRecipe(input: {
   );
 }
 
+/**
+ * Persist Fal reel policy on a catalog slot prompt_pack when missing.
+ * Designed reels read this at produce time (same slot → same recipe).
+ */
+export function withCatalogReelPolicy(
+  promptPack: Record<string, unknown> | null | undefined,
+  input: {
+    catalogSlotKey?: string | null;
+    sector?: string | null;
+    templateType?: string | null;
+    format?: string | null;
+  },
+): Record<string, unknown> {
+  const pack = promptPack && typeof promptPack === 'object' ? { ...promptPack } : {};
+  const key = String(input.catalogSlotKey ?? '').trim();
+  const format = String(input.format ?? '').trim().toLowerCase();
+  const isReel = format === 'reel' || /(?:^|_)reel(?:$|_)/i.test(key);
+  if (!isReel) return pack;
+  if (pack.reel_policy || pack.reelPolicy) return pack;
+  return {
+    ...pack,
+    reel_policy: reelRecipeToJson(
+      seedReelRecipeForTemplate({
+        catalogSlotKey: key,
+        templateType: input.templateType,
+        sector: input.sector,
+        slotPromptPack: pack,
+      }),
+    ),
+  };
+}
+
 /** Seed recipe when generating a reel_cover template in the library. */
 export function seedReelRecipeForTemplate(input: {
   catalogSlotKey?: string | null;

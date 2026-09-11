@@ -11,6 +11,7 @@ import {
   synthesizeSectorSlotDefinitions,
   type BrandSlotFacilities,
 } from '@/lib/sector-slot-pack';
+import { withCatalogReelPolicy } from '@/lib/reel-production-recipe';
 
 export interface CanonicalSector {
   sector_id: string;
@@ -125,15 +126,26 @@ export function enrichDbSlotsWithSectorPackDefaults(
     const packPack = pack.prompt_pack && typeof pack.prompt_pack === 'object' ? pack.prompt_pack : {};
     const needsPremium = packPack.require_premium_composition === true
       && dbPack.require_premium_composition !== true;
+    const needsReelAlign = pack.format === 'reel' && (
+      slot.library_slot_key !== 'reel_cover'
+      || !(dbPack.reel_policy || dbPack.reelPolicy)
+    );
 
-    if (!needsPremium) return slot;
+    if (!needsPremium && !needsReelAlign) return slot;
 
+    const mergedPack = needsPremium ? { ...dbPack, ...packPack } : { ...packPack, ...dbPack };
     return {
       ...slot,
       pipeline: pack.pipeline || slot.pipeline,
       slot_role: pack.slot_role || slot.slot_role,
       design_template_type: pack.design_template_type || slot.design_template_type,
-      prompt_pack: { ...dbPack, ...packPack },
+      library_slot_key: pack.format === 'reel' ? 'reel_cover' : (slot.library_slot_key ?? pack.library_slot_key),
+      prompt_pack: withCatalogReelPolicy(mergedPack, {
+        catalogSlotKey: slot.slot_key,
+        sector: slot.sector_id,
+        templateType: pack.design_template_type || slot.design_template_type,
+        format: pack.format || slot.format,
+      }),
     };
   });
 

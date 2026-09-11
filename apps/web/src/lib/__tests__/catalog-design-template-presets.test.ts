@@ -6,7 +6,10 @@ import {
   ONBOARDING_CATALOG_TEMPLATE_CAP,
 } from '@/lib/catalog-design-template-presets';
 import { resolveDesignTemplatePresets } from '@/lib/brand-design-template-presets';
-import { resolveSectorSlotsWithPackFallback } from '@/lib/production-slot-catalog';
+import {
+  enrichDbSlotsWithSectorPackDefaults,
+  resolveSectorSlotsWithPackFallback,
+} from '@/lib/production-slot-catalog';
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 
 function mockSlot(overrides: Partial<ProductionSlotDefinition> & Pick<ProductionSlotDefinition, 'slot_key' | 'design_template_type'>): ProductionSlotDefinition {
@@ -67,9 +70,13 @@ describe('buildDesignPresetFromCatalogSlot', () => {
         slot_key: 'beach_club_reel_teaser',
         design_template_type: 'reel_cover',
         format: 'reel',
+        prompt_pack: { reel_policy: { reel_job: 'venue_mood', camera: 'slow_pan' } },
       }),
     );
     expect(preset.format).toBe('reel_cover');
+    expect(preset.slotPromptPack).toMatchObject({
+      reel_policy: { reel_job: 'venue_mood', camera: 'slow_pan' },
+    });
   });
 
   it('maps carousel catalog slots to carousel design format (beach + shop)', () => {
@@ -220,6 +227,33 @@ describe('resolveSectorSlotsWithPackFallback', () => {
     });
     const slots = resolveSectorSlotsWithPackFallback('beach_club', [stale]);
     expect(slots.some((s) => s.slot_key === 'beach_club_daybed_offer_post')).toBe(true);
+  });
+
+  it('repairs stale reel DB rows to reel_cover + Fal reel_policy (beach + shop)', () => {
+    const staleBeach = mockSlot({
+      slot_key: 'beach_club_atmosphere_reel',
+      design_template_type: 'venue_showcase',
+      format: 'reel',
+      sector_id: 'beach_club',
+      library_slot_key: 'daily_story',
+      prompt_pack: { scene_hint_template: 'old' },
+    });
+    const staleShop = mockSlot({
+      slot_key: 'local_products_shop_product_detail_reel',
+      design_template_type: 'menu_highlight',
+      format: 'reel',
+      sector_id: 'local_products_shop',
+      library_slot_key: 'editorial_story',
+      prompt_pack: {},
+    });
+    const beach = enrichDbSlotsWithSectorPackDefaults('beach_club', [staleBeach]);
+    const shop = enrichDbSlotsWithSectorPackDefaults('local_products_shop', [staleShop]);
+    const atmosphere = beach.find((s) => s.slot_key === 'beach_club_atmosphere_reel');
+    const product = shop.find((s) => s.slot_key === 'local_products_shop_product_detail_reel');
+    expect(atmosphere?.library_slot_key).toBe('reel_cover');
+    expect(atmosphere?.prompt_pack.reel_policy).toMatchObject({ reel_job: 'venue_mood' });
+    expect(product?.library_slot_key).toBe('reel_cover');
+    expect(product?.prompt_pack.reel_policy).toMatchObject({ reel_job: 'menu_highlight' });
   });
 
   it('disables delivery promo when delivery facility off in pack fallback', () => {
