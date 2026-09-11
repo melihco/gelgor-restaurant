@@ -650,6 +650,9 @@ async def drain_production_jobs(
     claimed_total = ready_total = failed_total = enqueued_total = 0
     saw_lock_defer = False
     while claimed_total < max_slots:
+        if await jobs.has_live_in_flight(mission_id, stale_sec=claim_stale_sec):
+            saw_lock_defer = True
+            break
         limit = min(batch_size, max_slots - claimed_total)
         batch = await jobs.claim_batch(mission_id, limit=limit, stale_sec=claim_stale_sec)
         if not batch:
@@ -788,27 +791,36 @@ async def drain_production_jobs(
         # endregion
 
         if _is_ops_defer_reason(batch_reason):
-            delay = _bullmq_defer_delay_sec(batch_reason)
-            batch_spent = 0
-            for job in batch:
-                defer_status = await jobs.mark_deferred(
-                    job["id"],
-                    batch_reason,
-                    delay_sec=delay,
-                    max_age_sec=_defer_max_age_sec(batch_reason),
-                    count_attempt=_defer_counts_attempt(batch_reason),
+            if _should_keep_running_for_inflight(produce_data, batch_reason):
+                saw_lock_defer = True
+                logger.info(
+                    "production_factory.batch_stays_running",
+                    mission_id=str(mission_id),
+                    slots=slot_keys,
+                    reason=batch_reason,
                 )
-                if defer_status == "exhausted":
-                    batch_spent += 1
-            failed_total += batch_spent
-            logger.info(
-                "production_factory.batch_deferred",
-                mission_id=str(mission_id),
-                slots=slot_keys,
-                reason=batch_reason,
-                delay_sec=delay,
-                exhausted=batch_spent,
-            )
+            else:
+                delay = _bullmq_defer_delay_sec(batch_reason)
+                batch_spent = 0
+                for job in batch:
+                    defer_status = await jobs.mark_deferred(
+                        job["id"],
+                        batch_reason,
+                        delay_sec=delay,
+                        max_age_sec=_defer_max_age_sec(batch_reason),
+                        count_attempt=_defer_counts_attempt(batch_reason),
+                    )
+                    if defer_status == "exhausted":
+                        batch_spent += 1
+                failed_total += batch_spent
+                logger.info(
+                    "production_factory.batch_deferred",
+                    mission_id=str(mission_id),
+                    slots=slot_keys,
+                    reason=batch_reason,
+                    delay_sec=delay,
+                    exhausted=batch_spent,
+                )
         else:
             for job, key in zip(batch, slot_keys):
                 if key in ok_map:
@@ -872,11 +884,21 @@ async def drain_production_jobs(
     # Continuation kicks — BullMQ relies on worker callbacks; schedule a safety-net
     # drain when open jobs remain so slots do not freeze if the callback never arrives.
     if use_bullmq:
-        if await jobs.has_runnable_jobs(mission_id):
-            if saw_lock_defer:
-                delay = _bullmq_defer_delay_sec("production_in_flight")
-            else:
-                delay = 45.0 if enqueued_total > 0 else 2.0
+        if enqueued_total > 0:
+            # Worker callback continues the line. A 45s kick claims siblings
+            # while the lock is held → 409 pending in_flight pump.
+            schedule_drain(
+                mission_id,
+                workspace_id,
+                delay_sec=float(claim_stale_sec),
+                force=True,
+            )
+        elif await jobs.has_runnable_jobs(mission_id):
+            delay = (
+                _bullmq_defer_delay_sec("production_in_flight")
+                if saw_lock_defer
+                else 2.0
+            )
             schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
         elif (
             not summary_after.get("complete")
@@ -1057,6 +1079,17 @@ def _is_inflight_defer_reason(reason: str) -> bool:
     return "production_in_flight" in lower or "route_still_running" in lower
 
 
+def _should_keep_running_for_inflight(
+    produce_data: dict | None,
+    reason: str,
+) -> bool:
+    """Timeout / disconnect: Next.js is still painting. Pending-reclaim starts a second paint."""
+    if not _is_inflight_defer_reason(reason):
+        return False
+    code = str((produce_data or {}).get("code") or "").strip().lower()
+    return code == "route_still_running" or "route_still_running" in (reason or "").lower()
+
+
 def _defer_counts_attempt(reason: str) -> bool:
     """In-flight lock and quality gates both burn attempts — a flat 45s
     defer with attempts stuck at 0/12 repaints the same slot for hours.
@@ -1200,26 +1233,33 @@ async def apply_bullmq_completion(
     ready = failed = deferred = 0
     defer_reasons = _bullmq_defer_reasons()
     if reason in defer_reasons or _is_ops_defer_reason(reason):
-        delay = _bullmq_defer_delay_sec(reason)
-        for fj in factory_jobs:
-            job_id = fj.get("id")
-            if not job_id:
-                continue
-            try:
-                job_uuid = uuid.UUID(str(job_id))
-            except (ValueError, TypeError):
-                continue
-            defer_status = await jobs.mark_deferred(
-                job_uuid,
-                reason,
-                delay_sec=delay,
-                max_age_sec=_defer_max_age_sec(reason),
-                count_attempt=_defer_counts_attempt(reason),
+        if _should_keep_running_for_inflight(produce_data, reason):
+            logger.info(
+                "production_factory.bullmq_stays_running",
+                mission_id=str(mission_id),
+                reason=reason[:160],
             )
-            if defer_status == "exhausted":
-                failed += 1
-            else:
-                deferred += 1
+        else:
+            delay = _bullmq_defer_delay_sec(reason)
+            for fj in factory_jobs:
+                job_id = fj.get("id")
+                if not job_id:
+                    continue
+                try:
+                    job_uuid = uuid.UUID(str(job_id))
+                except (ValueError, TypeError):
+                    continue
+                defer_status = await jobs.mark_deferred(
+                    job_uuid,
+                    reason,
+                    delay_sec=delay,
+                    max_age_sec=_defer_max_age_sec(reason),
+                    count_attempt=_defer_counts_attempt(reason),
+                )
+                if defer_status == "exhausted":
+                    failed += 1
+                else:
+                    deferred += 1
     else:
         for fj in factory_jobs:
             job_id = fj.get("id")
@@ -1266,8 +1306,11 @@ async def apply_bullmq_completion(
 
     # Claim + enqueue any remaining runnable jobs for this mission.
     if not summary_after.get("complete") and await jobs.has_runnable_jobs(mission_id):
-        # Match mark_deferred backoff — avoid enqueue storms while lock is held.
-        delay = 45.0 if deferred > 0 else 2.0
+        delay = (
+            _bullmq_defer_delay_sec("production_in_flight")
+            if deferred > 0 and _is_inflight_defer_reason(reason)
+            else (45.0 if deferred > 0 else 2.0)
+        )
         schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
 
     return {

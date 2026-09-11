@@ -215,6 +215,41 @@ async def upsert_jobs(
     return inserted
 
 
+def _live_inflight_exists_sql(alias: str = "j") -> str:
+    """True when another non-stale claimed/running job already holds this mission."""
+    return f"""
+    EXISTS (
+        SELECT 1 FROM production_jobs live
+        WHERE live.mission_id = {alias}.mission_id
+          AND live.status IN ('claimed', 'running')
+          AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
+    )
+    """
+
+
+async def has_live_in_flight(
+    mission_id: uuid.UUID,
+    *,
+    stale_sec: int = _STALE_CLAIM_SEC,
+) -> bool:
+    """A worker is already painting this mission — do not claim a second batch."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                SELECT 1 FROM production_jobs live
+                WHERE live.mission_id = CAST(:mission_id AS UUID)
+                  AND live.status IN ('claimed', 'running')
+                  AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
+                LIMIT 1
+                """
+            ),
+            {"mission_id": str(mission_id), "stale_sec": int(stale_sec)},
+        )
+        return res.first() is not None
+
+
 async def claim_batch(
     mission_id: uuid.UUID | None,
     *,
@@ -225,6 +260,8 @@ async def claim_batch(
 
     A job is runnable when it is pending/failed and ``run_after <= now()``, OR it was
     claimed/running but its worker went stale. Marks claimed rows and returns them.
+    One live produce per mission: pending siblings stay queued until that batch
+    finishes. Otherwise 409 in_flight parks them and the next drain paints again.
     """
     factory = _get_session_factory()
     async with factory() as db:
@@ -232,16 +269,17 @@ async def claim_batch(
             text(
                 f"""
                 WITH claimable AS (
-                    SELECT id FROM production_jobs
+                    SELECT id FROM production_jobs j
                     WHERE (CAST(:mission_id AS UUID) IS NULL
-                           OR mission_id = CAST(:mission_id AS UUID))
+                           OR j.mission_id = CAST(:mission_id AS UUID))
                       AND (
-                        (status IN ('pending', 'failed') AND run_after <= now())
-                        OR (status IN ('claimed', 'running')
-                            AND claimed_at < now() - make_interval(secs => :stale_sec))
+                        (j.status IN ('pending', 'failed') AND j.run_after <= now())
+                        OR (j.status IN ('claimed', 'running')
+                            AND j.claimed_at < now() - make_interval(secs => :stale_sec))
                       )
-                      AND NOT ({_terminal_error_sql()})
-                    ORDER BY COALESCE(priority, 0) DESC, run_after ASC
+                      AND NOT ({_terminal_error_sql("j.last_error")})
+                      AND NOT ({_live_inflight_exists_sql("j")})
+                    ORDER BY COALESCE(j.priority, 0) DESC, j.run_after ASC
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
                 )
@@ -810,14 +848,15 @@ async def has_runnable_jobs(mission_id: uuid.UUID) -> bool:
     async with factory() as db:
         res = await db.execute(
             text(
-                """
-                SELECT 1 FROM production_jobs
-                WHERE mission_id = CAST(:mission_id AS UUID)
+                f"""
+                SELECT 1 FROM production_jobs j
+                WHERE j.mission_id = CAST(:mission_id AS UUID)
                   AND (
-                    (status IN ('pending', 'failed') AND run_after <= now())
-                    OR (status IN ('claimed', 'running')
-                        AND claimed_at < now() - make_interval(secs => :stale_sec))
+                    (j.status IN ('pending', 'failed') AND j.run_after <= now())
+                    OR (j.status IN ('claimed', 'running')
+                        AND j.claimed_at < now() - make_interval(secs => :stale_sec))
                   )
+                  AND NOT ({_live_inflight_exists_sql("j")})
                 LIMIT 1
                 """
             ),

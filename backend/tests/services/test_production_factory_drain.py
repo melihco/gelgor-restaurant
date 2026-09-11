@@ -361,6 +361,11 @@ def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     assert pfs._is_inflight_defer_reason(shop_lock) is True
     assert pfs._bullmq_defer_delay_sec("production_in_flight") == 240.0
     assert pfs._bullmq_defer_delay_sec("route_still_running") == 240.0
+    shop_timeout = {"code": "route_still_running"}
+    beach_timeout = {"code": "route_still_running", "reason": "production_in_flight"}
+    assert pfs._should_keep_running_for_inflight(shop_timeout, "production_in_flight") is True
+    assert pfs._should_keep_running_for_inflight(beach_timeout, "production_in_flight") is True
+    assert pfs._should_keep_running_for_inflight({}, "production_in_flight") is False
 
     # Both categories still get a wall-clock backstop; nothing defers forever.
     assert pfs._defer_max_age_sec(quality) == pfs._quality_defer_max_age_sec()
@@ -388,6 +393,15 @@ class _JobsRecorder:
         self.deferred: list[tuple[uuid.UUID, str]] = []
         self.defer_opts: list[dict] = []
         self.running: list[uuid.UUID] = []
+        self.live_in_flight = False
+
+    async def has_live_in_flight(
+        self,
+        mission_id: uuid.UUID,
+        *,
+        stale_sec: int = 900,
+    ) -> bool:
+        return self.live_in_flight
 
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
         return not self._summary.get("complete", False)
@@ -451,6 +465,7 @@ def _install_drain_doubles(
     for name in (
         "has_open_jobs",
         "has_runnable_jobs",
+        "has_live_in_flight",
         "claim_batch",
         "mark_running",
         "mark_ready",
@@ -896,3 +911,60 @@ async def test_drain_skips_follow_up_when_only_deferred_jobs_remain(
 
     assert out["ready"] == 1
     assert rekicks == []
+
+
+async def test_drain_does_not_claim_shop_or_beach_while_mission_in_flight(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=True)
+    shop = _job(0, "fal_designed_post")
+    beach = _job(1, "fal_designed_story")
+    jobs = _JobsRecorder(
+        claim_batches=[[shop, beach]],
+        summary={"total": 2, "complete": False, "active": 1, "failed": 0, "ready": 0},
+    )
+    jobs.live_in_flight = True
+    capture: dict = {}
+    _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={"reason": "enqueued_to_bullmq"},
+        brand=brand_stub,
+        capture_trigger_kwargs=capture,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert out["claimed"] == 0
+    assert out["enqueued"] == 0
+    assert capture == {}
+    assert jobs.deferred == []
+
+
+async def test_drain_timeout_keeps_shop_and_beach_running(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=False)
+    shop = _job(0, "fal_designed_post")
+    beach = _job(1, "fal_designed_story")
+    jobs = _JobsRecorder(
+        claim_batches=[[shop, beach]],
+        summary={"total": 2, "complete": False, "active": 2, "failed": 0, "ready": 0},
+    )
+    _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={
+            "produced": 0,
+            "skipped": True,
+            "reason": "production_in_flight",
+            "code": "route_still_running",
+        },
+        brand=brand_stub,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert jobs.deferred == []
+    assert jobs.running == [shop["id"], beach["id"]]
+    assert out["claimed"] == 2
