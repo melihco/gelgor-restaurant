@@ -562,6 +562,7 @@ export async function resolveGalleryFirstForSlot(input: {
       slotJob,
       language: input.language ?? 'Turkish',
       adaptiveScene: Boolean(input.adaptiveScene),
+      catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
       ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
       candidates: shortlist.map((row) => {
         const meta = input.galleryMeta[normalizeGalleryUrl(row.url)]

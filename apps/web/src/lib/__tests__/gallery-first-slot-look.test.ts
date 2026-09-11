@@ -211,6 +211,7 @@ describe('gallery-first — one look owns the pack', () => {
       language: 'Turkish',
       forcedPhotoUrl: OIL,
       lookFn: async (input: FeedSlotLookInput): Promise<FeedSlotLookResult> => {
+        expect(input.catalogSlotKey).toBe('local_products_shop_product_hero_post');
         seen = input.candidates.map((c) => c.url);
         return {
           ok: true,

@@ -42,14 +42,18 @@ export type FeedSlotLookCandidate = {
   primarySubject?: string;
 };
 
+export type LookJobKind = 'sell' | 'place' | 'process' | 'other';
+
 export type FeedSlotLookInput = {
   slotJob: string;
   language?: string;
   brandTone?: string;
-  /** Haftalık fikir — ipucu. Kanıt uymuyorsa reddedilir, kopyalanmaz. */
+  /** Haftalık fikir — ipucu. Kanıt uymuyorsa yok sayılır, kopyalanmaz. */
   ideationHint?: string;
   /** Brand flag: keep weekly scene sentence; restage photo later. */
   adaptiveScene?: boolean;
+  /** Katalog anahtarı — iş ailesi (sat / yer / süreç). Marka adı yok. */
+  catalogSlotKey?: string;
   candidates: FeedSlotLookCandidate[];
   missionId?: string | null;
   workspaceId?: string | null;
@@ -98,36 +102,66 @@ Return STRICT JSON only:
   "shellDirection": "product_hero" | "venue_ambiance" | "social_proof" | "event"
 }
 
+The picked product, caption, and headline are one pack. They must name the same thing.
+
+job_kind is in the user JSON:
+- sell: feature a good or service from the frame. Abstract catalog words (favorite, limited, hero, new, range) do not need to be printed on the photo. Pick a candidate with identity (readable label OR unmistakable product). Write from what you see. Null only if NO candidate has identity.
+- place: a place / venue / market / interior / landscape. Pick a place photo and venue_ambiance. A product basket or labeled goods is pickIndex null.
+- process: making / at-work / farm / kitchen floor. A shelf product is pickIndex null unless adaptive scene is on.
+- other: follow the photo. Null only if you would have to invent identity.
+
 Rules:
 - Trust the image over metadata tags when they disagree.
 - evidenceNote names what is in the frame. Quote readable label text exactly. If no readable text, say so AND name what you can still identify (loaf, plate, dress, sunset, crowd) or say identity is unclear.
 - caption may only claim what evidenceNote supports. Do not invent grades, harvests, origins, product names, or event titles that are not visible.
-- Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, ignore the hint and write from the readable label / what you see.
+- ideation_hint is optional weekly intent. If the photo cannot prove it, ignore the hint and write from the photo + slot_job. Do not return null only because the hint does not match.
+- Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, drop those words and write from the readable label / what you see.
 - Name water only from the frame. Open horizon water, waves, or a coast next to lawn and umbrellas is sea (deniz), not a lake (göl). Say göl/lake only when the water is clearly an enclosed inland lake.
 - evidenceNote names what is in the frame (lawn, umbrellas, loungers, sea). Caption is a magazine motto about that place — not a furniture inventory and not brochure filler ("mükemmel bir yer", "dinlendirici", "perfect place").
 - Caption and headline are a magazine motto — the opening line of a social caption. Not a shop command ("gelin", "alın"), not a photo description (bottle, basket, label, lawn, umbrella), not a weekly table note ("sofrada", "bu hafta"). Do not use brochure ("sizi bekliyoruz", "keşfedin", "experience", "deneyimlemek").
 - Headline is one complete sentence taken from the caption. Do not cut a word or letter to hit a box. Type can shrink later. Caption opens with that same sentence, then one evidence-backed line.
-- ideation_hint is optional weekly intent. If the photo cannot prove it, ignore the hint and write from the photo + slot_job — or return pickIndex null.
 - headline must be taken from the caption (same words). A complete motto, not a two-word product name and not a separate slogan. No hashtags as headline.
 - Write caption and headline in the requested language.
 - A bottle or glass on a set table at a venue is table_prop unless the photo is clearly a product-for-sale hero (packaging fills the frame).
 - table_prop must not use product_hero.
 - product_for_sale needs identity in the photo (readable label OR unmistakable product). If identity is unclear, pickIndex null.
 - Never use scene_fill when you pick a gallery photo. scene_fill is only for a generated stand-in with no gallery pick.
-- If no candidate can do the slot_job without inventing, pickIndex null.
-- If slot_job is a place (lawn, umbrellas, loungers, sea, venue), pick a place photo and venue_ambiance. A product basket or labeled goods is pickIndex null — do not sell on a place job.
-- Candidates are ordered best-caption-first. Prefer pickIndex 0 unless that photo cannot do the slot_job (no identity on a sell job, or a bottle on a place job).
+- Candidates are ordered best-caption-first. Prefer pickIndex 0 unless that photo cannot do the job_kind (no identity on sell, or a bottle on place).
 - One look. Do not ask for another photo.`;
 
 const LOOK_SYSTEM_ADAPTIVE = `${LOOK_SYSTEM}
 
-Adaptive scene is ON for this brand:
-- Pick the candidate that fits the ideation_hint scene (place, grove, market, range, process, or the named product). Do not invent a different mill, beach, or brand.
-- A labeled product is correct only when the hint or slot_job is selling that package. Do not skip a matching scene photo to grab a bottle just because the label is readable.
+Adaptive scene is ON. A later enhance step may restage the still (setting, light, table). That does not license invented names or grades.
+- Product, caption, and headline stay one pack. They must name the same thing.
+- On a sell job, pick a candidate with identity even if the weekly scene is not in the frame. Do not return null because the hint describes a setting that enhance can add.
+- If a matching place or process photo exists, prefer it over a bottle.
+- A labeled product is the right pick when the job is selling that package.
 - If ideation_hint is a process / at-work / behind-the-scenes sentence, KEEP that scene sentence as caption and headline.
-- Do not invent product grades, origins, or names that are not on the label.
 - evidenceNote still names what is currently in the frame (bottle, label, lawn, grove).
 - Place jobs still need a place photo. A bottle cannot prove a shop-interior or lawn job.`;
+
+const SELL_MUST_PICK = `This is a sell job. At least one candidate has readable identity. You must set pickIndex to a candidate with identity. Do not return null because ideation_hint or an abstract catalog word is not printed on the photo. Caption, headline, and the picked product must say the same thing. Write from the visible label / what you see.`;
+
+const PLACE_RE = /ambiance|atmosphere|venue|sunset|market_day|shop_tour|shop_interior|lawn|pier|terrace|garden|atmosfer|pazar|dükkan|dukkan|gün batım|gun batim|çim|cim |şemsiye|semsiye|şezlong/;
+const PROCESS_RE = /process|bts|farm_visit|craft|atölye|atolye|üretim|uretim|süreç|surec|kulis|çiftlik|ciftlik|behind/;
+const SELL_RE = /hero|favorite|limited|new_arrival|product|range|gift|detail|menu|dish|favori|sınırlı|sinirli|ürün|urun|parti|yelpaze/;
+
+/** Katalog / iş cümlesinden aile — sektör ve marka adı yok. */
+export function lookJobKind(input: {
+  slotJob?: string;
+  catalogSlotKey?: string;
+}): LookJobKind {
+  const bag = `${input.catalogSlotKey ?? ''} ${input.slotJob ?? ''}`.toLowerCase();
+  if (!bag.trim()) return 'other';
+  if (PLACE_RE.test(bag)) return 'place';
+  if (PROCESS_RE.test(bag)) return 'process';
+  if (SELL_RE.test(bag)) return 'sell';
+  return 'other';
+}
+
+function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean {
+  return String(candidate.visibleLabelText ?? '').trim().length >= 3;
+}
 
 export function feedSlotLookEnabled(): boolean {
   return process.env.FEED_SLOT_LOOK !== 'false';
@@ -326,6 +360,10 @@ export function lookSystemPrompt(adaptiveScene?: boolean): string {
 function buildLookUserText(input: FeedSlotLookInput, candidates: FeedSlotLookCandidate[]): string {
   return JSON.stringify({
     slot_job: input.slotJob.slice(0, 120),
+    job_kind: lookJobKind({
+      slotJob: input.slotJob,
+      catalogSlotKey: input.catalogSlotKey ?? input.slotKey ?? undefined,
+    }),
     language: (input.language ?? 'Turkish').slice(0, 40),
     brand_tone: String(input.brandTone ?? '').slice(0, 80) || null,
     ideation_hint: String(input.ideationHint ?? '').slice(0, 400) || null,
@@ -364,6 +402,10 @@ export async function lookFeedSlotPack(
   const profile = getAiModelProfile();
   const model = deps?.model ?? profile.visionGrafiker;
   const detail = profile.visionDetail === 'high' ? 'high' : 'low';
+  const jobKind = lookJobKind({
+    slotJob,
+    catalogSlotKey: input.catalogSlotKey ?? input.slotKey ?? undefined,
+  });
   const userText = buildLookUserText(input, candidates);
   const parts: OpenAI.Chat.ChatCompletionContentPart[] = [
     { type: 'text', text: userText },
@@ -378,7 +420,7 @@ export async function lookFeedSlotPack(
     });
   });
 
-  try {
+  const askLook = async (system: string, detailTag: string) => {
     const openai = deps?.openai ?? new OpenAI({ apiKey });
     const response = await openai.chat.completions.create({
       model,
@@ -386,11 +428,10 @@ export async function lookFeedSlotPack(
       temperature: 0,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: lookSystemPrompt(input.adaptiveScene) },
+        { role: 'system', content: system },
         { role: 'user', content: parts },
       ],
     });
-    const raw = response.choices[0]?.message?.content?.trim() ?? '{}';
     const usage: OpenAiUsageLike | null = response.usage ?? null;
     emitAiCostLine({
       callType: 'gallery_match',
@@ -402,10 +443,25 @@ export async function lookFeedSlotPack(
       slotKey: input.slotKey,
       promptTokens: usage?.prompt_tokens ?? undefined,
       completionTokens: usage?.completion_tokens ?? undefined,
-      detail: 'feed_slot_look',
+      detail: detailTag,
     });
+    return response.choices[0]?.message?.content?.trim() ?? '{}';
+  };
 
-    const { pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob);
+  try {
+    let raw = await askLook(lookSystemPrompt(input.adaptiveScene), 'feed_slot_look');
+    let { pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob);
+    if (
+      pickIndex == null
+      && jobKind === 'sell'
+      && candidates.some(candidateHasReadableIdentity)
+    ) {
+      raw = await askLook(
+        `${lookSystemPrompt(input.adaptiveScene)}\n\n${SELL_MUST_PICK}`,
+        'feed_slot_look_sell',
+      );
+      ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
+    }
     if (pickIndex == null) {
       return { ok: false, issues: ['no_pick'] };
     }

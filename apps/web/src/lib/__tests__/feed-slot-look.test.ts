@@ -4,6 +4,7 @@ import {
   isCampaignSentenceLock,
   isLookedFeedSlotPersistable,
   lookFeedSlotPack,
+  lookJobKind,
   lookSystemPrompt,
   shouldLookFeedSlotPack,
   shouldSkipFeedMeaningRematch,
@@ -14,11 +15,18 @@ import { parseFeedSlotPack, validateFeedSlotPack } from '@/lib/feed-slot-pack';
 type Captured = { content?: unknown };
 
 function fakeOpenai(payload: Record<string, unknown>, captured?: Captured) {
+  return fakeOpenaiSequence([payload], captured);
+}
+
+function fakeOpenaiSequence(payloads: Record<string, unknown>[], captured?: Captured) {
+  let i = 0;
   return {
     chat: {
       completions: {
         create: async (req: { messages: Array<{ role: string; content: unknown }> }) => {
-          if (captured) captured.content = req.messages.find((m) => m.role === 'user')?.content;
+          if (captured) captured.content = req.messages;
+          const payload = payloads[Math.min(i, payloads.length - 1)]!;
+          i += 1;
           return {
             choices: [{ message: { content: JSON.stringify(payload) } }],
             usage: { prompt_tokens: 80, completion_tokens: 40 },
@@ -30,6 +38,41 @@ function fakeOpenai(payload: Record<string, unknown>, captured?: Captured) {
 }
 
 describe('feed-slot-look — shop + beach', () => {
+  it('classifies catalog jobs without brand names', () => {
+    expect(lookJobKind({
+      slotJob: 'ürün hero',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+    })).toBe('sell');
+    expect(lookJobKind({
+      slotJob: 'müşteri favorisi',
+      catalogSlotKey: 'local_products_shop_customer_favorite_post',
+    })).toBe('sell');
+    expect(lookJobKind({
+      slotJob: 'sınırlı parti',
+      catalogSlotKey: 'local_products_shop_limited_batch_post',
+    })).toBe('sell');
+    expect(lookJobKind({
+      slotJob: 'gün batımı',
+      catalogSlotKey: 'beach_club_sunset_ambiance_story',
+    })).toBe('place');
+    expect(lookJobKind({
+      slotJob: 'dükkan atmosferi',
+      catalogSlotKey: 'local_products_shop_shop_ambiance_post',
+    })).toBe('place');
+    expect(lookJobKind({
+      slotJob: 'pazar günü',
+      catalogSlotKey: 'local_products_shop_market_day_post',
+    })).toBe('place');
+    expect(lookJobKind({
+      slotJob: 'el işi süreç',
+      catalogSlotKey: 'local_products_shop_craft_process_reel',
+    })).toBe('process');
+    expect(lookJobKind({
+      slotJob: 'çiftlik ziyareti',
+      catalogSlotKey: 'local_products_shop_farm_visit_story',
+    })).toBe('process');
+  });
+
   it('grounds a copied early-harvest sentence to the label on the bottle', async () => {
     const result = await lookFeedSlotPack(
       {
@@ -219,6 +262,59 @@ describe('feed-slot-look — shop + beach', () => {
     if (!result.ok) expect(result.issues).toContain('place_cannot_sell');
   });
 
+  it('shop sell: one more look when the first pass drops a labeled product', async () => {
+    const captured: Captured = {};
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        language: 'Turkish',
+        ideationHint: 'Müşterilerimiz bu ürünü çok seviyor',
+        candidates: [{
+          url: 'https://cdn.example.com/jar.jpg',
+          visibleLabelText: 'ÇAM BALI',
+        }],
+      },
+      {
+        openai: fakeOpenaiSequence([
+          { pickIndex: null, caption: '', headline: '', evidenceNote: '', photoRole: 'venue', shellDirection: 'venue_ambiance' },
+          {
+            pickIndex: 0,
+            photoRole: 'product_for_sale',
+            evidenceNote: 'Etiket: ÇAM BALI',
+            caption: 'Çam balımız rafta. Bir kaşık yeter.',
+            headline: 'Çam balımız rafta',
+            shellDirection: 'product_hero',
+          },
+        ], captured),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.photoUrl).toBe('https://cdn.example.com/jar.jpg');
+      expect(result.pack.caption).toMatch(/Çam/);
+      expect(result.pack.headline).toMatch(/Çam balımız rafta/);
+    }
+    const messages = captured.content as Array<{ role: string; content: unknown }>;
+    expect(JSON.stringify(messages)).toMatch(/sell job/i);
+  });
+
+  it('beach place: does not force a labeled bottle when the first look refuses', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı',
+        catalogSlotKey: 'beach_club_sunset_ambiance_story',
+        language: 'Turkish',
+        candidates: [
+          { url: 'https://cdn.example.com/bottle.jpg', visibleLabelText: 'SIZMA' },
+        ],
+      },
+      { openai: fakeOpenai({ pickIndex: null, caption: '', headline: '', evidenceNote: '', photoRole: 'venue', shellDirection: 'venue_ambiance' }) },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
   it('fail-closes when no candidate can prove the job', async () => {
     const result = await lookFeedSlotPack(
       {
@@ -392,10 +488,16 @@ describe('feed-slot-look — shop + beach', () => {
     })).toBe(false);
   });
 
-  it('adaptive look prefers the caption scene, not any labeled bottle', () => {
+  it('adaptive look restages later; sell still picks identity; pack stays one', () => {
     const adaptive = lookSystemPrompt(true);
+    const base = lookSystemPrompt(false);
+    expect(base).toMatch(/job_kind/);
+    expect(base).toMatch(/Do not return null only because the hint does not match/);
+    expect(base).not.toMatch(/or return pickIndex null/);
     expect(adaptive).toMatch(/best-caption-first|ordered best-caption-first/);
-    expect(adaptive).toMatch(/labeled product is correct only/i);
+    expect(adaptive).toMatch(/restage the still/i);
+    expect(adaptive).toMatch(/Product, caption, and headline stay one pack/i);
+    expect(adaptive).toMatch(/A labeled product is the right pick when the job is selling/i);
     expect(adaptive).not.toMatch(/Still pick a real hero \(labeled product/);
   });
 
