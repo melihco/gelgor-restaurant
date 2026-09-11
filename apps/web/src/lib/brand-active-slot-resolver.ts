@@ -122,7 +122,8 @@ export function alignAssignmentToCatalogSlotKey(
       || pipeline === 'fal_story'
       || pipeline === 'fal_only_reel'
       || pipeline === 'fal_only_story'
-      || pipeline === 'runway_reel'
+      // Legacy LLM/DB id — not in ProductionPipeline; normalize at ingest.
+      || String(pipeline) === 'runway_reel'
     ) {
       // Keep designed-post track when a post catalog key lands on a video pipeline.
       pipeline = String(pipeline).startsWith('fal_only') ? 'fal_only_post' : 'fal_design';
