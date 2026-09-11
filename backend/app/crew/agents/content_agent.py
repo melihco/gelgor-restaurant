@@ -13,7 +13,7 @@ from __future__ import annotations
 from crewai import Agent, LLM
 
 from app.config import get_settings
-from app.crew.context import BrandInfo, build_brand_context_prompt
+from app.crew.context import BrandInfo, build_brand_context_prompt, build_ideation_brand_context
 from app.crew.cta_localization import localize_ctas, resolve_language_code, resolve_output_language
 from app.crew.prompts.content_prompts import (
     CONTENT_AGENT_BACKSTORY,
@@ -57,15 +57,12 @@ def create_content_agent(
     degrade gracefully (return "not_configured") when keys are missing.
     """
     settings = get_settings()
-    # Ideation task already carries the rich gallery scene block — default ON
-    # drops the duplicate inventory from the backstory (input-token win).
-    # Opt out: DEDUP_GALLERY_BACKSTORY=false
-    _dedup_gallery = for_ideation and bool(
-        getattr(settings, "dedup_gallery_backstory", True)
-    )
-    brand_context_block = build_brand_context_prompt(
-        brand, include_gallery_inventory=not _dedup_gallery
-    )
+    # Ideation: scene block in the task is the photo SSOT. Backstory must not
+    # paste gallery_analysis JSON or the inventory copy. max_iter / top-ups stay.
+    if for_ideation:
+        brand_context_block = build_ideation_brand_context(brand)
+    else:
+        brand_context_block = build_brand_context_prompt(brand)
 
     lang_map = {"en": "English", "tr": "Turkish", "de": "German", "fr": "French", "es": "Spanish"}
     raw_lang = (brand.languages or "tr").split(",")[0].strip().lower()

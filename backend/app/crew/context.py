@@ -9,6 +9,7 @@ instead of generic AI content.
 
 from __future__ import annotations
 
+import json
 import structlog
 from dataclasses import dataclass, field
 
@@ -392,6 +393,45 @@ def build_brand_context_prompt(
     if brand.mission_memory is None:
         _prompt_cache[ck] = (_t.time(), result)
     return result
+
+
+_GALLERY_INVENTORY_HEADING = "## 🖼 Brand Gallery — Available Photos for Visual Matching"
+
+
+def omit_raw_gallery_analysis(text: str, raw: str | None) -> str:
+    """Drop an accidental paste of gallery_analysis JSON. Scene block stays in the task."""
+    blob = (raw or "").strip()
+    if len(blob) < 80:
+        return text
+    text = text.replace(blob, "")
+    try:
+        compact = json.dumps(json.loads(blob), ensure_ascii=False, separators=(",", ":"))
+        if compact != blob:
+            text = text.replace(compact, "")
+    except Exception:
+        pass
+    return text
+
+
+def _drop_gallery_inventory_section(text: str) -> str:
+    start = text.find(_GALLERY_INVENTORY_HEADING)
+    if start < 0:
+        return text
+    rest = text[start + len(_GALLERY_INVENTORY_HEADING) :]
+    nxt = rest.find("\n## ")
+    if nxt < 0:
+        return text[:start].rstrip() + "\n"
+    return text[:start].rstrip() + rest[nxt:]
+
+
+def build_ideation_brand_context(brand: BrandInfo) -> str:
+    """Ideation backstory: DNA + profile. Photo evidence lives in the task scene block.
+
+    Does not change max_iter or top-ups. Does not shrink the scene block.
+    """
+    text = build_brand_context_prompt(brand, include_gallery_inventory=False)
+    text = _drop_gallery_inventory_section(text)
+    return omit_raw_gallery_analysis(text, brand.gallery_analysis)
 
 
 def _build_brand_context_prompt_inner(

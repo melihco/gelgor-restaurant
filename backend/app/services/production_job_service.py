@@ -26,6 +26,36 @@ logger = structlog.get_logger()
 TERMINAL_STATUSES = {"ready", "exhausted", "skipped"}
 ACTIVE_STATUSES = {"pending", "failed", "claimed", "running"}
 
+# Same inputs cannot succeed: empty wallet, missing pack, look failed.
+# claim_batch / requeue / watchdog must not send these through auto-produce again.
+TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
+    "paket yok",
+    "bakış yapılamadı",
+    "provider_billing_circuit_open",
+    "skip-no-fal-quota",
+    "balance exhausted",
+    "exhausted balance",
+    "no credits remaining",
+    "insufficient_quota",
+    "user is locked",
+    "aylık kredi",
+    "budget_exhausted",
+    "token_wallet",
+    "ops-terminated",
+)
+
+
+def is_terminal_produce_error(reason: str | None) -> bool:
+    lower = (reason or "").strip().lower()
+    return bool(lower) and any(marker in lower for marker in TERMINAL_PRODUCE_ERROR_MARKERS)
+
+
+def _terminal_error_sql(column: str = "last_error") -> str:
+    return " OR ".join(
+        f"COALESCE({column}, '') ILIKE '%{marker}%'"
+        for marker in TERMINAL_PRODUCE_ERROR_MARKERS
+    )
+
 # SQL fragment — permanent gallery-theme failures must not re-enter the retry loop.
 _PERMANENT_FAILURE_REQUEUE_FILTER = """
   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
@@ -175,7 +205,7 @@ async def claim_batch(
     async with factory() as db:
         res = await db.execute(
             text(
-                """
+                f"""
                 WITH claimable AS (
                     SELECT id FROM production_jobs
                     WHERE (CAST(:mission_id AS UUID) IS NULL
@@ -185,6 +215,7 @@ async def claim_batch(
                         OR (status IN ('claimed', 'running')
                             AND claimed_at < now() - make_interval(secs => :stale_sec))
                       )
+                      AND NOT ({_terminal_error_sql()})
                     ORDER BY COALESCE(priority, 0) DESC, run_after ASC
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
@@ -473,6 +504,40 @@ async def mark_failed(
             meta={"retryable": bool(retryable)},
         )
     return status
+
+
+async def exhaust_open_terminal_error_jobs(*, limit: int = 80) -> int:
+    """Stop leftover pending/failed/running rows whose error cannot succeed on retry."""
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                f"""
+                UPDATE production_jobs
+                SET status = 'exhausted',
+                    completed_at = COALESCE(completed_at, now()),
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    last_error = left(
+                        CASE
+                            WHEN COALESCE(last_error, '') ILIKE '%ops-terminated%' THEN last_error
+                            ELSE COALESCE(last_error, 'terminal produce error')
+                                 || ' [ops-terminated: terminal produce error]'
+                        END,
+                        1000
+                    ),
+                    updated_at = now()
+                WHERE status IN ('pending', 'failed', 'claimed', 'running')
+                  AND ({_terminal_error_sql()})
+                RETURNING id
+                """
+            ),
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info("production_jobs.exhaust_terminal_errors", exhausted=len(rows))
+    return len(rows)
 
 
 async def mark_skipped(job_id: str | uuid.UUID, reason: str = "") -> None:
@@ -776,6 +841,8 @@ async def requeue_exhausted(
                   AND COALESCE(last_error, '') NOT ILIKE '%tutarsız%'
                   AND COALESCE(last_error, '') NOT ILIKE '%caption_design_incoherent%'
                   AND COALESCE(last_error, '') NOT ILIKE '%ops-terminated%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
     """
     if not include_billing_retry:
         permanent_filter += """
@@ -784,6 +851,8 @@ async def requeue_exhausted(
                   AND COALESCE(last_error, '') NOT ILIKE '%balance exhausted%'
                   AND COALESCE(last_error, '') NOT ILIKE '%exhausted balance%'
                   AND COALESCE(last_error, '') NOT ILIKE '%insufficient_quota%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%no credits remaining%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%user is locked%'
         """
     if not include_gallery_theme_retry:
         permanent_filter += """
@@ -1008,6 +1077,8 @@ async def requeue_failed(
                   AND COALESCE(last_error, '') NOT ILIKE '%tema çatışması%'
                   AND COALESCE(last_error, '') NOT ILIKE '%gallery_theme_mismatch%'
                   AND COALESCE(last_error, '') NOT ILIKE '%library_template_required%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%paket yok%'
+                  AND COALESCE(last_error, '') NOT ILIKE '%bakış yapılamadı%'
                   {billing_filter}
                 RETURNING id
                 """

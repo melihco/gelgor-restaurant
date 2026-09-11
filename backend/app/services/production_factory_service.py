@@ -417,6 +417,8 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "yeni çekim yükleyin",
     "no persistable content url",
     "designed_image_persist_failed",
+    "paket yok",
+    "bakış yapılamadı",
 )
 
 
@@ -426,7 +428,9 @@ def _is_non_retryable_slot_failure(
     produce_data: dict | None = None,
     slot_key: str = "",
 ) -> bool:
-    """Gallery theme gaps and similar errors cannot succeed without new gallery data."""
+    """Gallery theme, empty pack, or empty wallet — retrying the same inputs cannot succeed."""
+    if jobs.is_terminal_produce_error(reason):
+        return True
     lower = (reason or "").strip().lower()
     if any(marker in lower for marker in _NON_RETRYABLE_FAILURE_MARKERS):
         return True
@@ -919,21 +923,11 @@ async def _finalize_mission_production_state(mission_id: uuid.UUID) -> dict:
     return summary_after
 
 
-# External blocks that clear themselves or via ops (top-up, lock release, worker
-# restart). Retrying is cheap until they clear, so these defer without burning an
-# attempt — but still under `_OPS_DEFER_MAX_AGE_SEC`, because a provider circuit
-# that nobody clears otherwise keeps re-claiming a worker slot for weeks.
+# Worker / lock only. Empty wallet and missing pack are terminal — see
+# production_job_service.is_terminal_produce_error. Deferring those burned
+# 15h of claims with attempts stuck at 1/12.
 _TRANSIENT_OPS_DEFER_MARKERS = (
     "production_in_flight",
-    "provider_billing_circuit_open",
-    "skip-no-fal-quota",
-    "aylık kredi",
-    "sa kredi",
-    "token_wallet",
-    "günlük api bütçesi",
-    "günlük içerik limiti",
-    "daily_budget",
-    "budget_exhausted",
     "auto_produce_unreachable",
     "production_worker_offline",
     "enqueue_failed",
@@ -997,6 +991,8 @@ def _defer_counts_attempt(reason: str) -> bool:
 
 def _is_ops_defer_reason(reason: str) -> bool:
     """Blocks that re-queue instead of failing outright (line must not clog)."""
+    if jobs.is_terminal_produce_error(reason):
+        return False
     lower = (reason or "").strip().lower()
     if not lower:
         return False
@@ -1255,20 +1251,22 @@ async def run_factory_watchdog_tick(*, reclaim_limit: int = 50) -> dict[str, int
         else jobs._FACTORY_DRAIN_STALE_RECLAIM_SEC
     )
 
+    exhausted = await jobs.exhaust_open_terminal_error_jobs()
     reclaimed = 0
     for mid in await jobs.list_mission_ids_with_any_open_jobs(limit=reclaim_limit):
         reclaimed += await jobs.reclaim_stale_jobs(uuid.UUID(mid), stale_sec=stale_sec)
 
     drained = await drain_all_open_missions(limit=reclaim_limit)
 
-    if reclaimed or drained:
+    if reclaimed or drained or exhausted:
         logger.info(
             "production_factory.watchdog_tick",
             reclaimed=reclaimed,
             missions_scheduled=drained,
+            exhausted=exhausted,
         )
 
-    return {"reclaimed": reclaimed, "drained": drained}
+    return {"reclaimed": reclaimed, "drained": drained, "exhausted": exhausted}
 
 
 async def _workspace_for_mission(mission_id: uuid.UUID) -> uuid.UUID | None:

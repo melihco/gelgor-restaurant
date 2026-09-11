@@ -158,13 +158,10 @@ def test_bullmq_stale_window_does_not_overlap_live_paint() -> None:
     assert pjs._BULLMQ_WATCHDOG_STALE_SEC >= 900
 
 
-def test_ops_defer_reasons_cover_billing_and_credit() -> None:
-    assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is True
-    assert pfs._is_ops_defer_reason(
-        "Aylık kredi limiti doldu (25,689 / 25,000 SA Kredi)",
-    ) is True
+def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
     assert pfs._is_ops_defer_reason("production_in_flight") is True
-    assert pfs._is_ops_defer_reason("budget_exhausted") is True
+    assert pfs._is_ops_defer_reason("production_worker_offline") is True
+    assert pfs._is_ops_defer_reason("fetch failed") is True
     assert pfs._is_ops_defer_reason(
         "Caption–tasarım–görsel tutarsız (overlay_ungrounded)",
     ) is True
@@ -173,8 +170,11 @@ def test_ops_defer_reasons_cover_billing_and_credit() -> None:
     ) is True
     assert pfs._is_ops_defer_reason("withheld_quality_gate") is False
     assert pfs._is_ops_defer_reason("no_artifact") is False
-    assert pfs._bullmq_defer_delay_sec("Aylık kredi limiti doldu") == 900.0
-    assert pfs._bullmq_defer_delay_sec("provider_billing_circuit_open") == 900.0
+    assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is False
+    assert pfs._is_ops_defer_reason("budget_exhausted") is False
+    assert pfs._is_ops_defer_reason(
+        "Aylık kredi limiti doldu (25,689 / 25,000 SA Kredi)",
+    ) is False
     assert pfs._bullmq_defer_delay_sec("Caption–tasarım–görsel tutarsız (overlay_ungrounded)") == 60.0
     assert pfs._resolve_bullmq_batch_reason(
         {"error": "Aylık kredi limiti doldu (1 / 1 SA Kredi)"},
@@ -182,23 +182,47 @@ def test_ops_defer_reasons_cover_billing_and_credit() -> None:
     ).startswith("Aylık kredi")
 
 
+def test_empty_wallet_and_missing_pack_are_terminal() -> None:
+    from app.services.production_job_service import is_terminal_produce_error
+
+    shop_pack = "Paket yok (Bakış yapılamadı (bakış çağrısı))"
+    beach_pack = "Paket yok"
+    beach_billing = (
+        'fal_only_video: All typography models failed. Ideogram: Ideogram enqueue '
+        'failed 403: {"detail":"User is locked. Reason: Exhausted balance."}'
+    )
+    shop_credits = (
+        "429 You have no credits remaining. Add credits to continue using the API"
+    )
+    assert is_terminal_produce_error(shop_pack) is True
+    assert is_terminal_produce_error(beach_pack) is True
+    assert is_terminal_produce_error(beach_billing) is True
+    assert is_terminal_produce_error(shop_credits) is True
+    assert pfs._is_non_retryable_slot_failure(shop_pack) is True
+    assert pfs._is_non_retryable_slot_failure(beach_pack) is True
+    assert pfs._is_non_retryable_slot_failure(beach_billing) is True
+    assert pfs._is_non_retryable_slot_failure(shop_credits) is True
+    assert pfs._is_ops_defer_reason(shop_pack) is False
+    assert pfs._is_ops_defer_reason(beach_billing) is False
+
+
 def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     """A flat-delay defer that never burns an attempt loops ~60x/hour forever."""
     quality = "Caption–tasarım–görsel tutarsız (overlay_meaningless)"
     template = "library_template_required: no renderable template for catalog_slot_key=x"
-    ops = "provider_billing_circuit_open [skip-no-fal-quota]"
+    ops = "production_in_flight"
 
     # Quality gates re-run the same inputs — bound by attempts, not just wall clock.
     assert pfs._defer_counts_attempt(quality) is True
     assert pfs._defer_counts_attempt(template) is True
     assert pfs._defer_counts_attempt(ops) is False
-    assert pfs._defer_counts_attempt("production_in_flight") is False
 
     # Both categories still get a wall-clock backstop; nothing defers forever.
     assert pfs._defer_max_age_sec(quality) == pfs._quality_defer_max_age_sec()
     assert pfs._defer_max_age_sec(ops) == pfs._ops_defer_max_age_sec()
     assert pfs._defer_max_age_sec("no_artifact") is None
     assert pfs._quality_defer_max_age_sec() < pfs._ops_defer_max_age_sec()
+    assert pfs._defer_max_age_sec("provider_billing_circuit_open") is None
 
 
 # ── Drain flow helpers ───────────────────────────────────────────────────────
@@ -569,15 +593,21 @@ async def test_factory_watchdog_reclaims_and_schedules_drains(
     async def _drain_all(limit: int = 25):
         return 2
 
+    async def _exhaust(*, limit: int = 80):
+        return 3
+
     monkeypatch.setattr(
         pfs.jobs, "list_mission_ids_with_any_open_jobs", _list_any, raising=True
     )
     monkeypatch.setattr(pfs.jobs, "reclaim_stale_jobs", _reclaim, raising=True)
+    monkeypatch.setattr(
+        pfs.jobs, "exhaust_open_terminal_error_jobs", _exhaust, raising=True
+    )
     monkeypatch.setattr(pfs, "drain_all_open_missions", _drain_all, raising=True)
 
     out = await pfs.run_factory_watchdog_tick(reclaim_limit=10)
 
-    assert out == {"reclaimed": 1, "drained": 2}
+    assert out == {"reclaimed": 1, "drained": 2, "exhausted": 3}
     assert reclaimed == [mid]
 
 

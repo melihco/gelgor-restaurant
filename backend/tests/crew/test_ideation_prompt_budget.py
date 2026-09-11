@@ -1,5 +1,12 @@
+import json
+
 from app.crew.agents.content_agent import ideation_research_tools_enabled
-from app.crew.context import BrandInfo
+from app.crew.context import (
+    BrandInfo,
+    build_brand_context_prompt,
+    build_ideation_brand_context,
+    omit_raw_gallery_analysis,
+)
 from app.crew.prompts.content_prompts import (
     CONTENT_IDEATION_TASK,
     collapse_repeated_lines,
@@ -8,6 +15,7 @@ from app.crew.prompts.content_prompts import (
 )
 from app.crew.tasks.content_tasks import (
     _build_gallery_scene_block,
+    create_content_ideation_task,
     _is_fallback_gallery_description,
 )
 
@@ -74,8 +82,6 @@ def test_shop_and_beach_task_drops_foreign_sector_encyclopedia() -> None:
 
 
 def test_gallery_skips_whatsapp_fallback_keeps_real_analysis() -> None:
-    import json
-
     oil = "https://cdn.example.com/oil.jpg"
     wa = "https://cdn.example.com/wa.jpeg"
     brand = _brand("local_products_shop")
@@ -108,3 +114,61 @@ def test_website_summary_drops_repeat_kargo_banner() -> None:
 
 def test_ideation_research_tools_off_by_default() -> None:
     assert ideation_research_tools_enabled() is False
+
+
+def _analyzed_brand(sector: str, url: str, desc: str, tags: list[str]) -> BrandInfo:
+    brand = _brand(sector)
+    brand.gallery_analysis = json.dumps(
+        {
+            url: {
+                "contentTags": tags,
+                "description": desc,
+                "usageContext": "product hero" if sector == "local_products_shop" else "venue",
+                "mood": "warm",
+            }
+        },
+        ensure_ascii=False,
+    )
+    return brand
+
+
+def test_ideation_context_drops_raw_json_keeps_scene_block_two_sectors() -> None:
+    from crewai import Agent
+
+    cases = (
+        (
+            "local_products_shop",
+            "https://cdn.example.com/oil.jpg",
+            "Labeled olive oil bottle on a wooden shelf",
+            ["olive_oil", "bottle"],
+        ),
+        (
+            "beach_club",
+            "https://cdn.example.com/pier.jpg",
+            "Bitez pier at sunset with guests on the dock",
+            ["pier", "sunset"],
+        ),
+    )
+    for sector, url, desc, tags in cases:
+        brand = _analyzed_brand(sector, url, desc, tags)
+        ctx = build_ideation_brand_context(brand)
+        assert brand.gallery_analysis not in ctx
+        assert "Available Photos for Visual Matching" not in ctx
+        assert "Total analyzed photos:" not in ctx
+        fat = build_brand_context_prompt(brand, include_gallery_inventory=True)
+        fat = fat + "\n" + brand.gallery_analysis
+        cleaned = omit_raw_gallery_analysis(
+            fat.replace("## 🖼 Brand Gallery — Available Photos for Visual Matching", "## keep"),
+            brand.gallery_analysis,
+        )
+        assert brand.gallery_analysis not in cleaned
+
+        scene = _build_gallery_scene_block(brand)
+        assert url in scene
+        assert "olive oil" in scene.lower() or "pier" in scene.lower() or desc[:12] in scene
+
+        dummy = Agent(role="x", goal="x", backstory="x")
+        task = create_content_ideation_task(dummy, brand, count=4)
+        body = str(task.description or "")
+        assert url in body
+        assert brand.gallery_analysis not in body
