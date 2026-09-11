@@ -701,7 +701,8 @@ export async function produceFalDesignedPost(
     const layoutRefForIdeogram = templateLayoutReferenceUrl(binding);
     const allowPinnedIdeogram = purposePinnedForIdeogram && Boolean(layoutRefForIdeogram);
     if (
-      (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef) || allowPinnedIdeogram)
+      !input.hasRealBrandGallery
+      && (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef) || allowPinnedIdeogram)
       && !imageUrl
       && serverConfig.fal.configured
       && (!purposePinnedForIdeogram || allowPinnedIdeogram)

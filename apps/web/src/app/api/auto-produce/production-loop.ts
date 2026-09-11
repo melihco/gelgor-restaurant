@@ -1806,7 +1806,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || isFalVideoPipeline(assignment.pipeline)
       || isFalDesignPipeline(assignment.pipeline)
       || isFalOnlyVideoPipeline(assignment.pipeline)
-      || isFalOnlyPostPipeline(assignment.pipeline);
+      || isFalOnlyPostPipeline(assignment.pipeline)
+      || assignment.pipeline === 'fal_only_story';
     /** When set, calendar event overlay must not demote punchline → event title. */
     let lockedFalPunchlineSource: string | null = null;
     // Content calendar quoted tagline = canvas punchline lock for the whole slot.
@@ -2391,7 +2392,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       isFalVideoPipeline(assignment.pipeline)
       || isFalDesignPipeline(assignment.pipeline)
       || isFalOnlyVideoPipeline(assignment.pipeline)
-      || isFalOnlyPostPipeline(assignment.pipeline);
+      || isFalOnlyPostPipeline(assignment.pipeline)
+      || assignment.pipeline === 'fal_only_story';
     /** Brand Hub → Sıfırdan görsel üret: galeri olsa bile feed postlarında matcher atlanır. */
     const captionDrivenSlot = shouldUseCaptionDrivenVisual(aiVisualStandard, kind, assignment);
 
@@ -4190,16 +4192,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     const isFalDesignPost = isFalDesignPipeline(assignment.pipeline) || isPaidAdSlot;
     const isFalOnlyPost = isFalOnlyPostPipeline(assignment.pipeline);
     const isFalOnlyVideo = isFalOnlyVideoPipeline(assignment.pipeline);
+    const isFalOnlyStory = assignment.pipeline === 'fal_only_story'
+      || assignment.slot_role === 'fal_only_story';
     const isPremiumEditorial = isPremiumEditorialPipeline(assignment.pipeline)
       || assignment.slot_role === 'premium_editorial_campaign_post'
       || assignment.slot_role === 'premium_editorial_campaign_story';
     const usesFalDesignerTrack = isFalMissionVideo || isFalDesignPost || isFalOnlyPost || isFalOnlyVideo
+      || isFalOnlyStory
       || isPremiumEditorial;
     const falBriefFormat: 'post' | 'reel' | 'story' = isCalendarSlot
       ? (pkgFmt === 'story' ? 'story' : 'post')
       : isPaidAdSlot || isFalDesignPost || isFalOnlyPost
         ? 'post'
         : assignment.pipeline === 'fal_story'
+          || assignment.pipeline === 'fal_only_story'
           || assignment.slot_role === 'campaign_story_motion'
           || assignment.slot_role === 'fal_only_story'
           ? 'story'

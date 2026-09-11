@@ -111,5 +111,12 @@ describe('falOnlyHandler.canRun', () => {
     expect(
       falOnlyHandler.canRun(makeCtx({ isFalOnlyPost: false, isFalOnlyVideo: false })),
     ).toBe(false);
+    expect(
+      falOnlyHandler.canRun(makeCtx({
+        isFalOnlyPost: false,
+        isFalOnlyVideo: false,
+        pipeline: 'fal_only_story',
+      })),
+    ).toBe(true);
   });
 });

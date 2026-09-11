@@ -92,10 +92,10 @@ export function assignmentUsesGalleryPhoto(
 export function falOnlyPipelineForPostType(
   postType: 'feed' | 'story' | 'reel' | 'carousel',
 ): string | null {
-  if (postType === 'carousel') return null; // capacity reroutes: keep diversity fallback
-  if (postType === 'story') return 'fal_only_story';
+  // Posts/stories must withhold when the gallery cannot prove the card.
+  // Invented fal stills/videos are not a fallback. Only reels may use fal motion.
   if (postType === 'reel') return 'fal_only_reel';
-  return 'fal_only_post';
+  return null;
 }
 
 /**
@@ -107,11 +107,9 @@ export function falOnlyPipelineForPostType(
  */
 function falLastResortPipelineForPostType(
   postType: 'feed' | 'story' | 'reel' | 'carousel',
-): string {
-  if (postType === 'story') return 'fal_only_story';
+): string | null {
   if (postType === 'reel') return 'fal_only_reel';
-  // carousel → single AI-generated post (format downgrade, but avoids exhaustion)
-  return 'fal_only_post';
+  return null;
 }
 
 /**
@@ -214,7 +212,7 @@ export function pickVenueEscalationFallbackPhoto(input: {
   )[0] ?? null;
 }
 
-/** Runtime gallery gate failure → reroute to fal_only instead of permanent withhold. */
+/** Runtime gallery gate failure → reel fal motion only. Posts/stories withhold. */
 export function tryGalleryFailureEscalation<
   A extends { pipeline?: string; slot_role?: string },
 >(input: {
@@ -237,6 +235,7 @@ export function tryGalleryFailureEscalation<
 } | null {
   if (!input.missionId?.trim()) return null;
   const fallbackPipeline = falLastResortPipelineForPostType(input.postType);
+  if (!fallbackPipeline) return null;
   const kept = String(input.fallbackReferenceUrl ?? '').trim();
   const referenceUrl = kept && isUsableGalleryPhotoUrl(kept) ? kept : null;
   return {
@@ -255,7 +254,7 @@ export function tryGalleryFailureEscalation<
  * concrete subject the gallery simply does not contain are doomed to
  * `gallery_theme_mismatch` before any photo is picked — the veto/judge chain
  * can only confirm the absence. Instead of enqueueing guaranteed-permanent
- * failures, reroute those slots to the format's fal_only (AI visual) pipeline.
+ * failures, reroute **reels only** to fal_only_reel. Posts and stories withhold.
  *
  * Deterministic and vision-driven (canonical subject relations only), so the
  * plan phase and every drain call compute the same verdict for any tenant or

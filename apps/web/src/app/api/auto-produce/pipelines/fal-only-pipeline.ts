@@ -105,7 +105,8 @@ export interface FalOnlySlotResult {
 export async function produceFalOnlySlot(
   input: FalOnlySlotInput,
 ): Promise<FalOnlySlotResult | null> {
-  const isFalOnly = input.isFalOnlyPost || input.isFalOnlyVideo;
+  const isStoryStill = input.pipeline === 'fal_only_story';
+  const isFalOnly = input.isFalOnlyPost || input.isFalOnlyVideo || isStoryStill;
   if (!isFalOnly) return null;
 
   if (!serverConfig.fal.configured) {
@@ -124,9 +125,120 @@ export async function produceFalOnlySlot(
     };
   }
 
+  // ── fal-only story — 9:16 still only. Never Kling / I2V. ──────────────────
+  if (isStoryStill && !input.existingImageUrl) {
+    const binding = input.brandTemplateBinding;
+    const lockOpts = resolveFalTemplateLockOptions({
+      binding,
+      baseGrafikerMaxRetries: input.grafikerMaxRetries,
+    });
+    const designVibe =
+      binding?.lockedVibe ??
+      resolveTypographyVibeFromContext({
+        caption: input.caption,
+        headline: input.headline,
+        sector: input.sector,
+        brandVibe: input.brandVibe,
+        lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(input.sector ?? ''),
+      });
+    const brandColors = resolveFalProductionBrandColors(
+      input.brandColors,
+      binding?.brandColors,
+    );
+    const photoUrl = [
+      binding?.referencePhotoUrl,
+      input.referencePhotoUrl,
+      input.brandReferenceImageUrls?.find((u) => isUsableScenePhotoUrl(u)),
+    ].find((u) => isUsableScenePhotoUrl(u)) ?? null;
+    if (!photoUrl && (input.hasRealBrandGallery || input.requireGroundedGallery)) {
+      return {
+        imageUrl: null,
+        videoUrl: null,
+        falGrafikerScore: null,
+        falGrafikerPass: false,
+        falDesignEngine: null,
+        videoProduceMeta: null,
+        costDelta: 0,
+        failureReason: 'fal_only_story: no venue/product gallery photo — will not invent a scene',
+      };
+    }
+    const styleRefs = templateStyleReferenceUrls(
+      binding ?? {
+        matched: null,
+        lockedVibe: null,
+        referencePhotoUrl: photoUrl ?? null,
+        styleReferenceUrl: null,
+        brandDirectives: input.brandDirectives ?? [],
+        brandColors: null,
+        logoUrl: input.logoUrl,
+        logoPlacement: null,
+        occasion: undefined,
+      },
+      input.brandReferenceImageUrls ?? [],
+    );
+    try {
+      const still = await produceFalDesignedPostStill({
+        workspaceId: input.workspaceId,
+        headline: input.headline,
+        subtitle: input.cta || undefined,
+        caption: input.caption,
+        brandName: input.brandName,
+        brandColors,
+        vibe: designVibe,
+        backgroundStyle: input.backgroundStyle ?? (photoUrl ? 'photo_overlay' : 'gradient_mesh'),
+        aspectRatio: '9:16',
+        referencePhotoUrl: photoUrl ?? undefined,
+        sceneHint: input.sceneHint || undefined,
+        brandDirectives: binding?.brandDirectives ?? input.brandDirectives,
+        visualDnaTone: input.visualDnaTone,
+        logoUrl: binding?.logoUrl ?? input.logoUrl,
+        logoPlacement: binding?.logoPlacement ?? binding?.matched?.logoPlacement ?? input.logoPlacement,
+        location: input.location,
+        brandReferenceImageUrls: styleRefs,
+        sector: input.sector,
+        mood: input.mood,
+        grafikerMaxRetries: lockOpts.grafikerMaxRetries,
+        captionAwareHeadline: lockOpts.captionAwareHeadline,
+        requireGroundedGallery: input.requireGroundedGallery ?? resolveFalRequireGroundedGallery({
+          referencePhotoUrl: photoUrl,
+          sector: input.sector,
+          pipeline: 'fal_story',
+          hasRealBrandGallery: input.hasRealBrandGallery,
+          captionDrivenGenerated: input.captionDrivenGenerated,
+        }),
+        designIntensityLevel: input.designIntensityLevel,
+        occasion: binding?.occasion,
+        templateLayoutImageUrl: templateLayoutReferenceUrl(binding),
+        templateReplica: templateReplicaSpecFromBinding(binding),
+        libraryQualityFalFallback: false,
+      });
+      return {
+        imageUrl: still.imageUrl,
+        videoUrl: null,
+        falGrafikerScore: still.grafikerScore,
+        falGrafikerPass: still.grafikerPass,
+        falDesignEngine: still.typographyModel || 'fal_story_poster',
+        videoProduceMeta: null,
+        costDelta: 0.08,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        imageUrl: null,
+        videoUrl: null,
+        falGrafikerScore: null,
+        falGrafikerPass: false,
+        falDesignEngine: null,
+        videoProduceMeta: null,
+        costDelta: 0,
+        failureReason: `fal_only_story: ${msg}`.slice(0, 480),
+      };
+    }
+  }
+
   // ── fal-only video (reel) — DESIGNED route first ───────────────────────────
-  if (input.isFalOnlyVideo && !input.existingVideoUrl) {
-    const falPipeline = input.pipeline === 'fal_only_story' ? 'fal_story' : 'fal_reel';
+  if (input.isFalOnlyVideo && !isStoryStill && !input.existingVideoUrl) {
+    const falPipeline = 'fal_reel';
     const binding = input.brandTemplateBinding;
     const lockOpts = resolveFalTemplateLockOptions({
       binding,
@@ -456,7 +568,8 @@ export async function produceFalOnlySlot(
  */
 export const falOnlyHandler: ProductionPipelineHandler = {
   name: 'fal_only',
-  canRun: (ctx) => ctx.inputs.isFalOnlyPost || ctx.inputs.isFalOnlyVideo,
+  canRun: (ctx) => ctx.inputs.isFalOnlyPost || ctx.inputs.isFalOnlyVideo
+    || ctx.inputs.pipeline === 'fal_only_story',
   run: async ({ inputs, state }) => {
     const { resolveFalIntensityChannel } = await import('@/lib/fal-catalog-format');
     // Catalog key beats drifted fal_only_reel + *_story (or reverse) before bind.

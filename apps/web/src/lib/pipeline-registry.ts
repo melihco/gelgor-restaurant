@@ -66,7 +66,7 @@ export const PIPELINE_REGISTRY: Readonly<Record<string, PipelineDescriptor>> = {
 
   // pure fal.ai slots
   fal_only_post: d('fal_only_post', 'fal_only', { usesFalDesigner: true, retryable: true }),
-  fal_only_story: d('fal_only_story', 'fal_only', { isVideo: true, usesFalDesigner: true, retryable: true }),
+  fal_only_story: d('fal_only_story', 'fal_only', { usesFalDesigner: true, retryable: true }),
   fal_only_reel: d('fal_only_reel', 'fal_only', { isVideo: true, usesFalDesigner: true, retryable: true }),
 
   // gallery + product
@@ -112,16 +112,19 @@ export function isFalOnlyPipeline(pipeline: string | undefined | null): boolean 
   return inFamily(pipeline, 'fal_only');
 }
 
-/** fal-only video slots: `fal_only_story` | `fal_only_reel`. */
+/** fal-only 9:16 still — never image-to-video. */
+export function isFalOnlyStoryPipeline(pipeline: string | undefined | null): boolean {
+  return normalize(pipeline) === 'fal_only_story';
+}
+
+/** fal-only video: reel motion only. Stories are stills. */
 export function isFalOnlyVideoPipeline(pipeline: string | undefined | null): boolean {
-  const desc = getPipelineDescriptor(pipeline);
-  return desc?.family === 'fal_only' && desc.isVideo;
+  return normalize(pipeline) === 'fal_only_reel';
 }
 
 /** fal-only still post slot: `fal_only_post`. */
 export function isFalOnlyPostPipeline(pipeline: string | undefined | null): boolean {
-  const desc = getPipelineDescriptor(pipeline);
-  return desc?.family === 'fal_only' && !desc.isVideo;
+  return normalize(pipeline) === 'fal_only_post';
 }
 
 /** Whether the pipeline produces a video artifact. */

@@ -849,6 +849,30 @@ describe('falOnlyHandler.run', () => {
     expect(ctx.state.costDelta).toBeCloseTo(0.18);
   });
 
+  it('shop + beach: fal_only_story stays a still and does not call Kling', async () => {
+    h.produceFalDesignedPostStill.mockResolvedValue({
+      imageUrl: 'story-still',
+      grafikerScore: 7,
+      grafikerPass: true,
+      typographyModel: 'gpt-image-2',
+    });
+
+    for (const brandBusinessType of ['local_products_shop', 'beach_club']) {
+      const ctx = makeCtx({
+        isFalOnlyPost: false,
+        isFalOnlyVideo: false,
+        pipeline: 'fal_only_story',
+        brandBusinessType,
+        hasRealBrandGallery: true,
+      });
+      await falOnlyHandler.run(ctx);
+      expect(h.produceFalDesignerVideo).not.toHaveBeenCalled();
+      expect(h.generateStoryMotionPlate).not.toHaveBeenCalled();
+      expect(ctx.state.videoUrl).toBeNull();
+      expect(ctx.state.imageUrl).toBe('story-still');
+    }
+  });
+
   it('skips (no state change) when FAL is not configured', async () => {
     h.serverConfig.fal.configured = false;
 

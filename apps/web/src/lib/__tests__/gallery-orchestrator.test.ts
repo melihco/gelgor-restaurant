@@ -43,7 +43,7 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
     [HONEY]: { primarySubject: 'honey', contentTags: ['honey', 'bal'], description: 'Honey jars on shelf.' },
   };
 
-  it('reroutes a strict product slot whose subject is missing from the gallery (local_products_shop)', () => {
+  it('does not invent a fal post when the shop gallery cannot prove the subject', () => {
     const items = [
       queueItem(0, 'organic_post', 'gallery_photo', {
         caption_draft: 'Taze sıkım nar ekşisi şişelerimiz raflarda',
@@ -58,7 +58,7 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
       hasRealBrandPhotos: true,
       resolvedBrandName: 'Yerel Lezzetler',
     });
-    expect(out.get(missionGallerySlotKey(0, 'organic_post'))).toBe('fal_only_post');
+    expect(out.size).toBe(0);
   });
 
   it('does NOT reroute when the gallery has a subject-aligned photo', () => {
@@ -96,7 +96,7 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
     expect(out.size).toBe(0);
   });
 
-  it('maps story slots to fal_only_story (beach_club sector)', () => {
+  it('does not invent a fal story when the beach gallery cannot prove the subject', () => {
     const beachGallery: Record<string, GalleryPhotoMeta> = {
       [BEACH]: { primarySubject: 'beach_sunset', contentTags: ['beach', 'sunset'], description: 'Sunset over the beach.' },
     };
@@ -114,7 +114,25 @@ describe('resolveQueueGalleryCapacityReroutes', () => {
       hasRealBrandPhotos: true,
       resolvedBrandName: 'Marina Beach',
     });
-    expect(out.get(missionGallerySlotKey(2, 'organic_story_still'))).toBe('fal_only_story');
+    expect(out.size).toBe(0);
+  });
+
+  it('reroutes a reel when the shop gallery cannot prove the subject', () => {
+    const items = [
+      queueItem(1, 'organic_reel', 'fal_reel', {
+        caption_draft: 'Taze sıkım nar ekşisi şişelerimiz raflarda',
+        headline: 'Nar ekşisi',
+        subject_key: 'pomegranate_molasses',
+      }),
+    ];
+    const out = resolveQueueGalleryCapacityReroutes({
+      productionLoop: items,
+      galleryMeta: shopGallery,
+      galleryPhotos: [HONEY],
+      hasRealBrandPhotos: true,
+      resolvedBrandName: 'Yerel Lezzetler',
+    });
+    expect(out.get(missionGallerySlotKey(1, 'organic_reel'))).toBe('fal_only_reel');
   });
 
   it('never reroutes when the brand has no real gallery photos', () => {
@@ -204,42 +222,49 @@ describe('buildMissionGalleryAssignments judge rejections', () => {
 });
 
 describe('tryGalleryFailureEscalation', () => {
-  it('reroutes mission feed slots to fal_only_post on gallery veto', () => {
+  it('does not invent a fal post when a feed gallery veto fires', () => {
     const out = tryGalleryFailureEscalation({
       assignment: { slot_role: 'designed_post', pipeline: 'fal_design' },
       postType: 'feed',
       missionId: 'm-1',
       stage: 'judge_reject',
     });
-    expect(out?.assignment.pipeline).toBe('fal_only_post');
-    expect(out?.referenceUrl).toBeNull();
+    expect(out).toBeNull();
   });
 
-  it('keeps venue fallback photo when gallery match fails for restaurant brands', () => {
+  it('does not invent a fal story when a beach gallery veto fires', () => {
+    const out = tryGalleryFailureEscalation({
+      assignment: { slot_role: 'campaign_story_motion', pipeline: 'fal_story' },
+      postType: 'story',
+      missionId: 'm-1',
+      stage: 'judge_reject',
+      fallbackReferenceUrl: 'https://cdn.example.com/gallery/terrace.jpg',
+    });
+    expect(out).toBeNull();
+  });
+
+  it('keeps reel fal motion as the only gallery-failure fallback', () => {
     const venuePhoto = 'https://cdn.example.com/gallery/gelgor-dining.jpg';
     const out = tryGalleryFailureEscalation({
-      assignment: { slot_role: 'designed_post', pipeline: 'fal_design' },
-      postType: 'feed',
+      assignment: { slot_role: 'fal_reel_motion', pipeline: 'fal_reel' },
+      postType: 'reel',
       missionId: 'm-1',
       stage: 'judge_reject',
       fallbackReferenceUrl: venuePhoto,
     });
-    expect(out?.assignment.pipeline).toBe('fal_only_post');
+    expect(out?.assignment.pipeline).toBe('fal_only_reel');
     expect(out?.referenceUrl).toBe(venuePhoto);
     expect(out?.pickedFromBrandGallery).toBe(true);
   });
 
-  it('reroutes carousel slots to fal_only_post (last-resort, avoids exhaustion)', () => {
-    // Carousel gallery failures (e.g. testimonial slot with no customer photos)
-    // now escalate to fal_only_post so the slot produces something rather than exhausting.
+  it('does not invent a fal post when a carousel gallery veto fires', () => {
     const out = tryGalleryFailureEscalation({
       assignment: { slot_role: 'organic_carousel', pipeline: 'carousel_gallery' },
       postType: 'carousel',
       missionId: 'm-1',
       stage: 'hard_veto',
     });
-    expect(out?.assignment.pipeline).toBe('fal_only_post');
-    expect(out?.referenceUrl).toBeNull();
+    expect(out).toBeNull();
   });
 
   it('returns null when no missionId is provided', () => {

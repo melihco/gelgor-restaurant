@@ -28,7 +28,7 @@ const goldenFalOnly = (p: string | undefined | null) => {
 };
 const goldenFalOnlyVideo = (p: string | undefined | null) => {
   const s = String(p ?? '').trim();
-  return s === 'fal_only_story' || s === 'fal_only_reel';
+  return s === 'fal_only_reel';
 };
 const goldenFalOnlyPost = (p: string | undefined | null) => String(p ?? '').trim() === 'fal_only_post';
 
@@ -76,7 +76,7 @@ describe('pipeline-registry descriptors', () => {
 
   it('marks video pipelines correctly', () => {
     expect(isVideoPipeline('fal_reel')).toBe(true);
-    expect(isVideoPipeline('fal_only_story')).toBe(true);
+    expect(isVideoPipeline('fal_only_story')).toBe(false);
     expect(isVideoPipeline('product_showcase')).toBe(true);
     // Still-image pipelines — fal_story is a grounded poster (no Kling I2V).
     expect(isVideoPipeline('fal_story')).toBe(false);
@@ -95,7 +95,7 @@ describe('pipeline-registry descriptors', () => {
 
   it('treats fal_only post vs video split consistently', () => {
     expect(getPipelineDescriptor('fal_only_post')?.isVideo).toBe(false);
-    expect(getPipelineDescriptor('fal_only_story')?.isVideo).toBe(true);
+    expect(getPipelineDescriptor('fal_only_story')?.isVideo).toBe(false);
     expect(getPipelineDescriptor('fal_only_reel')?.isVideo).toBe(true);
   });
 });
