@@ -38,6 +38,11 @@ import {
   resolveAdaptiveGalleryContract,
 } from '@/lib/caption-scene-fit';
 import { lookJobKind, type LookJobKind } from '@/lib/look-job-kind';
+import {
+  isOpenAiQuotaBlocked,
+  isOpenAiQuotaOrBillingError,
+  markOpenAiQuotaBlocked,
+} from '@/lib/openai-error-utils';
 
 export { lookJobKind, type LookJobKind };
 
@@ -72,6 +77,7 @@ export type FeedSlotLookIssue =
   | 'look_no_key'
   | 'look_vision_blocked'
   | 'look_call_failed'
+  | 'look_no_credits'
   | 'no_pick'
   | 'incomplete_headline';
 
@@ -289,6 +295,7 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   look_no_key: 'Bakış yapılamadı (anahtar yok)',
   look_vision_blocked: 'Bakış yapılamadı (fotoğraf açılamadı)',
   look_call_failed: 'Bakış yapılamadı (bakış çağrısı)',
+  look_no_credits: 'Bakış yapılamadı (no credits remaining)',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',
   incomplete_headline: 'Üst yazı yarım kaldı',
 };
@@ -309,6 +316,9 @@ export function isLookOpsFailure(issues: readonly FeedSlotLookIssue[]): boolean 
 
 /** Persist error: ops stay retryable; empty pack stays terminal. */
 export function describeLookPersistError(issues: FeedSlotLookIssue[]): string {
+  if (issues.includes('look_no_credits')) {
+    return LOOK_ISSUE_TR.look_no_credits;
+  }
   const text = describeFeedSlotLookIssues(issues);
   if (isLookOpsFailure(issues)) return text;
   return `Paket yok (${text})`;
@@ -452,6 +462,9 @@ export async function lookFeedSlotPack(
   if (!apiKey && !deps?.openai) {
     return { ok: false, issues: ['look_no_key'] };
   }
+  if (!deps?.openai && isOpenAiQuotaBlocked()) {
+    return { ok: false, issues: ['look_no_credits'] };
+  }
 
   const profile = getAiModelProfile();
   const model = deps?.model ?? profile.visionGrafiker;
@@ -510,6 +523,7 @@ export async function lookFeedSlotPack(
     try {
       return await askLookOnce(system, detailTag);
     } catch (err) {
+      if (isOpenAiQuotaOrBillingError(err)) throw err;
       console.warn(
         '[feed-slot-look] call failed, one retry:',
         err instanceof Error ? err.message : String(err),
@@ -586,6 +600,10 @@ export async function lookFeedSlotPack(
     return { ok: true, pack: complete };
   } catch (err) {
     console.warn('[feed-slot-look] call failed:', err instanceof Error ? err.message : String(err));
+    if (isOpenAiQuotaOrBillingError(err)) {
+      markOpenAiQuotaBlocked();
+      return { ok: false, issues: ['look_no_credits'] };
+    }
     return { ok: false, issues: ['look_call_failed'] };
   }
 }

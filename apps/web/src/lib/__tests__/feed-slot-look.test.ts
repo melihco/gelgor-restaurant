@@ -7,6 +7,7 @@ vi.mock('@/lib/external-image-fetch', () => ({
 import {
   describeLookPersistError,
   isCampaignSentenceLock,
+  isLookOpsFailure,
   isLookedFeedSlotPersistable,
   lookFeedSlotPack,
   lookJobKind,
@@ -530,6 +531,10 @@ describe('feed-slot-look — shop + beach', () => {
     expect(describeLookPersistError(['look_call_failed'])).toBe(
       'Bakış yapılamadı (bakış çağrısı)',
     );
+    expect(describeLookPersistError(['look_no_credits'])).toBe(
+      'Bakış yapılamadı (no credits remaining)',
+    );
+    expect(isLookOpsFailure(['look_no_credits'])).toBe(false);
     expect(describeLookPersistError(['look_vision_blocked'])).toBe(
       'Bakış yapılamadı (fotoğraf açılamadı)',
     );
@@ -816,6 +821,66 @@ describe('feed-slot-look — shop + beach', () => {
     );
     expect(calls.count).toBe(2);
     expect(result.ok).toBe(true);
+  });
+
+  it('shop: empty OpenAI wallet is a credit lock, not a look retry', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        language: 'Turkish',
+        adaptiveScene: true,
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        openai: {
+          chat: {
+            completions: {
+              create: async () => {
+                calls.count += 1;
+                throw new Error('429 You have no credits remaining. Add credits to continue using the API');
+              },
+            },
+          },
+        } as unknown as OpenAI,
+      },
+    );
+    expect(calls.count).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('look_no_credits');
+  });
+
+  it('beach: empty OpenAI wallet is a credit lock, not a look retry', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı ambiyans',
+        language: 'Turkish',
+        adaptiveScene: true,
+        candidates: [{
+          url: 'https://cdn.example.com/pier.jpg',
+          description: 'Pier umbrellas open sea',
+        }],
+      },
+      {
+        openai: {
+          chat: {
+            completions: {
+              create: async () => {
+                calls.count += 1;
+                throw new Error('429 You have no credits remaining. Add credits to continue using the API');
+              },
+            },
+          },
+        } as unknown as OpenAI,
+      },
+    );
+    expect(calls.count).toBe(1);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('look_no_credits');
   });
 
   it('shop: does not send a blocked Instagram URL to the look model', async () => {

@@ -3,6 +3,8 @@
 export type OpenAiErrorCode = 'openai_quota_exceeded' | 'billing_hard_limit' | 'openai_error';
 
 const QUOTA_COOLDOWN_MS = 30 * 60 * 1000;
+const OPENAI_BILLING_RE =
+  /billing_hard_limit|insufficient_quota|exceeded your current quota|no credits remaining/i;
 
 let quotaBlockedUntil = 0;
 
@@ -29,16 +31,16 @@ export function clearOpenAiQuotaBlockedForTests(): void {
 export function isOpenAiQuotaOrBillingError(err: unknown): boolean {
   if (!err || typeof err !== 'object') {
     const s = String(err ?? '');
-    return /billing_hard_limit|insufficient_quota|exceeded your current quota/i.test(s);
+    return OPENAI_BILLING_RE.test(s);
   }
   const e = err as { message?: string; code?: string; status?: number; error?: { code?: string; message?: string } };
   const msg = String(e.message ?? e.error?.message ?? '');
   const code = String(e.code ?? e.error?.code ?? '');
   const blob = `${code} ${msg}`;
-  if (/rate_limit_exceeded|rate limit/i.test(blob) && !/insufficient_quota|billing_hard_limit|exceeded your current quota/i.test(blob)) {
+  if (/rate_limit_exceeded|rate limit/i.test(blob) && !OPENAI_BILLING_RE.test(blob)) {
     return false;
   }
-  return /billing_hard_limit|insufficient_quota|exceeded your current quota/i.test(blob);
+  return OPENAI_BILLING_RE.test(blob);
 }
 
 export function classifyOpenAiError(err: unknown): OpenAiErrorCode {

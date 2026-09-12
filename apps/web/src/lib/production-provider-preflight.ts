@@ -78,6 +78,7 @@ export function isProviderBillingFailureMessage(message: string): boolean {
     || lower.includes('billing_hard_limit')
     || lower.includes('insufficient_quota')
     || lower.includes('exceeded your current quota')
+    || lower.includes('no credits remaining')
     || lower.includes('image generation provider billing limit')
     || lower.includes('provider billing limit reached')
     || lower.includes('fal.ai balance exhausted')

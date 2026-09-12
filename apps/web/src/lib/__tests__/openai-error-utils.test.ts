@@ -11,6 +11,14 @@ describe('openai-error-utils', () => {
     clearOpenAiQuotaBlockedForTests();
   });
 
+  it('detects no credits remaining', () => {
+    expect(
+      isOpenAiQuotaOrBillingError(
+        new Error('429 You have no credits remaining. Add credits to continue using the API'),
+      ),
+    ).toBe(true);
+  });
+
   it('detects insufficient_quota', () => {
     expect(
       isOpenAiQuotaOrBillingError({

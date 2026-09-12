@@ -114,6 +114,12 @@ describe('production-provider-preflight', () => {
     expect(markOpenAiQuotaBlocked).toHaveBeenCalled();
   });
 
+  it('classifies no credits remaining as OpenAI billing', () => {
+    const msg = '429 You have no credits remaining. Add credits to continue using the API';
+    expect(isProviderBillingFailureMessage(msg)).toBe(true);
+    expect(recordProductionProviderBillingFailure(msg)).toBe('openai');
+  });
+
   it('ignores non-billing slot errors', () => {
     expect(recordProductionProviderBillingFailure('gallery_theme_mismatch')).toBeNull();
     expect(getProductionProviderPreflight().ok).toBe(true);
