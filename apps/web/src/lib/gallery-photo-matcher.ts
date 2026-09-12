@@ -103,6 +103,24 @@ export interface MatchPhotoInput {
    * slot photo selection stays consistent across both paths.
    */
   preferredAssetTypes?: string[];
+  /**
+   * Designed feed slots: caption/idea must pick the photo. Relaxed and
+   * diversity fallbacks are withheld rather than filling any unused frame.
+   */
+  requireCaptionPhotoMatch?: boolean;
+}
+
+export function assignmentRequiresCaptionPhotoMatch(
+  assignment: { pipeline?: string | null; slot_role?: string | null },
+): boolean {
+  const pipeline = String(assignment.pipeline ?? '');
+  const role = String(assignment.slot_role ?? '');
+  return (
+    pipeline === 'fal_design'
+    || role === 'designed_post'
+    || role === 'designed_typography'
+    || role === 'fal_designed_post'
+  );
 }
 
 export interface PhotoMatchResult {
@@ -1973,9 +1991,12 @@ export function pickMissionDiverseFallbackPhoto(
 ): PhotoMatchResult | null {
   if (
     matchInput
-    && captionRequiresStrictGalleryMatch(
-      matchInput.caption ?? '',
-      matchInput.headline ?? '',
+    && (
+      matchInput.requireCaptionPhotoMatch
+      || captionRequiresStrictGalleryMatch(
+        matchInput.caption ?? '',
+        matchInput.headline ?? '',
+      )
     )
   ) {
     return null;
@@ -2150,12 +2171,11 @@ export function assignPhotosToContents(
   // Photos subject-reserved for a pending sibling are off limits.
   if (pending.length > 0 && RELAXED_MATCH_SCORE < strictMinScore) {
     const reservations = buildSubjectReservations(pending);
-    const relaxedEligible = pending.filter(
-      (p) => !captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
-    );
-    const strictHeld = pending.filter(
-      (p) => captionRequiresStrictGalleryMatch(p.input.caption ?? '', p.input.headline ?? ''),
-    );
+    const captionLocked = (input: MatchPhotoInput): boolean =>
+      Boolean(input.requireCaptionPhotoMatch)
+      || captionRequiresStrictGalleryMatch(input.caption ?? '', input.headline ?? '');
+    const relaxedEligible = pending.filter((p) => !captionLocked(p.input));
+    const strictHeld = pending.filter((p) => captionLocked(p.input));
     const stillOpen = greedyAssignRound(relaxedEligible, RELAXED_MATCH_SCORE, reservations);
     pending = [...strictHeld, ...stillOpen];
   }

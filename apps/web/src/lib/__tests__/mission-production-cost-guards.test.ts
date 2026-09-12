@@ -38,17 +38,17 @@ describe('mission-production-cost-guards', () => {
     })).toBe(1);
   });
 
-  it('soft-accepts mid-retry only on cost-scoped tiers', () => {
-    expect(resolveGroundedSoftAcceptScore('agency')).toBe(6);
+  it('soft-accepts only at the Grafiker floor on cost-scoped tiers', () => {
+    expect(resolveGroundedSoftAcceptScore('agency')).toBe(8);
     expect(resolveGroundedSoftAcceptScore('premium')).toBeNull();
   });
 
-  it('keeps readable grounded frames instead of Ideogram on cost-scoped tiers', () => {
+  it('keeps grounded frames only when they already meet the Grafiker floor', () => {
     expect(shouldKeepGroundedInsteadOfIdeogram({
       productionTier: 'agency',
       textValidated: true,
       grafikerScore: 4,
-    })).toBe(true);
+    })).toBe(false);
     expect(shouldKeepGroundedInsteadOfIdeogram({
       productionTier: 'premium',
       textValidated: true,
@@ -57,7 +57,12 @@ describe('mission-production-cost-guards', () => {
     expect(shouldKeepGroundedInsteadOfIdeogram({
       productionTier: 'premium',
       textValidated: true,
-      grafikerScore: 5,
+      grafikerScore: 8,
+    })).toBe(true);
+    expect(shouldKeepGroundedInsteadOfIdeogram({
+      productionTier: 'agency',
+      textValidated: true,
+      grafikerScore: 8,
     })).toBe(true);
     expect(shouldKeepGroundedInsteadOfIdeogram({
       productionTier: 'agency',

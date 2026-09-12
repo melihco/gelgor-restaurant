@@ -345,11 +345,10 @@ describe('shouldUseLocalTypography (role matrix + flag gate)', () => {
     'campaign_story_motion',
     'fal_story_motion',
     'designed_typography',
-    'fal_designed_post',
     'fal_only_story',
     'fal_only_post',
   ];
-  const EXCLUDED_ROLES = ['designed_post', 'organic_reel', 'fal_reel', 'campaign_reel_motion'];
+  const EXCLUDED_ROLES = ['fal_designed_post', 'designed_post', 'organic_reel', 'fal_reel', 'campaign_reel_motion'];
 
   it('returns false whenever the flag is off, regardless of role', () => {
     delete process.env.LOCAL_TYPOGRAPHY_ENABLED;
@@ -382,7 +381,7 @@ describe('shouldUseLocalTypography (role matrix + flag gate)', () => {
 
   it('studio pack lock forbids Satori even when the flag is on', () => {
     process.env.LOCAL_TYPOGRAPHY_ENABLED = 'true';
-    expect(shouldUseLocalTypography('fal_designed_post', 'fal_design', null, {
+    expect(shouldUseLocalTypography('designed_typography', 'fal_design', null, {
       forbidSatoriEscape: true,
     })).toBe(false);
   });

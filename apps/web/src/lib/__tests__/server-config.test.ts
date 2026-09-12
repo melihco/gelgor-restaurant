@@ -216,17 +216,17 @@ describe('serverConfig', () => {
       expect(serverConfig.ai.tier).toBe('starter');
       expect(serverConfig.imageGen.model).toBe('gpt-image-2');
       expect(serverConfig.imageGen.editModel).toBe('gpt-image-2');
-      expect(serverConfig.imageGen.quality).toBe('medium');
+      expect(serverConfig.imageGen.quality).toBe('high');
       expect(serverConfig.imageGen.falModel).toBe('fal-ai/flux/schnell');
       expect(serverConfig.imageGen.preferFalDesignedPosts).toBe(true);
       expect(serverConfig.imageGen.expandScene).toBe(false);
       expect(serverConfig.imageGen.expandModel).toBe('gpt-4o-mini');
     });
 
-    it('agency tier uses medium gpt-image quality', () => {
+    it('agency tier uses high gpt-image quality', () => {
       process.env.AI_MODEL_TIER = 'agency';
       expect(serverConfig.ai.tier).toBe('agency');
-      expect(serverConfig.imageGen.quality).toBe('medium');
+      expect(serverConfig.imageGen.quality).toBe('high');
     });
 
     it('premium tier via AI_MODEL_TIER env', () => {

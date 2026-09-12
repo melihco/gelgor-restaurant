@@ -43,6 +43,7 @@ import {
   resolveUrlInPool,
   matchPhotoToContent,
   pickMissionDiverseFallbackPhoto,
+  assignmentRequiresCaptionPhotoMatch,
   isHardGalleryThemeMismatch,
   rankPhotosForContent,
   buildGalleryLookup,
@@ -2534,6 +2535,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           contentType: postType,
           businessType: brandBusinessType,
           subjectKey: ideationSubjectKey,
+          requireCaptionPhotoMatch: assignmentRequiresCaptionPhotoMatch(assignment),
         };
         if (batchAssigned?.url) {
           const batchMeta = galleryMeta[normalizeGalleryUrl(batchAssigned.url)]
@@ -2559,13 +2561,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ...missionGalleryExclude,
             ...(missionGalleryJudgeRejects.get(gallerySlotKey) ?? []),
           ];
-          const diverseFallback = pickMissionDiverseFallbackPhoto(
-            galleryPhotos,
-            new Set(slotFallbackExclude.map(normalizeGalleryUrl)),
-            galleryMeta,
-            slotFallbackExclude,
-            batchMatchInput,
-          );
+          const diverseFallback = assignmentRequiresCaptionPhotoMatch(assignment)
+            ? null
+            : pickMissionDiverseFallbackPhoto(
+              galleryPhotos,
+              new Set(slotFallbackExclude.map(normalizeGalleryUrl)),
+              galleryMeta,
+              slotFallbackExclude,
+              batchMatchInput,
+            );
           if (diverseFallback?.url) {
             referenceUrl = diverseFallback.url;
             galleryMatchScore = diverseFallback.score;
@@ -5047,74 +5051,18 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       } else if (isDesignedPostSlot && !designedPosterSyncUrl) {
         console.warn(
-          `[auto-produce] Designed post slot withheld (no branded poster) — trying fal_only fallback: "${headline.slice(0, 40)}"`,
+          `[auto-produce] Designed post slot withheld — refusing fal_only `
+          + `(designed slot has no branded poster): "${headline.slice(0, 40)}"`,
         );
-        const designedFallbackPhoto = pickVenueEscalationFallbackPhoto({
-          currentReferenceUrl: referenceUrl,
-          galleryPhotos,
-          brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined) ?? [],
-          sector: brandBusinessType,
-          hasRealBrandPhotos,
-          galleryAnalysis: galleryMeta,
-          matchInput: {
-            caption: ideationCaption,
-            headline: galleryMatchHeadline,
-            mood,
-            contentType: postType,
-            businessType: brandBusinessType,
-            subjectKey: ideationSubjectKey,
-          },
-          globalUsageCounts: globalGalleryUsageCounts,
-          missionUsedUrls: batchUsedGalleryMission,
-        }) ?? referenceUrl ?? undefined;
-        const designedFallback = await produceFalOnlySlot({
-          pipeline: 'fal_only_post',
-          workspaceId,
-          isFalOnlyPost: true,
-          isFalOnlyVideo: false,
-          existingImageUrl: imageUrl,
-          existingVideoUrl: videoUrl,
-          headline,
-          caption,
-          cta,
-          brandName: resolvedBrandName,
-          brandColors: { primary: syncPrimaryColor ?? '', accent: syncAccentColor ?? '' },
-          brandVibe: null,
-          sector: brandBusinessType,
-          location: brandLocation,
-          mood,
-          sceneHint: falSceneHint || undefined,
-          logoUrl: brandLogoUrl || undefined,
-          grafikerMaxRetries,
-          referencePhotoUrl: designedFallbackPhoto,
-          brandReferenceImageUrls: (brandCtx.reference_image_urls as string[] | undefined)?.slice(0, 2),
-          requireGroundedGallery: resolveFalRequireGroundedGallery({
-            referencePhotoUrl: designedFallbackPhoto,
-            sector: brandBusinessType,
-            hasRealBrandGallery: hasRealBrandPhotos,
-            captionDrivenGenerated: false,
-          }),
-          hasRealBrandGallery: hasRealBrandPhotos,
-          captionDrivenGenerated: false,
+        results.push({
+          title: headline,
+          imageUrl: '',
+          error: designedPosterGrafikerScore != null
+            ? `Grafiker ${designedPosterGrafikerScore}/10 — tasarım postu yayına alınmadı`
+            : 'Tasarım postu üretilemedi',
+          slotKey,
         });
-        if (designedFallback?.imageUrl) {
-          imageUrl = designedFallback.imageUrl;
-          designedPosterSyncUrl = designedFallback.imageUrl;
-          falDesignEngine = designedFallback.falDesignEngine;
-          falGrafikerScore = designedFallback.falGrafikerScore;
-          falGrafikerPass = designedFallback.falGrafikerPass;
-          costEstimate += designedFallback.costDelta;
-        } else {
-          results.push({
-            title: headline,
-            imageUrl: '',
-            error: designedPosterGrafikerScore != null
-              ? `Grafiker ${designedPosterGrafikerScore}/10 — tasarım postu yayına alınmadı`
-              : 'Tasarım postu üretilemedi',
-            slotKey,
-          });
-          continue;
-        }
+        continue;
       }
     }
 

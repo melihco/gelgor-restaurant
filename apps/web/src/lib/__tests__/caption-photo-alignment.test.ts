@@ -488,3 +488,53 @@ describe('Turkish morphology in gallery scoring', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('designed-slot caption lock — no diversity fill', () => {
+  const VENUE_PHOTO = 'https://cdn.example.com/gallery/shop-interior-02.jpg';
+  const VENUE_META: GalleryPhotoMeta = {
+    contentTags: ['interior', 'shelf', 'shop', 'ambiance'],
+    description: 'Shop interior with wooden shelves and jars in the background.',
+    mood: 'warm',
+    bestFor: ['venue_showcase', 'feed_post'],
+  };
+
+  it('shop product designed slot stays empty instead of taking a venue leftover', () => {
+    const assigned = assignPhotosToContents(
+      [
+        {
+          key: 'shop-hero',
+          input: {
+            caption: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
+            headline: 'Yağın en sakin hali',
+            businessType: 'local_products_shop',
+            requireCaptionPhotoMatch: true,
+          },
+          postType: 'feed',
+        },
+      ],
+      [VENUE_PHOTO],
+      { [VENUE_PHOTO]: VENUE_META },
+    );
+    expect(assigned.get('shop-hero')).toBeNull();
+  });
+
+  it('beach designed slot stays empty instead of taking a leftover food plate', () => {
+    const assigned = assignPhotosToContents(
+      [
+        {
+          key: 'daybed',
+          input: {
+            caption: 'Daybed rezervasyon — gün boyu deniz.',
+            headline: 'Daybed',
+            businessType: 'beach_club',
+            requireCaptionPhotoMatch: true,
+          },
+          postType: 'feed',
+        },
+      ],
+      [FOOD_PHOTO],
+      { [FOOD_PHOTO]: FOOD_ONLY_META },
+    );
+    expect(assigned.get('daybed')).toBeNull();
+  });
+});

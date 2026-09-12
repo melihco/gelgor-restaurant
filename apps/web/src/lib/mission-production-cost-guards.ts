@@ -5,6 +5,7 @@
  * Complements VIDEO_TIER_SCOPE (reel montage) and production profile retries.
  */
 
+import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { isVideoTierScopeActive } from '@/lib/video-tier-scope';
 
 /**
@@ -16,11 +17,11 @@ import { isVideoTierScopeActive } from '@/lib/video-tier-scope';
  */
 export const MISSION_CONTENT_PRODUCTION_IDEA_CAP = 16;
 
-/** Soft Grafiker score: accept mid-retry instead of burning another GPT edit. */
-export const GROUNDED_SOFT_ACCEPT_SCORE = 6;
+/** Mid-retry stop only when the frame already meets the Grafiker floor. */
+export const GROUNDED_SOFT_ACCEPT_SCORE = GRAFIKER_PASS_THRESHOLD;
 
-/** Prefer a readable grounded frame over paying Ideogram again. */
-export const GROUNDED_KEEP_MIN_SCORE = 5;
+/** Keep a grounded frame only when it already meets the publish floor. */
+export const GROUNDED_KEEP_MIN_SCORE = GRAFIKER_PASS_THRESHOLD;
 
 /** Max gallery photos animated per beat montage (was 3). */
 export const REEL_BEAT_MONTAGE_PHOTO_CAP = 2;
@@ -49,7 +50,7 @@ export function resolveGroundedDesignMaxAttempts(input: {
   return input.groundedOnly ? 3 : 2;
 }
 
-/** Mid-loop soft accept threshold; null = no soft accept (premium full retries). */
+/** Mid-loop early stop at the Grafiker floor; never a cheaper mid-score. */
 export function resolveGroundedSoftAcceptScore(
   productionTier?: string | null,
 ): number | null {
@@ -70,8 +71,6 @@ export function shouldKeepGroundedInsteadOfIdeogram(input: {
 }): boolean {
   if (input.libraryQualityFalFallback) return false;
   if (!input.textValidated) return false;
-  if (input.templateReplica) return true;
-  if (isMissionCostScopeActive(input.productionTier)) return true;
   const score = input.grafikerScore;
   return typeof score === 'number' && score >= GROUNDED_KEEP_MIN_SCORE;
 }

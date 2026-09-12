@@ -66,6 +66,9 @@ import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
 import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
+import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
+import { resolveDesignedPostProductionOrder } from '@/lib/designed-post-production-order';
+import { ensurePackagingFidelityPrompt } from '@/lib/product-packaging-fidelity';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import {
   composeDesignSpecShell,
@@ -146,11 +149,14 @@ export interface FalDesignedPostInput {
   /** production-loop punchline lock — paint must not stem/rewrite. */
   punchlineLockSource?: string | null;
   /**
-   * auto (default): paint layout boxes on the real photo when geometry exists.
-   * off: current GPT JPEG replica (compare / fallback).
+   * auto: paint layout boxes on the real photo when geometry exists.
+   * off (default): GPT JPEG replica.
    * only: fail if the shell cannot compose.
    */
   shellCompose?: ShellComposeMode;
+  slotRole?: string | null;
+  catalogSlotKey?: string | null;
+  announcementType?: string | null;
 }
 
 export interface FalDesignedPostResult {
@@ -371,7 +377,7 @@ export async function produceFalDesignedPost(
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
       const replicaLocked = librarySlotPaintLocked(binding?.matched);
-      const shellMode = replicaLocked ? 'off' : (input.shellCompose ?? 'auto');
+      const shellMode = replicaLocked ? 'off' : (input.shellCompose ?? 'off');
       if (shellMode !== 'off' && referenceUrl) {
         const shell = await composeDesignSpecShell({
           headline: canvasHeadline,
@@ -512,6 +518,17 @@ export async function produceFalDesignedPost(
           ?? binding?.matched?.canvaArchetypeId
           ?? null,
       });
+      const productionOrder = resolveDesignedPostProductionOrder({
+        businessType: input.sector,
+        slotRole: input.slotRole,
+        catalogSlotKey: input.catalogSlotKey,
+        announcementType: input.announcementType,
+        headline: canvasHeadline,
+        caption: input.caption,
+      });
+      const paintPrompt = productionOrder.packagingLock
+        ? ensurePackagingFidelityPrompt(baseDesignCardPrompt)
+        : baseDesignCardPrompt;
       if (replicaSpec) {
         console.log(
           `[auto-produce] [fal-design] template replica prompt active: "${binding?.matched?.templateName ?? '-'}"`,
@@ -548,8 +565,8 @@ export async function produceFalDesignedPost(
       let lastRegenBlock = '';
       for (let attempt = 0; attempt < maxGptAttempts; attempt += 1) {
         const designCardPrompt = lastRegenBlock
-          ? `${baseDesignCardPrompt}\n\n${lastRegenBlock}`
-          : baseDesignCardPrompt;
+          ? `${paintPrompt}\n\n${lastRegenBlock}`
+          : paintPrompt;
         const designedUrl = await generateDesignedPostImage({
           workspaceId: input.workspaceId,
           designCardPrompt,
@@ -622,19 +639,17 @@ export async function produceFalDesignedPost(
           );
           continue;
         }
-        // No template lock, so the Grafiker gate above is skipped and this render
-        // ships on text validation alone — which is how a headline clipped to a
-        // grammatical fragment and a reserved-but-empty logo band reached the feed.
-        // Review it for the record; promoting this to a gate needs the scorer's
-        // accuracy proven against the pixel defect detectors first.
         const observed = await scoreDesignedPostRender(designedUrl, input.headline);
         falGrafikerObservedScore = observed?.score ?? null;
         falGrafikerReviewed = observed?.score != null;
-        if (observed?.score != null) {
-          console.log(
-            `[auto-produce] [fal-design] observed grafiker ${observed.score}/10 `
-            + `(no template lock — record only) "${input.headline.slice(0, 40)}"`,
+        lastTextValidUrl = designedUrl;
+        lastTextValidScore = observed?.score ?? null;
+        if (observed?.score != null && observed.score < GRAFIKER_PASS_THRESHOLD) {
+          console.warn(
+            `[auto-produce] [fal-design] unlocked grafiker ${observed.score}/10 `
+            + `< ${GRAFIKER_PASS_THRESHOLD} — withhold "${input.headline.slice(0, 40)}"`,
           );
+          continue;
         }
         imageUrl = designedUrl;
         falDesignEngine = 'gpt_image_designed';
@@ -968,7 +983,13 @@ export const falDesignHandler: ProductionPipelineHandler = {
       && localReferenceUrl
       && isUsableGalleryPhotoUrl(localReferenceUrl),
     );
-    if (!state.imageUrl && !templateIsRenderable && localTypographyEligible) {
+    const designedFeedSlot = (
+      inputs.pipeline === 'fal_design'
+      || inputs.slotRole === 'designed_post'
+      || inputs.slotRole === 'designed_typography'
+      || inputs.slotRole === 'fal_designed_post'
+    );
+    if (!state.imageUrl && !templateIsRenderable && localTypographyEligible && !designedFeedSlot) {
       const local = await renderDesignedPostLocalTypography({
         inputs,
         templateBinding,
@@ -1049,6 +1070,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       bodyFont: inputs.falBodyFont,
       logoPlacement: templateBinding.logoPlacement ?? inputs.falLogoPlacement,
       productionTier: inputs.productionTier,
+      slotRole: inputs.slotRole,
+      catalogSlotKey: inputs.catalogSlotKey,
+      announcementType: inputs.announcementType,
       galleryPhotoMeta,
       canvaArchetypeId: inputs.canvaArchetypeId
         ?? templateBinding.matched?.canvaArchetypeId

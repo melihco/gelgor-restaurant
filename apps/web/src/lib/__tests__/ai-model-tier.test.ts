@@ -50,16 +50,16 @@ describe('ai-model-tier', () => {
     expect(resolveAiModelTier()).toBe('starter');
   });
 
-  it('starter profile uses mini + medium gpt-image + flux schnell', () => {
+  it('starter profile uses mini + high gpt-image + flux schnell', () => {
     const p = AI_MODEL_PROFILES.starter;
     expect(p.chatStandard).toBe('gpt-4o-mini');
     expect(p.chatCreative).toBe('gpt-4o-mini');
-    expect(p.imageOpenAiQuality).toBe('medium');
+    expect(p.imageOpenAiQuality).toBe('high');
     expect(p.falIdeogramModel).toBe('ideogram/v4');
   });
 
-  it('agency uses medium gpt-image quality; premium stays high', () => {
-    expect(AI_MODEL_PROFILES.agency.imageOpenAiQuality).toBe('medium');
+  it('agency and premium paint designed posts at high', () => {
+    expect(AI_MODEL_PROFILES.agency.imageOpenAiQuality).toBe('high');
     expect(AI_MODEL_PROFILES.agency.imageOpenAiModel).toBe('gpt-image-2');
     expect(AI_MODEL_PROFILES.premium.imageOpenAiQuality).toBe('high');
   });

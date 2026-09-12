@@ -8,6 +8,7 @@
 import {
   MIN_ACCEPT_SCORE,
   RELAXED_MATCH_SCORE,
+  assignmentRequiresCaptionPhotoMatch,
   buildGalleryLookup,
   isHardGalleryThemeMismatch,
   pickMissionDiverseFallbackPhoto,
@@ -246,6 +247,7 @@ export function buildSlotGalleryMatchInput(input: {
   });
 
   return {
+    requireCaptionPhotoMatch: assignmentRequiresCaptionPhotoMatch(input.assignment),
     caption: catalogAware.caption || baseCaption || input.brandName,
     headline: catalogAware.headline || syntheticHeadline,
     mood,

@@ -563,9 +563,7 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.costDelta).toBeCloseTo(0.04);
   });
 
-  it('records an observed grafiker score without gating the untemplated render', async () => {
-    // No template lock, so the Grafiker gate stays off; a low score must be
-    // measurable without withholding the slot.
+  it('withholds an untemplated render below the Grafiker floor', async () => {
     h.isUsableGalleryPhotoUrl.mockReturnValue(true);
     h.generateDesignedPostImage.mockResolvedValue('designed-url');
     h.runGrafikerVisionReview.mockResolvedValue({ score: 4, pass: false });
@@ -574,12 +572,23 @@ describe('falDesignHandler.run', () => {
     await falDesignHandler.run(ctx);
 
     expect(h.runGrafikerVisionReview).toHaveBeenCalled();
-    expect(ctx.state.imageUrl).toBe('designed-url');
+    expect(ctx.state.imageUrl).toBeNull();
     expect(ctx.state.falGrafikerObservedScore).toBe(4);
     expect(ctx.state.falGrafikerReviewed).toBe(true);
-    // The blocking fields stay untouched — no publish gate reads the observation.
-    expect(ctx.state.falGrafikerScore).toBeNull();
-    expect(ctx.state.falGrafikerPass).toBe(true);
+    expect(ctx.state.falDesignEngine).toBeNull();
+  });
+
+  it('ships an untemplated render that already meets the Grafiker floor', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue('designed-url');
+    h.runGrafikerVisionReview.mockResolvedValue({ score: 8, pass: true });
+
+    const ctx = makeCtx({ isFalDesignPost: true });
+    await falDesignHandler.run(ctx);
+
+    expect(ctx.state.imageUrl).toBe('designed-url');
+    expect(ctx.state.falGrafikerObservedScore).toBe(8);
+    expect(ctx.state.falDesignEngine).toBe('gpt_image_designed');
   });
 
   it('reports no review when the vision service is unavailable', async () => {

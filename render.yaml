@@ -176,7 +176,7 @@ services:
       - key: SMART_AGENCY_IMAGE_MODEL
         value: gpt-image-1
       - key: SMART_AGENCY_IMAGE_QUALITY
-        value: medium
+        value: high
       - key: FAL_IMAGE_MODEL
         value: fal-ai/flux/schnell
       - key: AI_MODEL_TIER
@@ -320,7 +320,7 @@ services:
       - key: SMART_AGENCY_IMAGE_MODEL
         value: gpt-image-1
       - key: SMART_AGENCY_IMAGE_QUALITY
-        value: medium
+        value: high
       - key: FAL_IMAGE_MODEL
         value: fal-ai/flux/schnell
       - key: AI_MODEL_TIER

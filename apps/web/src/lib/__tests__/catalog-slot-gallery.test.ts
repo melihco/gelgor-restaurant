@@ -221,6 +221,7 @@ describe('production pickGalleryPhotoForSlot — caption SSOT + catalog', () => 
     expect(match.preferredAssetTypes?.length).toBeGreaterThan(0);
     expect(match.templateUseCase).toBeTruthy();
     expect(match.caption).toBe('Gün batımında terasta altın saat — deniz manzarası eşliğinde.');
+    expect(match.requireCaptionPhotoMatch).toBe(true);
   });
 
   it('weak briefing headline seeds catalog sample for match input', () => {
