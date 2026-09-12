@@ -14,6 +14,7 @@ const SKIP_LABEL_PROD: Record<GptEnhanceSkipCode, string> = {
   stock_only: 'Stok görsel',
   non_venue_saas: 'Mekan dışı işletme — atlandı',
   designed_grade: 'Tasarım katmanı uygulandı — atlandı',
+  designed_gpt_paint: 'High boya uygulandı — ikinci enhance yok',
 };
 
 const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
@@ -25,6 +26,7 @@ const SKIP_LABEL_DEBUG: Record<GptEnhanceSkipCode, string> = {
   stock_only: 'Stok galeri',
   non_venue_saas: 'Policy: non_venue_saas (sektör venue dışı)',
   designed_grade: 'Policy: designed_grade (render-time grade)',
+  designed_gpt_paint: 'Policy: designed_gpt_paint (high edit is the paint)',
 };
 
 export function labelAiEnhanceSkip(
