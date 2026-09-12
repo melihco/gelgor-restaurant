@@ -287,9 +287,12 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
 
 def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     from app.services.production_job_service import (
+        HARD_SLOT_ATTEMPT_CAP,
+        LOOK_OPS_ATTEMPT_CAP,
         is_lane_blocker_look_ops,
         is_lane_blocker_provider,
         is_terminal_produce_error,
+        resolve_failure_attempt_cap,
         workspace_lane_cooldown_sql,
     )
 
@@ -318,6 +321,12 @@ def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     assert is_lane_blocker_look_ops(shop_gpt) is False
     assert pfs._is_non_retryable_slot_failure(shop_gpt) is True
     assert pfs._is_non_retryable_slot_failure(shop_look) is False
+    assert LOOK_OPS_ATTEMPT_CAP == 2
+    assert LOOK_OPS_ATTEMPT_CAP < HARD_SLOT_ATTEMPT_CAP
+    assert resolve_failure_attempt_cap(shop_look) == 2
+    assert resolve_failure_attempt_cap(beach_look) == 2
+    assert resolve_failure_attempt_cap(shop_pack) == HARD_SLOT_ATTEMPT_CAP
+    assert resolve_failure_attempt_cap(beach_gallery) == HARD_SLOT_ATTEMPT_CAP
     assert pfs._lane_same_mission_delay_sec([shop_look], default=2.0) == 180
     assert pfs._lane_same_mission_delay_sec([beach_look], default=2.0) == 180
     assert pfs._lane_same_mission_delay_sec([shop_gpt], default=2.0) == 600

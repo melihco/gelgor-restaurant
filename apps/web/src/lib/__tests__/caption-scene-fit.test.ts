@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canRestageNearestGallery,
   captionSceneNeedsRestage,
+  isPlaceSceneText,
   isProcessOrBtsSceneText,
   keepWeeklySceneCopy,
 } from '@/lib/caption-scene-fit';
@@ -61,6 +63,18 @@ describe('caption-scene-fit — local_products_shop + beach_club', () => {
     })).toBe(false);
   });
 
+  it('shop: flag on keeps a weekly market sentence on a bottle still', () => {
+    const kept = keepWeeklySceneCopy({
+      adaptiveScene: true,
+      ideationHint: 'Pazarda tezgah açtık. İncir kavanozda.',
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+      headline: 'Sızma zeytinyağımız raflarda',
+      evidenceNote: "Etiket: 'NATUREL SIZMA ZEYTİNYAĞI'",
+      photoSideText: 'Labeled oil bottle',
+    });
+    expect(kept.caption.toLowerCase()).toMatch(/pazar|tezgah/);
+  });
+
   it('shop: flag on keeps the weekly process sentence and strips unproven grade', () => {
     const kept = keepWeeklySceneCopy({
       adaptiveScene: true,
@@ -85,6 +99,41 @@ describe('caption-scene-fit — local_products_shop + beach_club', () => {
     });
     expect(left.caption).toMatch(/Sızma zeytinyağımız raflarda/);
     expect(left.caption).not.toMatch(/Üretimde/);
+  });
+
+  it('restage gate needs adaptive and no service fight', () => {
+    expect(canRestageNearestGallery({ adaptiveScene: true })).toBe(true);
+    expect(canRestageNearestGallery({ adaptiveScene: false })).toBe(false);
+    expect(canRestageNearestGallery({
+      adaptiveScene: true,
+      captionServiceConflict: true,
+    })).toBe(false);
+  });
+
+  it('shop: farm caption + bottle still needs restage; beach venue does not', () => {
+    expect(isPlaceSceneText('Pazarda tezgah açtık')).toBe(true);
+    expect(captionSceneNeedsRestage({
+      adaptiveScene: true,
+      caption: 'Çiftlikte hasat günü, üretimde iş başındayız',
+      slotJob: 'çiftlik ziyareti',
+      catalogSlotKey: 'local_products_shop_farm_visit_story',
+      evidenceNote: 'Rafta etiketli şişe',
+      photoRole: 'product_for_sale',
+    })).toBe(true);
+    expect(captionSceneNeedsRestage({
+      adaptiveScene: true,
+      caption: 'Pazarda tezgah açtık, kavanozlar dizili',
+      slotJob: 'pazar günü',
+      catalogSlotKey: 'local_products_shop_market_day_post',
+      evidenceNote: 'Etiketli kavanoz',
+      photoRole: 'product_for_sale',
+    })).toBe(true);
+    expect(captionSceneNeedsRestage({
+      adaptiveScene: false,
+      caption: 'Pazarda tezgah açtık',
+      evidenceNote: 'Etiketli kavanoz',
+      photoRole: 'product_for_sale',
+    })).toBe(false);
   });
 
   it('beach: sunset + venue is not a caption-scene restage', () => {

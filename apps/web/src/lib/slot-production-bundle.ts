@@ -53,6 +53,9 @@ export interface SlotPaintOverlayInput {
   photoUrl?: string | null;
   galleryPhotoMeta?: GalleryPhotoMeta | null;
   designMatchIsSoft?: boolean;
+  adaptiveScene?: boolean;
+  subjectKey?: string | null;
+  catalogSlotKey?: string | null;
 }
 
 export interface SlotPaintOverlayResult {
@@ -137,6 +140,9 @@ export function resolveSlotPaintOverlay(
     galleryMeta: input.galleryPhotoMeta,
     designSampleHeadline: input.sampleHeadline,
     designMatchIsSoft: input.designMatchIsSoft,
+    adaptiveScene: input.adaptiveScene,
+    subjectKey: input.subjectKey,
+    catalogSlotKey: input.catalogSlotKey,
   });
 
   const captionDerivedLock = isCaptionDerivedPunchlineLock(input.punchlineLockSource);

@@ -3783,6 +3783,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         galleryMeta: lockedMeta,
         catalogSlotKey: assignment.catalog_slot_key
           ?? (ideaRecord.catalog_slot_key as string | undefined),
+        adaptiveScene: aiVisualStandard.adaptiveScene,
+        subjectKey: ideationSubjectKey,
       });
       if (
         chain.repaired
@@ -3861,6 +3863,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               galleryMeta: photoMetaForCaption,
               catalogSlotKey: assignment.catalog_slot_key
                 ?? (ideaRecord.catalog_slot_key as string | undefined),
+              adaptiveScene: aiVisualStandard.adaptiveScene,
+              subjectKey: ideationSubjectKey,
             });
             if (recheck.ok) {
               console.warn(

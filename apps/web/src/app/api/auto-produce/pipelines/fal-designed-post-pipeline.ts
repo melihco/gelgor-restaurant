@@ -41,6 +41,7 @@ import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-produc
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 import {
   allowsTemplateGalleryPhotoFallback,
+  resolveAiVisualProductionStandard,
   resolveVisualSourceMode,
 } from '@/lib/ai-visual-production-standard';
 import { runGrafikerVisionReview } from '@/lib/grafiker-review-service';
@@ -233,6 +234,7 @@ export async function produceFalDesignedPost(
   if (!input.isFalDesignPost || input.existingImageUrl) return null;
 
   const aspectRatio = input.aspectRatio ?? '4:5';
+  const adaptiveScene = resolveAiVisualProductionStandard(input.brandTheme).adaptiveScene;
 
   let imageUrl: string | null = input.existingImageUrl;
   let falGrafikerScore: number | null = null;
@@ -331,6 +333,8 @@ export async function produceFalDesignedPost(
         photoUrl: referenceUrl,
         galleryPhotoMeta: input.galleryPhotoMeta,
         designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
+        adaptiveScene,
+        catalogSlotKey: input.catalogSlotKey,
       });
       if (
         paintOverlay.budgetSource === 'template_sample'
@@ -732,6 +736,8 @@ export async function produceFalDesignedPost(
         photoUrl: referenceUrl,
         galleryPhotoMeta: input.galleryPhotoMeta,
         designMatchIsSoft: binding?.matched?.matchQuality === 'soft',
+        adaptiveScene,
+        catalogSlotKey: input.catalogSlotKey,
       });
       const still = await produceFalDesignedPostStill({
         workspaceId: input.workspaceId,
@@ -1074,6 +1080,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       catalogSlotKey: inputs.catalogSlotKey,
       announcementType: inputs.announcementType,
       galleryPhotoMeta,
+      brandTheme: inputs.brandTheme,
       canvaArchetypeId: inputs.canvaArchetypeId
         ?? templateBinding.matched?.canvaArchetypeId
         ?? null,
@@ -1135,6 +1142,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
         typeBudget: templateBinding.matched?.typeBudget,
         photoUrl: satoriFallbackPhoto,
         designMatchIsSoft: templateBinding.matched?.matchQuality === 'soft',
+        adaptiveScene: resolveAiVisualProductionStandard(inputs.brandTheme).adaptiveScene,
+        catalogSlotKey: inputs.catalogSlotKey,
       });
       if (isHardDesignWithholdBreak(paintFallback.coherence.breaks)) {
         state.pipelineFailureReason = state.pipelineFailureReason

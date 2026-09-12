@@ -1720,6 +1720,27 @@ export function isHardGalleryThemeMismatch(
   return false;
 }
 
+/** Caption names a concrete SKU the photo cannot prove (honey vs oil). */
+export function isHardProductSkuMismatch(
+  input: MatchPhotoInput,
+  meta: GalleryPhotoMeta | undefined,
+  url?: string,
+): boolean {
+  const caption = matchCaptionBlob(input);
+  if (!caption.trim()) return false;
+  const searchable = buildGalleryPhotoSearchable(meta, url);
+  if (
+    productPhotoConflictPenalty(caption, searchable, {
+      subjectKey: input.subjectKey,
+      primarySubject: meta?.primarySubject,
+    }) >= STRONG_MATCH_SCORE
+  ) {
+    return true;
+  }
+  const relation = canonicalSubjectRelationForMeta(input.subjectKey, meta);
+  return relation === 'conflict' && (meta?.subjectConfidence ?? 1) >= 0.4;
+}
+
 /**
  * Fingerprint index memo for ranking. Greedy mission assignment calls
  * rankPhotosForContent O(slots²) times with the SAME lookup + analysis

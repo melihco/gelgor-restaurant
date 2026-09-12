@@ -9,6 +9,7 @@ import { assertPathTenantMatchesRequest } from '@/lib/tenant-production-guard';
 import { fetchCrewBackendJson } from '@/lib/crew-proxy';
 import { parseStringOrArray } from '@/lib/brand-readiness';
 import { filterBrandGalleryUrls } from '@/lib/gallery-upload';
+import { toAppJpegBuffer } from '@/lib/app-jpeg';
 import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
 import { generateStorageKey, isR2Configured, uploadToR2 } from '@/lib/r2-storage';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
@@ -25,16 +26,6 @@ function isAlreadyHosted(url: string): boolean {
   const r2Public = serverConfig.r2.publicUrl;
   if (r2Public && u.startsWith(r2Public)) return true;
   return false;
-}
-
-function extFromUrl(url: string, contentType?: string): string {
-  const lower = url.toLowerCase();
-  if (lower.endsWith('.png')) return 'png';
-  if (lower.endsWith('.webp')) return 'webp';
-  if (lower.endsWith('.gif')) return 'gif';
-  if (contentType?.includes('png')) return 'png';
-  if (contentType?.includes('webp')) return 'webp';
-  return 'jpg';
 }
 
 export async function POST(
@@ -87,10 +78,13 @@ export async function POST(
         errors.push(`${sourceUrl.slice(0, 60)}: fetch_failed`);
         continue;
       }
-      const ext = extFromUrl(sourceUrl);
-      const key = generateStorageKey(workspaceId, 'image', ext);
-      const ct = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      const uploaded = await uploadToR2(buffer, key, ct);
+      const jpeg = await toAppJpegBuffer(buffer);
+      if (!jpeg) {
+        errors.push(`${sourceUrl.slice(0, 60)}: jpeg_convert_failed`);
+        continue;
+      }
+      const key = generateStorageKey(workspaceId, 'image', 'jpg');
+      const uploaded = await uploadToR2(jpeg, key, 'image/jpeg');
       if (uploaded.url) {
         urlMap.set(sourceUrl, uploaded.url);
         mirrored += 1;

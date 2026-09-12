@@ -86,6 +86,8 @@ LANE_PROVIDER_MARKERS: tuple[str, ...] = (
 LANE_LOOK_OPS_COOLDOWN_SEC = 180
 LANE_PROVIDER_COOLDOWN_SEC = 600
 LANE_LOOK_OPS_BACKOFF_SEC = 180
+# In-call look already retries once. Two factory tours max — not three.
+LOOK_OPS_ATTEMPT_CAP = 2
 
 # A new paint can differ — never treat these as terminal, even if a marker overlaps.
 RETRYABLE_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
@@ -132,6 +134,13 @@ def is_lane_blocker_provider(reason: str | None) -> bool:
 
 def is_lane_blocker_reason(reason: str | None) -> bool:
     return is_lane_blocker_look_ops(reason) or is_lane_blocker_provider(reason)
+
+
+def resolve_failure_attempt_cap(reason: str | None) -> int:
+    """Look flake: 2 factory tours. Pack / paint errors keep the product cap."""
+    if is_lane_blocker_look_ops(reason):
+        return LOOK_OPS_ATTEMPT_CAP
+    return HARD_SLOT_ATTEMPT_CAP
 
 
 def workspace_lane_cooldown_sql(
@@ -606,6 +615,7 @@ async def mark_failed(
     retryable: bool = True,
     delay_sec: float | None = None,
     reset_priority: bool = False,
+    attempt_cap: int | None = None,
 ) -> str:
     """Increment attempts and schedule a backoff retry, or mark exhausted.
 
@@ -614,6 +624,7 @@ async def mark_failed(
     factory = _get_session_factory()
     row_dict: dict[str, Any] | None = None
     base = float(delay_sec) if delay_sec and delay_sec > 0 else float(_BACKOFF_BASE_SEC)
+    effective_cap = max(1, int(attempt_cap or resolve_failure_attempt_cap(error)))
     async with factory() as db:
         res = await db.execute(
             text(
@@ -632,9 +643,11 @@ async def mark_failed(
                     claimed_at = NULL,
                     claimed_by = NULL,
                     priority = CASE WHEN :reset_priority THEN 0 ELSE priority END,
+                    max_attempts = LEAST(COALESCE(max_attempts, :hard_cap), :attempt_cap),
                     status = CASE
                         WHEN NOT :retryable THEN 'exhausted'
-                        WHEN attempts + 1 >= max_attempts THEN 'exhausted'
+                        WHEN attempts + 1 >= LEAST(COALESCE(max_attempts, :hard_cap), :attempt_cap)
+                            THEN 'exhausted'
                         ELSE 'failed' END,
                     run_after = now() + make_interval(
                         secs => LEAST(:cap, :base * power(2, attempts))
@@ -651,6 +664,8 @@ async def mark_failed(
                 "reset_priority": bool(reset_priority),
                 "base": base,
                 "cap": _BACKOFF_CAP_SEC,
+                "hard_cap": HARD_SLOT_ATTEMPT_CAP,
+                "attempt_cap": effective_cap,
             },
         )
         row = res.first()

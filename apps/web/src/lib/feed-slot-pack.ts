@@ -106,6 +106,12 @@ function foldJob(text: string): string {
     .trim();
 }
 
+/** Weekly place/process sentence on a product seed — evidence is the still, not the scene. */
+function weeklySceneAllowsProductSeed(caption: string): boolean {
+  const f = fold(caption);
+  return /uretim|is basi|isbasi|workshop|atolye|behind the scenes|atmosfer|pazar|dukkan|gun batim|sunset|teras|ambiance/.test(f);
+}
+
 /** İş yer/alan (çim, şemsiye, şezlong) — satılık ürün kabuğuna kapanır. */
 export function slotJobIsPlaceNotSell(slotJob: string): boolean {
   const j = foldJob(slotJob);
@@ -202,6 +208,7 @@ export function headlineTakenFromCaption(headline: string, caption: string): boo
 
 export function validateFeedSlotPack(
   input: Partial<FeedSlotPack> | null | undefined,
+  opts?: { adaptiveScene?: boolean },
 ): FeedSlotPackIssue[] {
   const p = input ?? {};
   const issues: FeedSlotPackIssue[] = [];
@@ -237,7 +244,8 @@ export function validateFeedSlotPack(
     issues.push('product_needs_identity');
   }
   if (
-    slotJobIsPlaceNotSell(slotJob)
+    !opts?.adaptiveScene
+    && slotJobIsPlaceNotSell(slotJob)
     && (role === 'product_for_sale' || shell === 'product_hero')
   ) {
     issues.push('place_cannot_sell');
@@ -249,6 +257,7 @@ export function validateFeedSlotPack(
       photoRole: role,
       shellDirection: shell,
     })
+    && !(opts?.adaptiveScene && weeklySceneAllowsProductSeed(caption))
   ) {
     issues.push('copy_misses_evidence');
   }
@@ -274,8 +283,9 @@ export function isEmptyPlaceCommand(
 
 export function parseFeedSlotPack(
   input: Partial<FeedSlotPack> | null | undefined,
+  opts?: { adaptiveScene?: boolean },
 ): { ok: true; pack: FeedSlotPack } | { ok: false; issues: FeedSlotPackIssue[] } {
-  const issues = validateFeedSlotPack(input);
+  const issues = validateFeedSlotPack(input, opts);
   if (issues.length || !input) return { ok: false, issues };
   return {
     ok: true,

@@ -87,6 +87,19 @@ describe('feed-slot-pack — beach_club', () => {
     expect(issues).toContain('prop_cannot_sell');
   });
 
+  it('adaptive restage allows a labeled product seed on a place job', () => {
+    const issues = validateFeedSlotPack({
+      slotJob: 'çim alan şemsiye şezlong',
+      photoUrl: 'https://cdn.example.com/basket.jpg',
+      photoRole: 'product_for_sale',
+      caption: 'Çim alanda akşam ışığı. Şişe masada, deniz açık.',
+      headline: 'Çim alanda akşam ışığı',
+      shellDirection: 'product_hero',
+      evidenceNote: 'Etiket: DATÇA NATUREL SIZMA ZEYTİNYAĞI',
+    }, { adaptiveScene: true });
+    expect(issues).not.toContain('place_cannot_sell');
+  });
+
   it('rejects selling a product basket on a lawn / umbrella / lounger job', () => {
     const issues = validateFeedSlotPack({
       slotJob: 'çim alan şemsiye şezlong',

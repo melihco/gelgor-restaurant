@@ -9,7 +9,7 @@ import { shouldAiEnhanceForOutput } from '@/lib/ai-visual-production-standard';
 import type { AiVisualProductionStandard } from '@/lib/ai-visual-production-standard';
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
-import { captionSceneNeedsRestage } from '@/lib/caption-scene-fit';
+import { canRestageNearestGallery, captionSceneNeedsRestage } from '@/lib/caption-scene-fit';
 
 /** Strong caption↔photo match — no $0.21 enhance needed for organic stills. */
 export const GALLERY_ENHANCE_SKIP_MIN_SCORE = GIS_PILOT_MIN_SCORE + 3;
@@ -292,13 +292,9 @@ export function isWeakGalleryMatch(input: {
    */
   falGroundedPipeline?: boolean;
 }): boolean {
-  // adaptiveScene normally bypasses weak-gallery detection — but not when there is a
-  // confirmed cross-service conflict, or when Fal will paint on the gallery photo.
-  if (
-    input.adaptiveScene
-    && !input.captionServiceConflict
-    && !input.falGroundedPipeline
-  ) {
+  // Nearest still + high restage: do not fail the raw GIS floor.
+  // Service fights (nail/lash, DJ/food) still withhold.
+  if (canRestageNearestGallery(input)) {
     return false;
   }
   if (!input.missionProduction) return false;
@@ -348,11 +344,7 @@ export function shouldSkipProductionForWeakGallery(input: {
   ) {
     return false;
   }
-  if (
-    input.adaptiveScene
-    && !input.captionServiceConflict
-    && !input.falGroundedPipeline
-  ) {
+  if (canRestageNearestGallery(input)) {
     return false;
   }
   if (!input.missionProduction) return false;

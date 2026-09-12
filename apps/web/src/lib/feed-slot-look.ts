@@ -27,7 +27,7 @@ import {
   keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
 import {
-  isAttachableVisionUrl,
+  isLookModelVisionUrl,
   inlineLookVisionDataUris,
   resolveLookVisionUrls,
 } from '@/studio/look-urls';
@@ -135,11 +135,13 @@ Adaptive scene is ON. A later enhance step may restage the still (setting, light
 - On a sell job, pick a candidate with identity even if the weekly scene is not in the frame. Do not return null because the hint describes a setting that enhance can add.
 - If a matching place or process photo exists, prefer it over a bottle.
 - A labeled product is the right pick when the job is selling that package.
-- If ideation_hint is a process / at-work / behind-the-scenes sentence, KEEP that scene sentence as caption and headline.
+- If ideation_hint is a process / at-work / behind-the-scenes / place sentence, KEEP that scene sentence as caption and headline.
 - evidenceNote still names what is currently in the frame (bottle, label, lawn, grove).
-- Place jobs still need a place photo. A bottle cannot prove a shop-interior or lawn job.`;
+- Place or process jobs: prefer a matching place/process still. If none, pick the nearest labeled identity. Do not return null because the farm, shop, or process is not in the frame.`;
 
 const SELL_MUST_PICK = `This is a sell job. At least one candidate has readable identity. You must set pickIndex to a candidate with identity. Do not return null because ideation_hint or an abstract catalog word is not printed on the photo. Caption, headline, and the picked product must say the same thing. Write from the visible label / what you see.`;
+
+const RESTAGE_MUST_PICK = `Adaptive scene is ON. A later high restage will place this product in the weekly setting. Pick the best-caption candidate with identity. Do not return null because the farm, shop, or process is not in the frame. Prefer a real place or process photo if one exists.`;
 
 const PLACE_RE = /ambiance|atmosphere|venue|sunset|market_day|shop_tour|shop_interior|lawn|pier|terrace|garden|atmosfer|pazar|dükkan|dukkan|gün batım|gun batim|çim|cim |şemsiye|semsiye|şezlong/;
 const PROCESS_RE = /process|bts|farm_visit|craft|atölye|atolye|üretim|uretim|süreç|surec|kulis|çiftlik|ciftlik|behind/;
@@ -160,6 +162,11 @@ export function lookJobKind(input: {
 
 function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean {
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
+}
+
+function candidateCanSeedRestage(candidate: FeedSlotLookCandidate): boolean {
+  if (candidateHasReadableIdentity(candidate)) return true;
+  return String(candidate.description ?? '').trim().length >= 12;
 }
 
 export function feedSlotLookEnabled(): boolean {
@@ -284,9 +291,13 @@ export function describeLookPersistError(issues: FeedSlotLookIssue[]): string {
   return `Paket yok (${text})`;
 }
 
+function allowRemoteHttpVision(): boolean {
+  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test';
+}
+
 function visionImageUrl(candidate: FeedSlotLookCandidate): string | null {
   const target = (candidate.visionUrl ?? candidate.url).trim();
-  return isAttachableVisionUrl(target) ? target : null;
+  return isLookModelVisionUrl(target, allowRemoteHttpVision()) ? target : null;
 }
 
 async function withResolvedVisionUrls(
@@ -405,15 +416,15 @@ export async function lookFeedSlotPack(
     return { ok: false, issues: incoming.length === 0 ? ['no_pick'] : ['missing_slot_job'] };
   }
 
-  const apiKey = serverConfig.openai.apiKey;
-  if (!apiKey && !deps?.openai) {
-    return { ok: false, issues: ['look_no_key'] };
-  }
-
   const resolved = await withResolvedVisionUrls(incoming);
   const candidates = await inlineLookVisionDataUris(resolved);
   if (!candidates.some((c) => visionImageUrl(c))) {
     return { ok: false, issues: ['look_vision_blocked'] };
+  }
+
+  const apiKey = serverConfig.openai.apiKey;
+  if (!apiKey && !deps?.openai) {
+    return { ok: false, issues: ['look_no_key'] };
   }
 
   const profile = getAiModelProfile();
@@ -437,8 +448,12 @@ export async function lookFeedSlotPack(
     });
   });
 
-  const askLook = async (system: string, detailTag: string) => {
-    const openai = deps?.openai ?? new OpenAI({ apiKey });
+  const askLookOnce = async (system: string, detailTag: string) => {
+    const openai = deps?.openai ?? new OpenAI({
+      apiKey,
+      timeout: 60_000,
+      maxRetries: 0,
+    });
     const response = await openai.chat.completions.create({
       model,
       max_tokens: 420,
@@ -465,6 +480,18 @@ export async function lookFeedSlotPack(
     return response.choices[0]?.message?.content?.trim() ?? '{}';
   };
 
+  const askLook = async (system: string, detailTag: string) => {
+    try {
+      return await askLookOnce(system, detailTag);
+    } catch (err) {
+      console.warn(
+        '[feed-slot-look] call failed, one retry:',
+        err instanceof Error ? err.message : String(err),
+      );
+      return askLookOnce(system, `${detailTag}_retry`);
+    }
+  };
+
   try {
     let raw = await askLook(lookSystemPrompt(input.adaptiveScene), 'feed_slot_look');
     let { pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob);
@@ -476,6 +503,18 @@ export async function lookFeedSlotPack(
       raw = await askLook(
         `${lookSystemPrompt(input.adaptiveScene)}\n\n${SELL_MUST_PICK}`,
         'feed_slot_look_sell',
+      );
+      ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
+    }
+    if (
+      pickIndex == null
+      && input.adaptiveScene
+      && (jobKind === 'place' || jobKind === 'process')
+      && candidates.some(candidateCanSeedRestage)
+    ) {
+      raw = await askLook(
+        `${lookSystemPrompt(input.adaptiveScene)}\n\n${RESTAGE_MUST_PICK}`,
+        'feed_slot_look_restage',
       );
       ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
     }
@@ -510,7 +549,7 @@ export async function lookFeedSlotPack(
       evidenceNote: grounded.evidenceNote,
       caption: sceneCopy.caption,
       headline: sceneCopy.headline,
-    });
+    }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
     const complete = completeLookPack(parsed.pack);
     if (!complete) return { ok: false, issues: ['incomplete_headline'] };

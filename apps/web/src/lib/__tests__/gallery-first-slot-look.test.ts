@@ -315,6 +315,81 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
   });
 
+  it('shop: adaptive farm slot ranks a labeled bottle when the gallery has no farm still', () => {
+    const FALLBACK = 'https://cdn.example.com/gallery/whatsapp-empty.jpg';
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        idea_index: 3,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'copy_a',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'local_products_shop_farm_visit_story',
+        catalog_slot_label: 'çiftlik ziyareti',
+      },
+      galleryPhotos: [OIL, JAM, FALLBACK],
+      galleryMeta: {
+        ...shopMeta(),
+        [FALLBACK]: {
+          description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: content, whatsapp.',
+          suggestedAssetType: 'brand_background',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Çiftlikte hasat günü, sızma zeytinyağı üretimde.',
+      ideationHeadline: 'Hasat günü',
+      adaptiveScene: true,
+    });
+    expect(shortlist.map((row) => row.url)).toContain(OIL);
+    expect(shortlist.map((row) => row.url)).not.toContain(FALLBACK);
+  });
+
+  it('shop: without adaptive, a farm slot still prefers the unanalyzed interior leftover', () => {
+    const FALLBACK = 'https://cdn.example.com/gallery/whatsapp-empty.jpg';
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        idea_index: 3,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'copy_a',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'local_products_shop_farm_visit_story',
+        catalog_slot_label: 'çiftlik ziyareti',
+      },
+      galleryPhotos: [OIL, FALLBACK],
+      galleryMeta: {
+        ...shopMeta(),
+        [FALLBACK]: {
+          description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: content, whatsapp.',
+          suggestedAssetType: 'brand_background',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Çiftlikte hasat günü.',
+      ideationHeadline: 'Hasat günü',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(FALLBACK);
+  });
+
+  it('beach: adaptive sunset slot can seed from a table still when no terrace exists', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [PLATE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Plaj',
+      businessType: 'beach_club',
+      ideationCaption: 'Gün batımında masada kal, altın saat kaçmasın.',
+      ideationHeadline: 'Gün batımında masada kal',
+      adaptiveScene: true,
+    });
+    expect(shortlist.map((row) => row.url)).toContain(PLATE);
+  });
+
   it('beach: sunset caption ranks the terrace over a forced lunch plate', () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: beachAssignment(),

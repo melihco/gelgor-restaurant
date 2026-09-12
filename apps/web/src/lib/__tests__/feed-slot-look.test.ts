@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type OpenAI from 'openai';
+
+vi.mock('@/lib/external-image-fetch', () => ({
+  fetchReviewableFrameBuffer: vi.fn(async () => null),
+}));
 import {
   describeLookPersistError,
   isCampaignSentenceLock,
@@ -28,6 +32,26 @@ function fakeOpenaiSequence(payloads: Record<string, unknown>[], captured?: Capt
           if (captured) captured.content = req.messages;
           const payload = payloads[Math.min(i, payloads.length - 1)]!;
           i += 1;
+          return {
+            choices: [{ message: { content: JSON.stringify(payload) } }],
+            usage: { prompt_tokens: 80, completion_tokens: 40 },
+          };
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
+function fakeOpenaiThrowThen(
+  payload: Record<string, unknown>,
+  calls: { count: number },
+) {
+  return {
+    chat: {
+      completions: {
+        create: async () => {
+          calls.count += 1;
+          if (calls.count === 1) throw new Error('Request timed out');
           return {
             choices: [{ message: { content: JSON.stringify(payload) } }],
             usage: { prompt_tokens: 80, completion_tokens: 40 },
@@ -237,6 +261,38 @@ describe('feed-slot-look — shop + beach', () => {
     }
   });
 
+  it('adaptive place job may seed a labeled bottle for later restage', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'dükkan atmosferi',
+        catalogSlotKey: 'local_products_shop_shop_ambiance_post',
+        language: 'Turkish',
+        adaptiveScene: true,
+        ideationHint: 'Dükkan atmosferi bu akşam sakin.',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled oil bottle on a shelf',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: "Etiket: 'NATUREL SIZMA ZEYTİNYAĞI'. Rafta bir şişe.",
+          caption: 'Dükkan atmosferi bu akşam sakin. Raflarda sızma duruyor.',
+          headline: 'Dükkan bu akşam sakin',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.photoRole).toBe('product_for_sale');
+      expect(result.pack.caption.toLowerCase()).toMatch(/dükkan|atmosfer/);
+    }
+  });
+
   it('fail-closes when a place job is packed as a shop basket', async () => {
     const result = await lookFeedSlotPack(
       {
@@ -400,6 +456,9 @@ describe('feed-slot-look — shop + beach', () => {
     expect(describeLookPersistError(['look_call_failed'])).toBe(
       'Bakış yapılamadı (bakış çağrısı)',
     );
+    expect(describeLookPersistError(['look_vision_blocked'])).toBe(
+      'Bakış yapılamadı (fotoğraf açılamadı)',
+    );
     expect(describeLookPersistError(['no_pick'])).toBe(
       'Paket yok (Aday fotoğraflar bu işi kanıtlamıyor)',
     );
@@ -508,6 +567,8 @@ describe('feed-slot-look — shop + beach', () => {
     expect(adaptive).toMatch(/restage the still/i);
     expect(adaptive).toMatch(/Product, caption, and headline stay one pack/i);
     expect(adaptive).toMatch(/A labeled product is the right pick when the job is selling/i);
+    expect(adaptive).toMatch(/Do not return null because the farm, shop, or process is not in the frame/i);
+    expect(adaptive).not.toMatch(/A bottle cannot prove a shop-interior/);
     expect(adaptive).not.toMatch(/Still pick a real hero \(labeled product/);
     expect(base).toMatch(/separate on-canvas social line/i);
     expect(base).not.toMatch(/must come from the caption/);
@@ -629,6 +690,84 @@ describe('feed-slot-look — shop + beach', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
+  it('shop: retries one timed-out look call in-process', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        language: 'Turkish',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        openai: fakeOpenaiThrowThen({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Sızma zeytinyağımız raflarda',
+          shellDirection: 'product_hero',
+        }, calls),
+      },
+    );
+    expect(calls.count).toBe(2);
+    expect(result.ok).toBe(true);
+  });
+
+  it('beach: retries one timed-out look call in-process', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı ambiyans',
+        language: 'Turkish',
+        candidates: [{
+          url: 'https://cdn.example.com/pier.jpg',
+          description: 'Pier umbrellas open sea',
+        }],
+      },
+      {
+        openai: fakeOpenaiThrowThen({
+          pickIndex: 0,
+          photoRole: 'venue',
+          evidenceNote: 'iskele, açık deniz ufku',
+          caption: 'Deniz duruyor. Kenarda kalın.',
+          headline: 'Deniz duruyor',
+          shellDirection: 'venue_ambiance',
+        }, calls),
+      },
+    );
+    expect(calls.count).toBe(2);
+    expect(result.ok).toBe(true);
+  });
+
+  it('shop: does not send a blocked Instagram URL to the look model', async () => {
+    const result = await lookFeedSlotPack({
+      slotJob: 'ürün hero',
+      language: 'Turkish',
+      candidates: [{
+        url: 'https://scontent.cdninstagram.com/v/oil.jpg',
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+      }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('look_vision_blocked');
+  });
+
+  it('beach: does not send a blocked Wix URL to the look model', async () => {
+    const result = await lookFeedSlotPack({
+      slotJob: 'gün batımı ambiyans',
+      language: 'Turkish',
+      candidates: [{
+        url: 'https://static.wixstatic.com/media/pier.jpg',
+        description: 'Pier umbrellas open sea',
+      }],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('look_vision_blocked');
   });
 
   it('beach: refuses scene_fill when a venue still was picked', async () => {

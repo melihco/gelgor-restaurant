@@ -11,7 +11,17 @@ import {
 } from '@/lib/caption-photo-alignment';
 import { isSlotPhotoNeedUnmet } from '@/lib/catalog-slot-photo-fit';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
-import { isHardGalleryThemeMismatch } from '@/lib/gallery-photo-matcher';
+import {
+  isHardGalleryThemeMismatch,
+  isHardProductSkuMismatch,
+} from '@/lib/gallery-photo-matcher';
+import {
+  isPlaceSceneText,
+  isProcessOrBtsSceneText,
+  isProductStillEvidence,
+} from '@/lib/caption-scene-fit';
+import { lookJobKind } from '@/lib/feed-slot-look';
+import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
 import {
   isOffTopicTourismOverlay,
@@ -58,6 +68,10 @@ export interface CaptionDesignPostCoherenceInput {
   channel?: 'reel' | 'feed_post' | 'story';
   /** Catalog slot — hiring/plated families fail-closed on the wrong photo class. */
   catalogSlotKey?: string | null;
+  /** Brand flag: nearest product still + later restage may close a scene gap. */
+  adaptiveScene?: boolean;
+  /** Ideation subject — SKU fights still withhold when adaptive. */
+  subjectKey?: string | null;
   /**
    * Paint-time may rebias an ungrounded overlay. Publish-time must judge the
    * painted headline as-is — a repaired line is not what the customer sees.
@@ -278,24 +292,35 @@ export function evaluateCaptionDesignPostCoherence(
     // SKU veto (bal ↔ zeytinyağı) needs vision evidence. A matcher-accepted
     // pin with no bound analysis must not die here — that hid every shop feed
     // post behind photo_theme_conflict while the photo was already the SKU.
-    const hard = hasSubjectEvidence
-      ? (
-        isHardGalleryThemeMismatch(
-          {
-            caption,
-            headline: overlay,
-            businessType: input.businessType,
-          },
-          meta,
-          photoUrl,
-        )
-        || isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
-        || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta)
-      )
-      : (
-        isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable)
-        || isSlotPhotoNeedUnmet(input.catalogSlotKey, meta)
+    const matchInput = {
+      caption,
+      headline: overlay,
+      businessType: input.businessType,
+      subjectKey: input.subjectKey ?? undefined,
+    };
+    const skuFight = hasSubjectEvidence
+      && isHardProductSkuMismatch(matchInput, meta, photoUrl);
+    const serviceFight = isHardCaptionPhotoConflict(`${caption} ${overlay}`, searchable);
+    const classUnmet = isSlotPhotoNeedUnmet(input.catalogSlotKey, meta);
+    const themeMismatch = hasSubjectEvidence
+      && isHardGalleryThemeMismatch(matchInput, meta, photoUrl);
+    const job = lookJobKind({
+      slotJob: `${input.catalogSlotKey ?? ''} ${caption} ${overlay}`,
+      catalogSlotKey: input.catalogSlotKey ?? undefined,
+    });
+    const sceneText = `${caption} ${overlay} ${input.catalogSlotKey ?? ''}`;
+    const wantsScene = job === 'place' || job === 'process'
+      || isProcessOrBtsSceneText(sceneText)
+      || isPlaceSceneText(sceneText);
+    const productSeed = isProductStillEvidence(meta?.description, null)
+      || String(meta?.visibleLabelText ?? '').trim().length >= 3
+      || photoMatchesPreferredAssetTypes(
+        meta?.suggestedAssetType,
+        ['product_image', 'food_drink_photo', 'food_photo', 'food_image'],
       );
+    const restageableSceneGap = Boolean(input.adaptiveScene) && wantsScene && productSeed;
+    const hard = skuFight || serviceFight || classUnmet
+      || (themeMismatch && !restageableSceneGap);
     if (hard) breaks.push('photo_theme_conflict');
   }
 

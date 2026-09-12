@@ -15,14 +15,23 @@ describe('Fal grounded weak-gallery gate', () => {
     pipeline: 'fal_design',
   };
 
-  it('treats score below Fal GIS floor as weak even when adaptiveScene is on', () => {
+  it('adaptive restage bypasses Fal GIS floor unless the services fight', () => {
     expect(FAL_GROUNDED_GALLERY_MIN_SCORE).toBeGreaterThan(MIN_ACCEPT_SCORE);
     expect(
       isWeakGalleryMatch({
         ...base,
-        galleryMatchScore: MIN_ACCEPT_SCORE, // 28 — ok for Remotion, weak for Fal
+        galleryMatchScore: MIN_ACCEPT_SCORE,
         adaptiveScene: true,
         falGroundedPipeline: true,
+      }),
+    ).toBe(false);
+    expect(
+      isWeakGalleryMatch({
+        ...base,
+        galleryMatchScore: MIN_ACCEPT_SCORE,
+        adaptiveScene: true,
+        falGroundedPipeline: true,
+        captionServiceConflict: true,
       }),
     ).toBe(true);
     expect(
@@ -45,7 +54,19 @@ describe('Fal grounded weak-gallery gate', () => {
     ).toBe(false);
   });
 
-  it('skips Fal production on weak gallery regardless of brand_solid fallback', () => {
+  it('skips Fal production on weak gallery when adaptive restage is off', () => {
+    expect(
+      shouldSkipProductionForWeakGallery({
+        ...base,
+        galleryMatchScore: 20,
+        adaptiveScene: false,
+        mediaFallback: 'brand_solid',
+        falGroundedPipeline: true,
+      }),
+    ).toBe(true);
+  });
+
+  it('does not skip Fal when adaptive restage can close a weak GIS gap', () => {
     expect(
       shouldSkipProductionForWeakGallery({
         ...base,
@@ -54,7 +75,7 @@ describe('Fal grounded weak-gallery gate', () => {
         mediaFallback: 'brand_solid',
         falGroundedPipeline: true,
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('skips Fal grounded gallery matches below the grounded GIS floor (55)', () => {
@@ -62,7 +83,7 @@ describe('Fal grounded weak-gallery gate', () => {
       shouldSkipProductionForWeakGallery({
         ...base,
         galleryMatchScore: 48,
-        adaptiveScene: true,
+        adaptiveScene: false,
         mediaFallback: 'block',
         falGroundedPipeline: true,
       }),
@@ -109,7 +130,7 @@ describe('Fal grounded weak-gallery gate', () => {
       shouldSkipProductionForWeakGallery({
         ...base,
         galleryMatchScore: null,
-        adaptiveScene: true,
+        adaptiveScene: false,
         mediaFallback: 'brand_solid',
         falGroundedPipeline: true,
       }),

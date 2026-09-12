@@ -528,6 +528,7 @@ async def _mark_slot_failed(
         retryable=retryable,
         delay_sec=jobs.LANE_LOOK_OPS_BACKOFF_SEC if look_ops and retryable else None,
         reset_priority=look_ops or jobs.is_lane_blocker_provider(slot_reason),
+        attempt_cap=jobs.resolve_failure_attempt_cap(slot_reason),
     )
 
 

@@ -369,13 +369,20 @@ const LOOK_CANDIDATE_LIMIT = 4;
 /** Drop look tails that lose the caption winner by more than this. */
 const CAPTION_LOOK_SCORE_GAP = 8;
 
-/** Place / process jobs — products cannot prove the slot. */
+/** Place / process jobs — products cannot prove the slot unless adaptive restage. */
 const PLACE_PROCESS_LOOK_TYPES = [
   'venue_reference',
   'event_photo',
   'team_photo',
   'hero_image',
   'brand_background',
+] as const;
+
+const IDENTITY_SEED_TYPES = [
+  'product_image',
+  'food_drink_photo',
+  'food_photo',
+  'food_image',
 ] as const;
 
 function isFallbackGalleryMeta(meta?: GalleryPhotoMeta | null): boolean {
@@ -393,6 +400,13 @@ function photoCanProveLookJob(
     ? [...PLACE_PROCESS_LOOK_TYPES, 'food_drink_photo']
     : [...PLACE_PROCESS_LOOK_TYPES];
   return photoMatchesPreferredAssetTypes(meta?.suggestedAssetType, types);
+}
+
+/** Labeled product / plated still — valid seed when adaptive scene will restage. */
+function photoIsIdentitySeed(meta?: GalleryPhotoMeta | null): boolean {
+  if (!meta || isFallbackGalleryMeta(meta)) return false;
+  if (String(meta.visibleLabelText ?? '').trim().length >= 3) return true;
+  return photoMatchesPreferredAssetTypes(meta.suggestedAssetType, [...IDENTITY_SEED_TYPES]);
 }
 
 function lookJobKindFromAssignment(assignment: ProductionAssignment): LookJobKind {
@@ -449,20 +463,48 @@ function collectFeedSlotLookUrls(input: {
   /** Ignored for look: caption rank owns the shortlist. */
   forcedPhotoUrl?: string | null;
   matchInput: MatchPhotoInput;
+  /** Brand flag: nearest identity still may seed a later restage. */
+  adaptiveScene?: boolean;
 }): Array<{ url: string; score: number }> {
   const usedBases = new Set(input.excludeUrls.map(normalizeGalleryUrl));
   const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
   const jobKind = lookJobKindFromAssignment(input.assignment);
-  const jobKindPool = (jobKind === 'place' || jobKind === 'process')
-    ? input.galleryPhotos.filter((url) => {
-      const meta = input.galleryMeta[normalizeGalleryUrl(url)]
-        ?? input.galleryMeta[url]
-        ?? Object.entries(input.galleryMeta).find(
-          ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(url),
-        )?.[1];
-      return photoCanProveLookJob(meta, jobKind);
-    })
+  const metaFor = (url: string) => (
+    input.galleryMeta[normalizeGalleryUrl(url)]
+    ?? input.galleryMeta[url]
+    ?? Object.entries(input.galleryMeta).find(
+      ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(url),
+    )?.[1]
+  );
+  const proving = (jobKind === 'place' || jobKind === 'process')
+    ? input.galleryPhotos.filter((url) => photoCanProveLookJob(metaFor(url), jobKind))
     : [];
+  const realProving = proving.filter((url) => !isFallbackGalleryMeta(metaFor(url)));
+  const identitySeeds = (jobKind === 'place' || jobKind === 'process')
+    ? input.galleryPhotos.filter((url) => photoIsIdentitySeed(metaFor(url)))
+    : [];
+  const adaptive = Boolean(input.adaptiveScene);
+  const uniqueUrls = (urls: string[]) => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const url of urls) {
+      const key = normalizeGalleryUrl(url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(url);
+    }
+    return out;
+  };
+  let jobKindPool: string[] = [];
+  if (jobKind === 'place' || jobKind === 'process') {
+    if (adaptive) {
+      jobKindPool = realProving.length > 0
+        ? uniqueUrls([...realProving, ...identitySeeds])
+        : identitySeeds;
+    } else {
+      jobKindPool = proving;
+    }
+  }
   const captionIsStrong = isStrongIdeationCaption(input.ideationCaption);
   const preferredPool = !captionIsStrong && input.matchInput.preferredAssetTypes?.length
     ? filterGalleryUrlsByPreferredAssetTypes(
@@ -493,7 +535,8 @@ function collectFeedSlotLookUrls(input: {
       input.galleryMeta,
     );
 
-  const skipCaptionTrim = jobKind === 'place' || jobKind === 'process';
+  const skipCaptionTrim = (jobKind === 'place' || jobKind === 'process')
+    && !(adaptive && realProving.length === 0 && identitySeeds.length > 0);
   const finish = (rows: Array<{ url: string; score: number }>) => (
     skipCaptionTrim
       ? rows.slice(0, LOOK_CANDIDATE_LIMIT)
@@ -545,6 +588,7 @@ export function buildCaptionFitLookShortlist(input: {
   slotBackfillPass?: boolean;
   tieBreakSeed?: number;
   forcedPhotoUrl?: string | null;
+  adaptiveScene?: boolean;
 }): Array<{ url: string; score: number }> {
   const matchInput = buildSlotGalleryMatchInput(input);
   return collectFeedSlotLookUrls({
@@ -675,7 +719,7 @@ export async function resolveGalleryFirstForSlot(input: {
       evidenceNote: groundedCopy.evidenceNote,
       caption: sceneCopy.caption,
       headline: sceneCopy.headline,
-    });
+    }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);
     }

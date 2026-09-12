@@ -160,6 +160,68 @@ describe('caption-design-post-coherence', () => {
     expect(result.breaks).not.toContain('photo_theme_conflict');
   });
 
+  it('adaptive farm caption on an oil bottle is a restage gap, not a withhold', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Çiftlikte hasat günü, üretimde iş başındayız. Sızma raflarda.',
+      overlayHeadline: 'Hasat günü iş başında',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      catalogSlotKey: 'local_products_shop_farm_visit_story',
+      adaptiveScene: true,
+      galleryMeta: {
+        contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+        description: 'Dark glass bottle of olive oil',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'olive_oil',
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        subjectConfidence: 1,
+      },
+    });
+    expect(result.breaks).not.toContain('photo_theme_conflict');
+  });
+
+  it('beach: adaptive sunset caption on a table product still is a restage gap', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Gün batımında masada kal. Altın saat açık denizde duruyor.',
+      overlayHeadline: 'Gün batımında masada kal',
+      brandName: 'Yula',
+      businessType: 'beach_club',
+      photoUrl: 'https://cdn.example.com/table-drink.jpg',
+      catalogSlotKey: 'beach_club_sunset_ambiance_story',
+      adaptiveScene: true,
+      galleryMeta: {
+        contentTags: ['table', 'glass', 'bottle'],
+        description: 'Labeled bottle on a set table',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'table_drink',
+        visibleLabelText: 'YULA',
+        subjectConfidence: 0.7,
+      },
+    });
+    expect(result.breaks).not.toContain('photo_theme_conflict');
+  });
+
+  it('adaptive still withholds honey caption on an oil bottle', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Diken balımızı denediniz mi? Harika bir tat deneyimi sunuyor.',
+      overlayHeadline: 'Diken balımızı denediniz mi',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      catalogSlotKey: 'local_products_shop_farm_visit_story',
+      adaptiveScene: true,
+      galleryMeta: {
+        contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+        description: 'Dark glass bottle of olive oil',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'olive_oil',
+        subjectConfidence: 1,
+      },
+    });
+    expect(result.breaks).toContain('photo_theme_conflict');
+  });
+
   it('still withholds honey caption on an analyzed olive-oil photo', () => {
     const result = evaluateCaptionDesignPostCoherence({
       caption: 'Diken balımızı denediniz mi? Harika bir tat deneyimi sunuyor.',
