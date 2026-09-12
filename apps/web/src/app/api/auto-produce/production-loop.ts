@@ -52,6 +52,8 @@ import {
   resolveGalleryMatchSubjectKey,
   resolveGalleryLookupEntry,
   bindGalleryUrlToAnalysis,
+  resolveGalleryPhotoMeta,
+  aliasGalleryMetaForPhotoUrls,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
 } from '@/lib/gallery-photo-matcher';
@@ -346,6 +348,7 @@ import {
   shouldSkipFeedMeaningRematch,
 } from '@/lib/feed-slot-look';
 import { stampFeedSlotPackMetadata, type FeedSlotPack } from '@/lib/feed-slot-pack';
+import { isAdaptiveIdentitySeed } from '@/lib/caption-scene-fit';
 import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
 import {
   buildMissionGalleryAssignments,
@@ -1085,6 +1088,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       galleryMeta = analysisGate.meta;
     }
   }
+  galleryMeta = aliasGalleryMetaForPhotoUrls(galleryPhotos, galleryMeta);
 
   // P3 — auto subject: gallery density → sector default (explicit theme subject untouched).
   if (pctx.aiVisualStandard.visualSubject === 'auto') {
@@ -3243,10 +3247,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       galleryEscalatedToFalOnly = true;
       return true;
     };
-    let photoMetaForCaption = galleryMeta[normalizeGalleryUrl(normalizedResolvedReferenceUrl)]
-      ?? Object.entries(galleryMeta).find(
-        ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
-      )?.[1];
+    let photoMetaForCaption = resolveGalleryPhotoMeta(
+      normalizedResolvedReferenceUrl,
+      galleryMeta,
+      galleryPhotos,
+    );
     const galleryPhotoDescription = String(
       (photoMetaForCaption as GalleryPhotoMeta | undefined)?.description ?? '',
     ).trim();
@@ -3310,10 +3315,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           resolvedReferenceUrl = bestUrl;
           galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
           galleryMatchScore = bestScore;
-          photoMetaForCaption = galleryMeta[normalizeGalleryUrl(bestUrl)]
-            ?? Object.entries(galleryMeta).find(
-              ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(bestUrl),
-            )?.[1];
+          photoMetaForCaption = resolveGalleryPhotoMeta(bestUrl, galleryMeta, galleryPhotos);
           console.log(
             `[auto-produce] gallery re-picked for headline (score ${bestScore}): "${ideationHeadline.slice(0, 48)}"`,
           );
@@ -3345,10 +3347,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
                 resolvedReferenceUrl = normalizedAlt;
                 galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
                 galleryMatchScore = altScore;
-                photoMetaForCaption = galleryMeta[normalizeGalleryUrl(normalizedAlt)]
-                  ?? Object.entries(galleryMeta).find(
-                    ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(normalizedAlt),
-                  )?.[1];
+                photoMetaForCaption = resolveGalleryPhotoMeta(
+                  normalizedAlt,
+                  galleryMeta,
+                  galleryPhotos,
+                );
                 console.log(
                   `[auto-produce] gallery fallback re-pick (score ${altScore}): "${ideationHeadline.slice(0, 48)}"`,
                 );
@@ -3420,10 +3423,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         pickedFromBrandGallery = galleryPhotos.some(
           (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(rematchedUrl),
         );
-        photoMetaForCaption = galleryMeta[normalizeGalleryUrl(rematchedUrl)]
-          ?? Object.entries(galleryMeta).find(
-            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
-          )?.[1];
+        photoMetaForCaption = resolveGalleryPhotoMeta(rematchedUrl, galleryMeta, galleryPhotos);
         applyVisualClaimGrounding({ photoUrl: rematchedUrl });
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
@@ -3512,10 +3512,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         pickedFromBrandGallery = galleryPhotos.some(
           (u) => normalizeGalleryUrl(u) === normalizeGalleryUrl(decision.url!),
         );
-        photoMetaForCaption = galleryMeta[normalizeGalleryUrl(decision.url)]
-          ?? Object.entries(galleryMeta).find(
-            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(decision.url!),
-          )?.[1];
+        photoMetaForCaption = resolveGalleryPhotoMeta(decision.url, galleryMeta, galleryPhotos);
         galleryMatchScore = scoreIdeationPhotoMatch({
           caption: ideationCaption,
           headline: galleryMatchHeadline,
@@ -3769,10 +3766,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || assignment.slot_role === 'premium_editorial_campaign_story';
     if (designedCoherenceGate && caption.trim().length >= 24) {
       const lockedMeta = resolvedReferenceUrl
-        ? (galleryMeta[normalizeGalleryUrl(resolvedReferenceUrl)]
-          ?? Object.entries(galleryMeta).find(
-            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(resolvedReferenceUrl!),
-          )?.[1])
+        ? resolveGalleryPhotoMeta(resolvedReferenceUrl, galleryMeta, galleryPhotos)
         : undefined;
       const chain = canShipCaptionDesignPost({
         caption,
@@ -3849,10 +3843,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             resolvedReferenceUrl = rematchedUrl;
             galleryPreviewUrl = toFeedPreviewUrl(resolvedReferenceUrl) ?? resolvedReferenceUrl;
             pickedFromBrandGallery = true;
-            photoMetaForCaption = galleryMeta[normalizeGalleryUrl(rematchedUrl)]
-              ?? Object.entries(galleryMeta).find(
-                ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(rematchedUrl),
-              )?.[1];
+            photoMetaForCaption = resolveGalleryPhotoMeta(
+              rematchedUrl,
+              galleryMeta,
+              galleryPhotos,
+            );
             applyVisualClaimGrounding({ photoUrl: rematchedUrl });
             const recheck = canShipCaptionDesignPost({
               caption,
@@ -5790,6 +5785,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         ? scratchBriefTelemetry(lastScratchBrief)
         : {}),
       ai_enhance_level: aiVisualStandard.enabled ? aiPhotoEnhanceLevel : undefined,
+      adaptive_scene: Boolean(aiVisualStandard.adaptiveScene),
+      gallery_identity_seed: isAdaptiveIdentitySeed(photoMetaForCaption),
       ai_visual_standard_enabled: aiVisualStandard.enabled,
       ai_visual_standard: buildAiVisualStandardMetadata(aiVisualStandard, aiPhotoEnhanceLevel, {
         visualSourceMode: resolveVisualSourceMode(brandTheme),

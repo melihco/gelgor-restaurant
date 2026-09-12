@@ -315,6 +315,72 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
   });
 
+  it('shop: R2 display URL binds WP analysis so look sees the label', async () => {
+    const wp = 'https://shop.example.com/wp-content/uploads/sizma-bottle.jpg';
+    const r2 = '/api/media?key=tenant/gallery/sizma-bottle.jpg';
+    let seenLabel = '';
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [r2],
+      galleryMeta: {
+        [wp]: {
+          primarySubject: 'olive_oil',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled olive oil bottle on a shelf',
+          suggestedAssetType: 'product_image',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Sızma zeytinyağımız raflarda, sofraya bir damla yeter.',
+      ideationHeadline: 'Sızma Zeytinyağı',
+      language: 'Turkish',
+      adaptiveScene: true,
+      lookFn: async (input: FeedSlotLookInput): Promise<FeedSlotLookResult> => {
+        seenLabel = String(input.candidates[0]?.visibleLabelText ?? '');
+        return {
+          ok: true,
+          pack: {
+            slotJob: 'ürün hero',
+            photoUrl: input.candidates[0]!.url,
+            photoRole: 'product_for_sale',
+            caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+            headline: 'Sızma zeytinyağımız raflarda',
+            shellDirection: 'product_hero',
+            evidenceNote: "Etiket: 'NATUREL SIZMA ZEYTİNYAĞI'",
+          },
+        };
+      },
+    });
+    expect(seenLabel).toMatch(/SIZMA/);
+    expect(gf?.applied).toBe(true);
+    expect(gf?.photoUrl).toBe(r2);
+  });
+
+  it('beach: R2 display URL binds site analysis on an adaptive sunset seed', () => {
+    const site = 'https://club.example.com/uploads/lunch-plate.jpg';
+    const r2 = '/api/media?key=tenant/gallery/lunch-plate.jpg';
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [r2],
+      galleryMeta: {
+        [site]: {
+          primarySubject: 'food',
+          description: 'Öğle yemeği tabağı ve salata',
+          suggestedAssetType: 'food_image',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Plaj',
+      businessType: 'beach_club',
+      ideationCaption: 'Gün batımında masada kal, altın saat kaçmasın.',
+      ideationHeadline: 'Gün batımında masada kal',
+      adaptiveScene: true,
+    });
+    expect(shortlist.map((row) => row.url)).toContain(r2);
+  });
+
   it('shop: adaptive farm slot ranks a labeled bottle when the gallery has no farm still', () => {
     const FALLBACK = 'https://cdn.example.com/gallery/whatsapp-empty.jpg';
     const shortlist = buildCaptionFitLookShortlist({

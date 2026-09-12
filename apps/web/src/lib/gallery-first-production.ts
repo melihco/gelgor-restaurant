@@ -15,6 +15,7 @@ import {
   rankPhotosForContent,
   rankPhotosForContentSeeded,
   resolveGalleryMatchSubjectKey,
+  resolveGalleryPhotoMeta,
   type GalleryPhotoMeta,
   type MatchPhotoInput,
   type PhotoMatchResult,
@@ -465,11 +466,7 @@ function collectFeedSlotLookUrls(input: {
   const lookup = buildGalleryLookup(input.galleryMeta, input.galleryPhotos);
   const jobKind = lookJobKindFromAssignment(input.assignment);
   const metaFor = (url: string) => (
-    input.galleryMeta[normalizeGalleryUrl(url)]
-    ?? input.galleryMeta[url]
-    ?? Object.entries(input.galleryMeta).find(
-      ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(url),
-    )?.[1]
+    resolveGalleryPhotoMeta(url, input.galleryMeta, input.galleryPhotos)
   );
   const proving = (jobKind === 'place' || jobKind === 'process')
     ? input.galleryPhotos.filter((url) => photoCanProveLookJob(metaFor(url), jobKind))
@@ -672,10 +669,11 @@ export async function resolveGalleryFirstForSlot(input: {
       catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
       ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
       candidates: shortlist.map((row) => {
-        const meta = input.galleryMeta[normalizeGalleryUrl(row.url)]
-          ?? Object.entries(input.galleryMeta).find(
-            ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(row.url),
-          )?.[1];
+        const meta = resolveGalleryPhotoMeta(
+          row.url,
+          input.galleryMeta,
+          input.galleryPhotos,
+        );
         return {
           url: row.url,
           visibleLabelText: meta?.visibleLabelText,
@@ -688,10 +686,11 @@ export async function resolveGalleryFirstForSlot(input: {
     if (!looked.ok) {
       return emptySlotLookResult(looked.issues);
     }
-    const pickedMeta = input.galleryMeta[normalizeGalleryUrl(looked.pack.photoUrl)]
-      ?? Object.entries(input.galleryMeta).find(
-        ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(looked.pack.photoUrl),
-      )?.[1];
+    const pickedMeta = resolveGalleryPhotoMeta(
+      looked.pack.photoUrl,
+      input.galleryMeta,
+      input.galleryPhotos,
+    );
     const photoSideText = [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
       .filter(Boolean)
       .join(' ');
@@ -746,10 +745,11 @@ export async function resolveGalleryFirstForSlot(input: {
     const forcedBase = normalizeGalleryUrl(forced);
     const excluded = new Set(input.excludeUrls.map(normalizeGalleryUrl));
     if (!excluded.has(forcedBase)) {
-      const forcedMeta = input.galleryMeta[forcedBase]
-        ?? Object.entries(input.galleryMeta).find(
-          ([k]) => normalizeGalleryUrl(k) === forcedBase,
-        )?.[1];
+      const forcedMeta = resolveGalleryPhotoMeta(
+        forced,
+        input.galleryMeta,
+        input.galleryPhotos,
+      );
       // Re-validate batch assign — never trust a pre-assigned hard mismatch.
       if (!isHardGalleryThemeMismatch(matchInput, forcedMeta, forced)) {
         const forcedScore = scoreIdeationPhotoMatch({
@@ -790,10 +790,11 @@ export async function resolveGalleryFirstForSlot(input: {
   }
 
   const photoUrl = pick.url;
-  const meta = input.galleryMeta[normalizeGalleryUrl(photoUrl)]
-    ?? Object.entries(input.galleryMeta).find(
-      ([k]) => normalizeGalleryUrl(k) === normalizeGalleryUrl(photoUrl),
-    )?.[1];
+  const meta = resolveGalleryPhotoMeta(
+    photoUrl,
+    input.galleryMeta,
+    input.galleryPhotos,
+  );
 
   if (isHardGalleryThemeMismatch(matchInput, meta, photoUrl)) {
     return null;

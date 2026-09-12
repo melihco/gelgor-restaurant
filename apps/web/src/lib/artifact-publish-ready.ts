@@ -8,12 +8,16 @@
  * Multi-tenant: driven by pipeline/role/quality meta — never brand UUIDs.
  */
 
-import { buildProductionQualityScorecard } from '@/lib/production-quality-scorecard';
+import {
+  buildProductionQualityScorecard,
+  isBrokenGrafikerRender,
+} from '@/lib/production-quality-scorecard';
 import { GALLERY_THEME_MISMATCH_CODE } from '@/lib/production-slot-failures';
 import {
   evaluateArtifactPublishCoherence,
   isPublishCoherenceBlock,
 } from '@/lib/caption-design-post-coherence';
+import { canRestageStampedPack } from '@/lib/caption-scene-fit';
 import { isStampedFeedSlotPackVisible } from '@/lib/feed-slot-pack';
 import type { OutputArtifact } from '@/types';
 
@@ -153,7 +157,8 @@ export function resolveArtifactPublishReady(input: {
     // Quality stamps freeze the produce-time scorecard. Grafiker floor and
     // typography keys moved; a 9/10 post stayed hidden as "metin yarım".
     const recomputeQuality = stampedCode === 'quality_hard_block'
-      || stampedCode === 'caption_design_incoherent';
+      || stampedCode === 'caption_design_incoherent'
+      || stampedCode === 'gallery_theme_mismatch';
     if (!staleNotReady && !recomputeQuality) {
       return {
         ready: false,
@@ -173,12 +178,64 @@ export function resolveArtifactPublishReady(input: {
     };
   }
 
+  const needsVideo = fmt === 'reel' || role.includes('reel') || pipeline.includes('reel');
+  const hasVideo = input.hasPlayableVideo === true
+    || Boolean(content.videoUrl || meta.videoUrl || meta.video_url);
+  if (needsVideo && !hasVideo) {
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: 'Reel için video gerekli',
+      code: 'reel_video_required',
+    };
+  }
+
+  const designedRequired =
+    input.requireDesignedVisuals === true
+    || isDesignedVisualPipeline(pipeline, role)
+    || String(meta.production_route ?? '') === 'designed_grafiker';
+
+  // designedVisualReady=false must NOT override fal_designer_produced / fal_only /
+  // grafiker_pass already present on meta (bundleReadyNow is a weaker signal).
+  const designedReady = input.designedVisualReady === true || hasDesignedOrAgencyVisual(meta);
+  if (designedRequired && !designedReady) {
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: input.designedVisualReady === false
+        ? 'Tasarım henüz hazır değil'
+        : 'Tasarlanmış görsel gerekli — ham galeri feed’e düşmez',
+      code: input.designedVisualReady === false ? 'not_ready' : 'designed_visual_required',
+    };
+  }
+
+  if (isBrokenGrafikerRender(meta)) {
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: 'Tasarım kalitesi onay için yeterli değil',
+      code: 'quality_hard_block',
+    };
+  }
+
+  // Produce already judged the pack. Akış only re-checks media + broken paint.
+  const alreadyShipped = meta.publish_ready === true && meta.publish_blocked !== true;
+  if (alreadyShipped) {
+    return {
+      ready: true,
+      blockFeed: false,
+      reason: null,
+      code: 'ready',
+    };
+  }
+
   const mismatch =
     meta.error_code === GALLERY_THEME_MISMATCH_CODE
     || meta.gallery_theme_mismatch === true
     || String(meta.last_error ?? meta.error ?? '').toLowerCase().includes('gallery_theme_mismatch')
     || String(meta.last_error ?? meta.error ?? '').includes('Caption–görsel');
-  if (mismatch) {
+  // Adaptive identity + restage already closed the scene gap at look time.
+  if (mismatch && !canRestageStampedPack(meta)) {
     return {
       ready: false,
       blockFeed: true,
@@ -221,37 +278,6 @@ export function resolveArtifactPublishReady(input: {
       blockFeed: true,
       reason: 'Üretim paketi başarısız',
       code: 'bundle_failed',
-    };
-  }
-
-  const needsVideo = fmt === 'reel' || role.includes('reel') || pipeline.includes('reel');
-  const hasVideo = input.hasPlayableVideo === true
-    || Boolean(content.videoUrl || meta.videoUrl || meta.video_url);
-  if (needsVideo && !hasVideo) {
-    return {
-      ready: false,
-      blockFeed: true,
-      reason: 'Reel için video gerekli',
-      code: 'reel_video_required',
-    };
-  }
-
-  const designedRequired =
-    input.requireDesignedVisuals === true
-    || isDesignedVisualPipeline(pipeline, role)
-    || String(meta.production_route ?? '') === 'designed_grafiker';
-
-  // designedVisualReady=false must NOT override fal_designer_produced / fal_only /
-  // grafiker_pass already present on meta (bundleReadyNow is a weaker signal).
-  const designedReady = input.designedVisualReady === true || hasDesignedOrAgencyVisual(meta);
-  if (designedRequired && !designedReady) {
-    return {
-      ready: false,
-      blockFeed: true,
-      reason: input.designedVisualReady === false
-        ? 'Tasarım henüz hazır değil'
-        : 'Tasarlanmış görsel gerekli — ham galeri feed’e düşmez',
-      code: input.designedVisualReady === false ? 'not_ready' : 'designed_visual_required',
     };
   }
 

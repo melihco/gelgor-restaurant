@@ -18,9 +18,9 @@
 
 import {
   matchPhotoToContent,
+  resolveGalleryPhotoMeta,
   type GalleryPhotoMeta,
 } from '@/lib/gallery-photo-matcher';
-import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { textContainsHint } from '@/lib/turkish-morphology';
 
 /** Minimal food-topic trigger — one hit is enough to route to AI / hard gates. */
@@ -469,11 +469,7 @@ function resolveMetaForUrl(
   photoUrl: string,
   galleryAnalysis: Record<string, GalleryPhotoMeta>,
 ): GalleryPhotoMeta | undefined {
-  const base = normalizeGalleryUrl(photoUrl);
-  for (const [key, meta] of Object.entries(galleryAnalysis)) {
-    if (normalizeGalleryUrl(key) === base) return meta;
-  }
-  return undefined;
+  return resolveGalleryPhotoMeta(photoUrl, galleryAnalysis);
 }
 
 import {

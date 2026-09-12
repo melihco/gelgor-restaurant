@@ -18,6 +18,27 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     expect(card.hardBlockReason).toContain('eşleşmiyor');
   });
 
+  it('shop + beach: adaptive identity turns a rejected GIS into a warning', () => {
+    for (const extra of [
+      { adaptive_scene: true, gallery_identity_seed: true },
+      {
+        ai_visual_standard: { adaptive_scene: true },
+        gallery_photo_meta: {
+          visibleLabelText: 'YULA',
+          description: 'Labeled bottle on a set table',
+          suggestedAssetType: 'product_image',
+        },
+      },
+    ]) {
+      const card = buildProductionQualityScorecard(stubArtifact({}), {
+        gallery_match_score: 12,
+        ...extra,
+      });
+      expect(card.hardBlock).toBe(false);
+      expect(card.softWarnings.join(' ')).toMatch(/restage/i);
+    }
+  });
+
   it('hard blocks an observed score at the floor when grafiker_score is absent', () => {
     const card = buildProductionQualityScorecard(stubArtifact({}), {
       grafiker_observed_score: 3,

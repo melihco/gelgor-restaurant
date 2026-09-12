@@ -18,6 +18,7 @@ import {
 import {
   canRestageNearestGallery,
   isAdaptiveIdentitySeed,
+  readAdaptiveSceneFromMeta,
 } from '@/lib/caption-scene-fit';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
 import {
@@ -385,6 +386,8 @@ export function coherenceInputFromPublishArtifact(
     ).trim() || undefined,
     designMatchIsSoft: matchQuality === 'soft' || matchQuality === 'format_fallback',
     catalogSlotKey: String(meta.catalog_slot_key ?? '').trim() || undefined,
+    adaptiveScene: readAdaptiveSceneFromMeta(meta),
+    subjectKey: String(meta.subject_key ?? meta.ideation_subject_key ?? '').trim() || undefined,
   };
 }
 

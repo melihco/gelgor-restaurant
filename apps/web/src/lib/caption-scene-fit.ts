@@ -116,6 +116,43 @@ export type AdaptiveGalleryContract = {
   bindPickIndex: (modelPick: number | null) => number | null;
 };
 
+function readRecord(raw: unknown): Record<string, unknown> | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  return raw as Record<string, unknown>;
+}
+
+/** Brand flag on a produced artifact — Hub theme or produce stamp. */
+export function readAdaptiveSceneFromMeta(
+  meta?: Record<string, unknown> | null,
+): boolean {
+  if (!meta) return false;
+  if (meta.adaptive_scene === true || meta.ai_adaptive_scene === true) return true;
+  const standard = readRecord(meta.ai_visual_standard);
+  return standard?.adaptive_scene === true;
+}
+
+export function readGalleryIdentityFromMeta(
+  meta?: Record<string, unknown> | null,
+): AdaptiveIdentitySeed | null {
+  if (!meta) return null;
+  if (meta.gallery_identity_seed === true) {
+    return { description: 'stamped-identity-seed' };
+  }
+  const gallery = readRecord(meta.gallery_photo_meta);
+  return gallery as AdaptiveIdentitySeed | null;
+}
+
+/**
+ * Same restage contract the look used — Akış must not re-ask the scene gap.
+ * SKU / service / class still fail in the photo withhold.
+ */
+export function canRestageStampedPack(
+  meta?: Record<string, unknown> | null,
+): boolean {
+  if (!readAdaptiveSceneFromMeta(meta)) return false;
+  return isAdaptiveIdentitySeed(readGalleryIdentityFromMeta(meta));
+}
+
 /** One brand-parameter contract for look pick + later match gates. */
 export function resolveAdaptiveGalleryContract(input: {
   adaptiveScene?: boolean;

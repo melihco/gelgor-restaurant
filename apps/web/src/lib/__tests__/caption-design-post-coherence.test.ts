@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateArtifactPublishCoherence,
   evaluateCaptionDesignPostCoherence,
   isHardDesignWithholdBreak,
 } from '@/lib/caption-design-post-coherence';
@@ -272,6 +273,27 @@ describe('caption-design-post-coherence', () => {
     expect(result.overlayHeadline).not.toMatch(/#/);
     expect(result.repaired).toBe(true);
     expect(overlayHeadlineGroundedInCaption(result.overlayHeadline, caption)).toBe(true);
+  });
+
+  it('publish artifact reads adaptive_scene from the produce stamp', () => {
+    const result = evaluateArtifactPublishCoherence({
+      adaptive_scene: true,
+      catalog_slot_key: 'local_products_shop_farm_visit_story',
+      business_type: 'local_products_shop',
+      reference_photo_url: 'https://cdn.example.com/oil.jpg',
+      gallery_photo_meta: {
+        contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+        description: 'Dark glass bottle of olive oil',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'olive_oil',
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+      },
+    }, {
+      caption: 'Çiftlikte hasat günü, üretimde iş başındayız. Sızma raflarda.',
+      headline: 'Hasat günü iş başında',
+      design_overlay_headline: 'Hasat günü iş başında',
+    });
+    expect(result?.breaks).not.toContain('photo_theme_conflict');
   });
 
   it('withholds only photo/sample fights — overlay-only breaks can still paint', () => {

@@ -402,6 +402,100 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.blockFeed).toBe(true);
   });
 
+  it('shop: adaptive identity + theme stamp is a restage gap, not an Akış hide', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 7,
+        grafiker_pass: false,
+        gallery_theme_mismatch: true,
+        publish_blocked: true,
+        publish_block_code: 'gallery_theme_mismatch',
+        adaptive_scene: true,
+        gallery_identity_seed: true,
+        gallery_photo_meta: {
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled oil bottle',
+          suggestedAssetType: 'product_image',
+        },
+        catalog_slot_key: 'local_products_shop_farm_visit_story',
+        reference_photo_url: 'https://cdn.example.com/oil.jpg',
+        business_type: 'local_products_shop',
+      },
+      content: {
+        kind: 'instagram_post',
+        caption: 'Çiftlikte hasat günü, üretimde iş başındayız. Sızma raflarda.',
+        headline: 'Hasat günü iş başında',
+        design_overlay_headline: 'Hasat günü iş başında',
+      },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+  });
+
+  it('beach: adaptive identity + theme stamp still hides a DJ/food fight', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 8,
+        adaptive_scene: true,
+        gallery_identity_seed: true,
+        gallery_theme_mismatch: true,
+        business_type: 'beach_club',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        reference_photo_url: 'https://cdn.example.com/burger.jpg',
+        gallery_photo_meta: {
+          contentTags: ['food', 'burger', 'plate'],
+          description: 'Plated burger with fries on a wooden table',
+          suggestedAssetType: 'food_drink_photo',
+          primarySubject: 'food',
+        },
+      },
+      content: {
+        kind: 'instagram_post',
+        caption: 'Bu gece DJ seti ve beach party — dans için sahilde buluşalım.',
+        headline: 'DJ Night',
+        design_overlay_headline: 'DJ Night',
+      },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.code).toBe('caption_design_incoherent');
+  });
+
+  it('shop: produce-ready stamp is not re-scored by overlay/theme on Akış', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 6,
+        grafiker_pass: false,
+        publish_ready: true,
+        publish_blocked: false,
+        gallery_theme_mismatch: true,
+        adaptive_scene: true,
+      },
+      content: {
+        kind: 'instagram_post',
+        caption: 'Çiftlikte hasat günü, üretimde iş başındayız.',
+        headline: 'DJ Night',
+        design_overlay_headline: 'DJ Night',
+      },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+  });
+
   it('shop: half pack is not publish-ready; full pack is', () => {
     const designed = {
       pipeline: 'fal_design',

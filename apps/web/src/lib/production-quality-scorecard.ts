@@ -5,6 +5,7 @@
 import { classifyMatch, type MatchQuality, resolveArtifactMatchScore } from '@/lib/gallery-photo-matcher';
 import { getProductionBundleStatus, type ProductionBundleStatus } from '@/lib/production-bundle';
 import { GRAFIKER_HARD_FLOOR, GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
+import { canRestageStampedPack } from '@/lib/caption-scene-fit';
 import type { OutputArtifact } from '@/types';
 
 export type QualitySignalLevel = 'ok' | 'warn' | 'block';
@@ -22,6 +23,22 @@ export interface ProductionQualityScorecard {
   pisScore: number | null;
   feedDirectorScore: number | null;
   publishability: 'ready' | 'rendering' | 'failed' | 'unknown';
+}
+
+/** Broken paint — Hub + Akış hide. Scores 5–7 stay a warning. */
+export function isBrokenGrafikerRender(meta: Record<string, unknown>): boolean {
+  const grafikerScore = readNumber(
+    meta,
+    'grafiker_score',
+    'grafikerScore',
+    'grafiker_observed_score',
+    'grafikerObservedScore',
+  );
+  if (grafikerScore == null || grafikerScore > GRAFIKER_HARD_FLOOR) return false;
+  const galleryCarousel = String(meta.pipeline ?? '').toLowerCase() === 'carousel_gallery'
+    && String(meta.production_role ?? '').toLowerCase() === 'organic_carousel'
+    && meta.fal_designer_produced !== true;
+  return !galleryCarousel;
 }
 
 function readNumber(meta: Record<string, unknown>, ...keys: string[]): number | null {
@@ -82,8 +99,12 @@ export function buildProductionQualityScorecard(
   let hardBlockReason: string | null = null;
 
   if (matchCls?.quality === 'rejected') {
-    hardBlock = true;
-    hardBlockReason = 'Fotoğraf içerikle eşleşmiyor';
+    if (canRestageStampedPack(meta)) {
+      softWarnings.push('Haftalık sahne, seçilen kimlik karesi + restage ile tamamlanır');
+    } else {
+      hardBlock = true;
+      hardBlockReason = 'Fotoğraf içerikle eşleşmiyor';
+    }
   }
 
   const typographyTextValid = readBoolean(
@@ -103,16 +124,18 @@ export function buildProductionQualityScorecard(
   // opinion worth surfacing, a score at or below the floor is a broken render.
   // Raising this back to the pass threshold needs the scorer's agreement with
   // human review measured first.
-  if (!hardBlock && grafikerScore != null && grafikerScore <= GRAFIKER_HARD_FLOOR) {
-    const galleryCarousel = String(meta.pipeline ?? '').toLowerCase() === 'carousel_gallery'
-      && String(meta.production_role ?? '').toLowerCase() === 'organic_carousel'
-      && meta.fal_designer_produced !== true;
-    if (galleryCarousel) {
-      softWarnings.push('Carousel henüz kapak tasarımı olmadan galeri slaytları');
-    } else {
-      hardBlock = true;
-      hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
-    }
+  if (!hardBlock && isBrokenGrafikerRender(meta)) {
+    hardBlock = true;
+    hardBlockReason = 'Tasarım kalitesi onay için yeterli değil';
+  } else if (
+    !hardBlock
+    && String(meta.pipeline ?? '').toLowerCase() === 'carousel_gallery'
+    && String(meta.production_role ?? '').toLowerCase() === 'organic_carousel'
+    && meta.fal_designer_produced !== true
+    && grafikerScore != null
+    && grafikerScore <= GRAFIKER_HARD_FLOOR
+  ) {
+    softWarnings.push('Carousel henüz kapak tasarımı olmadan galeri slaytları');
   }
 
   if (

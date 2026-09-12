@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   canRestageNearestGallery,
+  canRestageStampedPack,
   captionSceneNeedsRestage,
   isAdaptiveIdentitySeed,
   isPlaceSceneText,
@@ -141,6 +142,31 @@ describe('caption-scene-fit — local_products_shop + beach_club', () => {
       candidates: [oil],
     });
     expect(off.bindPickIndex(null)).toBeNull();
+  });
+
+  it('shop + beach: produce stamp carries the restage contract to Akış', () => {
+    const shop = {
+      adaptive_scene: true,
+      gallery_photo_meta: {
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        description: 'Labeled oil bottle',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const beach = {
+      ai_visual_standard: { adaptive_scene: true },
+      gallery_identity_seed: true,
+    };
+    const leftover = {
+      adaptive_scene: true,
+      gallery_photo_meta: {
+        description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: whatsapp.',
+      },
+    };
+    expect(canRestageStampedPack(shop)).toBe(true);
+    expect(canRestageStampedPack(beach)).toBe(true);
+    expect(canRestageStampedPack(leftover)).toBe(false);
+    expect(canRestageStampedPack({ adaptive_scene: false, gallery_identity_seed: true })).toBe(false);
   });
 
   it('shop: farm caption + bottle still needs restage; beach venue does not', () => {
