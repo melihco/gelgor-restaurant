@@ -1,0 +1,159 @@
+/**
+ * Bakış paketinden sonra, boyadan önce: slot + foto kanıt + caption + headline
+ * aynı işi mi söylüyor? Kelime listesi yok — ucuz sohbet. Tutarsızsa boya yok
+ * (grafiker 8 zaten gelmez). Model yoksa açık bırak.
+ */
+
+import OpenAI from 'openai';
+import { serverConfig } from '@/lib/server-config';
+import { getAiModelProfile } from '@/lib/ai-model-tier';
+import {
+  emitAiCostLine,
+  estimateOpenAiUsd,
+  type OpenAiUsageLike,
+} from '@/lib/ai-cost-telemetry';
+import {
+  isOpenAiQuotaBlocked,
+  isOpenAiQuotaOrBillingError,
+  markOpenAiQuotaBlocked,
+} from '@/lib/openai-error-utils';
+import { parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
+
+const CONSISTENCY_SYSTEM = [
+  'You check one social card pack for internal consistency.',
+  'Fields: slot job, photo evidence, caption, headline.',
+  'No brand rules. No keyword dictionaries. The four fields are the only input.',
+  'Return JSON only:',
+  '{"ok": true} or {"ok": false} or {"ok": true, "headline": "<complete line from caption>"}.',
+  'ok=false when slot, evidence, caption, or headline name a different job or product.',
+  'ok=true when they tell the same story, including grade/process wording.',
+  'Add headline only when ok=true AND the given headline is cut, generic, or not the caption claim.',
+  'The replacement headline must be a complete sentence taken from the caption — no new product.',
+  'If unsure, {"ok": true}.',
+].join(' ');
+
+export type JudgeFeedPackConsistencyInput = {
+  pack: FeedSlotPack;
+  openai?: OpenAI;
+  model?: string;
+  missionId?: string | null;
+  workspaceId?: string | null;
+  slotKey?: string | null;
+};
+
+export type FeedPackConsistencyVerdict = {
+  ok: boolean;
+  headline?: string;
+};
+
+function parseVerdict(raw: string): FeedPackConsistencyVerdict {
+  try {
+    const parsed = JSON.parse(raw) as { ok?: unknown; headline?: unknown };
+    const headline = typeof parsed.headline === 'string' ? parsed.headline.trim() : '';
+    return {
+      ok: parsed.ok !== false,
+      ...(headline.length >= 8 ? { headline } : {}),
+    };
+  } catch {
+    return { ok: true };
+  }
+}
+
+export async function judgeFeedPackConsistency(
+  input: JudgeFeedPackConsistencyInput,
+): Promise<FeedPackConsistencyVerdict> {
+  const pack = input.pack;
+  const idea = [
+    pack.slotJob,
+    pack.evidenceNote,
+    pack.caption,
+    pack.headline,
+  ].join(' ').trim();
+  if (idea.length < 16) return { ok: true };
+
+  const apiKey = serverConfig.openai.apiKey;
+  if (!apiKey && !input.openai) return { ok: true };
+  if (!input.openai && isOpenAiQuotaBlocked()) return { ok: true };
+
+  const model = input.model ?? getAiModelProfile().chatStandard;
+  const openai = input.openai ?? new OpenAI({
+    apiKey,
+    timeout: 20_000,
+    maxRetries: 0,
+  });
+
+  try {
+    const response = await openai.chat.completions.create({
+      model,
+      max_tokens: 80,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: CONSISTENCY_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            `SLOT JOB:\n${pack.slotJob}`,
+            `PHOTO ROLE:\n${pack.photoRole}`,
+            `EVIDENCE:\n${pack.evidenceNote}`,
+            `CAPTION:\n${pack.caption}`,
+            `HEADLINE:\n${pack.headline}`,
+            `SHELL:\n${pack.shellDirection}`,
+          ].join('\n\n'),
+        },
+      ],
+    });
+    const usage: OpenAiUsageLike | null = response.usage ?? null;
+    emitAiCostLine({
+      callType: 'gallery_match',
+      usd: estimateOpenAiUsd(model, usage),
+      provider: 'openai',
+      model,
+      missionId: input.missionId,
+      workspaceId: input.workspaceId,
+      slotKey: input.slotKey,
+      promptTokens: usage?.prompt_tokens ?? undefined,
+      completionTokens: usage?.completion_tokens ?? undefined,
+      detail: 'feed_pack_consistency',
+    });
+    return parseVerdict(response.choices[0]?.message?.content?.trim() ?? '{}');
+  } catch (err) {
+    if (isOpenAiQuotaOrBillingError(err)) {
+      markOpenAiQuotaBlocked();
+    }
+    return { ok: true };
+  }
+}
+
+export async function applyFeedPackConsistency(
+  pack: FeedSlotPack,
+  opts?: {
+    adaptiveScene?: boolean;
+    judge?: (pack: FeedSlotPack) => Promise<FeedPackConsistencyVerdict>;
+    openai?: OpenAI;
+    missionId?: string | null;
+    workspaceId?: string | null;
+    slotKey?: string | null;
+  },
+): Promise<{ ok: true; pack: FeedSlotPack } | { ok: false; issues: ['incoherent_pack'] }> {
+  const verdict = opts?.judge
+    ? await opts.judge(pack)
+    : await judgeFeedPackConsistency({
+      pack,
+      openai: opts?.openai,
+      missionId: opts?.missionId,
+      workspaceId: opts?.workspaceId,
+      slotKey: opts?.slotKey,
+    });
+  if (!verdict.ok) return { ok: false, issues: ['incoherent_pack'] };
+  const nextHeadline = verdict.headline;
+  if (!nextHeadline || nextHeadline === pack.headline) {
+    return { ok: true, pack };
+  }
+  const parsed = parseFeedSlotPack({
+    ...pack,
+    headline: nextHeadline,
+  }, { adaptiveScene: opts?.adaptiveScene });
+  if (!parsed.ok) return { ok: true, pack };
+  return { ok: true, pack: parsed.pack };
+}

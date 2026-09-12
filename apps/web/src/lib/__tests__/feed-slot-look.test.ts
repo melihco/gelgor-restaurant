@@ -99,6 +99,99 @@ describe('feed-slot-look — shop + beach', () => {
     })).toBe('process');
   });
 
+  it('shop: invented SKU caption skips the look call', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        ideationHint: 'Müşterilerimiz şam balını çok seviyor!',
+        inventoryText: 'DİKEN BALI ÇAM BALI honey',
+        candidates: [{
+          url: 'https://cdn.example.com/diken.jpg',
+          visibleLabelText: 'DİKEN BALI',
+          primarySubject: 'honey',
+        }],
+      },
+      {
+        judgeProductClaim: async () => true,
+        openai: {
+          chat: {
+            completions: {
+              create: async () => {
+                calls.count += 1;
+                throw new Error('look must not run');
+              },
+            },
+          },
+        } as unknown as OpenAI,
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('invented_product_claim');
+    expect(calls.count).toBe(0);
+  });
+
+  it('beach: invented cocktail caption skips the look call', async () => {
+    const calls = { count: 0 };
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı',
+        catalogSlotKey: 'beach_club_sunset_ambiance_story',
+        ideationHint: 'Gece menümüzde yeni lagoon spritz var.',
+        inventoryText: 'YULA SPRITZ cocktail',
+        candidates: [{
+          url: 'https://cdn.example.com/spritz.jpg',
+          visibleLabelText: 'YULA SPRITZ',
+          primarySubject: 'cocktail',
+        }],
+      },
+      {
+        judgeProductClaim: async () => true,
+        openai: {
+          chat: {
+            completions: {
+              create: async () => {
+                calls.count += 1;
+                throw new Error('look must not run');
+              },
+            },
+          },
+        } as unknown as OpenAI,
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('invented_product_claim');
+    expect(calls.count).toBe(0);
+  });
+
+  it('shop: incoherent pack fails after look', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        catalogSlotKey: 'local_products_shop_product_hero_post',
+        ideationHint: 'Sızma zeytinyağımız raflarda.',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        judgePackConsistency: async () => ({ ok: false }),
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Sızma zeytinyağımız raflarda',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('incoherent_pack');
+  });
+
   it('grounds a copied early-harvest sentence to the label on the bottle', async () => {
     const result = await lookFeedSlotPack(
       {

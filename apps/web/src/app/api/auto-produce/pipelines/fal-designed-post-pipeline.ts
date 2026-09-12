@@ -38,7 +38,10 @@ import {
 import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
-import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
+import {
+  catalogSlotAllowsOnCanvasCta,
+  resolveSlotSublineForRender,
+} from '@/lib/slot-subline-policy';
 import {
   allowsTemplateGalleryPhotoFallback,
   resolveAiVisualProductionStandard,
@@ -69,7 +72,7 @@ import { studioForbidsSatoriEscape } from '@/studio/paint';
 import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { resolveDesignedPostProductionOrder } from '@/lib/designed-post-production-order';
-import { ensurePackagingFidelityPrompt } from '@/lib/product-packaging-fidelity';
+import { composePackagingLockedPaintPrompt } from '@/lib/product-packaging-fidelity';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import {
   composeDesignSpecShell,
@@ -328,7 +331,8 @@ export async function produceFalDesignedPost(
         designIntensity: input.designIntensityLevel,
         sampleHeadline: binding?.matched?.sampleHeadline,
         sampleSubtitle: binding?.matched?.sampleSubtitle,
-        showSubline: binding?.matched?.showSubline,
+        showSubline: catalogSlotAllowsOnCanvasCta(input.catalogSlotKey)
+          && binding?.matched?.showSubline !== false,
         typeBudget: binding?.matched?.typeBudget,
         photoUrl: referenceUrl,
         galleryPhotoMeta: input.galleryPhotoMeta,
@@ -487,12 +491,20 @@ export async function produceFalDesignedPost(
           };
         }
       }
+      const productionOrder = resolveDesignedPostProductionOrder({
+        businessType: input.sector,
+        slotRole: input.slotRole,
+        catalogSlotKey: input.catalogSlotKey,
+        announcementType: input.announcementType,
+        headline: canvasHeadline,
+        caption: input.caption,
+      });
       const baseDesignCardPrompt = replicaSpec
         ? appendNumericLayoutToPrompt(
           buildTemplateReplicaPrompt(replicaSpec, {
             headline: canvasHeadline,
             subtitle: dedupedSubtitle,
-          }, { photoSpatial }),
+          }, { photoSpatial, catalogSlotKey: input.catalogSlotKey }),
           numericLayout,
         )
         : (aspectRatio === '9:16'
@@ -502,7 +514,7 @@ export async function produceFalDesignedPost(
         headline: canvasHeadline,
         subtitle: dedupedSubtitle,
         caption: input.caption,
-        sceneHint: input.sceneHint,
+        sceneHint: productionOrder.packagingLock ? undefined : input.sceneHint,
         brandColors,
         brandName: input.brandName,
         sector: input.sector,
@@ -521,17 +533,13 @@ export async function produceFalDesignedPost(
         canvaArchetypeId: input.canvaArchetypeId
           ?? binding?.matched?.canvaArchetypeId
           ?? null,
-      });
-      const productionOrder = resolveDesignedPostProductionOrder({
-        businessType: input.sector,
-        slotRole: input.slotRole,
-        catalogSlotKey: input.catalogSlotKey,
-        announcementType: input.announcementType,
-        headline: canvasHeadline,
-        caption: input.caption,
+        packagingLock: productionOrder.packagingLock,
       });
       const paintPrompt = productionOrder.packagingLock
-        ? ensurePackagingFidelityPrompt(baseDesignCardPrompt)
+        ? composePackagingLockedPaintPrompt(baseDesignCardPrompt, {
+          headline: canvasHeadline,
+          hasSubtitle: Boolean(dedupedSubtitle),
+        })
         : baseDesignCardPrompt;
       if (replicaSpec) {
         console.log(
@@ -731,7 +739,8 @@ export async function produceFalDesignedPost(
         designIntensity: input.designIntensityLevel,
         sampleHeadline: binding?.matched?.sampleHeadline,
         sampleSubtitle: binding?.matched?.sampleSubtitle,
-        showSubline: binding?.matched?.showSubline,
+        showSubline: catalogSlotAllowsOnCanvasCta(input.catalogSlotKey)
+          && binding?.matched?.showSubline !== false,
         typeBudget: binding?.matched?.typeBudget,
         photoUrl: referenceUrl,
         galleryPhotoMeta: input.galleryPhotoMeta,
@@ -961,6 +970,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       );
     }
     const gatedFalSubtitle = resolveSlotSublineForRender(inputs.falSubtitle || inputs.cta, {
+      catalogSlotKey: inputs.catalogSlotKey,
       matchedShowSubline: templateBinding.matched?.showSubline,
     });
 
@@ -1138,7 +1148,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
         captionAwareHeadline: inputs.captionAwareHeadline,
         sampleHeadline: templateBinding.matched?.sampleHeadline,
         sampleSubtitle: templateBinding.matched?.sampleSubtitle,
-        showSubline: templateBinding.matched?.showSubline,
+        showSubline: catalogSlotAllowsOnCanvasCta(inputs.catalogSlotKey)
+          && templateBinding.matched?.showSubline !== false,
         typeBudget: templateBinding.matched?.typeBudget,
         photoUrl: satoriFallbackPhoto,
         designMatchIsSoft: templateBinding.matched?.matchQuality === 'soft',

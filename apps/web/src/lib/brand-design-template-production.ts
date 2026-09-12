@@ -403,6 +403,7 @@ export async function bindBrandTemplateForFalProduction(input: {
           headline: input.headline,
           // Never fall back to full caption as subline; respect template showSubline flag.
           subtitle: resolveSlotSublineForRender(input.subtitle, {
+            catalogSlotKey: input.catalogSlotKey,
             matchedShowSubline: matched.showSubline,
           }),
         }),
@@ -618,12 +619,16 @@ export function buildTemplateReplicaPrompt(
   mission: { headline: string; subtitle?: string | null },
   opts?: {
     showSubline?: boolean | null;
+    catalogSlotKey?: string | null;
+    onCanvasCta?: boolean | null;
     photoSpatial?: GalleryPhotoSpatial | null;
     language?: string | null;
   },
 ): string {
   let prompt = spec.prompt.trim();
   const missionSubtitle = resolveSlotSublineForRender(mission.subtitle, {
+    catalogSlotKey: opts?.catalogSlotKey,
+    onCanvasCta: opts?.onCanvasCta,
     matchedShowSubline: opts?.showSubline ?? spec.showSubline,
   }) ?? '';
 

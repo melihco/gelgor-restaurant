@@ -22,6 +22,7 @@ describe('hasWordLevelSpellingDeviation', () => {
   it('rejects near-miss painted typos (1-2 edit distance)', () => {
     expect(hasWordLevelSpellingDeviation('Ferahlatan Koktyller', 'Ferahlatan Kokteyller')).toBe(true);
     expect(hasWordLevelSpellingDeviation('Yaz Lezetleri', 'Yaz Lezzetleri')).toBe(true);
+    expect(hasWordLevelSpellingDeviation('Yağğın en sakin hali.', 'Yağın en sakin hali.')).toBe(true);
   });
 
   it('beach: Sinirli vs Sınırlı is a diacritic miss, not a new word', () => {

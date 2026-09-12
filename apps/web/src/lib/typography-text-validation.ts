@@ -153,6 +153,7 @@ async function callVisionCanvasValidator(
     '- Reject if detected text is unrelated to the intended headline (invented slogans, random words)',
     '- Reject if the text looks like an internal production note (e.g. "…göstereceğiz", "…paylaşacağız") rather than consumer copy',
     '- Turkish diacritics must be exact — reject ASCII-only misspellings',
+    '- Reject if any intended word gained or lost a letter (Yağın vs Yağğın, sakin vs sakinli)',
     '- Ignore decorative elements and small logo-area gibberish — focus on designed headline/subtitle only',
     '- Partially obscured but COMPLETE letters may still match; edge-clipped/truncated letters must NOT match',
   ].join('\n');

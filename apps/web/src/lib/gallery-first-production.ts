@@ -46,7 +46,17 @@ import {
   type FeedSlotLookResult,
   type LookJobKind,
 } from '@/lib/feed-slot-look';
-import { groundFeedSlotCopy, parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
+import {
+  applyFeedPackConsistency,
+  type FeedPackConsistencyVerdict,
+} from '@/lib/feed-pack-consistency';
+import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import {
+  galleryInventoryText,
+  groundFeedSlotCopy,
+  parseFeedSlotPack,
+  type FeedSlotPack,
+} from '@/lib/feed-slot-pack';
 import {
   isAdaptiveIdentitySeed,
   isFallbackGalleryAnalysis,
@@ -620,6 +630,9 @@ export async function resolveGalleryFirstForSlot(input: {
   forcedPhotoUrl?: string | null;
   /** Test seam — inject the one-look packer. */
   lookFn?: (input: FeedSlotLookInput) => Promise<FeedSlotLookResult>;
+  /** Test seam — shelf claim check (default: cheap chat, no word lists). */
+  judgeProductClaim?: (ideaText: string, inventoryText: string) => Promise<boolean>;
+  judgePackConsistency?: (pack: FeedSlotPack) => Promise<FeedPackConsistencyVerdict>;
   /** Brand flag: keep weekly scene sentence when the still is only a product. */
   adaptiveScene?: boolean;
 }): Promise<GalleryFirstSlotResult | null> {
@@ -661,13 +674,26 @@ export async function resolveGalleryFirstForSlot(input: {
       || slotJobFromCatalogKey(input.assignment.catalog_slot_key)
       || slotLabelTr(input.assignment);
     const lookFn = input.lookFn ?? lookFeedSlotPack;
+    const ideationHint = [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400);
+    const inventoryText = galleryInventoryText(input.galleryMeta);
+    const invented = input.judgeProductClaim
+      ? await input.judgeProductClaim(ideationHint, inventoryText)
+      : await judgeInventedProductClaim({
+        ideaText: ideationHint,
+        inventoryText,
+      });
+    if (invented) {
+      return emptySlotLookResult(['invented_product_claim']);
+    }
     const looked = await lookFn({
       slotJob,
       language: input.language ?? 'Turkish',
       brandTone: input.brandTone,
       adaptiveScene: Boolean(input.adaptiveScene),
       catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
-      ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),
+      ideationHint,
+      inventoryText,
+      productClaimChecked: true,
       candidates: shortlist.map((row) => {
         const meta = resolveGalleryPhotoMeta(
           row.url,
@@ -694,7 +720,6 @@ export async function resolveGalleryFirstForSlot(input: {
     const photoSideText = [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
       .filter(Boolean)
       .join(' ');
-    const ideationHint = [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400);
     const groundedCopy = groundFeedSlotCopy({
       ...looked.pack,
       ideationHint,
@@ -718,8 +743,15 @@ export async function resolveGalleryFirstForSlot(input: {
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);
     }
+    const coherent = await applyFeedPackConsistency(locked.pack, {
+      adaptiveScene: Boolean(input.adaptiveScene),
+      judge: input.judgePackConsistency,
+    });
+    if (!coherent.ok) {
+      return emptySlotLookResult(coherent.issues);
+    }
     const { acceptBoundPack } = await import('@/studio/bind');
-    const accepted = acceptBoundPack(locked.pack, {
+    const accepted = acceptBoundPack(coherent.pack, {
       adaptiveScene: Boolean(input.adaptiveScene),
     });
     if (!accepted.ok) {

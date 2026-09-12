@@ -472,6 +472,68 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
   });
 
+  it('shop: incoherent look pack does not apply', async () => {
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'İncir reçelimiz kavanozda, kahvaltıya bir kaşık yeter.',
+      ideationHeadline: 'İncir Reçeli',
+      judgePackConsistency: async () => ({ ok: false }),
+      lookFn: async () => ({
+        ok: true,
+        pack: {
+          slotJob: 'ürün hero',
+          photoUrl: JAM,
+          photoRole: 'product_for_sale',
+          caption: 'İncir reçelimiz kavanozda. Kahvaltıya bir kaşık yeter.',
+          headline: 'İncir reçelimiz kavanozda',
+          shellDirection: 'product_hero',
+          evidenceNote: "Etiket: 'İNCİR REÇELİ'",
+        },
+      }),
+    });
+    expect(gf?.applied).toBe(false);
+    expect(gf?.lookIssues).toContain('incoherent_pack');
+  });
+
+  it('shop: invented SKU caption does not call look or paint', async () => {
+    let called = 0;
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+        catalog_slot_label: 'müşteri favorisi',
+      },
+      galleryPhotos: [JAM],
+      galleryMeta: {
+        ...shopMeta(),
+        'https://cdn.example.com/gallery/diken-honey.jpg': {
+          primarySubject: 'honey',
+          visibleLabelText: 'DİKEN BALI',
+          contentTags: ['honey', 'jar'],
+          suggestedAssetType: 'product_image',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Doğal ve katkısız şam balımızı tadın! Müşterilerimiz çok seviyor.',
+      ideationHeadline: 'Müşterilerimiz şam balını çok seviyor!',
+      judgeProductClaim: async () => true,
+      lookFn: async () => {
+        called += 1;
+        throw new Error('look must not run');
+      },
+    });
+    expect(called).toBe(0);
+    expect(gf?.applied).toBe(false);
+    expect(gf?.lookIssues).toContain('invented_product_claim');
+  });
+
   it('does not call the look on reels', async () => {
     let called = 0;
     const gf = await resolveGalleryFirstForSlot({

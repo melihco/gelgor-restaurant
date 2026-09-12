@@ -8,6 +8,7 @@
 import type { ProductionSlotDefinition } from '@/lib/production-slot-catalog';
 import { buildDesignedStoryPromptPack } from '@/lib/catalog-slot-visual-defaults';
 import { withCatalogReelPolicy } from '@/lib/reel-production-recipe';
+import { catalogSlotAllowsOnCanvasCta } from '@/lib/slot-subline-policy';
 
 export type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
 
@@ -63,6 +64,11 @@ export interface SlotArchetypeInstance {
   tier?: 'standard' | 'premium';
   /** Extra prompt_pack fields merged into the slot definition. */
   promptPackExtras?: Record<string, unknown>;
+  /**
+   * Paint a CTA / subline on the designed frame. Default off for every brand.
+   * CTA-named suffixes (reservation_cta, booking_cta, …) opt in automatically.
+   */
+  onCanvasCta?: boolean;
 }
 
 export interface SectorSlotPack {
@@ -1203,6 +1209,7 @@ export function instanceToSlotDefinition(
             scene_hint_template: `{brand_name} — ${instance.labelEn} content for {content_brief}`,
           }),
         ...(instance.promptPackExtras ?? {}),
+        on_canvas_cta: instance.onCanvasCta === true || catalogSlotAllowsOnCanvasCta(slotKey),
       },
       {
         catalogSlotKey: slotKey,

@@ -48,6 +48,38 @@ export function ensurePackagingFidelityPrompt(prompt: string): string {
 }
 
 /**
+ * Short protected head for packaging-locked designed posts.
+ * Survives 4k trim; keeps letter-identical overlay + attached photo.
+ * Avoids the word "exactly" — image models have painted that token.
+ */
+export function buildLockedPackPaintHead(input: {
+  headline: string;
+  hasSubtitle?: boolean;
+}): string {
+  const line = String(input.headline ?? '').trim();
+  if (!line) return '';
+  return [
+    'PAINT HEAD (do not drop):',
+    `Overlay — one line, letter-identical: "${line}".`,
+    'Do not add, drop, or double any letter.',
+    input.hasSubtitle
+      ? 'A second line is allowed only if already contracted.'
+      : 'No second line, CTA, hashtag, or invented wordmark.',
+    'The attached gallery frame is the only scene. Do not restage, add props, or replace the product.',
+  ].join(' ');
+}
+
+/** Packaging fidelity + paint head in front of the design card. */
+export function composePackagingLockedPaintPrompt(
+  base: string,
+  input: { headline: string; hasSubtitle?: boolean },
+): string {
+  const head = buildLockedPackPaintHead(input);
+  const withHead = head ? `${head}\n\n${String(base ?? '').trim()}` : String(base ?? '').trim();
+  return ensurePackagingFidelityPrompt(withHead);
+}
+
+/**
  * Overlay typography ban vs packaging exception for generate-instagram-image.
  * Absolute "NO TEXT" forces models to invent/garbled labels on real products.
  */

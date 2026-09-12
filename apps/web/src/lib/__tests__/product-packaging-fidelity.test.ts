@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildLockedPackPaintHead,
+  composePackagingLockedPaintPrompt,
   ensurePackagingFidelityPrompt,
   expectsProductPackaging,
   isProductPackagingSector,
@@ -28,6 +30,25 @@ describe('product-packaging-fidelity', () => {
     expect(once).toMatch(/Change background only/);
     const twice = ensurePackagingFidelityPrompt(once);
     expect(twice).toBe(once);
+  });
+
+  it('shop + cafe: paint head keeps letter-identical overlay and no restage', () => {
+    const shop = composePackagingLockedPaintPrompt('Boutique social-agency card', {
+      headline: 'Yağın en sakin hali.',
+    });
+    expect(shop).toMatch(/letter-identical: "Yağın en sakin hali\."/);
+    expect(shop).toMatch(/Do not restage/);
+    expect(shop).toMatch(/CRITICAL PACKAGING FIDELITY/);
+    expect(shop.indexOf(buildLockedPackPaintHead({ headline: 'Yağın en sakin hali.' }))).toBeGreaterThan(
+      shop.indexOf('CRITICAL PACKAGING FIDELITY'),
+    );
+
+    const cafe = composePackagingLockedPaintPrompt('Venue card', {
+      headline: 'İmza tabak bu akşam.',
+      hasSubtitle: true,
+    });
+    expect(cafe).toMatch(/letter-identical: "İmza tabak bu akşam\."/);
+    expect(cafe).toMatch(/second line is allowed only if already contracted/);
   });
 
   it('carves packaging exception into text constraints', () => {

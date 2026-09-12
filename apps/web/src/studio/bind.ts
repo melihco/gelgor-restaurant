@@ -24,6 +24,8 @@ const PACK_ISSUE_TO_BIND: Record<FeedSlotPackIssue, BindFailureCode> = {
   product_needs_identity: 'product_needs_identity',
   place_cannot_sell: 'place_cannot_sell',
   copy_misses_evidence: 'copy_misses_evidence',
+  invented_product_claim: 'copy_misses_evidence',
+  incoherent_pack: 'copy_misses_evidence',
   empty_place_command: 'empty_place_command',
 };
 

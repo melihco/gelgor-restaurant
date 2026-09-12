@@ -54,6 +54,8 @@ export type FeedSlotPackIssue =
   | 'product_needs_identity'
   | 'place_cannot_sell'
   | 'copy_misses_evidence'
+  | 'invented_product_claim'
+  | 'incoherent_pack'
   | 'empty_place_command';
 
 const PHOTO_ROLES = new Set<FeedPhotoRole>([
@@ -333,6 +335,8 @@ const ISSUE_TR: Record<FeedSlotPackIssue, string> = {
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
   copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  invented_product_claim: 'Yazı, rafta / etikette olmayan bir ürün söylüyor',
+  incoherent_pack: 'Yazı, fotoğraf ve slot aynı işi söylemiyor',
   empty_place_command: 'Yer kartında emir slogan yok',
 };
 
@@ -403,6 +407,29 @@ const PLACE_FAMILY: Record<PlaceFamily, { tokens: string[]; surfaceTr: string; s
 
 function tokensOf(text: string): string[] {
   return fold(text).split(' ').filter((w) => w.length >= 3 && !STOP.has(w));
+}
+
+/** Etiket + özne — uzun açıklama yok (rastgele kelime envanter sayılmaz). */
+export function galleryInventoryText(
+  galleryMeta?: Record<string, {
+    visibleLabelText?: string;
+    primarySubject?: string;
+    subjectAliases?: string[];
+    contentTags?: string[];
+  } | undefined> | null,
+): string {
+  if (!galleryMeta) return '';
+  const parts: string[] = [];
+  for (const meta of Object.values(galleryMeta)) {
+    if (!meta) continue;
+    parts.push(
+      String(meta.visibleLabelText ?? ''),
+      String(meta.primarySubject ?? ''),
+      ...(meta.subjectAliases ?? []),
+      ...(meta.contentTags ?? []),
+    );
+  }
+  return parts.filter((p) => p.trim()).join(' ');
 }
 
 function tokenSet(text: string): Set<string> {

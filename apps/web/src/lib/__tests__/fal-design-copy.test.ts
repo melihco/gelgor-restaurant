@@ -282,6 +282,7 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(shouldPreserveLockedPunchlineHeadline('ad_hoc_brief')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('caption_pair')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('brand_tone_line')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('feed_slot_pack')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('agent_headline')).toBe(false);
     expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });

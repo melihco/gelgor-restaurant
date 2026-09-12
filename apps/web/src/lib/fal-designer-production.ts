@@ -23,6 +23,8 @@ import {
   type GalleryPhotoSpatial,
 } from '@/lib/gallery-photo-spatial';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
+import { catalogSlotAllowsOnCanvasCta } from '@/lib/slot-subline-policy';
+import { shouldPreserveLockedPunchlineHeadline } from '@/lib/fal-design-copy';
 import { getSectorProfile } from '@/lib/sector-production-profile';
 import {
   resolveFalDisplayHeadline,
@@ -608,6 +610,8 @@ type DesignCardPromptInput = {
   photoSpatial?: GalleryPhotoSpatial | null;
   /** Canva archetype — seeds the numeric composition map on fal_design. */
   canvaArchetypeId?: string | null;
+  /** Product SKU photo is locked — do not restage or invent craft geometry. */
+  packagingLock?: boolean;
 };
 
 /**
@@ -1035,6 +1039,7 @@ function buildDesignedDesignCardPrompt(
     isReel || isStory,
   );
 
+  const packagingLock = input.packagingLock === true;
   const premiumVenue = isPremiumVenueSector(sector);
   const creativeBrief = buildCreativeDesignBrief({
     mode,
@@ -1045,7 +1050,7 @@ function buildDesignedDesignCardPrompt(
     vibe: input.vibe,
     visualDnaTone: input.visualDnaTone,
     briefMood: input.briefMood,
-    sceneHint: input.sceneHint,
+    sceneHint: packagingLock ? undefined : input.sceneHint,
     designIntensityLevel: intensityLevel,
     headline: input.headline,
   });
@@ -1128,8 +1133,10 @@ function buildDesignedDesignCardPrompt(
     channel: logoChannel,
   });
 
-  const slotArtDirectionLock = (input.slotArtDirectionBlock ?? '').replace(/\s+/g, ' ').trim();
-  const artDirectionBlock = !slotArtDirectionLock && input.artDirection
+  const slotArtDirectionLock = packagingLock
+    ? ''
+    : (input.slotArtDirectionBlock ?? '').replace(/\s+/g, ' ').trim();
+  const artDirectionBlock = !packagingLock && !slotArtDirectionLock && input.artDirection
     ? `ART DIRECTION (brief-specific): ${input.artDirection.slice(0, 250)}`
     : '';
 
@@ -1205,7 +1212,8 @@ function buildDesignedDesignCardPrompt(
   const recipeReserve = brandRecipeLock ? Math.min(brandRecipeLock.length + 1, 981) : 0;
   const brandReserve = soulReserve + recipeReserve;
 
-  const needsCraftLock = shouldApplyCraftLayoutFamily(intensityLevel, layoutLanguage);
+  const needsCraftLock = !packagingLock
+    && shouldApplyCraftLayoutFamily(intensityLevel, layoutLanguage);
   const agentOwnsLayout = Boolean(slotArtDirectionLock);
   // Soft craft zones still apply with agent art direction (photo window + colors),
   // but hard craft-family LAYOUT LOCK is skipped so 100 brands don't share one kit.
@@ -1624,9 +1632,9 @@ export async function produceFalDesignerStill(
     );
   }
 
-  const preserveLockedPunchline =
-    input.punchlineLockSource === 'mission_tagline'
-    || input.punchlineLockSource === 'canva_field_copy';
+  const preserveLockedPunchline = shouldPreserveLockedPunchlineHeadline(
+    input.punchlineLockSource,
+  );
   const useCaptionAware = input.captionAwareHeadline === true
     && !groundedOnly
     && !preserveLockedPunchline
@@ -1708,9 +1716,13 @@ export async function produceFalDesignerStill(
         replicaPrompt = buildTemplateReplicaPrompt(input.templateReplica, {
           headline: displayHeadline,
           subtitle: captionSubtitle,
-        }, { showSubline: input.templateReplica.showSubline });
+        }, {
+          showSubline: input.templateReplica.showSubline,
+          catalogSlotKey: input.catalogSlotKey,
+        });
       }
-      const replicaSublineOff = input.templateReplica?.showSubline === false;
+      const replicaSublineOff = !catalogSlotAllowsOnCanvasCta(input.catalogSlotKey)
+        || input.templateReplica?.showSubline === false;
       const photoSpatial = await resolvePhotoSpatialForDesign({
         spatial: input.photoSpatial,
         photoUrl: input.referencePhotoUrl,

@@ -127,6 +127,7 @@ export function resolveSlotPaintOverlay(
   }
 
   const gatedSub = resolveSlotSublineForRender(subtitle, {
+    catalogSlotKey: input.catalogSlotKey,
     matchedShowSubline: input.showSubline,
   });
   subtitle = gatedSub || undefined;

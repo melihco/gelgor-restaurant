@@ -356,7 +356,7 @@ describe('template replica prompt', () => {
     const prompt = buildTemplateReplicaPrompt(spec, {
       headline: 'Datça erken hasat',
       subtitle: 'Bu hafta sonu',
-    });
+    }, { onCanvasCta: true });
     expect(prompt).toContain('HEADLINE: "Datça erken hasat" — SUBTITLE: "Bu hafta sonu" on diagonal panel.');
     expect(prompt).toContain('MISSION COPY OVERRIDE');
     expect(prompt).toContain('FORBIDDEN TEXT');

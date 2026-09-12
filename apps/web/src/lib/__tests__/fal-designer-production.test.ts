@@ -572,7 +572,7 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
     expect(prompt).toContain('ON-CANVAS TEXT CONTRACT');
     // Full mission punchline stays contracted (word-order lock matches actual word count).
     expect(prompt).toMatch(/Headline word order \(\d+ words/);
-    expect(prompt).toContain('MOTION-READY');
+    expect(prompt).toMatch(/MOTION-READY|Motion-ready/);
   });
 
   it('weaves the brand soul and a special occasion into the brand palette', () => {
@@ -662,6 +662,40 @@ describe('buildDesignedVideoReelDesignCardPrompt', () => {
       /LAYOUT LOCK: use ONLY "(type_with_brand_rules|asymmetric_corner_plate|magazine_cover_overlap|diagonal_soft_cut|editorial_split_soft|inset_photo_frame|l_shape_accent)"/,
     );
     expect(prompt).not.toMatch(/LAYOUT LOCK: use ONLY "side_rail_frame"/);
+  });
+});
+
+describe('packagingLock on designed post card', () => {
+  it('packagingLock drops restage scene and craft invent on shop + beach product', () => {
+    const shop = buildDesignedPostDesignCardPrompt({
+      vibe: 'editorial_serif',
+      headline: 'Yağın en sakin hali.',
+      caption: 'Yağın en sakin hali. Etikette sızma duruyor.',
+      sceneHint: 'new studio basket with extra olives and a clay vase',
+      slotArtDirectionBlock: 'TEMPLATE FAMILY: organic artisan. Compose a new pantry still.',
+      brandColors: { primary: '#5C6B3C', accent: '#C4784A' },
+      sector: 'local_products_shop',
+      aspectRatio: '4:5',
+      designIntensityLevel: 'bold_editorial',
+      packagingLock: true,
+    });
+    expect(shop).not.toContain('new studio basket');
+    expect(shop).not.toContain('Compose a new pantry still');
+    expect(shop).not.toContain('SLOT DIVERSITY LOCK');
+    expect(shop).not.toContain('LAYOUT LOCK:');
+
+    const beachProduct = buildDesignedPostDesignCardPrompt({
+      vibe: 'warm_coastal',
+      headline: 'Günün yatağı açık.',
+      sceneHint: 'invent a second pool deck at dusk',
+      brandColors: { primary: '#212529', accent: '#ffc107' },
+      sector: 'beach_club',
+      aspectRatio: '4:5',
+      designIntensityLevel: 'bold_editorial',
+      packagingLock: true,
+    });
+    expect(beachProduct).not.toContain('invent a second pool deck');
+    expect(beachProduct).not.toContain('SLOT DIVERSITY LOCK');
   });
 });
 

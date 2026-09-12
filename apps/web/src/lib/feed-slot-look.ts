@@ -15,6 +15,11 @@ import {
   type OpenAiUsageLike,
 } from '@/lib/ai-cost-telemetry';
 import {
+  applyFeedPackConsistency,
+  type FeedPackConsistencyVerdict,
+} from '@/lib/feed-pack-consistency';
+import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import {
   groundFeedSlotCopy,
   parseFeedSlotPack,
   type FeedPhotoRole,
@@ -66,6 +71,10 @@ export type FeedSlotLookInput = {
   /** Katalog anahtarı — iş ailesi (sat / yer / süreç). Marka adı yok. */
   catalogSlotKey?: string;
   candidates: FeedSlotLookCandidate[];
+  /** Tenant gallery labels — invented SKU check. Candidate photos alone are not enough. */
+  inventoryText?: string;
+  /** Gallery-first already judged the idea against shelf text. */
+  productClaimChecked?: boolean;
   missionId?: string | null;
   workspaceId?: string | null;
   slotKey?: string | null;
@@ -290,6 +299,8 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
   copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  invented_product_claim: 'Yazı, rafta / etikette olmayan bir ürün söylüyor',
+  incoherent_pack: 'Yazı, fotoğraf ve slot aynı işi söylemiyor',
   empty_place_command: 'Yer kartında emir slogan yok',
   look_unavailable: 'Bakış yapılamadı',
   look_no_key: 'Bakış yapılamadı (anahtar yok)',
@@ -444,12 +455,39 @@ function buildLookUserText(input: FeedSlotLookInput, candidates: FeedSlotLookCan
 
 export async function lookFeedSlotPack(
   input: FeedSlotLookInput,
-  deps?: { openai?: OpenAI; model?: string },
+  deps?: {
+    openai?: OpenAI;
+    model?: string;
+    judgeProductClaim?: (ideaText: string, inventoryText: string) => Promise<boolean>;
+    judgePackConsistency?: (pack: FeedSlotPack) => Promise<FeedPackConsistencyVerdict>;
+  },
 ): Promise<FeedSlotLookResult> {
   const slotJob = String(input.slotJob ?? '').trim();
   const incoming = input.candidates.slice(0, LOOK_MAX_CANDIDATES);
   if (incoming.length === 0 || slotJob.length < 4) {
     return { ok: false, issues: incoming.length === 0 ? ['no_pick'] : ['missing_slot_job'] };
+  }
+
+  const inventory = [
+    String(input.inventoryText ?? ''),
+    ...incoming.map((c) => [c.visibleLabelText, c.primarySubject].filter(Boolean).join(' ')),
+  ].join(' ');
+  const ideaText = String(input.ideationHint ?? '');
+  if (!input.productClaimChecked) {
+    const invented = deps?.judgeProductClaim
+      ? await deps.judgeProductClaim(ideaText, inventory)
+      : deps?.openai
+        ? false
+        : await judgeInventedProductClaim({
+          ideaText,
+          inventoryText: inventory,
+          missionId: input.missionId,
+          workspaceId: input.workspaceId,
+          slotKey: input.slotKey,
+        });
+    if (invented) {
+      return { ok: false, issues: ['invented_product_claim'] };
+    }
   }
 
   const resolved = await withResolvedVisionUrls(incoming);
@@ -597,6 +635,17 @@ export async function lookFeedSlotPack(
       adaptiveScene: Boolean(input.adaptiveScene),
     });
     if (!complete) return { ok: false, issues: ['incomplete_headline'] };
+    if (deps?.judgePackConsistency || !deps?.openai) {
+      const checked = await applyFeedPackConsistency(complete, {
+        adaptiveScene: Boolean(input.adaptiveScene),
+        judge: deps?.judgePackConsistency,
+        missionId: input.missionId,
+        workspaceId: input.workspaceId,
+        slotKey: input.slotKey,
+      });
+      if (!checked.ok) return { ok: false, issues: checked.issues };
+      return { ok: true, pack: checked.pack };
+    }
     return { ok: true, pack: complete };
   } catch (err) {
     console.warn('[feed-slot-look] call failed:', err instanceof Error ? err.message : String(err));

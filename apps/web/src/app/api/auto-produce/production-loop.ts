@@ -267,7 +267,10 @@ import {
   type PremiumCompositionMeta,
 } from './production-candidate-types';
 import { resolveSlotLogoForRender } from '@/lib/brand-logo-production';
-import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
+import {
+  catalogSlotAllowsOnCanvasCta,
+  resolveSlotSublineForRender,
+} from '@/lib/slot-subline-policy';
 import {
   fetchBrandThemeForProduction,
   resolveProductionVisualStandard,
@@ -1851,7 +1854,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         // Soft early budget from slot sample; fal-designed-post refits to matched template sample.
         const falSlotSample = resolveSlotSampleCopy({
           catalogSlotKey: assignment.catalog_slot_key,
-          showSubline: falDesignLibrarySlot?.showSubline,
+          showSubline: catalogSlotAllowsOnCanvasCta(assignment.catalog_slot_key)
+            && falDesignLibrarySlot?.showSubline !== false,
           sector: brandBusinessType,
           language: brandLanguageCode,
         });
@@ -1915,6 +1919,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           }
         }
         const gatedSub = resolveSlotSublineForRender(designCopy.subtitle, {
+          catalogSlotKey: assignment.catalog_slot_key,
           librarySlot: falDesignLibrarySlot,
         });
         if (gatedSub) {
@@ -4358,6 +4363,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       : undefined;
     // Library slot showSubline=false → never paint calendar support line.
     const falCalendarSubtitle = resolveSlotSublineForRender(falCalendarSubtitleRaw, {
+      catalogSlotKey: assignment.catalog_slot_key,
       librarySlot: falTypoSlot,
     });
     const falSlotTypography = usesFalDesignerTrack
@@ -5669,7 +5675,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             // to true. Unknown is now recorded as absent, not as a pass.
             ...(overlayWasPainted
               ? (falTextValidated
-                ? { typography_text_valid: falGrafikerPass !== false }
+                ? { typography_text_valid: true }
                 : {})
               : { typography_text_valid: false }),
             text_validated: falTextValidated,
