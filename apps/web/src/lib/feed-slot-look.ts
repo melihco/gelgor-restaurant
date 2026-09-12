@@ -31,7 +31,12 @@ import {
   inlineLookVisionDataUris,
   resolveLookVisionUrls,
 } from '@/studio/look-urls-inline';
-import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
+import {
+  isPlaceSceneText,
+  isProcessOrBtsSceneText,
+  keepWeeklySceneCopy,
+  resolveAdaptiveGalleryContract,
+} from '@/lib/caption-scene-fit';
 import { lookJobKind, type LookJobKind } from '@/lib/look-job-kind';
 
 export { lookJobKind, type LookJobKind };
@@ -42,6 +47,7 @@ export type FeedSlotLookCandidate = {
   visibleLabelText?: string;
   description?: string;
   primarySubject?: string;
+  suggestedAssetType?: string;
 };
 
 export type FeedSlotLookInput = {
@@ -138,19 +144,48 @@ Adaptive scene is ON. A later enhance step may restage the still (setting, light
 - A labeled product is the right pick when the job is selling that package.
 - If ideation_hint is a process / at-work / behind-the-scenes / place sentence, KEEP that scene sentence as caption and headline.
 - evidenceNote still names what is currently in the frame (bottle, label, lawn, grove).
-- Place or process jobs: prefer a matching place/process still. If none, pick the nearest labeled identity. Do not return null because the farm, shop, or process is not in the frame.`;
+- Place or process jobs: prefer a matching place/process still. If none, pick the nearest labeled identity. Do not return null because the farm, shop, or process is not in the frame.
+- Adaptive pick is the ranked identity shortlist. You write the pack for that still. Null does not withhold the card.`;
 
 const SELL_MUST_PICK = `This is a sell job. At least one candidate has readable identity. You must set pickIndex to a candidate with identity. Do not return null because ideation_hint or an abstract catalog word is not printed on the photo. Caption, headline, and the picked product must say the same thing. Write from the visible label / what you see.`;
-
-const RESTAGE_MUST_PICK = `Adaptive scene is ON. A later high restage will place this product in the weekly setting. Pick the best-caption candidate with identity. Do not return null because the farm, shop, or process is not in the frame. Prefer a real place or process photo if one exists.`;
 
 function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean {
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
 }
 
-function candidateCanSeedRestage(candidate: FeedSlotLookCandidate): boolean {
-  if (candidateHasReadableIdentity(candidate)) return true;
-  return String(candidate.description ?? '').trim().length >= 12;
+function fillAdaptiveLookDraft(
+  draft: Partial<FeedSlotPack>,
+  seed: FeedSlotLookCandidate,
+  ideationHint?: string,
+): Partial<FeedSlotPack> {
+  const label = String(seed.visibleLabelText ?? '').trim();
+  const desc = String(seed.description ?? '').trim();
+  const evidence = String(draft.evidenceNote ?? '').trim().length >= 4
+    ? String(draft.evidenceNote)
+    : (label ? `Etiket: ${label}${desc ? `. ${desc}` : ''}` : desc);
+  const hint = String(ideationHint ?? '').trim();
+  const weeklyScene = (isPlaceSceneText(hint) || isProcessOrBtsSceneText(hint))
+    && hint.length >= 16
+    ? hint
+    : '';
+  const caption = String(draft.caption ?? '').trim().length >= 16
+    ? String(draft.caption)
+    : (weeklyScene || evidence);
+  const role = draft.photoRole && draft.photoRole !== 'scene_fill'
+    ? draft.photoRole
+    : (label ? 'product_for_sale' : 'venue');
+  const shell = draft.shellDirection
+    ?? (role === 'product_for_sale' ? 'product_hero' : 'venue_ambiance');
+  const headline = String(draft.headline ?? '').trim()
+    || completeHeadlineFromCaption(caption);
+  return {
+    ...draft,
+    photoRole: role,
+    shellDirection: shell,
+    evidenceNote: evidence,
+    caption,
+    headline,
+  };
 }
 
 export function feedSlotLookEnabled(): boolean {
@@ -477,10 +512,15 @@ export async function lookFeedSlotPack(
   };
 
   try {
+    const contract = resolveAdaptiveGalleryContract({
+      adaptiveScene: input.adaptiveScene,
+      candidates,
+    });
     let raw = await askLook(lookSystemPrompt(input.adaptiveScene), 'feed_slot_look');
     let { pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob);
     if (
       pickIndex == null
+      && !contract.restage
       && jobKind === 'sell'
       && candidates.some(candidateHasReadableIdentity)
     ) {
@@ -490,22 +530,19 @@ export async function lookFeedSlotPack(
       );
       ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
     }
-    if (
-      pickIndex == null
-      && input.adaptiveScene
-      && (jobKind === 'place' || jobKind === 'process')
-      && candidates.some(candidateCanSeedRestage)
-    ) {
-      raw = await askLook(
-        `${lookSystemPrompt(input.adaptiveScene)}\n\n${RESTAGE_MUST_PICK}`,
-        'feed_slot_look_restage',
-      );
-      ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
-    }
+    const modelPick = pickIndex;
+    pickIndex = contract.bindPickIndex(pickIndex);
     if (pickIndex == null) {
       return { ok: false, issues: ['no_pick'] };
     }
     const picked = candidates[pickIndex];
+    draft = { ...draft, photoUrl: picked?.url };
+    if (contract.restage && picked) {
+      const seedDraft = modelPick == null
+        ? { ...draft, photoRole: undefined, shellDirection: undefined }
+        : draft;
+      draft = fillAdaptiveLookDraft(seedDraft, picked, input.ideationHint);
+    }
     const photoSideText = [picked?.visibleLabelText, picked?.description, picked?.primarySubject]
       .filter(Boolean)
       .join(' ');

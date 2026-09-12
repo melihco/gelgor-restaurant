@@ -71,6 +71,72 @@ export function canRestageNearestGallery(input: {
   return Boolean(input.adaptiveScene) && !input.captionServiceConflict;
 }
 
+const IDENTITY_SEED_ASSET_TYPES = [
+  'product_image',
+  'food_drink_photo',
+  'food_photo',
+  'food_image',
+] as const;
+
+export type AdaptiveIdentitySeed = {
+  visibleLabelText?: string | null;
+  description?: string | null;
+  suggestedAssetType?: string | null;
+};
+
+/** WhatsApp leftover / URL-token stub — not a restage seed. */
+export function isFallbackGalleryAnalysis(
+  description: string | null | undefined,
+): boolean {
+  return /metadata fallback analysis/i.test(String(description ?? ''));
+}
+
+/**
+ * Identity the restage contract accepts. Label, plated/product type,
+ * or a real analysis note. Fallback leftovers are not identity.
+ */
+export function isAdaptiveIdentitySeed(
+  meta?: AdaptiveIdentitySeed | null,
+): boolean {
+  if (!meta || isFallbackGalleryAnalysis(meta.description)) return false;
+  if (String(meta.visibleLabelText ?? '').trim().length >= 3) return true;
+  const type = String(meta.suggestedAssetType ?? '').trim().toLowerCase();
+  if ((IDENTITY_SEED_ASSET_TYPES as readonly string[]).includes(type)) return true;
+  return String(meta.description ?? '').trim().length >= 12;
+}
+
+export type AdaptiveGalleryContract = {
+  restage: boolean;
+  seedIndexes: number[];
+  /**
+   * Restage on + seeds: pick lives on the ranked identity shortlist.
+   * The model may choose among seeds; it cannot return null.
+   * Restage off: the model's pick (including null) stands.
+   */
+  bindPickIndex: (modelPick: number | null) => number | null;
+};
+
+/** One brand-parameter contract for look pick + later match gates. */
+export function resolveAdaptiveGalleryContract(input: {
+  adaptiveScene?: boolean;
+  captionServiceConflict?: boolean;
+  candidates: readonly AdaptiveIdentitySeed[];
+}): AdaptiveGalleryContract {
+  const restage = canRestageNearestGallery(input);
+  const seedIndexes = input.candidates
+    .map((candidate, index) => (isAdaptiveIdentitySeed(candidate) ? index : -1))
+    .filter((index) => index >= 0);
+  return {
+    restage,
+    seedIndexes,
+    bindPickIndex(modelPick) {
+      if (!restage || seedIndexes.length === 0) return modelPick;
+      if (modelPick != null && seedIndexes.includes(modelPick)) return modelPick;
+      return seedIndexes[0] ?? null;
+    },
+  };
+}
+
 export function isProductStillEvidence(
   evidenceNote: string | null | undefined,
   photoRole?: string | null,

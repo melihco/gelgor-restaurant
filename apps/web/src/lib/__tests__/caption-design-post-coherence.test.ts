@@ -160,6 +160,27 @@ describe('caption-design-post-coherence', () => {
     expect(result.breaks).not.toContain('photo_theme_conflict');
   });
 
+  it('adaptive favorite caption on an oil bottle is a restage gap, not a withhold', () => {
+    const result = evaluateCaptionDesignPostCoherence({
+      caption: 'Müşterilerimizden gelen yorumlara göre, bizim sızma zeytinyağımız sofrada kalıyor.',
+      overlayHeadline: 'Sızma zeytinyağımız sofrada',
+      brandName: 'Datça Dükkan',
+      businessType: 'local_products_shop',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      catalogSlotKey: 'local_products_shop_customer_favorite_post',
+      adaptiveScene: true,
+      galleryMeta: {
+        contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+        description: 'Dark glass bottle of olive oil',
+        suggestedAssetType: 'product_image',
+        primarySubject: 'olive_oil',
+        visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        subjectConfidence: 1,
+      },
+    });
+    expect(result.breaks).not.toContain('photo_theme_conflict');
+  });
+
   it('adaptive farm caption on an oil bottle is a restage gap, not a withhold', () => {
     const result = evaluateCaptionDesignPostCoherence({
       caption: 'Çiftlikte hasat günü, üretimde iş başındayız. Sızma raflarda.',

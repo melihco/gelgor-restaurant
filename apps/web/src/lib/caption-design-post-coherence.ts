@@ -16,12 +16,9 @@ import {
   isHardProductSkuMismatch,
 } from '@/lib/gallery-photo-matcher';
 import {
-  isPlaceSceneText,
-  isProcessOrBtsSceneText,
-  isProductStillEvidence,
+  canRestageNearestGallery,
+  isAdaptiveIdentitySeed,
 } from '@/lib/caption-scene-fit';
-import { lookJobKind } from '@/lib/look-job-kind';
-import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
 import {
   isOffTopicTourismOverlay,
@@ -304,23 +301,13 @@ export function evaluateCaptionDesignPostCoherence(
     const classUnmet = isSlotPhotoNeedUnmet(input.catalogSlotKey, meta);
     const themeMismatch = hasSubjectEvidence
       && isHardGalleryThemeMismatch(matchInput, meta, photoUrl);
-    const job = lookJobKind({
-      slotJob: `${input.catalogSlotKey ?? ''} ${caption} ${overlay}`,
-      catalogSlotKey: input.catalogSlotKey ?? undefined,
+    const restage = canRestageNearestGallery({
+      adaptiveScene: input.adaptiveScene,
+      captionServiceConflict: serviceFight,
     });
-    const sceneText = `${caption} ${overlay} ${input.catalogSlotKey ?? ''}`;
-    const wantsScene = job === 'place' || job === 'process'
-      || isProcessOrBtsSceneText(sceneText)
-      || isPlaceSceneText(sceneText);
-    const productSeed = isProductStillEvidence(meta?.description, null)
-      || String(meta?.visibleLabelText ?? '').trim().length >= 3
-      || photoMatchesPreferredAssetTypes(
-        meta?.suggestedAssetType,
-        ['product_image', 'food_drink_photo', 'food_photo', 'food_image'],
-      );
-    const restageableSceneGap = Boolean(input.adaptiveScene) && wantsScene && productSeed;
+    const sceneGapAllowed = restage && isAdaptiveIdentitySeed(meta);
     const hard = skuFight || serviceFight || classUnmet
-      || (themeMismatch && !restageableSceneGap);
+      || (themeMismatch && !sceneGapAllowed);
     if (hard) breaks.push('photo_theme_conflict');
   }
 

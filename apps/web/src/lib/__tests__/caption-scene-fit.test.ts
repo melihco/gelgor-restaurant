@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   canRestageNearestGallery,
   captionSceneNeedsRestage,
+  isAdaptiveIdentitySeed,
   isPlaceSceneText,
   isProcessOrBtsSceneText,
   keepWeeklySceneCopy,
+  resolveAdaptiveGalleryContract,
 } from '@/lib/caption-scene-fit';
 import { resolveAdaptiveSceneMode } from '@/lib/ai-visual-production-standard';
 import {
@@ -108,6 +110,37 @@ describe('caption-scene-fit — local_products_shop + beach_club', () => {
       adaptiveScene: true,
       captionServiceConflict: true,
     })).toBe(false);
+  });
+
+  it('shop + beach: restage pick is the ranked identity seed, not the model veto', () => {
+    const oil = { visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI', description: 'Labeled oil bottle' };
+    const leftover = {
+      description: 'Metadata fallback analysis for a brand gallery image. URL tokens suggest: whatsapp.',
+    };
+    const plate = { suggestedAssetType: 'food_drink_photo', description: 'Plated lunch on a table' };
+    expect(isAdaptiveIdentitySeed(oil)).toBe(true);
+    expect(isAdaptiveIdentitySeed(leftover)).toBe(false);
+    expect(isAdaptiveIdentitySeed(plate)).toBe(true);
+
+    const shop = resolveAdaptiveGalleryContract({
+      adaptiveScene: true,
+      candidates: [leftover, oil],
+    });
+    expect(shop.restage).toBe(true);
+    expect(shop.bindPickIndex(null)).toBe(1);
+    expect(shop.bindPickIndex(1)).toBe(1);
+
+    const beach = resolveAdaptiveGalleryContract({
+      adaptiveScene: true,
+      candidates: [plate],
+    });
+    expect(beach.bindPickIndex(null)).toBe(0);
+
+    const off = resolveAdaptiveGalleryContract({
+      adaptiveScene: false,
+      candidates: [oil],
+    });
+    expect(off.bindPickIndex(null)).toBeNull();
   });
 
   it('shop: farm caption + bottle still needs restage; beach venue does not', () => {

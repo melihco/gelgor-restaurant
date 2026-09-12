@@ -46,7 +46,11 @@ import {
   type LookJobKind,
 } from '@/lib/feed-slot-look';
 import { groundFeedSlotCopy, parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
-import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
+import {
+  isAdaptiveIdentitySeed,
+  isFallbackGalleryAnalysis,
+  keepWeeklySceneCopy,
+} from '@/lib/caption-scene-fit';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
 import { isVisionAnalysisDescription, isGalleryTagHeadline } from '@/lib/vision-text-guard';
@@ -378,16 +382,9 @@ const PLACE_PROCESS_LOOK_TYPES = [
   'brand_background',
 ] as const;
 
-const IDENTITY_SEED_TYPES = [
-  'product_image',
-  'food_drink_photo',
-  'food_photo',
-  'food_image',
-] as const;
-
 function isFallbackGalleryMeta(meta?: GalleryPhotoMeta | null): boolean {
   if (!meta) return true;
-  return /metadata fallback analysis/i.test(String(meta.description ?? ''));
+  return isFallbackGalleryAnalysis(meta.description);
 }
 
 function photoCanProveLookJob(
@@ -404,9 +401,7 @@ function photoCanProveLookJob(
 
 /** Labeled product / plated still — valid seed when adaptive scene will restage. */
 function photoIsIdentitySeed(meta?: GalleryPhotoMeta | null): boolean {
-  if (!meta || isFallbackGalleryMeta(meta)) return false;
-  if (String(meta.visibleLabelText ?? '').trim().length >= 3) return true;
-  return photoMatchesPreferredAssetTypes(meta.suggestedAssetType, [...IDENTITY_SEED_TYPES]);
+  return isAdaptiveIdentitySeed(meta);
 }
 
 function lookJobKindFromAssignment(assignment: ProductionAssignment): LookJobKind {
@@ -686,6 +681,7 @@ export async function resolveGalleryFirstForSlot(input: {
           visibleLabelText: meta?.visibleLabelText,
           description: meta?.description,
           primarySubject: meta?.primarySubject,
+          suggestedAssetType: meta?.suggestedAssetType,
         };
       }),
     });

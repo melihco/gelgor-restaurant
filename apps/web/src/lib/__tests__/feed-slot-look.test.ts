@@ -356,6 +356,70 @@ describe('feed-slot-look — shop + beach', () => {
     expect(JSON.stringify(messages)).toMatch(/sell job/i);
   });
 
+  it('shop: adaptive bind keeps a labeled seed when look returns null', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        catalogSlotKey: 'local_products_shop_product_hero_post',
+        language: 'Turkish',
+        adaptiveScene: true,
+        ideationHint: 'Erken hasat zeytinyağımız raflarda duruyor.',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled oil bottle on a shelf',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: null,
+          caption: '',
+          headline: '',
+          evidenceNote: '',
+          photoRole: 'venue',
+          shellDirection: 'venue_ambiance',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.photoUrl).toBe('https://cdn.example.com/oil.jpg');
+      expect(result.pack.caption.length).toBeGreaterThanOrEqual(16);
+    }
+  });
+
+  it('beach: adaptive bind keeps a plated seed when look returns null', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı',
+        catalogSlotKey: 'beach_club_sunset_ambiance_story',
+        language: 'Turkish',
+        adaptiveScene: true,
+        ideationHint: 'Gün batımında masada kal, altın saat açık denizde.',
+        candidates: [{
+          url: 'https://cdn.example.com/plate.jpg',
+          suggestedAssetType: 'food_drink_photo',
+          description: 'Plated lunch on a set table',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: null,
+          caption: '',
+          headline: '',
+          evidenceNote: '',
+          photoRole: 'venue',
+          shellDirection: 'venue_ambiance',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.photoUrl).toBe('https://cdn.example.com/plate.jpg');
+      expect(result.pack.caption.toLowerCase()).toMatch(/gün batım|masa|deniz/);
+    }
+  });
+
   it('beach place: does not force a labeled bottle when the first look refuses', async () => {
     const result = await lookFeedSlotPack(
       {
