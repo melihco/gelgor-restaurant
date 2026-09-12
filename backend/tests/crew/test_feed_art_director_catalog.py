@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import json
 
-from app.crew.crews.feed_art_director_crew import _normalize_production_assignments
+from app.crew.crews.feed_art_director_crew import (
+    _normalize_production_assignments,
+    build_look_pack_ssot_report,
+    run_feed_art_director,
+    should_skip_feed_art_director_for_look,
+)
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -511,3 +516,37 @@ def test_create_feed_cohesion_task_includes_briefing_context():
     assert "Brand visual briefing" in desc
     assert "cocktail" in desc
     assert "visual_subject_hint" in desc
+
+
+def test_weekly_look_pack_skips_art_director_llm():
+    assert should_skip_feed_art_director_for_look("weekly_content") is True
+    assert should_skip_feed_art_director_for_look("campaign") is False
+    assert should_skip_feed_art_director_for_look("ads_focus") is False
+    ideas = json.dumps(
+        [
+            {"headline": "Teras açık", "content_type": "post"},
+            {"headline": "Kahvaltı", "content_type": "story"},
+        ],
+        ensure_ascii=False,
+    )
+    report = run_feed_art_director(
+        brand=SimpleNamespace(business_name="Pansiyon", business_type="hospitality"),
+        content_ideas_json=ideas,
+        production_package="weekly_content",
+        catalog_slots=RESTAURANT_CATALOG,
+    )
+    assert report["_source"] == "look_pack_ssot"
+    assert report.get("_fallback") is False
+    assert report["production_assignments"]
+    assert report["recommended_order"] == [0, 1]
+
+
+def test_look_pack_ssot_report_is_not_fallback():
+    report = build_look_pack_ssot_report(
+        json.dumps([{"headline": "Bal", "content_type": "post"}]),
+        production_package="weekly_content",
+        catalog_slots=RESTAURANT_CATALOG,
+    )
+    assert report["_source"] == "look_pack_ssot"
+    assert report["_fallback"] is False
+    assert report["production_assignments"]

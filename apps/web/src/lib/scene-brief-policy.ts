@@ -13,11 +13,13 @@ export function slotNeedsSceneBrief(input: {
   isHeroReel: boolean;
   willStoryOverlay: boolean;
   designedPosterSync: boolean;
+  /** Look pack or matcher already chose the still — do not buy a $0.15 scene rewrite. */
+  galleryPhotoLocked?: boolean;
 }): boolean {
   // Gallery-locked visuals already have the photo. Scene Director (~$0.15)
   // used to fire for story overlays and hero reels anyway — skip those too.
   // Hero reel may still pay once when the still is not gallery-only.
-  if (input.galleryOnlyVisual) {
+  if (input.galleryOnlyVisual || input.galleryPhotoLocked) {
     return false;
   }
   if (input.designedPosterSync) return false;

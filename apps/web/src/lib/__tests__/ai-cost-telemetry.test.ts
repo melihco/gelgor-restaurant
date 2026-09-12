@@ -93,27 +93,35 @@ describe('Faz 1.4 — designed_post enhance skip flag', () => {
     ...overrides,
   });
 
-  it('DEFAULT (flag off): designed_post bg enhance still allowed', () => {
+  it('designed GPT paint skips the extra enhance even when grade flag is off', () => {
     const input = baseInput({ skipEnhanceForDesignedGrade: false });
-    expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
-  });
-
-  it('flag on + strong gallery match → skip with designed_grade', () => {
-    const input = baseInput({ skipEnhanceForDesignedGrade: true });
-    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_grade');
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('flag on but weak match → NOT skipped (quality preserved)', () => {
-    const input = baseInput({
-      skipEnhanceForDesignedGrade: true,
-      galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE - 10,
-    });
-    expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
+  it('flag on + strong gallery match → designed paint wins over designed_grade', () => {
+    const input = baseInput({ skipEnhanceForDesignedGrade: true });
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('flag on but stock photo → NOT skipped', () => {
-    const input = baseInput({ skipEnhanceForDesignedGrade: true, referenceIsStock: true });
+  it('organic gallery_photo still uses designed_grade when the flag is on', () => {
+    const input = baseInput({
+      skipEnhanceForDesignedGrade: true,
+      designedPostPhotoEnhance: false,
+      assignment: { pipeline: 'gallery_photo', slot_role: 'organic_post' } as GptEnhancePolicyInput['assignment'],
+    });
+    expect(resolveGptEnhanceSkipReason(input)).toBe('gallery_match_ok');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
+  });
+
+  it('stock organic still is not skipped as designed_grade', () => {
+    const input = baseInput({
+      skipEnhanceForDesignedGrade: true,
+      designedPostPhotoEnhance: false,
+      referenceIsStock: true,
+      assignment: { pipeline: 'gallery_photo', slot_role: 'organic_post' } as GptEnhancePolicyInput['assignment'],
+    });
     expect(resolveGptEnhanceSkipReason(input)).not.toBe('designed_grade');
   });
 

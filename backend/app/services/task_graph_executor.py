@@ -717,6 +717,37 @@ async def _execute_node_body(
                 _catalog_slots = await load_feed_director_catalog_slots(
                     _cat_db, workspace_id,
                 )
+            from app.services.gallery_slot_evidence import prefer_gallery_proven_slots
+
+            proven_slots = prefer_gallery_proven_slots(
+                _catalog_slots,
+                getattr(brand, "gallery_analysis", None),
+            )
+            if proven_slots:
+                dropped = len(_catalog_slots) - len(proven_slots)
+                proven_targets = {
+                    fmt: sum(1 for s in proven_slots if str(s.get("format") or "post") == fmt)
+                    for fmt in ("post", "story", "carousel", "reel")
+                }
+                asked = effective_input.get("format_targets") or {}
+                shaped_targets = {
+                    fmt: min(int(asked.get(fmt, 0) or 0), proven_targets.get(fmt, 0))
+                    for fmt in ("post", "story", "carousel", "reel")
+                }
+                shaped_total = sum(shaped_targets.values())
+                if shaped_total >= 3:
+                    _catalog_slots = proven_slots
+                    effective_input["format_targets"] = shaped_targets
+                    effective_input["count"] = shaped_total
+                    weekly_geo = {**weekly_geo, "total": shaped_total, **shaped_targets}
+                    effective_input["format_mix"] = format_mix_label(weekly_geo)
+                    logger.info(
+                        "content_ideation_slots_gallery_gated",
+                        node_key=node_key,
+                        proven=len(proven_slots),
+                        dropped=dropped,
+                        count=shaped_total,
+                    )
             slot_plan = build_weekly_catalog_assignment_plan(
                 _catalog_slots,
                 total=weekly_geo["total"],
@@ -2770,14 +2801,15 @@ async def _run_feed_art_director_report(
     try:
         from app.services.ai_cost_service import record_mission_category_cost
 
-        factory = _get_session_factory()
-        async with factory() as cost_db:
-            await record_mission_category_cost(
-                cost_db,
-                workspace_id,
-                mission_id,
-                "feed_art_director",
-            )
+        if str(report.get("_source") or "") != "look_pack_ssot":
+            factory = _get_session_factory()
+            async with factory() as cost_db:
+                await record_mission_category_cost(
+                    cost_db,
+                    workspace_id,
+                    mission_id,
+                    "feed_art_director",
+                )
     except Exception as cost_exc:
         logger.warning(
             "feed_art_director_cost_record_failed",

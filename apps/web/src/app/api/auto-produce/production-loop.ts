@@ -2270,11 +2270,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     });
     // Scene Director LLM — once per mission when any slot needs it (not per idea).
     let sceneBrief: ProductSceneBrief | null = null;
+    const galleryPhotoLocked = Boolean(
+      lockedFeedSlotPack
+      || (typeof preassignedGalleryUrl === 'string' && preassignedGalleryUrl.trim()),
+    );
     if (slotNeedsSceneBrief({
       visualStandard: aiVisualStandard,
       contentKind: kind,
       assignment,
       galleryOnlyVisual,
+      galleryPhotoLocked,
       isHeroReel,
       willStoryOverlay: false,
       designedPosterSync: false,

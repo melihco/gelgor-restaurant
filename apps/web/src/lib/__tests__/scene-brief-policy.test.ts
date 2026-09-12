@@ -100,6 +100,40 @@ describe('slotNeedsSceneBrief — gallery lock skips Crew ($0.15)', () => {
     })).toBe(false);
   });
 
+  it('beach look-locked designed post does not buy a brief', () => {
+    expect(slotNeedsSceneBrief({
+      visualStandard: standard({ adaptiveScene: true }),
+      contentKind: 'instagram_post',
+      assignment: assignment(
+        'fal_designed_post',
+        'fal_design',
+        'beach_club_sunset_ambiance_post',
+      ),
+      galleryOnlyVisual: false,
+      galleryPhotoLocked: true,
+      isHeroReel: false,
+      willStoryOverlay: false,
+      designedPosterSync: false,
+    })).toBe(false);
+  });
+
+  it('shop look-locked product post does not buy a brief', () => {
+    expect(slotNeedsSceneBrief({
+      visualStandard: standard({ adaptiveScene: true }),
+      contentKind: 'instagram_post',
+      assignment: assignment(
+        'organic_post',
+        'gallery_photo',
+        'local_products_shop_shop_ambiance_post',
+      ),
+      galleryOnlyVisual: false,
+      galleryPhotoLocked: true,
+      isHeroReel: true,
+      willStoryOverlay: false,
+      designedPosterSync: false,
+    })).toBe(false);
+  });
+
   it('designed post never calls scene director', () => {
     expect(slotNeedsSceneBrief({
       visualStandard: standard({ adaptiveScene: true }),

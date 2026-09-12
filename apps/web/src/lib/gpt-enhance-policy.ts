@@ -47,9 +47,22 @@ export type GptEnhanceSkipCode =
   | 'fal_story'
   | 'designed_post'
   | 'designed_grade'
+  | 'designed_gpt_paint'
   | 'gallery_match_ok'
   | 'stock_only'
   | 'non_venue_saas';
+
+function isDesignedGptPaintSlot(input: GptEnhancePolicyInput): boolean {
+  if (!input.designedPostPhotoEnhance) return false;
+  const pipeline = input.assignment.pipeline;
+  const role = input.assignment.slot_role;
+  return (
+    pipeline === 'fal_design'
+    || role === 'designed_post'
+    || role === 'designed_typography'
+    || role === 'fal_designed_post'
+  );
+}
 
 /** Product staging brands — high GIS ≠ ready-to-ship; phone snaps need BG work. */
 export function isProductHeroStaging(
@@ -104,6 +117,10 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
     if (!input.visualStandard.enabled) return 'disabled';
     return 'format_excluded';
   }
+
+  // High designed-post edit is the paint. A prior enhance restages the still,
+  // breaks labels, and stacks ~$0.21 on the same card.
+  if (isDesignedGptPaintSlot(input)) return 'designed_gpt_paint';
 
   // Faz 1.4 — venue + strong gallery: skip designed BG when cinematic grade covers it.
   // Honored even in gallery-revision mode (cost gate). Product staging never skips.
@@ -175,6 +192,8 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
   if (!shouldAiEnhanceForOutput(input.visualStandard, input.contentKind, input.assignment)) {
     return false;
   }
+
+  if (isDesignedGptPaintSlot(input)) return false;
 
   if (canSkipDesignedPostEnhanceForGrade(input)) return false;
 

@@ -17,6 +17,7 @@ Flow:
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -460,6 +461,49 @@ def _extract_json(text: str) -> dict[str, Any] | None:
     return None
 
 
+def feed_art_director_forced() -> bool:
+    """Opt-in: FEED_ART_DIRECTOR=true keeps the $0.45 weekly LLM."""
+    return os.environ.get("FEED_ART_DIRECTOR", "").strip().lower() == "true"
+
+
+def should_skip_feed_art_director_for_look(production_package: str | None) -> bool:
+    """Weekly stills lock photo+copy in look pack — a second director unlocks that."""
+    if feed_art_director_forced():
+        return False
+    pkg = (production_package or "weekly_content").strip().lower()
+    return pkg == "weekly_content"
+
+
+def build_look_pack_ssot_report(
+    content_ideas_json: str = "",
+    *,
+    production_package: str = "weekly_content",
+    production_profile: str | None = None,
+    catalog_slots: list[dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Heuristic assignments without the Feed Art Director LLM."""
+    report = _fallback_report(
+        "look_pack_ssot",
+        content_ideas_json,
+        production_package=production_package,
+        production_profile=production_profile,
+        catalog_slots=catalog_slots,
+    )
+    report["_fallback"] = False
+    report["_source"] = "look_pack_ssot"
+    report["_fallback_reason"] = "look_pack_ssot"
+    report["art_director_verdict"] = (
+        "Weekly look pack is the photo/copy lock — Feed Art Director skipped"
+    )
+    report["cohesion_notes"] = [
+        "Look pack locks caption and photo per slot; heuristic routing fills assignments.",
+    ]
+    ideas = parse_content_ideas_json(content_ideas_json)
+    if ideas and not report.get("recommended_order"):
+        report["recommended_order"] = list(range(len(ideas)))
+    return report
+
+
 def _infer_production_package(
     mission_type: str = "",
     mission_title: str = "",
@@ -510,6 +554,18 @@ def run_feed_art_director(
             raise RuntimeError("Feed Art Director blocked: no content ideas (premium/economy profile)")
         return _fallback_report(
             "No content ideas provided",
+            content_ideas_json,
+            production_package=production_package,
+            production_profile=production_profile,
+            catalog_slots=catalog_slots,
+        )
+
+    if should_skip_feed_art_director_for_look(production_package):
+        logger.info(
+            "feed_art_director_skipped_look_pack_ssot",
+            production_package=production_package,
+        )
+        return build_look_pack_ssot_report(
             content_ideas_json,
             production_package=production_package,
             production_profile=production_profile,

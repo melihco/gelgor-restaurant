@@ -56,20 +56,21 @@ describe('P1 — designed/fal BG enhance ↔ visual standard', () => {
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('fal_design + gallery_enhanced → allows designed BG enhance', () => {
+  it('fal_design + gallery_enhanced → designed GPT paint skips the extra enhance', () => {
     const input = designedBgInput();
-    expect(resolveGptEnhanceSkipReason(input)).toBeNull();
-    expect(shouldRunGptImageEnhance(input)).toBe(true);
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('agency requireDesignedVisuals still allows designedPostPhotoEnhance', () => {
+  it('agency requireDesignedVisuals still skips designedPostPhotoEnhance', () => {
     const input = designedBgInput({
       productionProfile: {
         tier: 'agency',
         requireDesignedVisuals: true,
       } as ProductionProfile,
     });
-    expect(shouldRunGptImageEnhance(input)).toBe(true);
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
   it('agency requireDesignedVisuals blocks non-BG organic enhance', () => {
@@ -87,7 +88,7 @@ describe('P1 — designed/fal BG enhance ↔ visual standard', () => {
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('product_hero + strong GIS still runs designed BG (no designed_grade skip)', () => {
+  it('product_hero designed card skips enhance — high paint keeps the label', () => {
     const input = designedBgInput({
       businessType: 'local_products_shop',
       galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE + 10,
@@ -98,27 +99,36 @@ describe('P1 — designed/fal BG enhance ↔ visual standard', () => {
       }),
     });
     expect(isProductHeroStaging(input.visualStandard)).toBe(true);
-    expect(resolveGptEnhanceSkipReason(input)).toBeNull();
-    expect(shouldRunGptImageEnhance(input)).toBe(true);
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('venue + designed_grade flag + strong GIS → skip designed BG', () => {
+  it('beach designed card also skips the stacked enhance', () => {
+    const input = designedBgInput({
+      businessType: 'beach_club',
+      visualStandard: standard({ visualSubject: 'venue_ambiance' }),
+    });
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
+  });
+
+  it('venue designed card skips enhance before the grade flag runs', () => {
     const input = designedBgInput({
       galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE + 5,
       skipEnhanceForDesignedGrade: true,
       visualStandard: standard({ visualSubject: 'venue_ambiance' }),
     });
-    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_grade');
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('ecommerce_retail product_hero bypasses non_venue_saas skip', () => {
+  it('ecommerce_retail product_hero bypasses non_venue_saas then skips designed paint stack', () => {
     const input = designedBgInput({
       businessType: 'ecommerce_retail',
       visualStandard: standard({ visualSubject: 'product_hero' }),
     });
-    expect(resolveGptEnhanceSkipReason(input)).toBeNull();
-    expect(shouldRunGptImageEnhance(input)).toBe(true);
+    expect(resolveGptEnhanceSkipReason(input)).toBe('designed_gpt_paint');
+    expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
   it('agency_services without product subject stays non_venue_saas', () => {
