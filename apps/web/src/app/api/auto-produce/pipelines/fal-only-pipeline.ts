@@ -33,6 +33,7 @@ import { isUsableGalleryPhotoUrl, isUsableScenePhotoUrl } from '@/lib/media-url'
 import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
+import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import type { ProductionPipelineHandler } from './pipeline-types';
 
 export interface FalOnlyVideoMeta {
@@ -356,13 +357,13 @@ export async function produceFalOnlySlot(
     } catch (designErr) {
       designFailMsg = designErr instanceof Error ? designErr.message : String(designErr);
       console.warn(
-        '[auto-produce] [fal-only] designed video failed, trying cinematic fallback:',
+        '[auto-produce] [fal-only] designed video failed — no cinematic fallback:',
         designFailMsg,
       );
     }
 
-    // Fallback: 9:16 designed still → motion. Never I2V a raw 4:5 gallery photo as a reel.
-    if (photoUrl || input.referencePhotoUrl) {
+    // Fallback: 9:16 designed still → motion. Off — empty reel beats a second motor.
+    if (allowDegradedVisualFallback() && (photoUrl || input.referencePhotoUrl)) {
       const stillRef = photoUrl ?? input.referencePhotoUrl!;
       try {
         const poster = await produceFalDesignedPostStill({

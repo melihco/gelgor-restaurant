@@ -52,11 +52,79 @@ export function readTypographyDesignConfig(
   };
 }
 
+export function readCreativeIdentityConfirmedAt(
+  theme: Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (!theme) return undefined;
+  const raw = theme.creative_identity_confirmed_at ?? theme.creativeIdentityConfirmedAt;
+  return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
+}
+
 export function isTypographyDesignConfirmed(
   theme: Record<string, unknown> | null | undefined,
 ): boolean {
   const cfg = readTypographyDesignConfig(theme);
-  return Boolean(cfg && isKnownTypographyVibe(cfg.vibe) && cfg.confirmed_at);
+  if (!cfg || !isKnownTypographyVibe(cfg.vibe)) return false;
+  if (cfg.confirmed_at) return true;
+  // Onboarding stamps the identity clock even if nested confirmed_at was dropped.
+  return Boolean(readCreativeIdentityConfirmedAt(theme));
+}
+
+export function extractThemeHexColor(raw: unknown, fallback: string): string {
+  const text = String(raw ?? '').trim();
+  const match = text.match(/#([0-9a-fA-F]{6})\b/);
+  return match ? `#${match[1]}` : fallback;
+}
+
+export function readThemePaletteColors(
+  theme: Record<string, unknown> | null | undefined,
+): { primary: string; accent: string; neutral: string; shadow: string } {
+  const palette = (theme?.palette && typeof theme.palette === 'object'
+    ? theme.palette
+    : {}) as Record<string, unknown>;
+  return {
+    primary: extractThemeHexColor(palette.primary, '#1a1a1a'),
+    accent: extractThemeHexColor(palette.accent, '#4f8ef7'),
+    neutral: extractThemeHexColor(palette.neutral, '#f5f5f5'),
+    shadow: extractThemeHexColor(palette.shadow, '#111111'),
+  };
+}
+
+/** Hub / Şablonlar confirm — locks vibe + palette without a second onboarding step. */
+export function buildHubTypographyConfirmThemePatch(input: {
+  currentTheme: Record<string, unknown>;
+  typography: BrandDesignTypographyConfig;
+  palette: { primary: string; accent: string; neutral: string; shadow: string };
+}): Record<string, unknown> {
+  const confirmed = buildUserConfirmedTypographyPatch({
+    ...input.typography,
+    accent_color: input.palette.accent,
+  });
+  const existingPost = input.currentTheme.post_design_defaults
+    ?? input.currentTheme.postDesignDefaults;
+  const postDefaults = existingPost && typeof existingPost === 'object'
+    ? existingPost
+    : resolvePostDesignDefaultsForTypography(confirmed);
+  const prevPalette = (input.currentTheme.palette && typeof input.currentTheme.palette === 'object'
+    ? input.currentTheme.palette
+    : {}) as Record<string, unknown>;
+  const confirmedAt = confirmed.confirmed_at ?? new Date().toISOString();
+  return {
+    ...input.currentTheme,
+    typography_design: confirmed,
+    typographyDesign: confirmed,
+    post_design_defaults: postDefaults,
+    postDesignDefaults: postDefaults,
+    palette: {
+      ...prevPalette,
+      primary: input.palette.primary,
+      accent: input.palette.accent,
+      neutral: input.palette.neutral,
+      shadow: input.palette.shadow,
+    },
+    creative_identity_confirmed_at: confirmedAt,
+    creativeIdentityConfirmedAt: confirmedAt,
+  };
 }
 
 /** HTTP / runner error when a full template set is requested without confirm. */

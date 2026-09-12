@@ -30,6 +30,10 @@ import {
   persistSlotCreativeBriefsFromTemplates,
 } from '@/lib/slot-creative-library-persist';
 import { brsCache } from '@/lib/server-ttl-cache';
+import {
+  getProductionProviderPreflight,
+  httpStatusForProviderPreflight,
+} from '@/lib/production-provider-preflight';
 
 export type GenerateBody = {
   limit?: number;
@@ -156,6 +160,19 @@ export async function validateGenerationPrereqs(workspaceId: string): Promise<
       ok: false,
       status: 422,
       body: typographyNotConfirmedResponse(),
+    };
+  }
+
+  const preflight = getProductionProviderPreflight();
+  if (!preflight.ok) {
+    return {
+      ok: false,
+      status: httpStatusForProviderPreflight(preflight.code),
+      body: {
+        error: preflight.code ?? 'provider_unavailable',
+        message: preflight.reason
+          ?? 'Görsel motor kotası yok — fallback yok, set üretilmez.',
+      },
     };
   }
 

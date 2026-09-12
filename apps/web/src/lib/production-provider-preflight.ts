@@ -158,19 +158,20 @@ export function getProductionProviderPreflight(): ProductionProviderPreflight {
     };
   }
 
+  if (openaiCircuitOpen) {
+    return {
+      ok: false,
+      code: 'provider_billing_circuit_open',
+      reason: 'OpenAI kotası doldu — Fal veya Satori fallback yok. Kota açılınca tekrar dene.',
+      providers,
+    };
+  }
+
   if (falCircuitOpen && openaiConfigured) {
     return {
       ok: true,
       falDegraded: true,
       reason: 'fal.ai billing circuit open — continuing with OpenAI; fal-video slots skipped',
-      providers,
-    };
-  }
-
-  if (openaiCircuitOpen && falConfigured) {
-    return {
-      ok: true,
-      reason: 'OpenAI quota circuit open — continuing with fal.ai image path',
       providers,
     };
   }

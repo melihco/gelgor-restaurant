@@ -337,7 +337,7 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designer-img');
   });
 
-  it('falls back to 9:16 poster→motion when the designer path throws on fal_reel', async () => {
+  it('does not fall back to 9:16 poster→motion when the designer path throws on fal_reel', async () => {
     h.produceFalDesignerVideo.mockRejectedValue(new Error('designer boom'));
     h.produceFalDesignedPostStill.mockResolvedValue({
       imageUrl: 'story-poster-img',
@@ -353,15 +353,11 @@ describe('falVideoHandler.run', () => {
     const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_reel' });
     await falVideoHandler.run(ctx);
 
-    // Never I2V a raw gallery 4:5 — motion starts from the designed 9:16 still.
-    expect(h.produceFalDesignedPostStill).toHaveBeenCalled();
-    expect(h.generateStoryMotionPlateWithRetry).toHaveBeenCalledWith(
-      expect.objectContaining({ imageUrl: 'story-poster-img', pipeline: 'fal_reel' }),
-    );
-    expect(ctx.state.videoUrl).toBe('https://cdn.example.com/raw-vid.mp4');
-    expect(ctx.state.imageUrl).toBe('story-poster-img');
-    expect(ctx.state.videoProduceMeta).toEqual({ source: 'luma' });
-    expect(ctx.state.costDelta).toBe(0.08);
+    expect(h.produceFalDesignedPostStill).not.toHaveBeenCalled();
+    expect(h.generateStoryMotionPlateWithRetry).not.toHaveBeenCalled();
+    expect(ctx.state.videoUrl).toBeNull();
+    expect(ctx.state.imageUrl).toBeNull();
+    expect(ctx.state.pipelineFailureReason).toMatch(/designer boom/);
   });
 
   it('skips entirely (no producer call, no state change) when FAL is not configured', async () => {
@@ -599,7 +595,7 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designed-url');
   });
 
-  it('falls back to the fal Ideogram still when the gallery photo is not usable', async () => {
+  it('does not fall back to Fal Ideogram when the gallery photo is not usable', async () => {
     h.isUsableGalleryPhotoUrl.mockReturnValue(false);
     h.produceFalDesignedPostStill.mockResolvedValue({
       imageUrl: 'fal-still',
@@ -611,11 +607,9 @@ describe('falDesignHandler.run', () => {
     await falDesignHandler.run(ctx);
 
     expect(h.generateDesignedPostImage).not.toHaveBeenCalled();
-    expect(h.produceFalDesignedPostStill).toHaveBeenCalledTimes(1);
-    expect(ctx.state.imageUrl).toBe('fal-still');
-    expect(ctx.state.falDesignEngine).toBe('fal_ideogram');
-    expect(ctx.state.falGrafikerScore).toBe(7);
-    expect(ctx.state.costDelta).toBeCloseTo(0.05);
+    expect(h.produceFalDesignedPostStill).not.toHaveBeenCalled();
+    expect(ctx.state.imageUrl).toBeNull();
+    expect(ctx.state.falDesignEngine).not.toBe('fal_ideogram');
   });
 
   it('leaves state untouched when the slot already has an image', async () => {
@@ -753,7 +747,7 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.falDesignEngine).not.toBe('satori_local');
   });
 
-  it('unlocked beach slot may still paint Satori when there is no library shell', async () => {
+  it('unlocked beach slot does not paint Satori after GPT miss', async () => {
     h.serverConfig.localTypography.enabled = true;
     try {
       h.isUsableGalleryPhotoUrl.mockReturnValue(true);
@@ -787,8 +781,8 @@ describe('falDesignHandler.run', () => {
       });
       await falDesignHandler.run(ctx);
 
-      expect(ctx.state.imageUrl).toBe('satori-fallback');
-      expect(ctx.state.falDesignEngine).toBe('satori_local');
+      expect(ctx.state.imageUrl).toBeNull();
+      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
     } finally {
       h.serverConfig.localTypography.enabled = false;
     }

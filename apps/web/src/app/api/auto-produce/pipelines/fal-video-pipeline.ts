@@ -36,6 +36,7 @@ import { serverConfig } from '@/lib/server-config';
 import { isUsableScenePhotoUrl } from '@/lib/media-url';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
+import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import {
   buildReelRecipeMotionCue,
   resolveEffectiveReelMotionMode,
@@ -433,10 +434,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
           );
           return;
         } catch (posterErr) {
-          // Safety net: template replica failed — a Satori overlay beats an
-          // empty slot when local typography is enabled for this role.
+          // No Satori/Fal second motor — empty slot beats a cream overlay.
           if (
-            !templateIsRenderable
+            !allowDegradedVisualFallback()
+            || !templateIsRenderable
             || !shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme, {
               forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
             })
@@ -611,11 +612,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
       const falMsg = falErr instanceof Error ? falErr.message : String(falErr);
       console.warn('[auto-produce] [fal-track] designer failed:', falMsg);
       state.pipelineFailureReason = `fal_video_designer: ${falMsg}`.slice(0, 480);
-      if (falPipeline === 'fal_story') {
+      if (falPipeline === 'fal_story' || !allowDegradedVisualFallback()) {
         return;
       }
-      // Reels MUST stay 9:16 — never I2V a raw 4:5 gallery photo into a "reel".
-      // Use fal_reel still path (not fal_story) so Ideogram can recover if grounded fails.
+      // Legacy reel still→motion fallback — off. Empty slot beats a second motor.
       try {
         const poster = await runFalStoryPosterProduction({
           workspaceId: inputs.workspaceId,

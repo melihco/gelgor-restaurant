@@ -65,6 +65,7 @@ import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
 import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 import { studioForbidsSatoriEscape } from '@/studio/paint';
+import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import {
   composeDesignSpecShell,
@@ -667,46 +668,36 @@ export async function produceFalDesignedPost(
         && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
       );
       if (!imageUrl && purposePinned) {
-        const layoutRef = templateLayoutReferenceUrl(binding);
-        if (!layoutRef || !serverConfig.fal.configured) {
-          console.warn(
-            `[auto-produce] [fal-design] purpose-pinned "${binding?.matched?.templateName ?? '-'}" `
-            + `gpt-image exhausted — no layout ref / fal for Ideogram fall-through`,
-          );
+        if (!allowDegradedVisualFallback()) {
           throw new Error(
             'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
           );
         }
-        console.warn(
-          `[auto-produce] [fal-design] purpose-pinned "${binding?.matched?.templateName ?? '-'}" `
-          + `gpt-image exhausted — Ideogram with locked layout ref`,
-        );
+        const layoutRef = templateLayoutReferenceUrl(binding);
+        if (!layoutRef || !serverConfig.fal.configured) {
+          throw new Error(
+            'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
+          );
+        }
       }
-      // Do not throw on requireGroundedGallery yet — Ideogram+layout may still recover.
     } else if (input.requireGroundedGallery) {
       throw new Error('Brand gallery photo required for New Brief designed post.');
-    } else if (groundedGalleryRef && !imageUrl) {
-      console.warn(
-        '[auto-produce] [fal-design] grounded GPT compose failed — trying ideogram fallback',
-      );
     }
 
-    // Fallback engine — fal Ideogram V4 typography still.
-    // Purpose-pinned hard/soft: allowed only when GPT replica failed and a layout
-    // reference exists (Ideogram paints against the approved shell, not a blank canvas).
+    // Ideogram is a quality drop. Quota / GPT miss stops here.
     const purposePinnedForIdeogram = Boolean(
       binding?.matched
       && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
     );
     const layoutRefForIdeogram = templateLayoutReferenceUrl(binding);
-    const allowPinnedIdeogram = purposePinnedForIdeogram && Boolean(layoutRefForIdeogram);
-    if (
+    const allowPinnedIdeogram = false;
+    if (allowDegradedVisualFallback() && (
       !input.hasRealBrandGallery
       && (!input.requireGroundedGallery || Boolean(binding?.matched && groundedGalleryRef) || allowPinnedIdeogram)
       && !imageUrl
       && serverConfig.fal.configured
       && (!purposePinnedForIdeogram || allowPinnedIdeogram)
-    ) {
+    )) {
       const canvasChannelIdeogram = aspectRatio === '9:16' ? 'reel' : 'feed_post';
       const paintOverlayIdeogram = resolveSlotPaintOverlay({
         headline: input.headline,
@@ -1097,7 +1088,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
       ? localReferenceUrl
       : null;
     if (
-      !state.imageUrl
+      allowDegradedVisualFallback()
+      && !state.imageUrl
       && satoriFallbackPhoto
       && !inputs.adHocBrief
       && !studioForbidsSatoriEscape(inputs)

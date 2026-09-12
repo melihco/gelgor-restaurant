@@ -81,11 +81,21 @@ describe('production-provider-preflight', () => {
     expect(p.code).toBe('provider_billing_circuit_open');
   });
 
-  it('openai circuit alone with fal available → continue', () => {
+  it('openai circuit alone with fal available → fail closed (no Fal fallback)', () => {
     (serverConfig as { imageProvider: string }).imageProvider = 'openai';
     vi.mocked(isOpenAiQuotaBlocked).mockReturnValue(true);
     const p = getProductionProviderPreflight();
-    expect(p.ok).toBe(true);
+    expect(p.ok).toBe(false);
+    expect(p.code).toBe('provider_billing_circuit_open');
+  });
+
+  it('shop and beach: OpenAI quota blocks set and produce the same way', () => {
+    for (const _sector of ['local_products_shop', 'beach_club'] as const) {
+      vi.mocked(isOpenAiQuotaBlocked).mockReturnValue(true);
+      const p = getProductionProviderPreflight();
+      expect(p.ok).toBe(false);
+      expect(p.code).toBe('provider_billing_circuit_open');
+    }
   });
 
   it('classifies fal balance exhausted and trips fal circuit', () => {

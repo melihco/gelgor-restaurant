@@ -114,6 +114,7 @@ import type { BrandPostDesignDefaults, BrandDesignTypographyConfig } from '@/typ
 import { TYPOGRAPHY_VIBE_LABELS, defaultTypographyVibeForSector } from '@/types/brand-theme';
 import {
   buildUserConfirmedTypographyPatch,
+  isTypographyDesignConfirmed,
   readTypographyDesignConfig,
   TYPOGRAPHY_VIBE_ONBOARDING_OPTIONS,
 } from '@/lib/typography-design-policy';
@@ -1063,6 +1064,39 @@ function PostDesignDefaultsPanel({
   return (
     <SCard t={t} title="Yazı & başlık" accent={t.accent}>
       <div style={{ padding: 14 }}>
+        {!isTypographyDesignConfirmed(theme) && (
+          <div style={{
+            marginBottom: 14,
+            padding: 14,
+            borderRadius: 14,
+            border: `1px solid ${t.accentBorder}`,
+            background: t.isDark ? 'rgba(245,158,11,0.10)' : 'rgba(245,158,11,0.07)',
+          }}>
+            <div style={{ fontSize: 14, fontWeight: 800, color: t.textPrimary, marginBottom: 6 }}>
+              Renk ve tipografiyi onayla
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: 13, lineHeight: 1.45, color: t.textSecondary }}>
+              Şablon seti bu onaya bağlı. Aşağıdaki vibe’ı seçtikten sonra onayla.
+            </p>
+            <button
+              type="button"
+              onClick={() => onSaveTypography(activeTypo)}
+              style={{
+                minHeight: 48,
+                width: '100%',
+                border: 'none',
+                borderRadius: 12,
+                background: t.accent,
+                color: '#fff',
+                fontSize: 16,
+                fontWeight: 800,
+                cursor: 'pointer',
+              }}
+            >
+              Onayla
+            </button>
+          </div>
+        )}
         <div style={{
           borderRadius: 18,
           padding: 14,

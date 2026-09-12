@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildHubTypographyConfirmThemePatch,
   buildUserConfirmedTypographyPatch,
   isTypographyDesignConfirmed,
   isKnownTypographyVibe,
@@ -32,6 +33,52 @@ describe('typography-design-policy', () => {
       typography_design: { vibe: 'warm_coastal', source: 'derived' },
     })).toBe(false);
     expect(typographyNotConfirmedResponse().error).toBe('typography_not_confirmed');
+  });
+
+  it('treats onboarding identity stamp as confirmed for shop and beach', () => {
+    expect(isTypographyDesignConfirmed({
+      typography_design: { vibe: 'anatolian_warm', source: 'derived' },
+      creative_identity_confirmed_at: '2026-09-12T05:00:00.000Z',
+    })).toBe(true);
+    expect(isTypographyDesignConfirmed({
+      typographyDesign: { vibe: 'warm_coastal' },
+      creativeIdentityConfirmedAt: '2026-09-12T05:00:00.000Z',
+    })).toBe(true);
+    expect(isTypographyDesignConfirmed({
+      creative_identity_confirmed_at: '2026-09-12T05:00:00.000Z',
+    })).toBe(false);
+  });
+
+  it('hub confirm patch stamps vibe and palette without wiping saved post defaults', () => {
+    const shop = buildHubTypographyConfirmThemePatch({
+      currentTheme: {
+        post_design_defaults: { font_preset: 'elegant_serif' },
+        palette: { primary: '#111111' },
+      },
+      typography: {
+        vibe: 'anatolian_warm',
+        text_effect: 'soft_shadow',
+        background_style: 'photo_overlay',
+        logo_treatment: 'watermark',
+      },
+      palette: { primary: '#7a1f1f', accent: '#d4a017', neutral: '#f6efe4', shadow: '#1a1208' },
+    });
+    const beach = buildHubTypographyConfirmThemePatch({
+      currentTheme: {},
+      typography: {
+        vibe: 'warm_coastal',
+        text_effect: 'soft_shadow',
+        background_style: 'photo_overlay',
+        logo_treatment: 'watermark',
+      },
+      palette: { primary: '#0b3d4a', accent: '#e8c36a', neutral: '#f4f1ea', shadow: '#122026' },
+    });
+    expect((shop.typography_design as { confirmed_at?: string }).confirmed_at).toBeTruthy();
+    expect((shop.typographyDesign as { confirmedAt?: string }).confirmedAt).toBeTruthy();
+    expect((shop.post_design_defaults as { font_preset?: string }).font_preset).toBe('elegant_serif');
+    expect((shop.palette as { accent?: string }).accent).toBe('#d4a017');
+    expect((beach.typography_design as { vibe?: string }).vibe).toBe('warm_coastal');
+    expect(beach.post_design_defaults).toBeTruthy();
   });
 
   it('accepts camelCase typographyDesign.confirmedAt from theme BFF', () => {

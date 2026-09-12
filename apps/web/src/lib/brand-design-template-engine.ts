@@ -14,11 +14,13 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedStoryDesignCardPrompt,
   buildDesignedVideoReelDesignCardPrompt,
-  pickFalLibraryFallbackDirectives,
-  produceFalDesignedPostStill,
-  resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
 } from '@/lib/fal-designer-production';
+import {
+  isProviderBillingFailureMessage,
+  recordProductionProviderBillingFailure,
+} from '@/lib/production-provider-preflight';
+import { isOpenAiQuotaBlocked } from '@/lib/openai-error-utils';
 import {
   lockImageToCanvas,
   resolveTargetCanvasForFormat,
@@ -1206,68 +1208,15 @@ async function generateOne(
         thumbnailUrl = await mirrorPreview(aspectLocked, input.workspaceId) ?? aspectLocked;
       }
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
       console.warn(
         `[design-template-engine] gpt preview failed for ${preset.templateType}:`,
-        err instanceof Error ? err.message : err,
+        msg,
       );
-    }
-  }
-
-  if (!thumbnailUrl && serverConfig.fal.configured) {
-    try {
-      const falSceneHint = [
-        sceneHint,
-        occasion ? `occasion=${occasion.name}${occasion.mood ? ` (${occasion.mood})` : ''}` : '',
-        `slot_job=${preset.name}`,
-      ].filter(Boolean).join('; ');
-      const still = await produceFalDesignedPostStill({
-        workspaceId: input.workspaceId,
-        headline: headline || input.brandName,
-        subtitle,
-        caption: subtitle ?? headline ?? preset.name,
-        brandName: input.brandName,
-        brandColors: input.brandColors,
-        vibe,
-        backgroundStyle: resolveIdeogramBackgroundStyle(
-          backgroundStyle,
-          picked?.url,
-        ),
-        aspectRatio: aspect,
-        referencePhotoUrl: picked?.url,
-        brandReferenceImageUrls: [
-          picked?.url,
-          ...(input.constitution?.moodboardRefs ?? []),
-        ].filter((url): url is string => Boolean(url)),
-        sceneHint: falSceneHint,
-        visualDnaTone: input.visualDnaTone,
-        designIntensityLevel,
-        logoUrl: brandMark.logoUrl,
-        logoPlacement: logoPlacement ?? layoutBrief.logoPlacement ?? undefined,
-        location: input.location,
-        sector: input.sector,
-        captionAwareHeadline: false,
-        // Prefer GPT grounded when photo exists; if that fails, still allow
-        // purpose-built Ideogram so library slots are not empty grain posters.
-        requireGroundedGallery: false,
-        libraryQualityFalFallback: true,
-        grafikerMaxRetries: 1,
-        templatePreviewMode: false,
-        brandDirectives: pickFalLibraryFallbackDirectives(templateBrandDirectives),
-        slotArtDirectionBlock: slotArtDirectionBlock || undefined,
-        occasion,
-      });
-      if (still.imageUrl) {
-        generator = still.typographyModel.includes('gpt-image')
-          ? (still.typographyModel.includes('gpt-image-2') ? 'gpt-image-2' : gptImageModel)
-          : 'fal-ideogram';
-        const aspectLocked = await lockTemplatePreviewAspect(still.imageUrl, preset.format);
-        thumbnailUrl = (await mirrorPreview(aspectLocked, input.workspaceId)) ?? aspectLocked;
+      recordProductionProviderBillingFailure(msg);
+      if (isOpenAiQuotaBlocked() || isProviderBillingFailureMessage(msg)) {
+        throw err instanceof Error ? err : new Error(msg);
       }
-    } catch (err) {
-      console.warn(
-        `[design-template-engine] fal fallback failed for ${preset.templateType}:`,
-        err instanceof Error ? err.message : err,
-      );
     }
   }
 

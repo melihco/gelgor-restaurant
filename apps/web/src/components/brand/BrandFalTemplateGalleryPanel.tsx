@@ -33,6 +33,7 @@ import {
   type TemplateTypeBudget,
 } from '@/lib/template-type-budget';
 import { isTypographyDesignConfirmed } from '@/lib/typography-design-policy';
+import { BrandTypographyConfirmCard } from '@/components/brand/BrandTypographyConfirmCard';
 
 type Variant = 'mobile' | 'desktop';
 
@@ -910,32 +911,7 @@ export function BrandFalTemplateGalleryPanel({
     let completedSuccessfully = false;
 
     try {
-      setStatus('Smoke test: 1 şablon üretiliyor…');
-      const smoke = await runGenerate({
-        limit: 1,
-        concurrency: 1,
-        locale: 'tr',
-        archiveExisting: false,
-      });
-      if (!smoke.res.ok) {
-        setStatusKind('error');
-        setStatus(
-          smoke.data?.error === 'typography_not_confirmed'
-            ? String(smoke.data.message ?? 'Önce Renk & Tipografi’yi onaylayın.')
-            : smoke.data?.error === 'no_gallery_photos'
-              ? String(smoke.data.message ?? 'Galeri fotoğrafı yok.')
-              : 'Şablon üretimi başarısız — galeri fotoğrafı ve API anahtarlarını kontrol edin.',
-        );
-        return;
-      }
-      const smokeGenerated = Number(smoke.data?.generated ?? 0);
-      if (smokeGenerated < 1) {
-        setStatusKind('error');
-        setStatus('Smoke test başarısız — önizleme üretilemedi (FAL/OpenAI anahtarlarını kontrol edin).');
-        return;
-      }
-
-      setStatus('Smoke test OK — marka DNA, sektör, vibe ve tasarım yoğunluğu ayarlarıyla şablonlar üretiliyor… (3–8 dk sürebilir)');
+      setStatus('Şablon seti üretiliyor… Kota yoksa durur, Fal/Satori fallback yok.');
       const full = await runGenerate({
         concurrency: productionSettings.concurrency,
         limit: productionSettings.preview_cap,
@@ -944,7 +920,21 @@ export function BrandFalTemplateGalleryPanel({
       });
       if (!full.res.ok) {
         setStatusKind('error');
-        setStatus('Tam set üretimi başarısız — smoke test geçti, tekrar deneyin.');
+        const err = String(full.data?.error ?? '');
+        setStatus(
+          err === 'typography_not_confirmed'
+            ? String(full.data?.message ?? 'Önce Renk & Tipografi’yi onaylayın.')
+            : err === 'no_gallery_photos'
+              ? String(full.data?.message ?? 'Galeri fotoğrafı yok.')
+              : err === 'provider_billing_circuit_open'
+                ? String(full.data?.message ?? 'OpenAI kotası doldu — set üretilmez.')
+                : String(full.data?.message ?? 'Şablon seti üretilemedi. Kota veya galeri yoksa fallback yok.'),
+        );
+        return;
+      }
+      if (Number(full.data?.generated ?? 0) < 1) {
+        setStatusKind('error');
+        setStatus('Set boş kaldı — kota veya galeri yetmedi. Kalite düşüren ikinci motor yok.');
         return;
       }
 
@@ -991,8 +981,30 @@ export function BrandFalTemplateGalleryPanel({
     ? { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 12 }
     : { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 };
 
+  const applyConfirmedTheme = (savedTheme: Record<string, unknown>) => {
+    queryClient.setQueryData(
+      ['brand-theme-kit', tenantId],
+      (prev: unknown) => {
+        if (prev && typeof prev === 'object' && prev !== null && 'theme' in prev) {
+          return { ...(prev as Record<string, unknown>), theme: savedTheme };
+        }
+        return savedTheme;
+      },
+    );
+    void queryClient.invalidateQueries({ queryKey: ['brand-theme-kit', tenantId] });
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {!typographyConfirmed && (
+        <BrandTypographyConfirmCard
+          tenantId={tenantId}
+          sector={sector}
+          theme={brandTheme}
+          t={t}
+          onConfirmed={applyConfirmedTheme}
+        />
+      )}
       {brandTheme && (
         <BrandFalTemplateProductionPanel
           tenantId={tenantId}
