@@ -26,11 +26,11 @@ import {
   isIncompleteOverlayPhrase,
   keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
+import { isLookModelVisionUrl } from '@/studio/look-urls';
 import {
-  isLookModelVisionUrl,
   inlineLookVisionDataUris,
   resolveLookVisionUrls,
-} from '@/studio/look-urls';
+} from '@/studio/look-urls-inline';
 import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
 import { lookJobKind, type LookJobKind } from '@/lib/look-job-kind';
 

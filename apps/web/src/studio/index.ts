@@ -8,8 +8,10 @@ export { studioForbidsSatoriEscape, shouldSkipPaintRematch, paintPolicyStamp } f
 export { formatNeedsMotion, motionPolicyStamp } from './motion';
 export { gateSlot, gateFromPublishDecision, dispositionFromGate } from './gate';
 export {
-  resolveLookVisionUrls,
-  inlineLookVisionDataUris,
   needsLookVisionResolve,
   isAttachableVisionUrl,
 } from './look-urls';
+export {
+  resolveLookVisionUrls,
+  inlineLookVisionDataUris,
+} from './look-urls-inline';

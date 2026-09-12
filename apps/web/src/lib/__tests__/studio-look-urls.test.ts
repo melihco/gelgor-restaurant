@@ -4,9 +4,11 @@ import {
   isHotlinkBlockedVisionUrl,
   isLookModelVisionUrl,
   needsLookVisionResolve,
+} from '@/studio/look-urls';
+import {
   inlineLookVisionDataUris,
   sniffLookImageMime,
-} from '@/studio/look-urls';
+} from '@/studio/look-urls-inline';
 
 vi.mock('@/lib/external-image-fetch', () => ({
   fetchReviewableFrameBuffer: vi.fn(async (url: string) => {
