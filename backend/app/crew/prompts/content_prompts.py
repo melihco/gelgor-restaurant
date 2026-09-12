@@ -414,7 +414,7 @@ For each concept, return a JSON object with:
 - "format": "feed" | "story" | "reel" | "carousel"  ← REQUIRED for LayoutEngine routing
 - "template_use_case": one of "event_announcement", "menu_share", "product_highlight", "campaign_offer", "behind_the_scenes", "social_proof", "educational_post", "daily_story", "lead_generation", "google_business_update"
 - "content_kind": "instagram_post" | "instagram_story" | "instagram_reel"
-- "headline": REQUIRED. Write caption_draft FIRST, then copy the caption's opening spoken thought onto headline (same words the owner would say on the photo — max 60 characters). Do not invent a second slogan. The platform uses this pair as one source: caption is the post, headline is that caption on canvas. MUST NOT describe what is visible in a photo. NEVER brand name alone or with suffixes. BAD: category labels ("Yaz sezonu", "Günlük Story") and a second marketing line that is not in the caption.
+- "headline": REQUIRED. A complete on-canvas social line in {output_language} and the brand tone (luxury → quiet editorial; warm → intimate). Same claim as caption_draft and the photo — not the caption's first sentence, not a cut of it, not a second invented product/event. Max 48 characters, whole phrase (type shrinks later). MUST NOT describe the photo as inventory. NEVER brand name alone. BAD: category labels ("Yaz sezonu", "Günlük Story") and brochure verbs ("keşfedin", "kutlayın").
 - "subline": supporting line below headline — max 120 characters. Empty string "" if not needed.
 - "bullets": optional array of 2–4 key points, each max 80 chars — for carousel/educational posts; empty array [] for others
 - "event_date": event/campaign/publish date if relevant, otherwise ""

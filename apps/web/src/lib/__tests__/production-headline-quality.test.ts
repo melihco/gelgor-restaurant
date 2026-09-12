@@ -46,17 +46,40 @@ describe('visual design card headline preference', () => {
     expect(r.reason).toBe('label_visual_design_card');
   });
 
-  it('sanitizeProductionHeadline paints the caption opening, not a second slogan', () => {
-    const h = sanitizeProductionHeadline({
-      headline: 'Zeytin hasadını kutlayın',
-      ideationHeadline: 'Zeytin hasadını kutlayın',
+  it('sanitize keeps a complete grounded line and drops a hollow slogan', () => {
+    const kept = sanitizeProductionHeadline({
+      headline: 'Soğuk sıkım raflarda',
+      ideationHeadline: 'Soğuk sıkım raflarda',
       caption: 'Zeytin hasadı başladı! Soğuk sıkım bu hafta raflarda.',
       brandName: 'Yöresel Dükkan',
       visualDesignHeadline: 'Doğanın Tazeliği',
       businessType: 'local_products_shop',
+      maxLen: 48,
+    });
+    expect(kept).toBe('Soğuk sıkım raflarda');
+
+    const hollow = sanitizeProductionHeadline({
+      headline: 'Zeytin hasadını kutlayın',
+      ideationHeadline: 'Zeytin hasadını kutlayın',
+      caption: 'Zeytin hasadı başladı! Soğuk sıkım bu hafta raflarda.',
+      brandName: 'Yöresel Dükkan',
+      businessType: 'local_products_shop',
       maxLen: 32,
     });
-    expect(h).toBe('Zeytin hasadı başladı');
+    expect(hollow).toBe('Zeytin hasadı başladı');
+  });
+
+  it('beach luxury English line stays — not the caption opening', () => {
+    const h = sanitizeProductionHeadline({
+      headline: 'Last light on the terrace',
+      ideationHeadline: 'Last light on the terrace',
+      caption: 'The terrace holds the last light. The sea stays open.',
+      brandName: 'Yula Bodrum',
+      businessType: 'beach_club',
+      language: 'en',
+      maxLen: 48,
+    });
+    expect(h).toBe('Last light on the terrace');
   });
 
   it('sanitize keeps a caption-native hook for product love', () => {

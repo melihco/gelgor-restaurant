@@ -2067,6 +2067,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         forceRewrite: Boolean(slotBackfillPass),
         forcedPhotoUrl: batchAssignedPhoto,
         adaptiveScene: aiVisualStandard.adaptiveScene,
+        language: brandLanguageCode === 'en' ? 'English' : 'Turkish',
+        brandTone: String(brandCtx.brand_tone ?? ''),
       });
       if (gf?.source === 'slot_look' && !gf.applied) {
         console.warn(

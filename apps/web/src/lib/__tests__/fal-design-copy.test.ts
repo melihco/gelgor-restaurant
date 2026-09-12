@@ -281,6 +281,7 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(shouldPreserveLockedPunchlineHeadline('canva_field_copy')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('ad_hoc_brief')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('caption_pair')).toBe(true);
+    expect(shouldPreserveLockedPunchlineHeadline('brand_tone_line')).toBe(true);
     expect(shouldPreserveLockedPunchlineHeadline('agent_headline')).toBe(false);
     expect(shouldPreserveLockedPunchlineHeadline(null)).toBe(false);
   });
@@ -406,7 +407,7 @@ describe('resolveMissionFalDesignCopy', () => {
       businessType: 'beach_club',
       designIntensity: 'balanced',
     });
-    expect(result.source).toMatch(/caption_pair|caption_|agent_headline/);
+    expect(result.source).toMatch(/caption_pair|caption_|agent_headline|brand_tone_line/);
     expect(result.headline.toLowerCase()).toMatch(/gece|buluş|sıcak|dj/);
     expect(result.headline.toLowerCase()).not.toMatch(/sezon|yaz sezon/);
   });
@@ -426,9 +427,36 @@ describe('resolveMissionFalDesignCopy', () => {
         businessType,
         designIntensity: 'balanced',
       });
-      expect(result.source).toMatch(/caption_pair|caption_|agent_headline/);
+      expect(result.source).toMatch(/caption_pair|caption_|agent_headline|brand_tone_line/);
       expect(result.headline.toLowerCase()).toMatch(/hasat|tadım|zeytin|stok/);
     }
+  });
+
+  it('keeps a grounded tone line for shop TR and beach EN luxury', () => {
+    const shop = resolveMissionFalDesignCopy({
+      idea: { headline: 'Soğuk sıkım raflarda' },
+      ideationHeadline: 'Soğuk sıkım raflarda',
+      caption: 'Zeytin hasadı başladı! Soğuk sıkım bu hafta raflarda.',
+      brandName: 'Yöresel Dükkan',
+      channel: 'feed_post',
+      businessType: 'local_products_shop',
+      designIntensity: 'balanced',
+    });
+    expect(shop.headline).toBe('Soğuk sıkım raflarda');
+    expect(shop.source).toBe('brand_tone_line');
+
+    const beach = resolveMissionFalDesignCopy({
+      idea: { headline: 'Last light on the terrace' },
+      ideationHeadline: 'Last light on the terrace',
+      caption: 'The terrace holds the last light. The sea stays open.',
+      brandName: 'Yula Bodrum',
+      channel: 'feed_post',
+      businessType: 'beach_club',
+      language: 'en',
+      designIntensity: 'balanced',
+    });
+    expect(beach.headline).toBe('Last light on the terrace');
+    expect(beach.source).toBe('brand_tone_line');
   });
 
   it('paints caption opening not keşfedin slogan on weekend hours', () => {

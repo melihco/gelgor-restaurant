@@ -569,6 +569,7 @@ export async function resolveGalleryFirstForSlot(input: {
   visualSubjectHint?: string;
   creativeBrief?: string;
   language?: string;
+  brandTone?: string;
   ideationCaption?: string;
   ideationHeadline?: string;
   subjectKey?: string;
@@ -627,6 +628,7 @@ export async function resolveGalleryFirstForSlot(input: {
     const looked = await lookFn({
       slotJob,
       language: input.language ?? 'Turkish',
+      brandTone: input.brandTone,
       adaptiveScene: Boolean(input.adaptiveScene),
       catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
       ideationHint: [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400),

@@ -183,6 +183,28 @@ describe('gallery-first — one look owns the pack', () => {
     expect(gf?.lookIssues).toContain('no_pick');
   });
 
+  it('passes language and brand tone into the look', async () => {
+    let seen: FeedSlotLookInput | null = null;
+    await resolveGalleryFirstForSlot({
+      assignment: beachAssignment(),
+      galleryPhotos: [TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Yula',
+      businessType: 'beach_club',
+      language: 'English',
+      brandTone: 'luxury',
+      ideationCaption: 'The terrace holds the last light.',
+      ideationHeadline: 'Last light on the terrace',
+      lookFn: async (input): Promise<FeedSlotLookResult> => {
+        seen = input;
+        return { ok: false, issues: ['no_pick'] };
+      },
+    });
+    expect(seen?.language).toBe('English');
+    expect(seen?.brandTone).toBe('luxury');
+  });
+
   it('shop: jam caption ranks the jar over a forced oil bottle', async () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: shopAssignment(),

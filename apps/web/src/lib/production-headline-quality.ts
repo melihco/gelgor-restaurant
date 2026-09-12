@@ -397,9 +397,17 @@ export function resolveMeaningfulProductionHeadline(input: {
     ? overlayHeadlineFromCaption(caption, brandName, maxLen)
     : '';
   if (
-    captionOverlay
-    && headline
-    && !overlayTakenFromCaption(headline, caption)
+    headline
+    && caption
+    && !isIncompleteOverlayPhrase(headline)
+    && (
+      isHollowSocialHeadline(headline)
+      || (
+        !overlayHeadlineGroundedInCaption(headline, caption)
+        && !overlayTakenFromCaption(headline, caption)
+      )
+    )
+    && captionOverlay
   ) {
     return { headline: captionOverlay, replaced: true, reason: 'caption_pair' };
   }
@@ -538,13 +546,24 @@ export function sanitizeProductionHeadline(input: {
     return resolved.headline;
   };
 
-  const captionLine = overlayHeadlineFromCaption(input.caption ?? '', brandName, maxLen);
-  if (captionLine && !isGalleryTagHeadline(captionLine)) return captionLine;
-
-  for (const candidate of [input.ideationHeadline, input.headline]) {
+  const caption = String(input.caption ?? '').trim();
+  const captionLine = overlayHeadlineFromCaption(caption, brandName, maxLen);
+  for (const candidate of [input.headline, input.ideationHeadline]) {
     const ok = tryHeadline(candidate ?? '');
-    if (ok) return ok;
+    if (
+      ok
+      && !isIncompleteOverlayPhrase(ok)
+      && !isHollowSocialHeadline(ok)
+      && (
+        !caption
+        || overlayHeadlineGroundedInCaption(ok, caption)
+        || overlayTakenFromCaption(ok, caption)
+      )
+    ) {
+      return ok;
+    }
   }
+  if (captionLine && !isGalleryTagHeadline(captionLine)) return captionLine;
 
   return resolveMeaningfulProductionHeadline({
     headline: '',

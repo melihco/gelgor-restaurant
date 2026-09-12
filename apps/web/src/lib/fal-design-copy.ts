@@ -387,6 +387,7 @@ export function shouldPreserveLockedPunchlineHeadline(
     || source === 'canva_field_copy'
     || source === 'ad_hoc_brief'
     || source === 'caption_pair'
+    || source === 'brand_tone_line'
     || source === 'feed_slot_pack';
 }
 
@@ -548,11 +549,15 @@ export function resolveMissionFalDesignCopy(input: {
       const first = raw.split(/[.!?\n]+/).map((s) => s.trim()).find((s) => s.length >= 8) ?? '';
       return first.replace(/[.,;:]+$/g, '');
     })();
-    const pairedRaw = (
+    const keepToneLine = Boolean(
       ideaLine
-      && overlayTakenFromCaption(ideaLine, caption)
       && acceptPlannedOverlayLine(ideaLine)
-    )
+      && (
+        overlayHeadlineGroundedInCaption(ideaLine, caption)
+        || overlayTakenFromCaption(ideaLine, caption)
+      ),
+    );
+    const pairedRaw = keepToneLine
       ? ideaLine
       : (firstSpoken && acceptPlannedOverlayLine(firstSpoken)
         ? firstSpoken
@@ -567,7 +572,11 @@ export function resolveMissionFalDesignCopy(input: {
         headline: pairedRaw,
         cta: input.cta || String(input.idea.subline ?? '').trim() || undefined,
       }) ?? undefined;
-      return { headline: pairedRaw, subtitle, source: 'caption_pair' };
+      return {
+        headline: pairedRaw,
+        subtitle,
+        source: keepToneLine ? 'brand_tone_line' : 'caption_pair',
+      };
     }
   }
 

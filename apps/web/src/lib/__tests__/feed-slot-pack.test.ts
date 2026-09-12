@@ -139,6 +139,19 @@ describe('feed-slot-pack — beach_club', () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it('accepts a luxury English line that shares the terrace claim', () => {
+    const parsed = parseFeedSlotPack({
+      slotJob: 'terrace sunset',
+      photoUrl: 'https://cdn.example.com/terrace.jpg',
+      photoRole: 'venue',
+      caption: 'The terrace holds the last light. The sea stays open.',
+      headline: 'Last light on the terrace',
+      shellDirection: 'venue_ambiance',
+      evidenceNote: 'Terrace, umbrellas, open sea horizon',
+    });
+    expect(parsed.ok).toBe(true);
+  });
+
   it('rejects an English event headline on a Turkish sunset caption', () => {
     expect(
       headlineTakenFromCaption(
@@ -271,7 +284,7 @@ describe('feed-slot-pack — motto box + caption open', () => {
       caption: 'Natürel sızma. Bal yanında.',
     });
     expect(locked.headline).toBe('Yağın en sakin hali');
-    expect(locked.caption.startsWith('Yağın en sakin hali')).toBe(true);
+    expect(locked.caption).toBe('Natürel sızma. Bal yanında.');
   });
 
   it('beach: does not invent extra words when the motto already fits', () => {

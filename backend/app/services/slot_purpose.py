@@ -205,7 +205,6 @@ def align_idea_to_slot_purpose(idea: dict[str, Any], brand: Any = None) -> bool:
     caption = str(idea.get("caption_draft") or idea.get("caption") or "").strip()
     if caption_hits_slot_purpose(caption, key):
         apply_caption_headline_pair(idea)
-        idea["overlay_headline_source"] = "caption_pair"
         return False
 
     lang = ""
@@ -224,7 +223,6 @@ def align_idea_to_slot_purpose(idea: dict[str, Any], brand: Any = None) -> bool:
         idea["caption_draft"] = joined
         idea["caption"] = joined
     apply_caption_headline_pair(idea)
-    idea["overlay_headline_source"] = "caption_pair"
     idea["slot_purpose_aligned"] = True
     return True
 

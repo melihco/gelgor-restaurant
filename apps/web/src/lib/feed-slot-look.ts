@@ -16,7 +16,6 @@ import {
 } from '@/lib/ai-cost-telemetry';
 import {
   groundFeedSlotCopy,
-  headlineTakenFromCaption,
   parseFeedSlotPack,
   type FeedPhotoRole,
   type FeedShellDirection,
@@ -98,7 +97,7 @@ Return STRICT JSON only:
   "photoRole": "product_for_sale" | "table_prop" | "venue" | "people" | "scene_fill",
   "evidenceNote": "<what is actually visible>",
   "caption": "<post sentence>",
-  "headline": "<must come from the caption>",
+  "headline": "<complete on-canvas social line in requested language + brand_tone>",
   "shellDirection": "product_hero" | "venue_ambiance" | "social_proof" | "event"
 }
 
@@ -118,10 +117,10 @@ Rules:
 - Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, drop those words and write from the readable label / what you see.
 - Name water only from the frame. Open horizon water, waves, or a coast next to lawn and umbrellas is sea (deniz), not a lake (göl). Say göl/lake only when the water is clearly an enclosed inland lake.
 - evidenceNote names what is in the frame (lawn, umbrellas, loungers, sea). Caption is a magazine motto about that place — not a furniture inventory and not brochure filler ("mükemmel bir yer", "dinlendirici", "perfect place").
-- Caption and headline are a magazine motto — the opening line of a social caption. Not a shop command ("gelin", "alın"), not a photo description (bottle, basket, label, lawn, umbrella), not a weekly table note ("sofrada", "bu hafta"). Do not use brochure ("sizi bekliyoruz", "keşfedin", "experience", "deneyimlemek").
-- Headline is one complete sentence taken from the caption. Do not cut a word or letter to hit a box. Type can shrink later. Caption opens with that same sentence, then one evidence-backed line.
-- headline must be taken from the caption (same words). A complete motto, not a two-word product name and not a separate slogan. No hashtags as headline.
-- Write caption and headline in the requested language.
+- Caption is the Instagram body. Headline is a separate on-canvas social line — not the caption's first sentence and not a cut of it.
+- Headline must be a complete phrase in the requested language. Type can shrink later; do not drop a word to hit a box. No hashtags.
+- Headline and caption share the same claim and a noun visible in evidenceNote (terrace, sea, oil, jam). Do not invent grades, origins, or events.
+- brand_tone is the voice: luxury/premium → quiet editorial; warm/samimi → intimate; energetic → alive. Not a shop command ("gelin", "alın"), not a photo inventory, not brochure ("sizi bekliyoruz", "keşfedin", "experience").
 - A bottle or glass on a set table at a venue is table_prop unless the photo is clearly a product-for-sale hero (packaging fills the frame).
 - table_prop must not use product_hero.
 - product_for_sale needs identity in the photo (readable label OR unmistakable product). If identity is unclear, pickIndex null.
@@ -250,7 +249,7 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   missing_caption: 'Alt yazı yok veya çok kısa',
   missing_headline: 'Üst yazı yok',
   missing_evidence: 'Fotoğrafın kanıt notu boş',
-  headline_not_from_caption: 'Üst yazı alt yazıdan gelmiyor',
+  headline_not_from_caption: 'Üst yazı sahne ve alt yazı iddiasına uymuyor',
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
@@ -346,8 +345,9 @@ function draftFromLookJson(
 
   const caption = String(parsed.caption ?? '').trim();
   let headline = String(parsed.headline ?? '').trim();
-  if (caption.length >= 16 && (!headline || !headlineTakenFromCaption(headline, caption))) {
-    headline = completeHeadlineFromCaption(caption);
+  if (!headline || isIncompleteOverlayPhrase(headline)) {
+    const own = keepCompleteOverlaySentence(headline);
+    headline = own || completeHeadlineFromCaption(caption);
   }
 
   let photoRole = asRole(parsed.photoRole ?? parsed.photo_role);

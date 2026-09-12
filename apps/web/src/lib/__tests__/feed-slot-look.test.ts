@@ -509,6 +509,42 @@ describe('feed-slot-look — shop + beach', () => {
     expect(adaptive).toMatch(/Product, caption, and headline stay one pack/i);
     expect(adaptive).toMatch(/A labeled product is the right pick when the job is selling/i);
     expect(adaptive).not.toMatch(/Still pick a real hero \(labeled product/);
+    expect(base).toMatch(/separate on-canvas social line/i);
+    expect(base).not.toMatch(/must come from the caption/);
+  });
+
+  it('keeps a complete grounded tone line that is not the caption opening', async () => {
+    const captured: Captured = {};
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı',
+        language: 'English',
+        brandTone: 'luxury',
+        candidates: [{
+          url: 'https://cdn.example.com/terrace.jpg',
+          description: 'Terrace, umbrellas, open sea horizon',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'venue',
+          evidenceNote: 'Terrace, umbrellas, open sea horizon',
+          caption: 'The terrace holds the last light. The sea stays open.',
+          headline: 'Last light on the terrace',
+          shellDirection: 'venue_ambiance',
+        }, captured),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.headline).toBe('Last light on the terrace');
+      expect(result.pack.caption).toMatch(/terrace holds the last light/i);
+    }
+    const messages = captured.content as Array<{ role: string; content: unknown }>;
+    const blob = JSON.stringify(messages);
+    expect(blob).toMatch(/language\\":\\"English/);
+    expect(blob).toMatch(/brand_tone\\":\\"luxury/);
   });
 
   it('adaptive scene keeps the weekly process sentence on a bottle still', async () => {

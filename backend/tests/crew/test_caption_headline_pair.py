@@ -25,6 +25,22 @@ def test_apply_replaces_invented_slogan_with_caption_line():
     assert overlay_taken_from_caption(idea["headline"], idea["caption_draft"])
 
 
+def test_apply_keeps_complete_grounded_tone_line():
+    shop = apply_caption_headline_pair({
+        "headline": "Soğuk sıkım raflarda",
+        "caption_draft": "Zeytin hasadı başladı! Soğuk sıkım bu hafta raflarda.",
+    })
+    assert shop["headline"] == "Soğuk sıkım raflarda"
+    assert shop["overlay_headline_source"] == "brand_tone_line"
+
+    beach = apply_caption_headline_pair({
+        "headline": "Last light on the terrace",
+        "caption_draft": "The terrace holds the last light. The sea stays open.",
+    })
+    assert beach["headline"] == "Last light on the terrace"
+    assert beach["overlay_headline_source"] == "brand_tone_line"
+
+
 def test_keeps_headline_already_taken_from_caption():
     idea = apply_caption_headline_pair({
         "headline": "Zeytin hasadı başladı",

@@ -3,6 +3,7 @@ import {
   isMeaningfulFalOverlayText,
   keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
+import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 
 /**
  * Faz 1 — bir vitrin kartının tek kağıdı.
@@ -171,21 +172,14 @@ export function captionOpensWithHeadline(caption: string, headline: string): boo
   return first.includes(h) || h.includes(first);
 }
 
-/** Headline tam cümle kalır; caption aynı motto ile açılır. Kutu punto işidir. */
+/** Headline tam cümle kalır. Caption Instagram gövdesidir — headline yapıştırılmaz. */
 export function lockFeedCardCopy(input: {
   caption: string;
   headline: string;
 }): { caption: string; headline: string } {
   const first = filled(input.headline).split(/[.!?…\n—–]/)[0]?.replace(/[.!?…]+$/g, '').trim() ?? '';
   const headline = keepCompleteOverlaySentence(first) || first;
-  let caption = filled(input.caption);
-  if (headline && !captionOpensWithHeadline(caption, headline)) {
-    const lead = headline.endsWith('.') || headline.endsWith('!') || headline.endsWith('?')
-      ? headline
-      : `${headline}.`;
-    caption = `${lead} ${caption}`.replace(/\s+/g, ' ').trim();
-  }
-  return { caption, headline };
+  return { caption: filled(input.caption), headline };
 }
 
 /** Üst yazı yoksa veya sapmışsa alt yazının ilk cümlesi. Kesilmez. */
@@ -227,7 +221,12 @@ export function validateFeedSlotPack(
   if (!role || !PHOTO_ROLES.has(role)) issues.push('missing_photo');
   if (!shell || !SHELLS.has(shell)) issues.push('missing_slot_job');
 
-  if (caption.length >= 16 && headline.length >= 4 && !headlineTakenFromCaption(headline, caption)) {
+  if (
+    caption.length >= 16
+    && headline.length >= 4
+    && !overlayHeadlineGroundedInCaption(headline, caption)
+    && !overlayHeadlineGroundedInCaption(headline, filled(p.evidenceNote))
+  ) {
     issues.push('headline_not_from_caption');
   }
 
@@ -322,7 +321,7 @@ const ISSUE_TR: Record<FeedSlotPackIssue, string> = {
   missing_caption: 'Alt yazı yok veya çok kısa',
   missing_headline: 'Üst yazı yok',
   missing_evidence: 'Fotoğrafın kanıt notu boş',
-  headline_not_from_caption: 'Üst yazı alt yazıdan gelmiyor',
+  headline_not_from_caption: 'Üst yazı sahne ve alt yazı iddiasına uymuyor',
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
@@ -664,7 +663,17 @@ export function groundFeedSlotCopy(input: FeedSlotCopyGroundInput): {
       photoSideText: input.photoSideText,
     });
     headline = deriveHeadlineFromCaption(caption);
-  } else if (caption.length >= 16 && (!headline || !headlineTakenFromCaption(headline, caption))) {
+  } else if (
+    caption.length >= 16
+    && (
+      !headline
+      || isIncompleteOverlayPhrase(headline)
+      || (
+        !overlayHeadlineGroundedInCaption(headline, caption)
+        && !overlayHeadlineGroundedInCaption(headline, evidenceNote)
+      )
+    )
+  ) {
     headline = deriveHeadlineFromCaption(caption);
   }
 
