@@ -719,7 +719,9 @@ export async function resolveGalleryFirstForSlot(input: {
       return emptySlotLookResult(locked.issues);
     }
     const { acceptBoundPack } = await import('@/studio/bind');
-    const accepted = acceptBoundPack(locked.pack);
+    const accepted = acceptBoundPack(locked.pack, {
+      adaptiveScene: Boolean(input.adaptiveScene),
+    });
     if (!accepted.ok) {
       return emptySlotLookResult(accepted.codes);
     }

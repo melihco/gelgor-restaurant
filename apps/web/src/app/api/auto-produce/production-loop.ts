@@ -2037,6 +2037,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let galleryFirstSource: GalleryFirstCaptionSource | null = null;
     let galleryMatchScoreEarly: number | null = null;
     let lockedFeedSlotPack: FeedSlotPack | null = null;
+    const lookAdaptive = { adaptiveScene: Boolean(aiVisualStandard.adaptiveScene) };
 
     if (shouldUseGalleryFirstMission({
       missionId,
@@ -2141,7 +2142,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       continue;
     }
 
-    if (!isLookedFeedSlotPersistable(assignment, lockedFeedSlotPack)) {
+    if (!isLookedFeedSlotPersistable(assignment, lockedFeedSlotPack, lookAdaptive)) {
       results.push({
         title: headline || '(empty idea)',
         imageUrl: '',
@@ -2155,7 +2156,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       photoUrl?: string | null;
       generatedFill?: boolean;
     }) => {
-      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) return;
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)) return;
       const grounded = groundPublishCopyToVisual({
         caption,
         headline,
@@ -2845,7 +2846,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
 
     if (!forceAttachedPhotos && referenceUrl && !referenceUrl.startsWith('/api/') && !(await isProductionGalleryUrlReachable(referenceUrl))) {
-      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)) {
         results.push({
           title: headline,
           imageUrl: '',
@@ -2978,7 +2979,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       // pin must not withhold a slot they can compose without.
       && !pipelineComposesWithoutGalleryPin(assignment.pipeline, assignment.slot_role)
     ) {
-      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+      if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)) {
         results.push({
           title: headline,
           imageUrl: '',
@@ -3389,7 +3390,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         resolvedReferenceUrl,
       ),
     );
-    if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+    if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)) {
       hardThemeConflict = false;
     }
     if (hardThemeConflict && resolvedReferenceUrl) {
@@ -3474,7 +3475,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && !captionDrivenGenerated
       && !forceAttachedPhotos
       && !stillBatchConfirmedPick
-      && !shouldSkipFeedMeaningRematch(lockedFeedSlotPack)
+      && !shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)
     ) {
       const judgeExclude = getMissionWideExcludeUrls(
         galleryUsage,
@@ -3627,7 +3628,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     // When judge_reject clears the photo, shouldSkip sees !hasReference and would
     // call escalate again (no-op) then hard-fail with "Galeri–caption eşleşmesi…".
     if (
-      !shouldSkipFeedMeaningRematch(lockedFeedSlotPack)
+      !shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)
       && !galleryEscalatedToFalOnly
       && shouldSkipProductionForWeakGallery({
         missionProduction: Boolean(missionId),
@@ -3802,7 +3803,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
       if (!chain.ok) {
-        if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack)) {
+        if (shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)) {
           results.push({
             title: headline,
             imageUrl: galleryPreviewUrl ?? '',
@@ -5578,7 +5579,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         caption_source: galleryFirstSource,
       } : {}),
       ...(shouldLookFeedSlotPack(assignment)
-        ? stampFeedSlotPackMetadata(lockedFeedSlotPack)
+        ? stampFeedSlotPackMetadata(lockedFeedSlotPack, lookAdaptive)
         : {}),
       ...(galleryPhotoDescription
         ? { gallery_photo_description: galleryPhotoDescription.slice(0, 800) }

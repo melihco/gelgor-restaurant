@@ -106,12 +106,6 @@ function foldJob(text: string): string {
     .trim();
 }
 
-/** Weekly place/process sentence on a product seed — evidence is the still, not the scene. */
-function weeklySceneAllowsProductSeed(caption: string): boolean {
-  const f = fold(caption);
-  return /uretim|is basi|isbasi|workshop|atolye|behind the scenes|atmosfer|pazar|dukkan|gun batim|sunset|teras|ambiance/.test(f);
-}
-
 /** İş yer/alan (çim, şemsiye, şezlong) — satılık ürün kabuğuna kapanır. */
 export function slotJobIsPlaceNotSell(slotJob: string): boolean {
   const j = foldJob(slotJob);
@@ -257,7 +251,7 @@ export function validateFeedSlotPack(
       photoRole: role,
       shellDirection: shell,
     })
-    && !(opts?.adaptiveScene && weeklySceneAllowsProductSeed(caption))
+    && !opts?.adaptiveScene
   ) {
     issues.push('copy_misses_evidence');
   }
@@ -304,8 +298,9 @@ export function parseFeedSlotPack(
 /** Üretim damgası — bakışlı stillde paket yoksa vitrin gizler. */
 export function stampFeedSlotPackMetadata(
   pack: Partial<FeedSlotPack> | null | undefined,
+  opts?: { adaptiveScene?: boolean },
 ): { feed_slot_pack?: FeedSlotPack; feed_slot_pack_ok: boolean } {
-  const parsed = parseFeedSlotPack(pack);
+  const parsed = parseFeedSlotPack(pack, opts);
   if (parsed.ok) {
     return { feed_slot_pack: parsed.pack, feed_slot_pack_ok: true };
   }
@@ -321,7 +316,9 @@ export function isStampedFeedSlotPackVisible(
 ): boolean {
   if (!meta) return true;
   if (meta.feed_slot_pack_ok === false) return false;
-  if (meta.feed_slot_pack == null && meta.feed_slot_pack_ok !== true) return true;
+  // Produce already judged the pack (including adaptive restage).
+  if (meta.feed_slot_pack_ok === true) return true;
+  if (meta.feed_slot_pack == null) return true;
   return parseFeedSlotPack(meta.feed_slot_pack as Partial<FeedSlotPack>).ok;
 }
 

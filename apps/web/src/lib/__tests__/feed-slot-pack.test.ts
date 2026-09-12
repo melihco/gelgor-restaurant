@@ -340,6 +340,23 @@ describe('feed-slot-pack — vitrine stamp', () => {
     evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
   };
 
+  it('shop: adaptive favorite sentence on an oil still stamps visible', () => {
+    const favorite = {
+      slotJob: 'müşteri favorisi',
+      photoUrl: 'https://cdn.example.com/oil.jpg',
+      photoRole: 'product_for_sale' as const,
+      caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
+      headline: 'Bu kavanoz sofrada kalıyor',
+      shellDirection: 'product_hero' as const,
+      evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+    };
+    expect(validateFeedSlotPack(favorite)).toContain('copy_misses_evidence');
+    expect(validateFeedSlotPack(favorite, { adaptiveScene: true })).not.toContain('copy_misses_evidence');
+    const stamp = stampFeedSlotPackMetadata(favorite, { adaptiveScene: true });
+    expect(stamp.feed_slot_pack_ok).toBe(true);
+    expect(isStampedFeedSlotPackVisible({ ...stamp, adaptive_scene: true })).toBe(true);
+  });
+
   it('shop: stamps a full pack visible', () => {
     const stamp = stampFeedSlotPackMetadata(shopPack);
     expect(stamp.feed_slot_pack_ok).toBe(true);
@@ -357,6 +374,21 @@ describe('feed-slot-pack — vitrine stamp', () => {
       evidenceNote: 'yazı yok, masa dekoru',
     }).feed_slot_pack_ok).toBe(false);
     expect(isStampedFeedSlotPackVisible({ feed_slot_pack_ok: false })).toBe(false);
+  });
+
+  it('trusts produce stamp even if a later parse would miss evidence', () => {
+    expect(isStampedFeedSlotPackVisible({
+      feed_slot_pack_ok: true,
+      feed_slot_pack: {
+        slotJob: 'müşteri favorisi',
+        photoUrl: 'https://cdn.example.com/oil.jpg',
+        photoRole: 'product_for_sale',
+        caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
+        headline: 'Bu kavanoz sofrada kalıyor',
+        shellDirection: 'product_hero',
+        evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+      },
+    })).toBe(true);
   });
 
   it('unstamped metadata stays visible so old cards and reels remain', () => {

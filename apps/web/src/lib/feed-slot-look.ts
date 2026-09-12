@@ -256,17 +256,21 @@ export function slotJobFromCatalogKey(key: string | undefined): string {
     .trim();
 }
 
-export function shouldSkipFeedMeaningRematch(pack: FeedSlotPack | null | undefined): boolean {
-  return Boolean(pack && parseFeedSlotPack(pack).ok);
+export function shouldSkipFeedMeaningRematch(
+  pack: FeedSlotPack | null | undefined,
+  opts?: { adaptiveScene?: boolean },
+): boolean {
+  return Boolean(pack && parseFeedSlotPack(pack, opts).ok);
 }
 
 /** Haftalık still: paket yoksa kart yazılmaz. Reel / reklam / kilitli cümle serbest. */
 export function isLookedFeedSlotPersistable(
   assignment: Parameters<typeof shouldLookFeedSlotPack>[0],
   pack: Partial<FeedSlotPack> | null | undefined,
+  opts?: { adaptiveScene?: boolean },
 ): boolean {
   if (!shouldLookFeedSlotPack(assignment)) return true;
-  return parseFeedSlotPack(pack).ok;
+  return parseFeedSlotPack(pack, opts).ok;
 }
 
 const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
@@ -330,11 +334,14 @@ function completeHeadlineFromCaption(caption: string): string {
   return keepCompleteOverlaySentence(first) || first;
 }
 
-function completeLookPack(pack: FeedSlotPack): FeedSlotPack | null {
+function completeLookPack(
+  pack: FeedSlotPack,
+  opts?: { adaptiveScene?: boolean },
+): FeedSlotPack | null {
   if (!isIncompleteOverlayPhrase(pack.headline)) return pack;
   const rescued = completeHeadlineFromCaption(pack.caption);
   if (!rescued || isIncompleteOverlayPhrase(rescued)) return null;
-  const parsed = parseFeedSlotPack({ ...pack, headline: rescued });
+  const parsed = parseFeedSlotPack({ ...pack, headline: rescued }, opts);
   return parsed.ok ? parsed.pack : null;
 }
 
@@ -572,7 +579,9 @@ export async function lookFeedSlotPack(
       headline: sceneCopy.headline,
     }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
-    const complete = completeLookPack(parsed.pack);
+    const complete = completeLookPack(parsed.pack, {
+      adaptiveScene: Boolean(input.adaptiveScene),
+    });
     if (!complete) return { ok: false, issues: ['incomplete_headline'] };
     return { ok: true, pack: complete };
   } catch (err) {

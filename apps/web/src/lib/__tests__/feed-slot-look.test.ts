@@ -505,6 +505,16 @@ describe('feed-slot-look — shop + beach', () => {
       evidenceNote: 'iskele, açık deniz ufku',
     };
     expect(isLookedFeedSlotPersistable(shopWeekly, fullShop)).toBe(true);
+    expect(isLookedFeedSlotPersistable(shopWeekly, {
+      ...fullShop,
+      caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
+      headline: 'Bu kavanoz sofrada kalıyor',
+    })).toBe(false);
+    expect(isLookedFeedSlotPersistable(shopWeekly, {
+      ...fullShop,
+      caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
+      headline: 'Bu kavanoz sofrada kalıyor',
+    }, { adaptiveScene: true })).toBe(true);
     expect(isLookedFeedSlotPersistable(shopWeekly, null)).toBe(false);
     expect(isLookedFeedSlotPersistable(beachWeekly, fullBeach)).toBe(true);
     expect(isLookedFeedSlotPersistable(beachWeekly, null)).toBe(false);

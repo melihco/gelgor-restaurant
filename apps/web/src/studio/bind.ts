@@ -61,8 +61,9 @@ export function bindFailure(codes: BindFailureCode[]): BindFailure {
 /** Semantic pack + complete-sentence lock. Paint must not run without this. */
 export function acceptBoundPack(
   input: Partial<FeedSlotPack | StudioFeedPack> | null | undefined,
+  opts?: { adaptiveScene?: boolean },
 ): { ok: true; pack: FeedSlotPack } | BindFailure {
-  const parsed = parseFeedSlotPack(input as Partial<FeedSlotPack>);
+  const parsed = parseFeedSlotPack(input as Partial<FeedSlotPack>, opts);
   if (!parsed.ok) {
     return bindFailure(parsed.issues.map((i) => PACK_ISSUE_TO_BIND[i]));
   }
