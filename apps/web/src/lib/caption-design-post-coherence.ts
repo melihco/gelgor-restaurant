@@ -20,7 +20,7 @@ import {
   isProcessOrBtsSceneText,
   isProductStillEvidence,
 } from '@/lib/caption-scene-fit';
-import { lookJobKind } from '@/lib/feed-slot-look';
+import { lookJobKind } from '@/lib/look-job-kind';
 import { photoMatchesPreferredAssetTypes } from '@/lib/gallery-asset-type-affinity';
 import { hasCaptionHeadlineThemeConflict } from '@/lib/headline-theme-clusters';
 import {

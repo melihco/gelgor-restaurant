@@ -32,6 +32,9 @@ import {
   resolveLookVisionUrls,
 } from '@/studio/look-urls';
 import { keepWeeklySceneCopy } from '@/lib/caption-scene-fit';
+import { lookJobKind, type LookJobKind } from '@/lib/look-job-kind';
+
+export { lookJobKind, type LookJobKind };
 
 export type FeedSlotLookCandidate = {
   url: string;
@@ -40,8 +43,6 @@ export type FeedSlotLookCandidate = {
   description?: string;
   primarySubject?: string;
 };
-
-export type LookJobKind = 'sell' | 'place' | 'process' | 'other';
 
 export type FeedSlotLookInput = {
   slotJob: string;
@@ -142,23 +143,6 @@ Adaptive scene is ON. A later enhance step may restage the still (setting, light
 const SELL_MUST_PICK = `This is a sell job. At least one candidate has readable identity. You must set pickIndex to a candidate with identity. Do not return null because ideation_hint or an abstract catalog word is not printed on the photo. Caption, headline, and the picked product must say the same thing. Write from the visible label / what you see.`;
 
 const RESTAGE_MUST_PICK = `Adaptive scene is ON. A later high restage will place this product in the weekly setting. Pick the best-caption candidate with identity. Do not return null because the farm, shop, or process is not in the frame. Prefer a real place or process photo if one exists.`;
-
-const PLACE_RE = /ambiance|atmosphere|venue|sunset|market_day|shop_tour|shop_interior|lawn|pier|terrace|garden|atmosfer|pazar|dükkan|dukkan|gün batım|gun batim|çim|cim |şemsiye|semsiye|şezlong/;
-const PROCESS_RE = /process|bts|farm_visit|craft|atölye|atolye|üretim|uretim|süreç|surec|kulis|çiftlik|ciftlik|behind/;
-const SELL_RE = /hero|favorite|limited|new_arrival|product|range|gift|detail|menu|dish|favori|sınırlı|sinirli|ürün|urun|parti|yelpaze/;
-
-/** Katalog / iş cümlesinden aile — sektör ve marka adı yok. */
-export function lookJobKind(input: {
-  slotJob?: string;
-  catalogSlotKey?: string;
-}): LookJobKind {
-  const bag = `${input.catalogSlotKey ?? ''} ${input.slotJob ?? ''}`.toLowerCase();
-  if (!bag.trim()) return 'other';
-  if (PLACE_RE.test(bag)) return 'place';
-  if (PROCESS_RE.test(bag)) return 'process';
-  if (SELL_RE.test(bag)) return 'sell';
-  return 'other';
-}
 
 function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean {
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
