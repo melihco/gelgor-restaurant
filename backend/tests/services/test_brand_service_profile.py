@@ -16,6 +16,25 @@ from app.services.brand_service_profile_service import (
 )
 
 
+def test_heuristic_classifies_pension_as_hotel_not_shop_or_restaurant():
+    ctx = {
+        "business_name": "Koy Pansiyon",
+        "business_type": "local_products_shop",
+        "description": (
+            "10 odalı aile pansiyonu ve restoran. Zeytinyağlı ev yemekleri, "
+            "el yapımı reçel, kahvaltı ve konaklama."
+        ),
+        "website_summary": (
+            "Hakkımızda: Bodrum koyunda pansiyon. Menü 2026 Anne Patatesi ₺300 "
+            "reçel zeytinyağı kalamar."
+        ),
+    }
+    profile = heuristic_service_profile(ctx)
+    assert profile["category"] == "hotel_hospitality"
+    assert profile["cta_style"] == "booking"
+    assert canonical_sector_from_category("hotel_hospitality") == "hospitality"
+
+
 def test_heuristic_classifies_beach_club_from_discovery_text():
     """A Yula-like beach bar must NOT stay 'local_products_shop'."""
     ctx = {

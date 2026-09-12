@@ -253,6 +253,7 @@ def _extract_location_from_sources(instagram: dict, google: dict) -> str:
             r"bitez|gündoğan|türkbükü|yalıkavak|göltürkbükü|akyarlar|ortakent|"
             r"kadıköy|beşiktaş|beyoğlu|şişli|bakırköy|üsküdar|çengelköy|"
             r"bağcılar|ataşehir|maltepe|kartal|pendik|datça|marmaris|"
+            r"mazıköy|mazikoy|mazı|mazi|inceyalı|inceyali|gökova|mumcular|"
             r"alanya|side|kemer|belek|lara|kundu)\b",
             _re.IGNORECASE,
         )
@@ -266,7 +267,9 @@ def _extract_location_from_sources(instagram: dict, google: dict) -> str:
         # Take the last meaningful part (city/district usually at end)
         parts = [p.strip() for p in address.replace("/", ",").split(",") if p.strip()]
         if parts:
-            return ", ".join(parts[-2:])[:100]
+            joined = " ".join(parts).lower()
+            keep = 3 if any(tok in joined for tok in ("bodrum", "muğla", "mugla", "antalya")) else 2
+            return ", ".join(parts[-keep:])[:120]
 
     return ""
 
@@ -358,6 +361,10 @@ def _is_usable_gallery_url(url: str) -> bool:
 
         if not parse_qs(urlparse(s).query).get("url"):
             return False
+    from app.crew.discovery_identity import is_editor_chrome_image_url
+
+    if is_editor_chrome_image_url(s):
+        return False
     return True
 
 
@@ -1491,6 +1498,10 @@ async def persist_discovery_result(
             ("fashion_retail", "beauty_wellness"),
             ("fashion_retail", "local_products_shop"),
             ("fashion_retail", "beach_club"),
+            # Menu-heavy stay venue first classified as shop / restaurant
+            ("local_products_shop", "hospitality"),
+            ("local_products_shop", "restaurant_cafe"),
+            ("restaurant_cafe", "hospitality"),
             # Other stale general labels
             ("hospitality_entertainment", "agency_services"),
             ("local_service_business", "agency_services"),

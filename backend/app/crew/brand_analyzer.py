@@ -29,6 +29,17 @@ from app.crew.industry_playbooks import (
     risk_rules_for_industry,
     template_families_for,
 )
+from app.crew.discovery_identity import (
+    identity_first_from_pages,
+    identity_first_summary,
+    infer_audience_for_industry,
+    is_editor_chrome_image_url,
+    is_nightlife_venue,
+    is_retail_product_shop,
+    is_stay_venue,
+    score_crawled_page,
+    stay_content_pillars,
+)
 
 logger = structlog.get_logger()
 
@@ -104,6 +115,8 @@ def _absolute_url(base: str, href: str) -> str | None:
 
 def _probably_photo_url(url: str) -> bool:
     u = url.lower()
+    if is_editor_chrome_image_url(url):
+        return False
     if any(s in u for s in _IMAGE_SKIP_SUBSTR):
         return False
     if u.endswith((".svg", ".ico", ".mp4", ".mov", ".webm", ".ogg", ".woff", ".woff2", ".ttf", ".js", ".css")):
@@ -590,10 +603,8 @@ async def fetch_website_deep(
                 if tr_ratio < 0.005 and len(text) > 200:
                     return (1, title, text[:1000], imgs, html_content[:120_000])
 
-                score = len(PRODUCT_KEYWORDS.findall(text)) + len(text) // 200
-                tr_product_signals = ["zeytinyağı", "bal ", "badem", "reçel", "turşu",
-                                      "yöresel", "doğal", "hasat", "ürün", "pekmez"]
-                score += sum(5 for w in tr_product_signals if w in text.lower())
+                score = score_crawled_page(page_url, text)
+                score += len(PRODUCT_KEYWORDS.findall(text)) // 4
                 return (score, title, text[:5000], imgs, html_content[:120_000])
             except Exception:
                 return (0, "", "", [], "")
@@ -660,7 +671,8 @@ async def fetch_website_deep(
     result["raw_fetch_ok"] = True
     result["title"] = scored_pages[0][1] or ""
 
-    combined = "\n\n---\n\n".join(t for _, _, t in scored_pages)
+    identity_snippet = identity_first_from_pages(crawled_pages)
+    combined = identity_snippet or "\n\n---\n\n".join(t for _, _, t in scored_pages)
     result["text_snippet"] = _sanitize_postgres_text(combined[:20_000])
 
     # Description from best page
@@ -1002,11 +1014,10 @@ def _build_clean_website_summary(
     # Website content (primary source)
     web_desc = _clean_text_block(website_data.get("description") or "", 500)
     web_snippet = _clean_text_block(website_data.get("text_snippet") or "", 3000)
+    identity_block = identity_first_summary(web_desc, web_snippet, 3600)
 
-    if web_desc:
-        parts.append(web_desc)
-    if web_snippet and len(web_snippet.strip()) > 80:
-        parts.append(web_snippet)
+    if identity_block:
+        parts.append(identity_block)
 
     # If website gave us nothing useful, fall back to social sources
     if not parts or len("\n\n".join(parts).strip()) < 80:
@@ -1415,6 +1426,8 @@ async def analyze_brand(
         s = u.strip()
         if not s.startswith("http"):
             return False
+        if is_editor_chrome_image_url(s):
+            return False
         # Skip truly unusable URL formats (data URIs, blobs, localhost)
         if _EPHEMERAL.search(s):
             return False
@@ -1439,11 +1452,13 @@ async def analyze_brand(
             return (0, low)
         if any(h in low for h in ("galeri", "gallery", "photo", "foto")):
             return (1, low)
-        if any(h in low for h in ("/menu", "food", "drink", "bar")):
+        if any(h in low for h in ("oda", "room", "koy", "cove", "venue", "mekan")):
             return (2, low)
+        if any(h in low for h in ("/menu", "food", "drink", "bar")):
+            return (3, low)
         if any(h in low for h in ("/assets/", "/images/")):
-            return (4, low)
-        return (3, low)
+            return (5, low)
+        return (4, low)
 
     # 1. Website images (permanent, highest quality)
     for u in sorted((website_data.get("image_urls") or []), key=_reference_image_rank):
@@ -1567,7 +1582,15 @@ def infer_industry(text: str, fallback: str = "") -> str:
     if production_hits >= 2:
         return "production_company"
 
-    # ── 2. Local / artisan food products ─────────────────────────────────
+    # ── 2. Stay venue BEFORE artisan-food shop ────────────────────────────
+    # Pension + restaurant sites mention zeytinyağı / reçel on the menu.
+    # That must not flip them into local_products_shop.
+    if is_stay_venue(blob) and not is_nightlife_venue(blob):
+        return "hospitality"
+    if is_nightlife_venue(blob):
+        return "beach_club"
+
+    # ── 2b. Local / artisan food products ────────────────────────────────
     # Must run BEFORE restaurant patterns because food product shops can
     # mention "menü", "ürünler", "sipariş" — same words restaurants use.
     local_product_signals = [
@@ -1579,16 +1602,18 @@ def infer_industry(text: str, fallback: str = "") -> str:
         "sızma", "naturel", "doğal bal", "kuru meyve",
     ]
     local_product_hits = sum(1 for w in local_product_signals if w in blob)
-    if local_product_hits >= 2:
-        return "local_products_shop"
-    if any(w in blob for w in [
+    shop_phrase = any(w in blob for w in [
         "yöresel ürün", "yoresel urun", "köy ürünleri", "koy urunleri",
         "zeytinyağı fabrika", "zeytinyagi fabrika", "sızma zeytinyağı",
         "lokum", "türk lokumu", "kuruyemiş", "baharat dükkan",
         "organik market", "çiftlik ürün", "zeytinyağı üretim",
         "bal üretim", "arıcılık", "manav", "aktariye",
-    ]):
-        return "local_products_shop"
+    ])
+    if not is_stay_venue(blob) and (local_product_hits >= 2 or shop_phrase):
+        if shop_phrase or is_retail_product_shop(blob) or local_product_hits >= 3:
+            return "local_products_shop"
+        if local_product_hits >= 2 and not any(w in blob for w in ("restoran", "restaurant", "menü", "menu")):
+            return "local_products_shop"
 
     # ── 3. Hospitality override before beauty ─────────────────────────────
     # Beach clubs / resorts often mention ancillary "spa" / massage. A single
@@ -1756,13 +1781,11 @@ def infer_industry(text: str, fallback: str = "") -> str:
         return "beach_club"
     # Require at least 2 loose signals to avoid e.g. a hotel with "beach" view being classified here.
     # "rezervasyon" alone is NOT enough — restaurants use it too.
-    beach_loose = sum(1 for w in ["beach", "plaj", "havuz", "pool", "club", "dj",
+    beach_loose = sum(1 for w in ["beach", "plaj", "havuz", "pool", "dj",
                                    "sunset bar", "açık hava bar", "open air"] if w in blob)
-    if beach_loose >= 2:
+    if beach_loose >= 2 and not is_stay_venue(blob):
         return "beach_club"
-    # hospitality_entertainment only when combined nightlife signals appear
-    hospitality_hits = sum(1 for w in ["sunset bar", "open bar", "dj", "club", "beach", "plaj"] if w in blob)
-    if hospitality_hits >= 1 and any(w in blob for w in ["rezervasyon", "reservation"]):
+    if is_nightlife_venue(blob) and any(w in blob for w in ["rezervasyon", "reservation"]):
         return "hospitality_entertainment"
 
     if any(w in blob for w in ["handmade", "el yap", "seramik", "takı", "craft", "atölye"]):
@@ -1773,7 +1796,7 @@ def infer_industry(text: str, fallback: str = "") -> str:
                                 "mutfak", "yemek menüsü", "masa rezervasyon", "sofra"]):
         return "restaurant"
     # "menü" alone is NOT a restaurant signal — service businesses use it for price lists too
-    if any(w in blob for w in ["hotel", "otel", "suite", "konaklama", "resort"]):
+    if any(w in blob for w in ["hotel", "otel", "suite", "konaklama", "resort", "pansiyon", "pension", "guesthouse"]):
         return "hospitality"
     if any(w in blob for w in ["psikolog", "terapist", "terapi", "psikoterapi", "klinik", "doktor", "clinic"]):
         return "healthcare_clinic"
@@ -1789,6 +1812,8 @@ def infer_content_pillars(text: str, industry: str) -> list[str]:
     from app.crew.industry_playbooks import normalize_industry_id, get_industry_playbook
     normalized = normalize_industry_id(industry)
     playbook = get_industry_playbook(normalized)
+    if normalized == "hospitality" or (is_stay_venue(blob) and not is_nightlife_venue(blob)):
+        return stay_content_pillars(blob)
     if normalized in (
         "local_products_shop",
         "beach_club",
@@ -1878,13 +1903,15 @@ def infer_default_ctas(primary_goals: list[str], industry: str, language: str = 
 def infer_visual_style(text: str, tone: str) -> str:
     blob = f"{text} {tone}".lower()
     styles: list[str] = []
-    if any(w in blob for w in ["premium", "luxury", "exclusive", "lüks"]):
+    if is_stay_venue(blob) and not is_nightlife_venue(blob):
+        styles.append("place-first, warm Aegean stay, family rooms and table")
+    if any(w in blob for w in ["premium", "luxury", "exclusive", "lüks"]) and not is_stay_venue(blob):
         styles.append("premium, elegant, high-contrast")
-    if any(w in blob for w in ["warm", "family", "sıcak", "samimi"]):
+    if any(w in blob for w in ["warm", "family", "sıcak", "samimi", "aile"]):
         styles.append("warm, natural, people-first")
-    if any(w in blob for w in ["minimal", "modern", "design"]):
+    if any(w in blob for w in ["minimal", "modern", "design"]) and not is_stay_venue(blob):
         styles.append("minimal, modern, clean layout")
-    if any(w in blob for w in ["energetic", "dj", "party", "dynamic", "canlı"]):
+    if is_nightlife_venue(blob) or any(w in blob for w in ["energetic", "dj set", "party", "dynamic"]):
         styles.append("energetic, vibrant, motion-friendly")
     return "; ".join(styles) or "brand-led, clean, social-first visuals"
 
@@ -1892,14 +1919,14 @@ def infer_visual_style(text: str, tone: str) -> str:
 def infer_target_audience(text: str, industry: str) -> list[str]:
     blob = f"{text} {industry}".lower()
     if "coffee" in blob or "kafe" in blob:
-        return ["yerel kahve severler", "uzaktan çalışanlar", "mahalle müşterileri"]
-    if "beach" in blob or "dj" in blob or "club" in blob:
-        return ["tatilciler", "etkinlik ve müzik takipçileri", "rezervasyon odaklı misafirler"]
+        if not is_stay_venue(blob):
+            return ["yerel kahve severler", "uzaktan çalışanlar", "mahalle müşterileri"]
     if "handmade" in blob or "el yap" in blob:
-        return ["tasarım ve el işi ürün meraklıları", "hediye arayan müşteriler"]
+        if not is_stay_venue(blob) and not any(w in blob for w in ("reçel", "zeytinyağı", "restoran")):
+            return ["tasarım ve el işi ürün meraklıları", "hediye arayan müşteriler"]
     if "production" in blob or "prodüksiyon" in blob:
         return ["marka yöneticileri", "event organizatörleri", "kurumsal müşteriler"]
-    return ["mevcut müşteriler", "potansiyel müşteriler", "yerel takipçiler"]
+    return infer_audience_for_industry(text, industry)
 
 
 def infer_missing_questions(

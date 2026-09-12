@@ -28,6 +28,11 @@ import {
   GPT_IMAGE_2_STORY_SIZE,
   supportsFlexibleOpenAiImageSize,
 } from '@/lib/design-canvas-aspect';
+import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import {
+  rewriteCdnUrlForOpenAiEdit,
+  toOpenAiEditImageFile,
+} from '@/lib/openai-image-upload';
 
 export const runtime = 'nodejs';
 /** gpt-image-2 high design cards regularly exceed 2 minutes. */
@@ -370,21 +375,26 @@ const FETCH_HEADERS = {
 
 async function fetchUrlAsOpenAIUpload(imageUrl: string): Promise<Awaited<ReturnType<typeof toFile>> | null> {
   try {
-    const trimmed = imageUrl.trim();
-    const fetchTarget = trimmed.startsWith('/api/')
-      ? `${getNextjsInternalOrigin()}${trimmed}`
-      : trimmed;
-    const res = await fetch(fetchTarget, {
-      signal: AbortSignal.timeout(25_000),
-      headers: FETCH_HEADERS,
-    });
-    if (!res.ok) return null;
-    const mime = res.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
-    if (!mime.startsWith('image/')) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 50 * 1024 * 1024) return null;
-    const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-    return toFile(buf, `ref.${ext}`, { type: mime });
+    const trimmed = rewriteCdnUrlForOpenAiEdit(imageUrl.trim());
+    let buf: Buffer | null = null;
+    let mime = 'image/jpeg';
+    if (trimmed.startsWith('/api/')) {
+      const res = await fetch(`${getNextjsInternalOrigin()}${trimmed}`, {
+        signal: AbortSignal.timeout(25_000),
+        headers: {
+          ...FETCH_HEADERS,
+          Accept: 'image/jpeg,image/png,image/webp,image/*,*/*;q=0.8',
+        },
+      });
+      if (!res.ok) return null;
+      mime = res.headers.get('content-type')?.split(';')[0] || 'image/jpeg';
+      if (!mime.startsWith('image/')) return null;
+      buf = Buffer.from(await res.arrayBuffer());
+    } else {
+      buf = await fetchExternalImageBuffer(trimmed, 25_000);
+    }
+    if (!buf || buf.length > 50 * 1024 * 1024) return null;
+    return toOpenAiEditImageFile(buf, mime);
   } catch {
     return null;
   }

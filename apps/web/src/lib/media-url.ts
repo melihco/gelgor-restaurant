@@ -26,6 +26,21 @@ const R2_KEY_BARE =
   /^[0-9a-f-]{36}\/(posts|stories|reels|videos|images|image|video)\//i;
 
 /** Stock / seed URLs — not the customer's own venue photos. */
+export function isEditorChromeGalleryUrl(url: string): boolean {
+  const lower = url.toLowerCase();
+  return (
+    lower.includes('parastorage.com')
+    || lower.includes('editor-elements')
+    || lower.includes('restaurant-menus-showcase')
+    || lower.includes('sloppyframe')
+    || lower.includes('11062b_')
+    || /[?&/]w_32(?:[^\d]|$)/.test(lower)
+    || /[?&/]w_55(?:[^\d]|$)/.test(lower)
+    || /[?&/]w_90(?:[^\d]|$)/.test(lower)
+    || lower.includes('blur_2')
+  );
+}
+
 export function isStockGalleryPhotoUrl(url: string): boolean {
   const lower = url.toLowerCase();
   return (
@@ -36,6 +51,7 @@ export function isStockGalleryPhotoUrl(url: string): boolean {
     || lower.includes('pixabay.com')
     || lower.includes('placeholder.com')
     || lower.includes('placehold.co')
+    || isEditorChromeGalleryUrl(url)
   );
 }
 

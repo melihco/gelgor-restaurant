@@ -40,6 +40,7 @@ import {
   type BrandTonePreset,
 } from '@/lib/sync-company-profile-from-python';
 import { normalizeSectorId } from '@/lib/sector-production-profile';
+import { isStockGalleryPhotoUrl } from '@/lib/media-url';
 import { serviceProfileCategoryForSector } from '@/lib/canonical-sector';
 import {
   ONBOARDING_HEADING_FONTS,
@@ -1727,7 +1728,12 @@ function GalleryReadyStep({
     const analysisKeys = analysisRes?.ok
       ? Object.keys((await analysisRes.json().catch(() => ({}))) as Record<string, unknown>)
       : [];
-    const count = Math.max(refs.filter((u) => u.startsWith('http') || u.includes('/api/media')).length, analysisKeys.length);
+    const usableRefs = refs.filter((u) => {
+      const ok = u.startsWith('http') || u.includes('/api/media');
+      return ok && !isStockGalleryPhotoUrl(u);
+    });
+    const usableAnalysis = analysisKeys.filter((u) => !isStockGalleryPhotoUrl(u));
+    const count = Math.max(usableRefs.length, usableAnalysis.length);
     setPhotoCount(count);
     return count;
   }

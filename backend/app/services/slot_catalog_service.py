@@ -205,15 +205,33 @@ async def _load_brand_context(
 
 
 async def load_brand_slot_facilities(db: AsyncSession, workspace_id: uuid.UUID) -> dict[str, bool]:
-    """Read brand_theme.slot_facilities — venue keys default ON; opt-in keys default OFF."""
+    """Read brand_theme.slot_facilities — missing key uses sector-aware defaults."""
     result = await db.execute(
-        select(BrandContext.brand_theme).where(BrandContext.workspace_id == workspace_id)
+        select(BrandContext.brand_theme, BrandContext.business_type, BrandContext.website_summary)
+        .where(BrandContext.workspace_id == workspace_id)
     )
-    row = result.scalar_one_or_none()
-    if not isinstance(row, dict):
+    rec = result.one_or_none()
+    if rec is None:
         return default_slot_facilities()
-    raw = row.get("slot_facilities") or row.get("slotFacilities")
-    return resolve_facilities_dict(raw if isinstance(raw, dict) else None)
+    theme, business_type, website_summary = rec[0], rec[1], rec[2]
+    if not isinstance(theme, dict):
+        from app.crew.discovery_identity import facility_defaults_for_sector
+        from app.crew.industry_playbooks import normalize_industry_id
+
+        return facility_defaults_for_sector(
+            normalize_industry_id(business_type or ""),
+            website_summary or "",
+        )
+    raw = theme.get("slot_facilities") or theme.get("slotFacilities")
+    if isinstance(raw, dict) and raw:
+        return resolve_facilities_dict(raw)
+    from app.crew.discovery_identity import facility_defaults_for_sector
+    from app.crew.industry_playbooks import normalize_industry_id
+
+    return facility_defaults_for_sector(
+        normalize_industry_id(business_type or ""),
+        website_summary or "",
+    )
 
 
 # Back-compat alias for feed_director / bootstrap callers.

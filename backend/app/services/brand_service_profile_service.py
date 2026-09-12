@@ -23,6 +23,8 @@ from typing import Any
 
 import structlog
 
+from app.crew.discovery_identity import is_nightlife_venue, is_stay_venue
+
 _logger = structlog.get_logger()
 
 PROFILE_VERSION = 1
@@ -274,8 +276,15 @@ def _combined_discovery_text(brand_ctx: dict[str, Any]) -> str:
 
 
 def _match_category(text: str) -> tuple[str, dict[str, Any]] | None:
+    blob = (text or "").lower()
+    if is_stay_venue(blob) and not is_nightlife_venue(blob):
+        hotel = next(r for r in _CATEGORY_RULES if r["category"] == "hotel_hospitality")
+        return hotel["category"], hotel
+    if is_nightlife_venue(blob):
+        club = next(r for r in _CATEGORY_RULES if r["category"] == "beach_club_bar")
+        return club["category"], club
     for rule in _CATEGORY_RULES:
-        if any(sig in text for sig in rule["signals"]):
+        if any(sig in blob for sig in rule["signals"]):
             return rule["category"], rule
     return None
 
@@ -462,12 +471,15 @@ def _llm_service_profile(brand_ctx: dict[str, Any]) -> dict[str, Any] | None:
         f"{brand_ctx.get('business_type')}\n"
         f"Discovery signals (website, menu, bio, gallery tags):\n{text[:3200]}\n\n"
         "Category rules (pick ONE):\n"
+        "- hotel_hospitality: pansiyon, pension, guesthouse, hotel, rooms + breakfast. "
+        "A stay venue that also has a restaurant is STILL hotel_hospitality — "
+        "olive-oil / jam on a pension menu is not a shop.\n"
         "- barber_salon: men's barber, erkek kuaför, hair-cut franchise, multi-location "
         "salon network focused on haircuts/shave (even if the URL says /salonlar).\n"
         "- beauty_wellness: nail, spa, lash, aesthetics, women's beauty — NOT men's barber.\n"
-        "- restaurant_bar / cafe_bakery: food & drink venues (pide, kebap, cafe, bakery…).\n"
-        "- beach_club_bar: beach/pool nightlife venues — not a hair brand that mentions party.\n"
-        "- local_products_shop: packaged goods / e-commerce of products.\n"
+        "- restaurant_bar / cafe_bakery: food & drink venues WITHOUT rooms/stay.\n"
+        "- beach_club_bar: beach/pool nightlife venues with DJ/cocktails — not a quiet pension.\n"
+        "- local_products_shop: packaged goods / e-commerce of products. NOT a pension kitchen.\n"
         "- general_business: ONLY when signals are truly insufficient.\n\n"
         "Return JSON with EXACTLY these keys:\n"
         f'{{"category": "one of {_LLM_CATEGORY_ENUM}",\n'

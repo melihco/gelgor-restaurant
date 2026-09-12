@@ -763,6 +763,21 @@ async def save_brand_theme(ctx: "BrandContext", theme: "BrandTheme | dict", db) 
 
     sector = normalize_industry_id(getattr(ctx, "business_type", "") or "")
     visual_dna = getattr(ctx, "visual_dna", None) or ""
+    if not theme_dict.get("slot_facilities") and not theme_dict.get("slotFacilities"):
+        from app.crew.discovery_identity import facility_defaults_for_sector
+
+        theme_dict["slot_facilities"] = facility_defaults_for_sector(
+            sector,
+            " ".join(
+                str(x)
+                for x in (
+                    getattr(ctx, "description", None),
+                    getattr(ctx, "website_summary", None),
+                    getattr(ctx, "business_type", None),
+                )
+                if x
+            ),
+        )
     theme_dict = apply_production_layers_to_theme_dict(
         theme_dict,
         sector=sector,

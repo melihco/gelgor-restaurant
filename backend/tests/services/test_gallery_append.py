@@ -15,6 +15,15 @@ def test_parse_reference_image_urls_includes_api_media():
     assert urls[1].startswith("https://")
 
 
+def test_is_usable_gallery_url_rejects_wix_chrome():
+    assert not _is_usable_gallery_url(
+        "https://static.parastorage.com/services/editor-elements/sloppyframe.png"
+    )
+    assert _is_usable_gallery_url(
+        "https://static.wixstatic.com/media/f894ab_real-venue~mv2.jpg"
+    )
+
+
 def test_is_usable_gallery_url_api_media():
     assert _is_usable_gallery_url(
         "/api/media?key=tenant-uuid/image/2026/06/photo.webp"

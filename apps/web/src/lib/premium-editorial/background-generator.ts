@@ -9,6 +9,11 @@ import OpenAI from 'openai';
 import { toFile } from 'openai';
 import { serverConfig } from '@/lib/server-config';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
+import { fetchExternalImageBuffer } from '@/lib/external-image-fetch';
+import {
+  rewriteCdnUrlForOpenAiEdit,
+  toOpenAiEditImageFile,
+} from '@/lib/openai-image-upload';
 import { persistImageBuffer } from '@/lib/persist-enhanced-images';
 import { resolveMediaFetchUrl } from '@/lib/logo-compositor';
 import type { PremiumEditorialAspectRatio } from './types';
@@ -34,14 +39,12 @@ function promptLimit(model: string): number {
 
 async function fetchAsUpload(url: string): Promise<Awaited<ReturnType<typeof toFile>> | null> {
   try {
-    const fetchUrl = await resolveMediaFetchUrl(url);
-    const res = await fetch(fetchUrl, { signal: AbortSignal.timeout(25_000) });
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 200) return null;
-    const mime = res.headers.get('content-type') || 'image/jpeg';
-    const ext = mime.includes('png') ? 'png' : mime.includes('webp') ? 'webp' : 'jpg';
-    return toFile(buf, `ref.${ext}`, { type: mime });
+    const fetchUrl = rewriteCdnUrlForOpenAiEdit(await resolveMediaFetchUrl(url));
+    const buf = fetchUrl.startsWith('http')
+      ? await fetchExternalImageBuffer(fetchUrl, 25_000)
+      : null;
+    if (!buf || buf.length < 200) return null;
+    return toOpenAiEditImageFile(buf, 'image/jpeg');
   } catch {
     return null;
   }
