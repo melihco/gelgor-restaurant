@@ -459,6 +459,7 @@ _NON_RETRYABLE_FAILURE_MARKERS = (
     "hero reel slot assigned",
     "bakış yapılamadı",
     "library_template_replica_required",
+    "gpt-image exhausted",
 )
 
 
@@ -520,7 +521,39 @@ async def _mark_slot_failed(
         produce_data=produce_data,
         slot_key=slot_key,
     )
-    return await jobs.mark_failed(job_id, slot_reason, retryable=retryable)
+    look_ops = jobs.is_lane_blocker_look_ops(slot_reason)
+    return await jobs.mark_failed(
+        job_id,
+        slot_reason,
+        retryable=retryable,
+        delay_sec=jobs.LANE_LOOK_OPS_BACKOFF_SEC if look_ops and retryable else None,
+        reset_priority=look_ops or jobs.is_lane_blocker_provider(slot_reason),
+    )
+
+
+def _lane_same_mission_delay_sec(reasons: list[str], *, default: float = 2.0) -> float:
+    """After look flake / provider lock, park this mission so another brand can paint."""
+    if any(jobs.is_lane_blocker_provider(r) for r in reasons):
+        return float(jobs.LANE_PROVIDER_COOLDOWN_SEC)
+    if any(jobs.is_lane_blocker_look_ops(r) for r in reasons):
+        return float(jobs.LANE_LOOK_OPS_COOLDOWN_SEC)
+    return default
+
+
+def _collect_slot_reasons(
+    produce_data: dict | None,
+    factory_jobs: list[dict],
+    batch_reason: str,
+) -> list[str]:
+    reasons = [batch_reason] if batch_reason else []
+    for job in factory_jobs:
+        key = str(job.get("slotKey") or job.get("slot_key") or "")
+        if key:
+            reasons.append(_resolve_slot_failure_reason(produce_data, key, batch_reason))
+    err = str((produce_data or {}).get("error") or "")
+    if err:
+        reasons.append(err)
+    return reasons
 
 
 def _resolve_slot_failure_reason(
@@ -648,6 +681,9 @@ async def drain_production_jobs(
     )
     claimed_total = ready_total = failed_total = enqueued_total = 0
     saw_lock_defer = False
+    produce_data: dict | None = None
+    slot_keys: list[str] = []
+    batch_reason = ""
     while claimed_total < max_slots:
         if await jobs.has_live_in_flight(mission_id, stale_sec=claim_stale_sec):
             saw_lock_defer = True
@@ -896,9 +932,21 @@ async def drain_production_jobs(
             delay = (
                 _bullmq_defer_delay_sec("production_in_flight")
                 if saw_lock_defer
-                else 2.0
+                else _lane_same_mission_delay_sec(
+                    _collect_slot_reasons(
+                        produce_data,
+                        [{"slotKey": k} for k in slot_keys],
+                        batch_reason,
+                    ),
+                    default=2.0,
+                )
             )
             schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
+            if delay in (
+                float(jobs.LANE_LOOK_OPS_COOLDOWN_SEC),
+                float(jobs.LANE_PROVIDER_COOLDOWN_SEC),
+            ):
+                await drain_all_open_missions()
         elif (
             not summary_after.get("complete")
             and int(summary_after.get("ready") or 0) < int(summary_after.get("total") or 0)
@@ -1303,12 +1351,21 @@ async def apply_bullmq_completion(
 
     # Claim + enqueue any remaining runnable jobs for this mission.
     if not summary_after.get("complete") and await jobs.has_runnable_jobs(mission_id):
+        slot_reasons = _collect_slot_reasons(produce_data, factory_jobs, reason)
         delay = (
             _bullmq_defer_delay_sec("production_in_flight")
             if deferred > 0 and _is_inflight_defer_reason(reason)
-            else (45.0 if deferred > 0 else 2.0)
+            else (
+                45.0 if deferred > 0
+                else _lane_same_mission_delay_sec(slot_reasons, default=2.0)
+            )
         )
         schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
+        if delay in (
+            float(jobs.LANE_LOOK_OPS_COOLDOWN_SEC),
+            float(jobs.LANE_PROVIDER_COOLDOWN_SEC),
+        ):
+            await drain_all_open_missions()
 
     return {
         "ready": ready,

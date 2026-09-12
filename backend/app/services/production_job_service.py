@@ -63,7 +63,29 @@ TERMINAL_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
     "ops-terminated",
     "library_template_required",
     "library_template_replica_required",
+    "gpt-image exhausted",
 )
+
+# Look ops flake / provider lock — do not let one workspace keep the only paint lane.
+LANE_LOOK_OPS_MARKERS: tuple[str, ...] = (
+    "bakış çağrısı",
+    "fotoğraf açılamadı",
+    "look_call_failed",
+    "look_vision_blocked",
+)
+LANE_PROVIDER_MARKERS: tuple[str, ...] = (
+    "user is locked",
+    "gpt-image exhausted",
+    "provider_billing_circuit_open",
+    "skip-no-fal-quota",
+    "balance exhausted",
+    "exhausted balance",
+    "no credits remaining",
+    "insufficient_quota",
+)
+LANE_LOOK_OPS_COOLDOWN_SEC = 180
+LANE_PROVIDER_COOLDOWN_SEC = 600
+LANE_LOOK_OPS_BACKOFF_SEC = 180
 
 # A new paint can differ — never treat these as terminal, even if a marker overlaps.
 RETRYABLE_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
@@ -94,6 +116,49 @@ def is_terminal_produce_error(reason: str | None) -> bool:
         return False
     lower = (reason or "").strip().lower()
     return bool(lower) and any(marker in lower for marker in TERMINAL_PRODUCE_ERROR_MARKERS)
+
+
+def is_lane_blocker_look_ops(reason: str | None) -> bool:
+    lower = (reason or "").strip().lower()
+    return bool(lower) and any(marker in lower for marker in LANE_LOOK_OPS_MARKERS)
+
+
+def is_lane_blocker_provider(reason: str | None) -> bool:
+    if is_lane_blocker_look_ops(reason):
+        return False
+    lower = (reason or "").strip().lower()
+    return bool(lower) and any(marker in lower for marker in LANE_PROVIDER_MARKERS)
+
+
+def is_lane_blocker_reason(reason: str | None) -> bool:
+    return is_lane_blocker_look_ops(reason) or is_lane_blocker_provider(reason)
+
+
+def workspace_lane_cooldown_sql(
+    workspace_col: str = "workspace_id",
+    *,
+    look_sec: int = LANE_LOOK_OPS_COOLDOWN_SEC,
+    provider_sec: int = LANE_PROVIDER_COOLDOWN_SEC,
+) -> str:
+    """Exclude workspaces that just burned the lane on look flake or provider lock."""
+    look = " OR ".join(
+        f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_LOOK_OPS_MARKERS
+    )
+    provider = " OR ".join(
+        f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_PROVIDER_MARKERS
+    )
+    return f"""
+    {workspace_col} NOT IN (
+      SELECT workspace_id FROM production_jobs
+      WHERE updated_at > now() - make_interval(secs => {int(look_sec)})
+        AND ({look})
+    )
+    AND {workspace_col} NOT IN (
+      SELECT workspace_id FROM production_jobs
+      WHERE updated_at > now() - make_interval(secs => {int(provider_sec)})
+        AND ({provider})
+    )
+    """
 
 
 def _terminal_error_sql(column: str = "last_error") -> str:
@@ -539,6 +604,8 @@ async def mark_failed(
     error: str,
     *,
     retryable: bool = True,
+    delay_sec: float | None = None,
+    reset_priority: bool = False,
 ) -> str:
     """Increment attempts and schedule a backoff retry, or mark exhausted.
 
@@ -546,6 +613,7 @@ async def mark_failed(
     """
     factory = _get_session_factory()
     row_dict: dict[str, Any] | None = None
+    base = float(delay_sec) if delay_sec and delay_sec > 0 else float(_BACKOFF_BASE_SEC)
     async with factory() as db:
         res = await db.execute(
             text(
@@ -563,6 +631,7 @@ async def mark_failed(
                     END,
                     claimed_at = NULL,
                     claimed_by = NULL,
+                    priority = CASE WHEN :reset_priority THEN 0 ELSE priority END,
                     status = CASE
                         WHEN NOT :retryable THEN 'exhausted'
                         WHEN attempts + 1 >= max_attempts THEN 'exhausted'
@@ -579,7 +648,8 @@ async def mark_failed(
                 "id": str(job_id),
                 "error": (error or "")[:1000],
                 "retryable": bool(retryable),
-                "base": _BACKOFF_BASE_SEC,
+                "reset_priority": bool(reset_priority),
+                "base": base,
                 "cap": _BACKOFF_CAP_SEC,
             },
         )
@@ -1211,12 +1281,15 @@ async def list_missions_with_open_jobs(limit: int = 50) -> list[str]:
                 f"""
                 SELECT DISTINCT mission_id FROM production_jobs
                 WHERE (
+                    (
                     status IN ('pending', 'failed')
                     AND run_after <= now()
                     AND {_attempts_under_cap_sql("")}
                   )
                    OR (status IN ('claimed', 'running')
                        AND claimed_at < now() - make_interval(secs => :stale_sec))
+                    )
+                  AND {workspace_lane_cooldown_sql("workspace_id")}
                 LIMIT :limit
                 """
             ),
@@ -1246,6 +1319,7 @@ async def list_missions_with_open_jobs_fair_share(limit: int = 50) -> list[str]:
                            MAX(COALESCE(priority, 0)) AS max_priority
                     FROM production_jobs
                     WHERE (
+                        (
                         status IN ('pending', 'failed')
                         AND run_after <= now()
                         AND {_attempts_under_cap_sql("")}
@@ -1253,20 +1327,22 @@ async def list_missions_with_open_jobs_fair_share(limit: int = 50) -> list[str]:
                         status IN ('claimed', 'running')
                         AND claimed_at < now() - make_interval(secs => :stale_sec)
                     )
+                    )
+                      AND {workspace_lane_cooldown_sql("workspace_id")}
                     GROUP BY mission_id, workspace_id
                 ),
                 ranked AS (
                     SELECT mission_id, workspace_id, oldest_wait, max_priority,
                            ROW_NUMBER() OVER (
                                PARTITION BY workspace_id
-                               ORDER BY max_priority DESC, oldest_wait ASC
+                               ORDER BY oldest_wait ASC, max_priority DESC
                            ) AS ws_rank
                     FROM runnable
                 )
                 SELECT mission_id::text
                 FROM ranked
                 WHERE ws_rank = 1
-                ORDER BY max_priority DESC, oldest_wait ASC
+                ORDER BY oldest_wait ASC, max_priority DESC
                 LIMIT :limit
                 """
             ),

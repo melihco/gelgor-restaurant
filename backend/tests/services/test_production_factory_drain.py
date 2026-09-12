@@ -285,6 +285,49 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert pfs._is_ops_defer_reason(beach_billing) is False
 
 
+def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
+    from app.services.production_job_service import (
+        is_lane_blocker_look_ops,
+        is_lane_blocker_provider,
+        is_terminal_produce_error,
+        workspace_lane_cooldown_sql,
+    )
+
+    shop_look = "Bakış yapılamadı (bakış çağrısı)"
+    beach_look = "Bakış yapılamadı (fotoğraf açılamadı)"
+    shop_pack = "Paket yok (Aday fotoğraflar bu işi kanıtlamıyor)"
+    beach_gallery = "Galeri eşleşmesi yok — caption ile uyumlu marka fotoğrafı bulunamadı"
+    shop_gpt = (
+        "fal_design: library_template_replica_failed: "
+        "gpt-image exhausted on purpose-pinned template"
+    )
+    beach_lock = (
+        'fal_video_designer: All typography models failed. Ideogram: Ideogram enqueue '
+        'failed 403: {"detail":"User is locked. Reason: Exhausted balance."}'
+    )
+
+    assert is_lane_blocker_look_ops(shop_look) is True
+    assert is_lane_blocker_look_ops(beach_look) is True
+    assert is_lane_blocker_look_ops(shop_pack) is False
+    assert is_lane_blocker_look_ops(beach_gallery) is False
+    assert is_terminal_produce_error(shop_pack) is True
+    assert is_terminal_produce_error(beach_gallery) is True
+    assert is_terminal_produce_error(shop_gpt) is True
+    assert is_lane_blocker_provider(shop_gpt) is True
+    assert is_lane_blocker_provider(beach_lock) is True
+    assert is_lane_blocker_look_ops(shop_gpt) is False
+    assert pfs._is_non_retryable_slot_failure(shop_gpt) is True
+    assert pfs._is_non_retryable_slot_failure(shop_look) is False
+    assert pfs._lane_same_mission_delay_sec([shop_look], default=2.0) == 180
+    assert pfs._lane_same_mission_delay_sec([beach_look], default=2.0) == 180
+    assert pfs._lane_same_mission_delay_sec([shop_gpt], default=2.0) == 600
+    assert pfs._lane_same_mission_delay_sec([shop_pack], default=2.0) == 2.0
+    sql = workspace_lane_cooldown_sql()
+    assert "bakış çağrısı" in sql
+    assert "gpt-image exhausted" in sql
+    assert "user is locked" in sql
+
+
 def test_publish_code_map_shop_and_beach() -> None:
     from app.services.production_job_service import (
         is_retryable_publish_error,
