@@ -3,6 +3,7 @@ import { cleanupOldBuckets } from '@/app/api/auto-produce/budget';
 import {
   acquireProductionLocksForRun,
   releaseAllProductionLocks,
+  resolveProductionLockLane,
 } from '@/lib/production-in-process-lock';
 import {
   assertAutonomousProductionAllowed,
@@ -105,13 +106,19 @@ export async function executeAutoProduce(
     if (qualityGuard) return responseToResult(qualityGuard);
   }
 
+  const lockLane = resolveProductionLockLane({
+    backfillSlotKeys: Array.isArray(backfillSlotKeys) ? backfillSlotKeys : null,
+    catalogSlotBindings: catalogSlotBindings ?? null,
+  });
+
   if (skipArtifactDedupe) {
-    await releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId, lockLane);
   }
 
   const internalCaller = Boolean(opts?.trustedInternal || (req && isTrustedInternalRequest(req)));
   const locks = await acquireProductionLocksForRun(workspaceId, missionId, {
     recoverStale: internalCaller || skipArtifactDedupe === true,
+    lane: lockLane,
   });
   if (!locks.workspace) {
     return {
@@ -124,7 +131,7 @@ export async function executeAutoProduce(
   }
 
   if (missionId && !locks.mission) {
-    await releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId, lockLane);
     return {
       status: 409,
       body: {
@@ -141,7 +148,7 @@ export async function executeAutoProduce(
       skipForInternal: true,
     });
     if (missionGuard) {
-      await releaseAllProductionLocks(workspaceId, missionId);
+      await releaseAllProductionLocks(workspaceId, missionId, lockLane);
       return responseToResult(missionGuard);
     }
   }
@@ -230,7 +237,7 @@ export async function executeAutoProduce(
     console.error('[studio] Unhandled error:', message);
     return { status: 500, body: { error: message, code: 'auto_produce_internal_error' } };
   } finally {
-    await releaseAllProductionLocks(workspaceId, missionId);
+    await releaseAllProductionLocks(workspaceId, missionId, lockLane);
   }
 }
 

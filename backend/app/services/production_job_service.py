@@ -72,15 +72,21 @@ LANE_LOOK_OPS_MARKERS: tuple[str, ...] = (
     "look_call_failed",
     "look_vision_blocked",
 )
-LANE_PROVIDER_MARKERS: tuple[str, ...] = (
-    "user is locked",
+# GPT still-lane. Fal/Ideogram wallet lock must not park posts/stories.
+LANE_STILL_PROVIDER_MARKERS: tuple[str, ...] = (
     "gpt-image exhausted",
+    "insufficient_quota",
+)
+LANE_VIDEO_PROVIDER_MARKERS: tuple[str, ...] = (
+    "user is locked",
     "provider_billing_circuit_open",
     "skip-no-fal-quota",
     "balance exhausted",
     "exhausted balance",
     "no credits remaining",
-    "insufficient_quota",
+)
+LANE_PROVIDER_MARKERS: tuple[str, ...] = (
+    LANE_STILL_PROVIDER_MARKERS + LANE_VIDEO_PROVIDER_MARKERS
 )
 LANE_LOOK_OPS_COOLDOWN_SEC = 180
 LANE_PROVIDER_COOLDOWN_SEC = 600
@@ -141,18 +147,44 @@ def resolve_failure_attempt_cap(reason: str | None) -> int:
     return HARD_SLOT_ATTEMPT_CAP
 
 
+def is_reel_job(job: dict[str, Any] | None = None, **fields: Any) -> bool:
+    """Weekly swipe (post/story/carousel) vs reel/video lane."""
+    src = job or {}
+    hay = " ".join(
+        str(src.get(key) or fields.get(key) or "")
+        for key in ("slot_key", "slot_role", "format", "pipeline")
+    ).lower()
+    return "reel" in hay
+
+
+def _reel_job_sql(alias: str = "j") -> str:
+    a = alias
+    return (
+        f"("
+        f"COALESCE({a}.slot_key, '') ILIKE '%reel%' "
+        f"OR COALESCE({a}.slot_role, '') ILIKE '%reel%' "
+        f"OR COALESCE({a}.format, '') ILIKE '%reel%' "
+        f"OR COALESCE({a}.pipeline, '') ILIKE '%reel%'"
+        f")"
+    )
+
+
 def workspace_lane_cooldown_sql(
     workspace_col: str = "workspace_id",
     *,
     look_sec: int = LANE_LOOK_OPS_COOLDOWN_SEC,
     provider_sec: int = LANE_PROVIDER_COOLDOWN_SEC,
 ) -> str:
-    """Exclude workspaces that just burned the lane on look flake or provider lock."""
+    """Exclude workspaces that burned the still lane (look flake / GPT lock).
+
+    Fal/Ideogram wallet deaths stay on the video claim filter so a reel 403
+    does not hide the weekly swipe for the whole brand.
+    """
     look = " OR ".join(
         f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_LOOK_OPS_MARKERS
     )
     provider = " OR ".join(
-        f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_PROVIDER_MARKERS
+        f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_STILL_PROVIDER_MARKERS
     )
     return f"""
     {workspace_col} NOT IN (
@@ -164,6 +196,27 @@ def workspace_lane_cooldown_sql(
       SELECT workspace_id FROM production_jobs
       WHERE updated_at > now() - make_interval(secs => {int(provider_sec)})
         AND ({provider})
+    )
+    """
+
+
+def _video_lane_cooldown_sql(
+    workspace_col: str = "j.workspace_id",
+    *,
+    provider_sec: int = LANE_PROVIDER_COOLDOWN_SEC,
+) -> str:
+    """Reel claim only — fal wallet lock must not park stills."""
+    provider = " OR ".join(
+        f"COALESCE(last_error, '') ILIKE '%{m}%'" for m in LANE_VIDEO_PROVIDER_MARKERS
+    )
+    return f"""
+    (
+      NOT ({_reel_job_sql("j")})
+      OR {workspace_col} NOT IN (
+        SELECT workspace_id FROM production_jobs
+        WHERE updated_at > now() - make_interval(secs => {int(provider_sec)})
+          AND ({provider})
+      )
     )
     """
 
@@ -323,13 +376,22 @@ async def upsert_jobs(
 
 
 def _live_inflight_exists_sql(alias: str = "j") -> str:
-    """True when another non-stale claimed/running job already holds this mission."""
+    """True when another non-stale job already holds this mission *lane*.
+
+    A running reel must not block a still claim (and the reverse).
+    """
+    reel_j = _reel_job_sql(alias)
+    reel_live = _reel_job_sql("live")
     return f"""
     EXISTS (
         SELECT 1 FROM production_jobs live
         WHERE live.mission_id = {alias}.mission_id
           AND live.status IN ('claimed', 'running')
           AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
+          AND (
+            (({reel_j}) AND ({reel_live}))
+            OR (NOT ({reel_j}) AND NOT ({reel_live}))
+          )
     )
     """
 
@@ -338,17 +400,45 @@ async def has_live_in_flight(
     mission_id: uuid.UUID,
     *,
     stale_sec: int = _STALE_CLAIM_SEC,
+    lane: str = "any",
 ) -> bool:
-    """A worker is already painting this mission — do not claim a second batch."""
+    """A worker is already painting this mission lane.
+
+    ``lane='both'`` is true only when still *and* reel are in flight.
+    """
+    reel = _reel_job_sql("live")
     factory = _get_session_factory()
     async with factory() as db:
+        if lane == "both":
+            res = await db.execute(
+                text(
+                    f"""
+                    SELECT
+                      bool_or(NOT ({reel})) AS still_live,
+                      bool_or({reel}) AS video_live
+                    FROM production_jobs live
+                    WHERE live.mission_id = CAST(:mission_id AS UUID)
+                      AND live.status IN ('claimed', 'running')
+                      AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
+                    """
+                ),
+                {"mission_id": str(mission_id), "stale_sec": int(stale_sec)},
+            )
+            row = res.first()
+            return bool(row and row[0] and row[1])
+        extra = ""
+        if lane == "still":
+            extra = f"AND NOT ({reel})"
+        elif lane == "video":
+            extra = f"AND ({reel})"
         res = await db.execute(
             text(
-                """
+                f"""
                 SELECT 1 FROM production_jobs live
                 WHERE live.mission_id = CAST(:mission_id AS UUID)
                   AND live.status IN ('claimed', 'running')
                   AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
+                  {extra}
                 LIMIT 1
                 """
             ),
@@ -367,16 +457,35 @@ async def claim_batch(
 
     A job is runnable when it is pending/failed and ``run_after <= now()``, OR it was
     claimed/running but its worker went stale. Marks claimed rows and returns them.
-    One live produce per mission: pending siblings stay queued until that batch
-    finishes. Otherwise 409 in_flight parks them and the next drain paints again.
+    One live produce per *lane*: stills (post/story/carousel) ignore a running
+    reel so the weekly swipe does not wait on fal.ai. A batch never mixes lanes.
+    Stills are claimed first when both are free.
     """
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
             text(
                 f"""
-                WITH claimable AS (
-                    SELECT id FROM production_jobs j
+                WITH lane AS (
+                    SELECT CASE
+                      WHEN EXISTS (
+                        SELECT 1 FROM production_jobs s
+                        WHERE (CAST(:mission_id AS UUID) IS NULL
+                               OR s.mission_id = CAST(:mission_id AS UUID))
+                          AND (
+                            (s.status IN ('pending', 'failed') AND s.run_after <= now())
+                            OR (s.status IN ('claimed', 'running')
+                                AND s.claimed_at < now() - make_interval(secs => :stale_sec))
+                          )
+                          AND NOT ({_terminal_error_sql("s.last_error")})
+                          AND NOT ({_reel_job_sql("s")})
+                          AND NOT ({_live_inflight_exists_sql("s")})
+                          AND {_attempts_under_cap_sql("s")}
+                      ) THEN 0 ELSE 1
+                    END AS want_reel
+                ),
+                claimable AS (
+                    SELECT j.id FROM production_jobs j, lane
                     WHERE (CAST(:mission_id AS UUID) IS NULL
                            OR j.mission_id = CAST(:mission_id AS UUID))
                       AND (
@@ -387,6 +496,11 @@ async def claim_batch(
                       AND NOT ({_terminal_error_sql("j.last_error")})
                       AND NOT ({_live_inflight_exists_sql("j")})
                       AND {_attempts_under_cap_sql("j")}
+                      AND {_video_lane_cooldown_sql()}
+                      AND (
+                        (lane.want_reel = 0 AND NOT ({_reel_job_sql("j")}))
+                        OR (lane.want_reel = 1 AND ({_reel_job_sql("j")}))
+                      )
                     ORDER BY COALESCE(j.priority, 0) DESC, j.run_after ASC
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
@@ -1019,12 +1133,16 @@ async def has_open_jobs(mission_id: uuid.UUID) -> bool:
         return res.first() is not None
 
 
-async def has_runnable_jobs(mission_id: uuid.UUID) -> bool:
+async def has_runnable_jobs(
+    mission_id: uuid.UUID,
+    *,
+    lane: str | None = None,
+) -> bool:
     """True if claim_batch would pick a row now.
 
     Pending/failed with ``run_after`` in the future (billing / lock defer) are
     open but not runnable — kicking drain on those burns workers and drops
-    ready/claimed ratio.
+    ready/claimed ratio. ``lane`` limits to still or video.
     """
     from app.config import get_settings
 
@@ -1034,6 +1152,11 @@ async def has_runnable_jobs(mission_id: uuid.UUID) -> bool:
         if settings.use_bullmq_executor
         else _STALE_CLAIM_SEC
     )
+    extra = ""
+    if lane == "still":
+        extra = f"AND NOT ({_reel_job_sql('j')})"
+    elif lane == "video":
+        extra = f"AND ({_reel_job_sql('j')})"
     factory = _get_session_factory()
     async with factory() as db:
         res = await db.execute(
@@ -1048,6 +1171,7 @@ async def has_runnable_jobs(mission_id: uuid.UUID) -> bool:
                   )
                   AND NOT ({_live_inflight_exists_sql("j")})
                   AND {_attempts_under_cap_sql("j")}
+                  {extra}
                 LIMIT 1
                 """
             ),

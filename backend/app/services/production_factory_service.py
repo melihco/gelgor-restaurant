@@ -570,9 +570,23 @@ async def _mark_slot_failed(
     )
 
 
-def _lane_same_mission_delay_sec(reasons: list[str], *, default: float = 2.0) -> float:
-    """After look flake / provider lock, park this mission so another brand can paint."""
+def _batch_lock_lane(batch: list[dict]) -> str:
+    return "video" if batch and all(jobs.is_reel_job(job) for job in batch) else "still"
+
+
+def _lane_same_mission_delay_sec(
+    reasons: list[str],
+    *,
+    default: float = 2.0,
+    jobs_were_reels: bool = False,
+) -> float:
+    """After look flake / GPT lock, park this mission so another brand can paint.
+
+    Fal/Ideogram wallet on a reel stays on the video lane — stills drain now.
+    """
     if any(jobs.is_lane_blocker_provider(r) for r in reasons):
+        if jobs_were_reels:
+            return default
         return float(jobs.LANE_PROVIDER_COOLDOWN_SEC)
     if any(jobs.is_lane_blocker_look_ops(r) for r in reasons):
         return float(jobs.LANE_LOOK_OPS_COOLDOWN_SEC)
@@ -723,8 +737,11 @@ async def drain_production_jobs(
     produce_data: dict | None = None
     slot_keys: list[str] = []
     batch_reason = ""
+    enqueued_lanes: set[str] = set()
     while claimed_total < max_slots:
-        if await jobs.has_live_in_flight(mission_id, stale_sec=claim_stale_sec):
+        if await jobs.has_live_in_flight(
+            mission_id, stale_sec=claim_stale_sec, lane="both"
+        ):
             saw_lock_defer = True
             break
         limit = min(batch_size, max_slots - claimed_total)
@@ -785,9 +802,12 @@ async def drain_production_jobs(
                 for job in batch:
                     await jobs.mark_running(job["id"])
                 enqueued_total += len(batch)
-                # One batch in flight per mission — worker holds the production lock;
-                # enqueueing more batches here only yields 409 deferred loops.
-                break
+                enqueued_lanes.add(_batch_lock_lane(batch))
+                # One still batch + one reel batch may run together. A second
+                # still while the still lock is held is still a 409 loop.
+                if "still" in enqueued_lanes and "video" in enqueued_lanes:
+                    break
+                continue
             # Enqueue failed — defer transient lock/queue errors; fail hard only on unknown.
             eq_reason = str((eq or {}).get("reason") or "bullmq enqueue failed")
             if eq_reason in _bullmq_defer_reasons() or eq is None:
@@ -959,12 +979,26 @@ async def drain_production_jobs(
     # drain when open jobs remain so slots do not freeze if the callback never arrives.
     if use_bullmq:
         if enqueued_total > 0:
-            # Worker callback continues the line. A 45s kick claims siblings
-            # while the lock is held → 409 pending in_flight pump.
+            other = (
+                "video"
+                if "still" in enqueued_lanes and "video" not in enqueued_lanes
+                else "still"
+                if "video" in enqueued_lanes and "still" not in enqueued_lanes
+                else None
+            )
+            other_free = bool(
+                other
+                and await jobs.has_runnable_jobs(mission_id, lane=other)
+                and not await jobs.has_live_in_flight(
+                    mission_id, stale_sec=claim_stale_sec, lane=other
+                )
+            )
+            # Same-lane siblings wait for the worker callback. The other lane
+            # (reel vs swipe) can start now — it has its own lock.
             schedule_drain(
                 mission_id,
                 workspace_id,
-                delay_sec=float(claim_stale_sec),
+                delay_sec=2.0 if other_free else float(claim_stale_sec),
                 force=True,
             )
         elif await jobs.has_runnable_jobs(mission_id):
@@ -978,6 +1012,7 @@ async def drain_production_jobs(
                         batch_reason,
                     ),
                     default=2.0,
+                    jobs_were_reels=all("reel" in k.lower() for k in slot_keys) if slot_keys else False,
                 )
             )
             schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)
@@ -1406,7 +1441,14 @@ async def apply_bullmq_completion(
             if deferred > 0 and _is_inflight_defer_reason(reason)
             else (
                 45.0 if deferred > 0
-                else _lane_same_mission_delay_sec(slot_reasons, default=2.0)
+                else _lane_same_mission_delay_sec(
+                    slot_reasons,
+                    default=2.0,
+                    jobs_were_reels=all(
+                        jobs.is_reel_job(job) or "reel" in str(job.get("slotKey") or "").lower()
+                        for job in factory_jobs
+                    ) if factory_jobs else False,
+                )
             )
         )
         schedule_drain(mission_id, workspace_id, delay_sec=delay, force=True)

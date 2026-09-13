@@ -155,7 +155,52 @@ export async function releaseMissionProductionLock(missionId: string): Promise<v
   await release(lockKey('mission', missionId), _missionProductionLock);
 }
 
-export async function releaseAllProductionLocks(workspaceId: string, missionId?: string | null): Promise<void> {
+export type ProductionLockLane = 'still' | 'video';
+
+export function resolveProductionLockLane(input: {
+  backfillSlotKeys?: string[] | null;
+  catalogSlotBindings?: Record<string, string> | null;
+}): ProductionLockLane {
+  const keys = [
+    ...(input.backfillSlotKeys ?? []),
+    ...Object.values(input.catalogSlotBindings ?? {}),
+  ].map((k) => String(k).toLowerCase());
+  if (keys.length === 0) return 'still';
+  return keys.every((k) => k.includes('reel')) ? 'video' : 'still';
+}
+
+export async function acquireVideoProductionLocks(
+  workspaceId: string,
+  missionId?: string | null,
+): Promise<ProductionLockAcquireResult> {
+  const workspaceOk = await acquire(lockKey('ws-video', workspaceId), _workspaceProductionLock);
+  if (!workspaceOk) return { workspace: false, mission: false };
+  if (!missionId) return { workspace: true, mission: true };
+  const missionOk = await acquire(lockKey('mission-video', missionId), _missionProductionLock);
+  if (!missionOk) {
+    await release(lockKey('ws-video', workspaceId), _workspaceProductionLock);
+    return { workspace: true, mission: false };
+  }
+  return { workspace: true, mission: true };
+}
+
+export async function releaseVideoProductionLocks(
+  workspaceId: string,
+  missionId?: string | null,
+): Promise<void> {
+  await release(lockKey('ws-video', workspaceId), _workspaceProductionLock);
+  if (missionId) await release(lockKey('mission-video', missionId), _missionProductionLock);
+}
+
+export async function releaseAllProductionLocks(
+  workspaceId: string,
+  missionId?: string | null,
+  lane: ProductionLockLane = 'still',
+): Promise<void> {
+  if (lane === 'video') {
+    await releaseVideoProductionLocks(workspaceId, missionId);
+    return;
+  }
   await releaseProductionLock(workspaceId);
   if (missionId) await releaseMissionProductionLock(missionId);
 }
@@ -222,9 +267,21 @@ export interface ProductionLockAcquireResult {
 export async function acquireProductionLocksForRun(
   workspaceId: string,
   missionId?: string | null,
-  opts?: { recoverStale?: boolean },
+  opts?: { recoverStale?: boolean; lane?: ProductionLockLane },
 ): Promise<ProductionLockAcquireResult> {
   const recover = opts?.recoverStale === true;
+  if ((opts?.lane ?? 'still') === 'video') {
+    let locks = await acquireVideoProductionLocks(workspaceId, missionId);
+    if (!locks.workspace && recover) {
+      await releaseVideoProductionLocks(workspaceId, missionId);
+      locks = await acquireVideoProductionLocks(workspaceId, missionId);
+    }
+    if (!locks.mission && missionId && recover) {
+      await releaseVideoProductionLocks(workspaceId, missionId);
+      locks = await acquireVideoProductionLocks(workspaceId, missionId);
+    }
+    return locks;
+  }
 
   let workspaceOk = await acquireProductionLock(workspaceId);
   if (!workspaceOk && recover) {

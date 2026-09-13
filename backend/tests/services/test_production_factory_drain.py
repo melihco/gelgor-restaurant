@@ -331,8 +331,11 @@ def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     from app.services.production_job_service import (
         HARD_SLOT_ATTEMPT_CAP,
         LOOK_OPS_ATTEMPT_CAP,
+        _live_inflight_exists_sql,
+        _video_lane_cooldown_sql,
         is_lane_blocker_look_ops,
         is_lane_blocker_provider,
+        is_reel_job,
         is_terminal_produce_error,
         resolve_failure_attempt_cap,
         workspace_lane_cooldown_sql,
@@ -373,10 +376,26 @@ def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     assert pfs._lane_same_mission_delay_sec([beach_look], default=2.0) == 180
     assert pfs._lane_same_mission_delay_sec([shop_gpt], default=2.0) == 600
     assert pfs._lane_same_mission_delay_sec([shop_pack], default=2.0) == 2.0
+    assert pfs._lane_same_mission_delay_sec(
+        [beach_lock], default=2.0, jobs_were_reels=True
+    ) == 2.0
+    assert pfs._lane_same_mission_delay_sec(
+        [beach_lock], default=2.0, jobs_were_reels=False
+    ) == 600
     sql = workspace_lane_cooldown_sql()
     assert "bakış çağrısı" in sql
     assert "gpt-image exhausted" in sql
-    assert "user is locked" in sql
+    assert "user is locked" not in sql
+    assert "exhausted balance" not in sql
+    inflight_sql = _live_inflight_exists_sql("j")
+    assert "reel" in inflight_sql
+    video_sql = _video_lane_cooldown_sql()
+    assert "user is locked" in video_sql
+    assert "exhausted balance" in video_sql
+    assert is_reel_job({"slot_key": "local_products_shop_product_detail_reel"}) is True
+    assert is_reel_job({"slot_role": "instagram_reel", "format": "reel"}) is True
+    assert is_reel_job({"slot_key": "beach_club_sunset_golden_story"}) is False
+    assert is_reel_job({"slot_key": "restaurant_cafe_menu_tasting_carousel"}) is False
 
 
 def test_publish_code_map_shop_and_beach() -> None:
@@ -526,13 +545,14 @@ class _JobsRecorder:
         mission_id: uuid.UUID,
         *,
         stale_sec: int = 900,
+        **_kwargs: object,
     ) -> bool:
         return self.live_in_flight
 
     async def has_open_jobs(self, mission_id: uuid.UUID) -> bool:
         return not self._summary.get("complete", False)
 
-    async def has_runnable_jobs(self, mission_id: uuid.UUID) -> bool:
+    async def has_runnable_jobs(self, mission_id: uuid.UUID, *, lane: str | None = None) -> bool:
         return await self.has_open_jobs(mission_id)
 
     async def claim_batch(
