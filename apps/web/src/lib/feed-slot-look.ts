@@ -24,6 +24,7 @@ import {
   groundFeedSlotCopy,
   isCaptionOpeningHeadline,
   parseFeedSlotPack,
+  sellingCopyMissesEvidence,
   type FeedPhotoRole,
   type FeedShellDirection,
   type FeedSlotPack,
@@ -78,6 +79,8 @@ export type FeedSlotLookInput = {
   inventoryText?: string;
   /** Gallery-first already judged the idea against shelf text. */
   productClaimChecked?: boolean;
+  /** Gallery-first rewrites then judges once — look must not ask again. */
+  skipPackConsistency?: boolean;
   missionId?: string | null;
   workspaceId?: string | null;
   slotKey?: string | null;
@@ -175,6 +178,18 @@ function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
 }
 
+function copyNamesPickLabel(copy: unknown, seed: FeedSlotLookCandidate): boolean {
+  const text = String(copy ?? '').trim();
+  const label = String(seed.visibleLabelText ?? '').trim();
+  if (text.length < 8 || label.length < 3) return false;
+  return !sellingCopyMissesEvidence({
+    caption: text,
+    evidenceNote: `Etiket: ${label}`,
+    photoRole: 'product_for_sale',
+    shellDirection: 'product_hero',
+  });
+}
+
 /** Sell shortlist is already SKU-ranked. Model null / scene_fill must not drop the card. Place never lands here. */
 function bindSellShortlistPick(input: {
   pickIndex: number | null;
@@ -204,9 +219,12 @@ function fillAdaptiveLookDraft(
     && hint.length >= 16
     ? hint
     : '';
+  const fromLabel = label.length >= 3
+    ? `${label.replace(/\s+/g, ' ').trim()}. Etiket duruyor.`
+    : '';
   const caption = String(draft.caption ?? '').trim().length >= 16
     ? String(draft.caption)
-    : (weeklyScene || (hint.length >= 16 ? hint : '') || evidence);
+    : (weeklyScene || fromLabel || (hint.length >= 16 ? hint : '') || evidence);
   const role = draft.photoRole && draft.photoRole !== 'scene_fill'
     ? draft.photoRole
     : (label ? 'product_for_sale' : 'venue');
@@ -354,6 +372,25 @@ export function isLookOpsFailure(issues: readonly FeedSlotLookIssue[]): boolean 
 }
 
 /** Persist error: ops stay retryable; empty pack stays terminal. */
+/** Job payload / result metadata — hakemin gördüğü paket. Marka adı yok. */
+export function lookPackSnapshot(pack: Partial<FeedSlotPack> | null | undefined): Record<string, string> | null {
+  if (!pack) return null;
+  const snap: Record<string, string> = {};
+  for (const key of [
+    'slotJob',
+    'photoUrl',
+    'photoRole',
+    'caption',
+    'headline',
+    'shellDirection',
+    'evidenceNote',
+  ] as const) {
+    const value = String(pack[key] ?? '').trim();
+    if (value) snap[key] = value.slice(0, 500);
+  }
+  return Object.keys(snap).length >= 3 ? snap : null;
+}
+
 export function describeLookPersistError(issues: FeedSlotLookIssue[]): string {
   if (issues.includes('look_no_credits')) {
     return LOOK_ISSUE_TR.look_no_credits;
@@ -653,9 +690,9 @@ export async function lookFeedSlotPack(
           ...draft,
           photoRole: undefined,
           shellDirection: undefined,
-          caption: '',
-          headline: '',
-          evidenceNote: '',
+          caption: copyNamesPickLabel(draft.caption, picked) ? draft.caption : '',
+          headline: copyNamesPickLabel(draft.headline, picked) ? draft.headline : '',
+          evidenceNote: copyNamesPickLabel(draft.evidenceNote, picked) ? draft.evidenceNote : '',
         }
         : draft;
       draft = fillAdaptiveLookDraft(seedDraft, picked, input.ideationHint);
@@ -694,7 +731,10 @@ export async function lookFeedSlotPack(
       adaptiveScene: Boolean(input.adaptiveScene),
     });
     if (!complete) return { ok: false, issues: ['incomplete_headline'] };
-    if (deps?.judgePackConsistency || !deps?.openai) {
+    if (
+      !input.skipPackConsistency
+      && (deps?.judgePackConsistency || !deps?.openai)
+    ) {
       const checked = await applyFeedPackConsistency(complete, {
         adaptiveScene: Boolean(input.adaptiveScene),
         judge: deps?.judgePackConsistency,

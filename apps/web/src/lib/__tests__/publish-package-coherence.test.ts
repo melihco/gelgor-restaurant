@@ -4,6 +4,7 @@ import {
   resolveArtifactPublishReadyFromArtifact,
 } from '@/lib/artifact-publish-ready';
 import { isArtifactFeedReady } from '@/lib/weekly-publish-package';
+import { stampFeedSlotPackMetadata } from '@/lib/feed-slot-pack';
 import type { OutputArtifact } from '@/types';
 
 function designedMeta(extra: Record<string, unknown>): Record<string, unknown> {
@@ -92,6 +93,43 @@ describe('publish öncesi caption + foto + şablon + headline', () => {
     });
     expect(d.code).toBe('ready');
     expect(d.blockFeed).toBe(false);
+  });
+
+  it('plaj: bakış paketi olsa da DJ yazısı + yemek foto Akış’a düşmez', () => {
+    const d = resolveArtifactPublishReady({
+      meta: designedMeta({
+        business_type: 'beach_club',
+        catalog_slot_key: 'beach_club_dj_night_teaser_post',
+        brand_design_template_match_quality: 'hard',
+        reference_photo_url: 'https://cdn.example.com/burger.jpg',
+        gallery_photo_meta: {
+          contentTags: ['food', 'burger', 'plate'],
+          description: 'Plated burger with fries on a wooden table',
+          suggestedAssetType: 'food_drink_photo',
+          primarySubject: 'food',
+          subjectConfidence: 1,
+        },
+        ...stampFeedSlotPackMetadata({
+          slotJob: 'dj gecesi',
+          photoUrl: 'https://cdn.example.com/dj.jpg',
+          photoRole: 'venue',
+          caption: 'Bu gece DJ seti ve beach party — dans için sahilde buluşalım.',
+          headline: 'DJ Night bu gece',
+          shellDirection: 'venue_ambiance',
+          evidenceNote: 'DJ kabini, gece sahil',
+        }),
+      }),
+      content: {
+        kind: 'instagram_post',
+        caption: 'Bu gece DJ seti ve beach party — dans için sahilde buluşalım.',
+        headline: 'DJ Night',
+        design_overlay_headline: 'DJ Night',
+      },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.code).toBe('caption_design_incoherent');
   });
 
   it('plaj: DJ yazısı + yemek foto Akış’a düşmez', () => {

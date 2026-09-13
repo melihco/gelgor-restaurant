@@ -460,6 +460,29 @@ async def mark_running(job_id: str | uuid.UUID) -> None:
         await emit_from_job_row(row_dict, "running", status="running")
 
 
+async def merge_job_payload(
+    job_id: str | uuid.UUID,
+    patch: dict[str, Any] | None,
+) -> None:
+    """Shallow-merge JSON onto production_jobs.payload. Keeps catalogSlotLabel."""
+    if not patch:
+        return
+    factory = _get_session_factory()
+    async with factory() as db:
+        await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET payload = COALESCE(payload, '{}'::jsonb) || CAST(:patch AS jsonb),
+                    updated_at = now()
+                WHERE id = CAST(:id AS UUID)
+                """
+            ),
+            {"id": str(job_id), "patch": json.dumps(patch, ensure_ascii=False)},
+        )
+        await db.commit()
+
+
 async def mark_ready(
     job_id: str | uuid.UUID,
     *,

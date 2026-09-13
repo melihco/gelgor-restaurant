@@ -711,6 +711,7 @@ export async function resolveGalleryFirstForSlot(input: {
       ideationHint,
       inventoryText,
       productClaimChecked: true,
+      skipPackConsistency: true,
       candidates: shortlist.map((row) => {
         const meta = resolveGalleryPhotoMeta(
           row.url,
@@ -777,7 +778,7 @@ export async function resolveGalleryFirstForSlot(input: {
       judge: input.judgePackConsistency,
     });
     if (!coherent.ok) {
-      return emptySlotLookResult(coherent.issues);
+      return { ...emptySlotLookResult(coherent.issues), pack: locked.pack };
     }
     const { acceptBoundPack } = await import('@/studio/bind');
     const accepted = acceptBoundPack(coherent.pack, {

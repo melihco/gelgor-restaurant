@@ -509,12 +509,50 @@ def _is_non_retryable_slot_failure(
     return False
 
 
+def _slot_look_snapshot(produce_data: dict | None, slot_key: str) -> dict[str, Any] | None:
+    """Look pack the Next worker judged — stored on job.payload for diagnosis."""
+    if not slot_key:
+        return None
+    for row in (produce_data or {}).get("results") or []:
+        if not isinstance(row, dict):
+            continue
+        if str(row.get("slotKey") or "") != slot_key:
+            continue
+        meta = row.get("metadata")
+        if not isinstance(meta, dict):
+            return None
+        snap: dict[str, Any] = {}
+        pack = meta.get("lookPack")
+        if isinstance(pack, dict) and pack:
+            snap["lookPack"] = {
+                key: str(pack[key])[:500]
+                for key in (
+                    "slotJob",
+                    "photoUrl",
+                    "photoRole",
+                    "caption",
+                    "headline",
+                    "shellDirection",
+                    "evidenceNote",
+                )
+                if pack.get(key)
+            }
+        issues = meta.get("lookIssues")
+        if isinstance(issues, list) and issues:
+            snap["lookIssues"] = [str(item)[:80] for item in issues[:12]]
+        return snap or None
+    return None
+
+
 async def _mark_slot_failed(
     job_id: uuid.UUID | str,
     produce_data: dict | None,
     slot_key: str,
     batch_reason: str,
 ) -> str:
+    look_snap = _slot_look_snapshot(produce_data, slot_key)
+    if look_snap:
+        await jobs.merge_job_payload(job_id, look_snap)
     slot_reason = _resolve_slot_failure_reason(produce_data, slot_key, batch_reason)
     retryable = not _is_non_retryable_slot_failure(
         slot_reason,

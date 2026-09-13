@@ -516,6 +516,49 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.code).toBe('caption_design_incoherent');
   });
 
+  it('shop: looked pack + leftover motto still publishes when the photo matches', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 8,
+        grafiker_pass: true,
+        business_type: 'local_products_shop',
+        catalog_slot_key: 'local_products_shop_product_hero_post',
+        brand_design_template_match_quality: 'soft',
+        brand_design_template_sample_headline: 'Doğanın Mucizesi',
+        reference_photo_url: 'https://cdn.example.com/oil.jpg',
+        gallery_photo_meta: {
+          contentTags: ['olive oil', 'zeytinyağı', 'bottle'],
+          description: 'Labeled olive oil bottle',
+          suggestedAssetType: 'product_image',
+          primarySubject: 'olive_oil',
+        },
+        ...stampFeedSlotPackMetadata({
+          slotJob: 'ürün hero',
+          photoUrl: 'https://cdn.example.com/oil.jpg',
+          photoRole: 'product_for_sale',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Sızma zeytinyağımız raflarda',
+          shellDirection: 'product_hero',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+        }),
+      },
+      content: {
+        kind: 'instagram_post',
+        caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+        headline: 'Doğanın Mucizesi',
+        design_overlay_headline: 'Doğanın Mucizesi',
+      },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(true);
+    expect(d.blockFeed).toBe(false);
+    expect(d.code).toBe('ready');
+  });
+
   it('shop: produce-ready stamp is not re-scored by overlay/theme on Akış', () => {
     const d = resolveArtifactPublishReady({
       meta: {

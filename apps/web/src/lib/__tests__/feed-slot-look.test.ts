@@ -6,6 +6,7 @@ vi.mock('@/lib/external-image-fetch', () => ({
 }));
 import {
   describeLookPersistError,
+  lookPackSnapshot,
   isCampaignSentenceLock,
   isLookOpsFailure,
   isLookedFeedSlotPersistable,
@@ -165,26 +166,26 @@ describe('feed-slot-look — shop + beach', () => {
     expect(calls.count).toBe(0);
   });
 
-  it('shop: incoherent pack fails after look', async () => {
+  it('beach: lunch copy on a pier still fails after look', async () => {
     const result = await lookFeedSlotPack(
       {
-        slotJob: 'ürün hero',
-        catalogSlotKey: 'local_products_shop_product_hero_post',
-        ideationHint: 'Sızma zeytinyağımız raflarda.',
+        slotJob: 'gün batımı',
+        catalogSlotKey: 'beach_club_sunset_ambiance_story',
+        ideationHint: 'Gün batımında masada kal.',
         candidates: [{
-          url: 'https://cdn.example.com/oil.jpg',
-          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          url: 'https://cdn.example.com/pier.jpg',
+          description: 'iskele, açık deniz ufku',
         }],
       },
       {
         judgePackConsistency: async () => ({ ok: false }),
         openai: fakeOpenai({
           pickIndex: 0,
-          photoRole: 'product_for_sale',
-          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
-          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
-          headline: 'Sızma zeytinyağımız raflarda',
-          shellDirection: 'product_hero',
+          photoRole: 'venue',
+          evidenceNote: 'iskele, açık deniz ufku',
+          caption: 'Öğle tabağı hazır. Masada kalın ve gelin.',
+          headline: 'Öğle tabağı hazır',
+          shellDirection: 'venue_ambiance',
         }),
       },
     );
@@ -531,6 +532,65 @@ describe('feed-slot-look — shop + beach', () => {
     if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
+  it('shop sell: bind after null writes the label, not the sawed weekly hook', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        language: 'Turkish',
+        ideationHint: 'Müşterilerimizin en sevdiği lezzetlerden biri:',
+        candidates: [{
+          url: 'https://cdn.example.com/almond.jpg',
+          visibleLabelText: 'BADEM EZMESİ',
+        }],
+      },
+      {
+        openai: fakeOpenaiSequence([
+          { pickIndex: null, caption: '', headline: '', evidenceNote: '', photoRole: 'venue', shellDirection: 'venue_ambiance' },
+          { pickIndex: null, caption: '', headline: '', evidenceNote: '', photoRole: 'venue', shellDirection: 'venue_ambiance' },
+        ]),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.photoUrl).toBe('https://cdn.example.com/almond.jpg');
+      expect(result.pack.evidenceNote).toMatch(/BADEM EZMESİ/);
+      expect(result.pack.caption).toMatch(/badem|ezme/i);
+      expect(result.pack.caption).not.toMatch(/en sevdiği lezzetlerden biri:$/);
+    }
+  });
+
+  it('shop sell: skipPackConsistency does not call the pack judge', async () => {
+    let judged = 0;
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        catalogSlotKey: 'local_products_shop_product_hero_post',
+        skipPackConsistency: true,
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+        }],
+      },
+      {
+        judgePackConsistency: async () => {
+          judged += 1;
+          return { ok: false };
+        },
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Sızma zeytinyağımız raflarda',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(judged).toBe(0);
+    expect(result.ok).toBe(true);
+  });
+
   it('shop sell: labeled shortlist binds after look returns null twice', async () => {
     const result = await lookFeedSlotPack(
       {
@@ -700,6 +760,18 @@ describe('feed-slot-look — shop + beach', () => {
     expect(describeLookPersistError(['missing_caption'])).toBe(
       'Paket yok (Alt yazı yok veya çok kısa)',
     );
+    expect(lookPackSnapshot({
+      slotJob: 'müşteri favorisi',
+      photoUrl: 'https://cdn.example.com/almond.jpg',
+      photoRole: 'product_for_sale',
+      caption: 'Badem ezmemiz rafta. Bir kaşık yeter.',
+      headline: 'Badem ezmemiz rafta',
+      shellDirection: 'product_hero',
+      evidenceNote: 'Etiket: BADEM EZMESİ',
+    })).toMatchObject({
+      slotJob: 'müşteri favorisi',
+      evidenceNote: 'Etiket: BADEM EZMESİ',
+    });
   });
 
   it('does not look at reels and locks meaning rematch after a valid pack', () => {

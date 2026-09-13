@@ -17,7 +17,11 @@ import {
   isOpenAiQuotaOrBillingError,
   markOpenAiQuotaBlocked,
 } from '@/lib/openai-error-utils';
-import { parseFeedSlotPack, type FeedSlotPack } from '@/lib/feed-slot-pack';
+import {
+  parseFeedSlotPack,
+  sellingCopyMissesEvidence,
+  type FeedSlotPack,
+} from '@/lib/feed-slot-pack';
 
 const CONSISTENCY_SYSTEM = [
   'You check one social card pack for internal consistency.',
@@ -25,12 +29,28 @@ const CONSISTENCY_SYSTEM = [
   'No brand rules. No keyword dictionaries. The four fields are the only input.',
   'Return JSON only:',
   '{"ok": true} or {"ok": false} or {"ok": true, "headline": "<complete line from caption>"}.',
-  'ok=false when slot, evidence, caption, or headline name a different job or product.',
+  'ok=false when evidence, caption, or headline name a different product,',
+  'or when a place/process card sells a product.',
+  'A slot that names the audience (favorite, range, review, social proof)',
+  'and a product_hero shell are the same job when caption and evidence name the same product.',
   'ok=true when they tell the same story, including grade/process wording.',
   'Add headline only when ok=true AND the given headline is cut, generic, or not the caption claim.',
   'The replacement headline must be a complete sentence taken from the caption — no new product.',
   'If unsure, {"ok": true}.',
 ].join(' ');
+
+/** Satılık kart: yazı ve etiket aynı ürünü söylüyorsa slot adı ikinci iş değildir. */
+export function packTellsSameProductStory(pack: FeedSlotPack): boolean {
+  if (pack.photoRole !== 'product_for_sale' && pack.shellDirection !== 'product_hero') {
+    return false;
+  }
+  return !sellingCopyMissesEvidence({
+    caption: pack.caption,
+    evidenceNote: pack.evidenceNote,
+    photoRole: pack.photoRole,
+    shellDirection: pack.shellDirection,
+  });
+}
 
 export type JudgeFeedPackConsistencyInput = {
   pack: FeedSlotPack;
@@ -136,6 +156,10 @@ export async function applyFeedPackConsistency(
     slotKey?: string | null;
   },
 ): Promise<{ ok: true; pack: FeedSlotPack } | { ok: false; issues: ['incoherent_pack'] }> {
+  const sameProduct = packTellsSameProductStory(pack);
+  if (sameProduct && !opts?.judge && !opts?.openai) {
+    return { ok: true, pack };
+  }
   const verdict = opts?.judge
     ? await opts.judge(pack)
     : await judgeFeedPackConsistency({
@@ -145,7 +169,7 @@ export async function applyFeedPackConsistency(
       workspaceId: opts?.workspaceId,
       slotKey: opts?.slotKey,
     });
-  if (!verdict.ok) return { ok: false, issues: ['incoherent_pack'] };
+  if (!verdict.ok && !sameProduct) return { ok: false, issues: ['incoherent_pack'] };
   const nextHeadline = verdict.headline;
   if (!nextHeadline || nextHeadline === pack.headline) {
     return { ok: true, pack };

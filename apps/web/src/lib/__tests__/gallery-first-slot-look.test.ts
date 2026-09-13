@@ -509,21 +509,25 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(PLATE);
   });
 
-  it('shop: incoherent look pack does not apply', async () => {
+  it('shop: favorite slot keeps a labeled jar when the judge only hates the slot name', async () => {
     const gf = await resolveGalleryFirstForSlot({
-      assignment: shopAssignment(),
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+        catalog_slot_label: 'müşteri favorisi',
+      },
       galleryPhotos: [JAM],
       galleryMeta: shopMeta(),
       excludeUrls: [],
       brandName: 'Dükkan',
       businessType: 'local_products_shop',
-      ideationCaption: 'İncir reçelimiz kavanozda, kahvaltıya bir kaşık yeter.',
-      ideationHeadline: 'İncir Reçeli',
+      ideationCaption: 'Müşterilerimizin en sevdiği lezzetlerden biri: incir reçeli.',
+      ideationHeadline: 'Müşterilerimizin en sevdiği lezzetlerden biri:',
       judgePackConsistency: async () => ({ ok: false }),
       lookFn: async () => ({
         ok: true,
         pack: {
-          slotJob: 'ürün hero',
+          slotJob: 'müşteri favorisi',
           photoUrl: JAM,
           photoRole: 'product_for_sale',
           caption: 'İncir reçelimiz kavanozda. Kahvaltıya bir kaşık yeter.',
@@ -533,8 +537,37 @@ describe('gallery-first — one look owns the pack', () => {
         },
       }),
     });
+    expect(gf?.applied).toBe(true);
+    expect(gf?.pack?.caption).toMatch(/reçel/i);
+  });
+
+  it('beach: sunset slot withholds lunch copy on a pier still', async () => {
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: beachAssignment(),
+      galleryPhotos: [TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Plaj',
+      businessType: 'beach_club',
+      ideationCaption: 'Gün batımında masada kal, altın saat açık denizde.',
+      ideationHeadline: 'Gün batımında masada kal',
+      judgePackConsistency: async () => ({ ok: false }),
+      lookFn: async () => ({
+        ok: true,
+        pack: {
+          slotJob: 'gün batımı',
+          photoUrl: TABLE,
+          photoRole: 'venue',
+          caption: 'Öğle tabağı hazır. Masada kalın ve gelin.',
+          headline: 'Öğle tabağı hazır',
+          shellDirection: 'venue_ambiance',
+          evidenceNote: 'iskele, açık deniz ufku',
+        },
+      }),
+    });
     expect(gf?.applied).toBe(false);
     expect(gf?.lookIssues).toContain('incoherent_pack');
+    expect(gf?.pack?.caption).toMatch(/tabağı|tabagi/i);
   });
 
   it('shop: invented SKU caption does not call look or paint', async () => {

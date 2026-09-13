@@ -346,6 +346,7 @@ import {
 import {
   describeFeedSlotLookIssues,
   describeLookPersistError,
+  lookPackSnapshot,
   isLookedFeedSlotPersistable,
   shouldLookFeedSlotPack,
   shouldSkipFeedMeaningRematch,
@@ -2098,6 +2099,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           imageUrl: '',
           error: describeLookPersistError(gf.lookIssues ?? []),
           slotKey,
+          metadata: {
+            lookIssues: gf.lookIssues ?? [],
+            ...(lookPackSnapshot(gf.pack) ? { lookPack: lookPackSnapshot(gf.pack) } : {}),
+          },
         });
         continue;
       }
@@ -2113,13 +2118,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           lockedFeedSlotPack = gf.pack;
           caption = gf.pack.caption;
           missionSessionCaptions.push(gf.pack.caption);
-          if (calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()) {
-            headline = ideaFeedBind.paintHeadline;
-            lockedFalPunchlineSource = 'mission_tagline';
-          } else {
-            headline = gf.pack.headline;
-            lockedFalPunchlineSource = 'feed_slot_pack';
-          }
+          headline = gf.pack.headline;
+          lockedFalPunchlineSource = 'feed_slot_pack';
         } else {
           if (gf.caption.trim()) {
             if (!originalIdeationCaption.trim() || gf.grounded) {
@@ -2171,9 +2171,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     }
     if (lockedFeedSlotPack) {
       caption = lockedFeedSlotPack.caption;
-      headline = calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
-        ? ideaFeedBind.paintHeadline
-        : lockedFeedSlotPack.headline;
+      headline = lockedFeedSlotPack.headline;
+      lockedFalPunchlineSource = 'feed_slot_pack';
     }
 
     const applyVisualClaimGrounding = (opts?: {
@@ -5358,10 +5357,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       kind === 'instagram_reel' ? 22
         : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
           : 32;
-    let publishHeadline = calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
-      ? ideaFeedBind.paintHeadline
-      : lockedFeedSlotPack
-        ? lockedFeedSlotPack.headline
+    let publishHeadline = lockedFeedSlotPack
+      ? lockedFeedSlotPack.headline
+      : calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
+        ? ideaFeedBind.paintHeadline
       : sanitizeProductionHeadline({
       headline,
       ideationHeadline: usesFalDesignCopy ? headline : storedIdeationHeadline,

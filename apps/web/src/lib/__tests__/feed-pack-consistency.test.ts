@@ -3,6 +3,7 @@ import type OpenAI from 'openai';
 import {
   applyFeedPackConsistency,
   judgeFeedPackConsistency,
+  packTellsSameProductStory,
 } from '@/lib/feed-pack-consistency';
 import type { FeedSlotPack } from '@/lib/feed-slot-pack';
 
@@ -46,14 +47,39 @@ function fakeVerdictOpenai(body: Record<string, unknown>, calls: { count: number
 }
 
 describe('feed-pack-consistency — shop + beach', () => {
-  it('shop: mismatched caption and evidence withholds before paint', async () => {
-    const calls = { count: 0 };
-    const result = await applyFeedPackConsistency(shopPack(), {
+  it('shop: favorite slot + product shell is the same story when the label matches', async () => {
+    const favorite = {
+      ...shopPack(),
+      slotJob: 'müşteri favorisi',
+      caption: 'Badem ezmemiz rafta. Bir kaşık yeter.',
+      headline: 'Badem ezmemiz rafta',
+      evidenceNote: 'Etiket: BADEM EZMESİ',
+    };
+    expect(packTellsSameProductStory(favorite)).toBe(true);
+    const result = await applyFeedPackConsistency(favorite, {
       judge: async () => ({ ok: false }),
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('shop: oil caption on a jam label withholds before paint', async () => {
+    const calls = { count: 0 };
+    const mismatch = {
+      ...shopPack(),
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+      headline: 'Sızma zeytinyağımız raflarda',
+      evidenceNote: 'Etiket: İNCİR REÇELİ',
+    };
+    expect(packTellsSameProductStory(mismatch)).toBe(false);
+    const result = await applyFeedPackConsistency(mismatch, {
+      judge: async () => {
+        calls.count += 1;
+        return { ok: false };
+      },
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues).toContain('incoherent_pack');
-    expect(calls.count).toBe(0);
+    expect(calls.count).toBe(1);
   });
 
   it('shop: model may replace a sawed headline from the caption', async () => {
