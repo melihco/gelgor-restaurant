@@ -10,24 +10,93 @@ import {
 import { applyCalendarProductionEnrichment } from '@/lib/mission-production-plan';
 
 describe('resolveIdeaFeedBind', () => {
-  it('locks publishable Hub tagline for gallery + paint (local_products_shop)', () => {
+  it('shop sell + olive_oil: Hub motto paints, product scores gallery', () => {
     const idea = {
       calendar_enriched: true,
       calendar_plan_index: 0,
       concept_title: 'Erken Hasat Zeytinyağı',
-      tagline: '"Datça\'nın özgün tatları burada."',
-      caption_draft: 'Soğuk sıkım zeytinyağı hikayesi.',
+      headline: 'Erken Hasat Zeytinyağımız Burada!',
+      tagline: '"Datça\'da buluşalım."',
+      caption_draft: 'Bu yılın erken hasat zeytinyağı sofralarınızı süslüyor.',
       subject_key: 'olive_oil',
+      catalog_slot_key: 'local_products_shop_product_hero_post',
       photo_mood: 'sunlit grove',
     };
-    const bind = resolveIdeaFeedBind(idea, { brandName: 'Datça Lezzet' });
+    const bind = resolveIdeaFeedBind(idea, {
+      brandName: 'Datça Lezzet',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+    });
     expect(bind.taglinePublishable).toBe(true);
     expect(bind.punchlineLockSource).toBe('mission_tagline');
-    expect(bind.paintHeadline).toContain('Datça');
-    expect(bind.galleryMatchHeadline).toBe(bind.paintHeadline);
-    expect(bind.galleryMatchCaption).toContain('Datça');
-    expect(bind.galleryMatchCaption).not.toContain('content_brief');
+    expect(bind.paintHeadline.toLowerCase()).toContain('buluşalım');
+    expect(bind.galleryMatchHeadline.toLowerCase()).toMatch(/zeytinyağ|hasat/);
+    expect(bind.galleryMatchHeadline.toLowerCase()).not.toContain('buluşalım');
+    expect(bind.galleryMatchCaption).toContain('zeytinyağı');
+    expect(bind.galleryMatchCaption).not.toContain('buluşalım');
     expect(bind.subjectKey).toBe('olive_oil');
+  });
+
+  it('shop editorial campaign_post + olive_oil: motto paints, product scores', () => {
+    const bind = resolveIdeaFeedBind({
+      calendar_enriched: true,
+      concept_title: 'Erken hasat zeytinyağımızın kalitesini hisset',
+      tagline: 'Karaman Datça\'da buluşalım.',
+      caption_draft: 'Bu yılın erken hasat zeytinyağı sofrada.',
+      subject_key: 'olive_oil',
+      catalog_slot_key: 'local_products_shop_premium_editorial_campaign_post',
+    }, {
+      brandName: 'Karaman Datça',
+      catalogSlotKey: 'local_products_shop_premium_editorial_campaign_post',
+    });
+    expect(bind.taglinePublishable).toBe(true);
+    expect(bind.paintHeadline.toLowerCase()).toContain('buluşalım');
+    expect(bind.galleryMatchHeadline.toLowerCase()).toMatch(/zeytinyağ|hasat/);
+    expect(bind.galleryMatchCaption).not.toContain('buluşalım');
+  });
+
+  it('beach place slot still locks a Hub sunset line', () => {
+    const idea = {
+      calendar_enriched: true,
+      concept_title: 'Friday Sunset Ritual',
+      tagline: 'Golden hour by the Aegean.',
+      caption_draft: 'The terrace holds the last light.',
+      catalog_slot_key: 'beach_club_sunset_ambiance_story',
+    };
+    const bind = resolveIdeaFeedBind(idea, {
+      brandName: 'Yula Beach',
+      catalogSlotKey: 'beach_club_sunset_ambiance_story',
+    });
+    expect(bind.taglinePublishable).toBe(true);
+    expect(bind.paintHeadline.toLowerCase()).toContain('golden hour');
+    expect(bind.galleryMatchHeadline).toBe(bind.paintHeadline);
+  });
+
+  it('shop sell without motto: caption opening is not the paint line', () => {
+    const bind = resolveIdeaFeedBind({
+      headline: 'Erken Hasat Zeytinyağımız Burada!',
+      caption_draft: 'Erken Hasat Zeytinyağımız Burada! Bu yılın yağı rafta.',
+      subject_key: 'olive_oil',
+      catalog_slot_key: 'local_products_shop_product_hero_post',
+    }, {
+      brandName: 'Datça Lezzet',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+    });
+    expect(bind.taglinePublishable).toBe(false);
+    expect(bind.paintHeadline).toBe('');
+    expect(bind.galleryMatchHeadline.toLowerCase()).toMatch(/zeytinyağ|hasat/);
+  });
+
+  it('beach without motto: caption opening is not the paint line', () => {
+    const bind = resolveIdeaFeedBind({
+      headline: 'The terrace holds the last light',
+      caption_draft: 'The terrace holds the last light. The sea stays open.',
+      catalog_slot_key: 'beach_club_sunset_ambiance_story',
+    }, {
+      brandName: 'Yula Beach',
+      catalogSlotKey: 'beach_club_sunset_ambiance_story',
+    });
+    expect(bind.taglinePublishable).toBe(false);
+    expect(bind.paintHeadline).toBe('');
   });
 
   it('does not lock planning labels as punchline (beach_club)', () => {

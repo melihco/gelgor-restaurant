@@ -205,6 +205,43 @@ describe('gallery-first — one look owns the pack', () => {
     expect(seen?.brandTone).toBe('luxury');
   });
 
+  it('shop: omitted language becomes Turkish for look', async () => {
+    let seen: FeedSlotLookInput | null = null;
+    await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Sızma zeytinyağımız raflarda.',
+      lookFn: async (input): Promise<FeedSlotLookResult> => {
+        seen = input;
+        return { ok: false, issues: ['no_pick'] };
+      },
+    });
+    expect(seen?.language).toBe('Turkish');
+  });
+
+  it('beach: language code en becomes English for look', async () => {
+    let seen: FeedSlotLookInput | null = null;
+    await resolveGalleryFirstForSlot({
+      assignment: beachAssignment(),
+      galleryPhotos: [TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Yula',
+      businessType: 'beach_club',
+      language: 'en',
+      ideationCaption: 'The terrace holds the last light.',
+      lookFn: async (input): Promise<FeedSlotLookResult> => {
+        seen = input;
+        return { ok: false, issues: ['no_pick'] };
+      },
+    });
+    expect(seen?.language).toBe('English');
+  });
+
   it('shop: jam caption ranks the jar over a forced oil bottle', async () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: shopAssignment(),
@@ -532,6 +569,135 @@ describe('gallery-first — one look owns the pack', () => {
     expect(called).toBe(0);
     expect(gf?.applied).toBe(false);
     expect(gf?.lookIssues).toContain('invented_product_claim');
+  });
+
+  it('shop: oil caption cannot look a honey jar even when look tries', async () => {
+    const HONEY = 'https://cdn.example.com/gallery/flower-honey.jpg';
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [HONEY]: {
+        primarySubject: 'honey',
+        visibleLabelText: 'SÜZME ÇİÇEK BALI',
+        description: 'Labeled flower honey jar',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: shopAssignment(),
+      galleryPhotos: [HONEY, OIL],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Bu yılın erken hasat zeytinyağı sofralarınızı süslüyor.',
+      ideationHeadline: 'Erken Hasat Zeytinyağımız Burada!',
+      subjectKey: 'olive_oil',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(OIL);
+    expect(shortlist.map((row) => row.url)).not.toContain(HONEY);
+
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [HONEY, OIL],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Bu yılın erken hasat zeytinyağı sofralarınızı süslüyor.',
+      ideationHeadline: 'Erken Hasat Zeytinyağımız Burada!',
+      subjectKey: 'olive_oil',
+      language: 'Turkish',
+      lookFn: async (): Promise<FeedSlotLookResult> => ({
+        ok: true,
+        pack: {
+          slotJob: 'ürün hero',
+          photoUrl: HONEY,
+          photoRole: 'product_for_sale',
+          caption: 'Süzme çiçek balımız sofralarınızı süslüyor.',
+          headline: 'Süzme çiçek balımız sofralarınızı süslüyor',
+          shellDirection: 'product_hero',
+          evidenceNote: "Etiket: 'SÜZME ÇİÇEK BALI'",
+        },
+      }),
+    });
+    expect(gf?.applied).toBe(false);
+    expect(gf?.lookIssues).toContain('no_pick');
+  });
+
+  it('shop hours: wedding copy + only jars is paket yok, not an oil pick', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        idea_index: 5,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'copy_a',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'local_products_shop_weekend_hours_story',
+        catalog_slot_label: 'hafta sonu saatleri',
+      },
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Düğünlerimize gelin, tatmaya bekliyoruz!',
+      ideationHeadline: 'Düğünlerimize gelin',
+    });
+    expect(shortlist).toHaveLength(0);
+  });
+
+  it('beach: place shortlist is not emptied by a missing product subject', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [TABLE, PLATE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Yula',
+      businessType: 'beach_club',
+      ideationCaption: 'The terrace holds the last light.',
+      ideationHeadline: 'Last light on the terrace',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(TABLE);
+  });
+
+  it('shop: EN honey caption shortlists the TR-labeled jar, not oil', () => {
+    const HONEY = 'https://cdn.example.com/gallery/cicek-bali.jpg';
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [HONEY]: {
+        visibleLabelText: 'SÜZME ÇİÇEK BALI',
+        description: 'Etiketli cam kavanoz rafta.',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL, HONEY],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Harbor Shop',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Wildflower honey from the hills this week.',
+      ideationHeadline: 'Wildflower honey',
+      subjectKey: 'honey',
+    });
+    expect(shortlist[0]?.url).toBe(HONEY);
+    expect(shortlist.map((row) => row.url)).not.toContain(OIL);
+  });
+
+  it('beach: EN terrace caption ranks the TR venue still over the plate', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: beachAssignment(),
+      galleryPhotos: [PLATE, TABLE],
+      galleryMeta: beachMeta(),
+      excludeUrls: [],
+      brandName: 'Yula',
+      businessType: 'beach_club',
+      ideationCaption: 'The terrace holds the last light. The sea stays open.',
+      ideationHeadline: 'Last light on the terrace',
+      subjectKey: 'venue',
+    });
+    expect(shortlist[0]?.url).toBe(TABLE);
   });
 
   it('does not call the look on reels', async () => {

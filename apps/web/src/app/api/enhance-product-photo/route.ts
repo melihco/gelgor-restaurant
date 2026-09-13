@@ -361,6 +361,8 @@ type EnhanceRunOpts = {
   referenceImageUrls: string[];
   sceneBrief: Record<string, unknown>;
   visualSubject: ResolvedVisualSubject;
+  /** Hub adaptive scene — sell restage may GPT-edit if cutout is down. */
+  adaptiveScene?: boolean;
 };
 
 async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
@@ -419,22 +421,27 @@ async function runSingleGalleryEnhance(opts: EnhanceRunOpts): Promise<{
         stages,
       };
     }
-    // Never GPT-edit packaging pixels — return source photo (lighting untouched beats morph).
-    console.warn(
-      '[enhance-product] packaging-safe composite unavailable — passthrough original (no GPT morph)',
-    );
-    stages.push('packaging_passthrough_original');
-    const sourceBuf = await fetchImageBuffer(opts.photoUrl);
-    if (!sourceBuf) {
-      throw new Error(`Could not fetch source image: ${opts.photoUrl.slice(0, 80)}`);
+    if (!opts.adaptiveScene) {
+      console.warn(
+        '[enhance-product] packaging-safe composite unavailable — passthrough original (no GPT morph)',
+      );
+      stages.push('packaging_passthrough_original');
+      const sourceBuf = await fetchImageBuffer(opts.photoUrl);
+      if (!sourceBuf) {
+        throw new Error(`Could not fetch source image: ${opts.photoUrl.slice(0, 80)}`);
+      }
+      const r2Url = await uploadEnhancedBufferToR2(sourceBuf, opts.workspaceId);
+      if (r2Url) stages.push('r2_upload');
+      return {
+        imageUrl: r2Url ?? `data:image/jpeg;base64,${sourceBuf.toString('base64')}`,
+        logoApplied: false,
+        stages,
+      };
     }
-    const r2Url = await uploadEnhancedBufferToR2(sourceBuf, opts.workspaceId);
-    if (r2Url) stages.push('r2_upload');
-    return {
-      imageUrl: r2Url ?? `data:image/jpeg;base64,${sourceBuf.toString('base64')}`,
-      logoApplied: false,
-      stages,
-    };
+    console.warn(
+      '[enhance-product] packaging-safe composite unavailable — GPT restage (adaptive scene)',
+    );
+    stages.push('packaging_cutout_miss_gpt_restage');
   }
 
   const openai = new OpenAI({ apiKey: opts.apiKey });
@@ -656,6 +663,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             referenceImageUrls,
             sceneBrief,
             visualSubject,
+            adaptiveScene: body.adaptiveScene === true,
           });
           return { original: photoUrl, imageUrl };
         } catch (err: unknown) {

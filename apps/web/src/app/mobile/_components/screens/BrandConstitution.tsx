@@ -2513,8 +2513,8 @@ function AdvancedVisualSettings({ t, aiEnabled, aiLevel, aiGalleryRevise, aiUseI
                   <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Caption&apos;a uygun sahne</div>
                   <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, maxWidth: 220, lineHeight: 1.35 }}>
                     {aiAdaptiveScene
-                      ? 'Yazıdaki sahne kurulur, seçili ürün/mekan yerleştirilir. Başka marka veya başka mekan yok.'
-                      : 'Kapalı: yalnız resimde duran yazılır. Açınca yazıdaki sahne kurulur.'}
+                      ? 'Satılık üründe zemin kurulur, etiket aynı kalır. Mekan slota gerçek foto durur — uydurma yer yok.'
+                      : 'Kapalı: galeri karesi olduğu gibi. Açınca yalnız satılık / süreç slota zemin.'}
                   </div>
                 </div>
                 <Toggle

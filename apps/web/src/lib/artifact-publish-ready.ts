@@ -218,6 +218,17 @@ export function resolveArtifactPublishReady(input: {
     };
   }
 
+  // Produce may have stamped publish_ready before the type gate was honest.
+  // An explicit fail (clipped / unread / invented line) always hides the card.
+  if (meta.typography_text_valid === false || meta.typographyTextValid === false) {
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: 'Görseldeki metin doğrulanamadı veya yarım kaldı',
+      code: 'quality_hard_block',
+    };
+  }
+
   // Produce already judged the pack. Akış only re-checks media + broken paint.
   const alreadyShipped = meta.publish_ready === true && meta.publish_blocked !== true;
   if (alreadyShipped) {

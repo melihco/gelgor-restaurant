@@ -226,7 +226,7 @@ export async function enhanceGalleryPhotosForIdea(opts: {
     missionId: opts.missionId,
   };
 
-  const timeoutMs = urls.length > 1 ? 240_000 : 120_000;
+  const timeoutMs = urls.length > 1 || standard?.adaptiveScene ? 240_000 : 120_000;
 
   for (let attempt = 0; attempt < 2; attempt++) {
     try {

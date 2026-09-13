@@ -3,6 +3,7 @@
  * Vision description stays in metadata.gallery_photo_description for prompts.
  */
 
+import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import {
   isVisionAnalysisDescription,
   isGalleryTagHeadline,
@@ -143,6 +144,7 @@ export function buildInstagramCaptionFromGalleryMeta(
   meta: Record<string, unknown> | undefined,
   brandName: string,
   location?: string,
+  language?: unknown,
 ): { caption: string; headline: string; sceneDescription: string } {
   const sceneDescription = String(meta?.description ?? meta?.photo_description ?? '').trim();
   const hook = pickTurkishCaptionHook(meta?.captionHooks);
@@ -176,8 +178,13 @@ export function buildInstagramCaptionFromGalleryMeta(
     : brandName;
   if (locLine) bodyParts.push(locLine);
 
-  const caption = bodyParts.join('\n\n').slice(0, 420).trim()
-    || `${brandName} deneyimini keşfedin.`;
+  const name = brandName.trim();
+  const emptyFallback = resolveLookPromptLanguage(language) === 'English'
+    ? (name ? `${name}.` : '')
+    : (name ? `${name} deneyimini keşfedin.` : '');
+  const onlyBrandName = bodyParts.length === 1 && bodyParts[0] === name;
+  const caption = (onlyBrandName ? emptyFallback : bodyParts.join('\n\n').slice(0, 420).trim())
+    || emptyFallback;
 
   return {
     caption,

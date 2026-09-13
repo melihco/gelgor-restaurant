@@ -88,11 +88,39 @@ describe('P1 — designed/fal BG enhance ↔ visual standard', () => {
     expect(shouldRunGptImageEnhance(input)).toBe(false);
   });
 
-  it('product_hero designed card skips enhance — high paint keeps the label', () => {
+  it('product sell + adaptive on → designed card may restage background', () => {
     const input = designedBgInput({
       businessType: 'local_products_shop',
       galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE + 10,
       skipEnhanceForDesignedGrade: true,
+      slotJob: 'müşteri favorisi',
+      caption: 'Badem ezmesi.',
+      assignment: {
+        pipeline: 'fal_design',
+        slot_role: 'fal_designed_post',
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+      } as GptEnhancePolicyInput['assignment'],
+      visualStandard: standard({
+        adaptiveScene: true,
+        visualSubject: 'product_hero',
+        adaptiveSceneMode: 'product_showcase',
+      }),
+    });
+    expect(isProductHeroStaging(input.visualStandard)).toBe(true);
+    expect(resolveGptEnhanceSkipReason(input)).toBeNull();
+    expect(shouldRunGptImageEnhance(input)).toBe(true);
+  });
+
+  it('product_hero designed card skips enhance when adaptive is off', () => {
+    const input = designedBgInput({
+      businessType: 'local_products_shop',
+      galleryMatchScore: GALLERY_ENHANCE_SKIP_MIN_SCORE + 10,
+      skipEnhanceForDesignedGrade: true,
+      assignment: {
+        pipeline: 'fal_design',
+        slot_role: 'fal_designed_post',
+        catalog_slot_key: 'local_products_shop_product_hero_post',
+      } as GptEnhancePolicyInput['assignment'],
       visualStandard: standard({
         visualSubject: 'product_hero',
         adaptiveSceneMode: 'product_showcase',

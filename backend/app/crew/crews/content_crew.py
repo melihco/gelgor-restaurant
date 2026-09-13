@@ -472,11 +472,9 @@ def _enforce_idea_completeness(concepts: list, brand: BrandInfo) -> list:
                 headline = cand
                 break
             if not headline:
-                # Derive a short headline from the caption's first words (stories
-                # often omit an explicit headline but ICS/Canva still need one).
-                caption = str(item.get("caption_draft") or item.get("caption") or "").strip()
-                words = caption.split()
-                headline = " ".join(words[:6]).rstrip(".,!?:;") if words else ""
+                # Never copy the caption opening onto the canvas. Pairing
+                # later fills a distinct later sentence when one exists.
+                headline = ""
             cta = str(item.get("cta") or "").strip()
             # Never put internal strategic_purpose on the canvas as subtitle.
             subtitle = str(item.get("subline") or item.get("tagline") or "").strip().strip('"“”\'«»')

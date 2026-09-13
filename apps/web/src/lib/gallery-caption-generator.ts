@@ -2,6 +2,7 @@
  * GPT caption generation from analyzed gallery photos (shared by API route + auto-produce).
  */
 import OpenAI from 'openai';
+import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { serverConfig } from '@/lib/server-config';
 
@@ -66,7 +67,7 @@ export async function generateGalleryCaptionsWithGpt(input: {
     input.brandDescription ? `About: ${input.brandDescription}` : '',
     input.industry ? `Industry: ${input.industry}` : '',
     input.slotHint ? `Content slot: ${input.slotHint}` : '',
-    `Language: ${input.language ?? 'Turkish'}`,
+    `Language: ${resolveLookPromptLanguage(input.language)}`,
     '',
     `Photos (${photosToProcess.length}):`,
     photosDescription,

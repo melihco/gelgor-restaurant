@@ -482,12 +482,14 @@ export function buildCaptionFromPhotoMeta(
   meta: GalleryPhotoMeta | undefined,
   brandName: string,
   location?: string,
+  language?: unknown,
 ): { caption: string; headline: string; sceneDescription: string } {
   const raw = meta as GalleryPhotoMeta & Record<string, unknown> | undefined;
   const built = buildInstagramCaptionFromGalleryMeta(
     raw as Record<string, unknown> | undefined,
     brandName,
     location,
+    language,
   );
   const desc = meta?.description?.trim() ?? '';
   if (desc && isVisionAnalysisDescription(desc) && built.caption) {

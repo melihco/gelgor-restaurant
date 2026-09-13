@@ -20,13 +20,16 @@ import {
 } from '@/lib/feed-pack-consistency';
 import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
 import {
+  deriveHeadlineFromCaption,
   groundFeedSlotCopy,
+  isCaptionOpeningHeadline,
   parseFeedSlotPack,
   type FeedPhotoRole,
   type FeedShellDirection,
   type FeedSlotPack,
   type FeedSlotPackIssue,
 } from '@/lib/feed-slot-pack';
+import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import {
   isIncompleteOverlayPhrase,
   keepCompleteOverlaySentence,
@@ -135,13 +138,15 @@ Rules:
 - Trust the image over metadata tags when they disagree.
 - evidenceNote names what is in the frame. Quote readable label text exactly. If no readable text, say so AND name what you can still identify (loaf, plate, dress, sunset, crowd) or say identity is unclear.
 - caption may only claim what evidenceNote supports. Do not invent grades, harvests, origins, product names, or event titles that are not visible.
-- ideation_hint is optional weekly intent. If the photo cannot prove it, ignore the hint and write from the photo + slot_job. Do not return null only because the hint does not match.
-- Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, drop those words and write from the readable label / what you see.
+- ideation_hint is the weekly product/scene. If a candidate can prove that product, pick that candidate. Caption and headline stay that product. Drop only unproven grades (harvest, origin) — do not switch to a different product because another jar has a clearer label.
+- If no candidate proves the weekly product, pickIndex null. Do not sell a different SKU.
+- Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, drop those words and write from the readable label of the SAME product.
 - Name water only from the frame. Open horizon water, waves, or a coast next to lawn and umbrellas is sea (deniz), not a lake (göl). Say göl/lake only when the water is clearly an enclosed inland lake.
 - evidenceNote names what is in the frame (lawn, umbrellas, loungers, sea). Caption is a magazine motto about that place — not a furniture inventory and not brochure filler ("mükemmel bir yer", "dinlendirici", "perfect place").
 - Caption is the Instagram body. Headline is a separate on-canvas social line — not the caption's first sentence and not a cut of it.
 - Headline must be a complete phrase in the requested language. Type can shrink later; do not drop a word to hit a box. No hashtags.
 - Headline and caption share the same claim and a noun visible in evidenceNote (terrace, sea, oil, jam). Do not invent grades, origins, or events.
+- Headline is a punchline. Never copy the caption's first sentence or its opening words.
 - brand_tone is the voice: luxury/premium → quiet editorial; warm/samimi → intimate; energetic → alive. Not a shop command ("gelin", "alın"), not a photo inventory, not brochure ("sizi bekliyoruz", "keşfedin", "experience").
 - A bottle or glass on a set table at a venue is table_prop unless the photo is clearly a product-for-sale hero (packaging fills the frame).
 - table_prop must not use product_hero.
@@ -162,7 +167,7 @@ Adaptive scene is ON. A later enhance step may restage the still (setting, light
 - Place or process jobs: prefer a matching place/process still. If none, pick the nearest labeled identity. Do not return null because the farm, shop, or process is not in the frame.
 - Adaptive pick is the ranked identity shortlist. You write the pack for that still. Null does not withhold the card.`;
 
-const SELL_MUST_PICK = `This is a sell job. At least one candidate has readable identity. You must set pickIndex to a candidate with identity. Do not return null because ideation_hint or an abstract catalog word is not printed on the photo. Caption, headline, and the picked product must say the same thing. Write from the visible label / what you see.`;
+const SELL_MUST_PICK = `This is a sell job. Pick a candidate whose identity is the weekly product in ideation_hint. Do not return null only because a harvest/grade word is missing from the label. Do return null if the only labeled jars are a different product. Caption, headline, and the picked product must say the same weekly product. Write from the visible label / what you see.`;
 
 function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean {
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
@@ -351,17 +356,27 @@ async function withResolvedVisionUrls(
 }
 
 function completeHeadlineFromCaption(caption: string): string {
-  const first = caption.trim().split(/[.!?…\n]/)[0]?.trim() || caption.trim();
-  return keepCompleteOverlaySentence(first) || first;
+  return deriveHeadlineFromCaption(caption);
 }
 
 function completeLookPack(
   pack: FeedSlotPack,
   opts?: { adaptiveScene?: boolean },
 ): FeedSlotPack | null {
-  if (!isIncompleteOverlayPhrase(pack.headline)) return pack;
+  if (
+    !isIncompleteOverlayPhrase(pack.headline)
+    && !isCaptionOpeningHeadline(pack.headline, pack.caption)
+  ) {
+    return pack;
+  }
   const rescued = completeHeadlineFromCaption(pack.caption);
-  if (!rescued || isIncompleteOverlayPhrase(rescued)) return null;
+  if (
+    !rescued
+    || isIncompleteOverlayPhrase(rescued)
+    || isCaptionOpeningHeadline(rescued, pack.caption)
+  ) {
+    return null;
+  }
   const parsed = parseFeedSlotPack({ ...pack, headline: rescued }, opts);
   return parsed.ok ? parsed.pack : null;
 }
@@ -403,9 +418,17 @@ function draftFromLookJson(
 
   const caption = String(parsed.caption ?? '').trim();
   let headline = String(parsed.headline ?? '').trim();
-  if (!headline || isIncompleteOverlayPhrase(headline)) {
+  if (
+    !headline
+    || isIncompleteOverlayPhrase(headline)
+    || isCaptionOpeningHeadline(headline, caption)
+  ) {
     const own = keepCompleteOverlaySentence(headline);
-    headline = own || completeHeadlineFromCaption(caption);
+    headline = own
+      && !isIncompleteOverlayPhrase(own)
+      && !isCaptionOpeningHeadline(own, caption)
+      ? own
+      : completeHeadlineFromCaption(caption);
   }
 
   let photoRole = asRole(parsed.photoRole ?? parsed.photo_role);
@@ -439,7 +462,7 @@ function buildLookUserText(input: FeedSlotLookInput, candidates: FeedSlotLookCan
       slotJob: input.slotJob,
       catalogSlotKey: input.catalogSlotKey ?? input.slotKey ?? undefined,
     }),
-    language: (input.language ?? 'Turkish').slice(0, 40),
+    language: resolveLookPromptLanguage(input.language),
     brand_tone: String(input.brandTone ?? '').slice(0, 80) || null,
     ideation_hint: String(input.ideationHint ?? '').slice(0, 400) || null,
     adaptive_scene: Boolean(input.adaptiveScene),
@@ -614,6 +637,7 @@ export async function lookFeedSlotPack(
       headline: String(draft.headline ?? ''),
       ideationHint: input.ideationHint,
       photoSideText,
+      language: input.language,
     });
     const sceneCopy = keepWeeklySceneCopy({
       adaptiveScene: Boolean(input.adaptiveScene),

@@ -149,7 +149,10 @@ export function getVisualSourceModeHint(
   if (mode === 'gallery_enhanced') {
     const level = labelAiEnhanceLevel(opts.level ?? 'moderate');
     const subject = labelAiVisualSubject(opts.subject ?? 'auto', opts.sector);
-    return `Yoğunluk: ${level} · Konu: ${subject}. İleri ayarlardan değiştirilebilir.`;
+    const gate = family === 'venue'
+      ? 'Mekan slota gerçek foto kalır; uydurma yer yok.'
+      : 'Satılık slota zemin değişebilir; etiket kilit. Mekan slota dokunulmaz.';
+    return `Yoğunluk: ${level} · Konu: ${subject}. ${gate}`;
   }
   if (mode === 'ai_generated') {
     return family === 'product'

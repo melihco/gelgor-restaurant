@@ -102,15 +102,18 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     expect(card.hardBlockReason).toContain('metin');
   });
 
-  // On the gallery and premium routes the flag is derived from the Grafiker pass
-  // flag, so blocking on it would reimpose the same uncalibrated threshold.
-  it('warns when typography_text_valid only mirrors a below-threshold score', () => {
-    const card = buildProductionQualityScorecard(stubArtifact({}), {
-      typography_text_valid: false,
-      grafiker_score: 6,
-    });
-    expect(card.hardBlock).toBe(false);
-    expect(card.softWarnings.join(' ')).toContain('metin');
+  it('shop + beach: explicit typography fail hard-blocks even when Grafiker is mid', () => {
+    for (const extra of [
+      { grafiker_score: 6, pipeline: 'premium_editorial' },
+      { grafiker_score: 5, pipeline: 'fal_design', fal_designer_produced: true },
+    ]) {
+      const card = buildProductionQualityScorecard(stubArtifact({}), {
+        typography_text_valid: false,
+        ...extra,
+      });
+      expect(card.hardBlock).toBe(true);
+      expect(card.hardBlockReason).toContain('metin');
+    }
   });
 
   it('does not block when typography flag is absent (legacy artifact)', () => {

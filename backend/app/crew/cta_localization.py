@@ -111,15 +111,15 @@ def resolve_language_code(languages: str | None) -> str:
     raw = (languages or "tr").split(",")[0].strip().lower()
     if raw in _LANG_MAP:
         return raw
-    if raw.startswith("eng"):
+    if raw.startswith("en-") or raw.startswith("eng"):
         return "en"
-    if raw.startswith("tur") or raw == "türkçe":
+    if raw.startswith("tr-") or raw.startswith("tur") or raw == "türkçe":
         return "tr"
-    return "en"
+    return "tr"
 
 
 def resolve_output_language(languages: str | None) -> str:
-    return _LANG_MAP.get(resolve_language_code(languages), "English")
+    return _LANG_MAP.get(resolve_language_code(languages), "Turkish")
 
 
 def _strip_cta_phrases(text: str) -> str:

@@ -232,6 +232,20 @@ export function resolveBrandLanguageCode(raw: unknown): 'tr' | 'en' {
   return 'tr';
 }
 
+/** Look / gallery-first prompt language. Empty or unknown → Turkish (same as brand code). */
+export function resolveLookPromptLanguage(raw?: unknown): 'English' | 'Turkish' {
+  if (raw == null) return 'Turkish';
+  const first = Array.isArray(raw)
+    ? String(raw.map((v) => String(v).trim()).find(Boolean) ?? '')
+    : String(raw).trim();
+  if (!first) return 'Turkish';
+  const low = first.toLowerCase();
+  if (low === 'english' || low === 'en' || low.startsWith('en-') || low.startsWith('eng')) {
+    return 'English';
+  }
+  return 'Turkish';
+}
+
 /** Align caption + CTA to brand language. Works even when caption is empty. */
 export function harmonizeCaptionAndCta(
   caption: string,

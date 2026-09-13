@@ -7,8 +7,10 @@
  */
 import {
   deriveHeadlineFromCaption,
+  isCaptionOpeningHeadline,
   lockFeedCardCopy,
 } from '@/lib/feed-slot-pack';
+import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 
@@ -248,5 +250,27 @@ export function keepWeeklySceneCopy(input: {
   const nextHeadline = grounded.headline.trim().length >= 4
     ? grounded.headline.trim()
     : deriveHeadlineFromCaption(nextCaption);
-  return lockFeedCardCopy({ caption: nextCaption, headline: nextHeadline });
+  const locked = lockFeedCardCopy({ caption: nextCaption, headline: nextHeadline });
+  if (!isCaptionOpeningHeadline(locked.headline, locked.caption)) {
+    return locked;
+  }
+  const later = deriveHeadlineFromCaption(locked.caption);
+  if (later) return { caption: locked.caption, headline: later };
+  const evidence = String(input.evidenceNote ?? '').trim();
+  const prior = headline;
+  if (
+    prior
+    && !isCaptionOpeningHeadline(prior, locked.caption)
+    && (
+      overlayHeadlineGroundedInCaption(prior, locked.caption)
+      || overlayHeadlineGroundedInCaption(prior, evidence)
+    )
+  ) {
+    return { caption: locked.caption, headline: prior };
+  }
+  const fromEvidence = deriveHeadlineFromCaption(evidence);
+  if (fromEvidence && !isCaptionOpeningHeadline(fromEvidence, locked.caption)) {
+    return { caption: locked.caption, headline: fromEvidence };
+  }
+  return { caption: locked.caption, headline: '' };
 }

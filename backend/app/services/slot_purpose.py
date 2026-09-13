@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from app.crew.caption_headline_pair import apply_caption_headline_pair
+from app.crew.cta_localization import resolve_language_code
 from app.data.sector_slot_pack import SECTOR_SLOT_PACKS
 
 _HASHTAG = re.compile(r"[#@]\S+")
@@ -207,10 +208,8 @@ def align_idea_to_slot_purpose(idea: dict[str, Any], brand: Any = None) -> bool:
         apply_caption_headline_pair(idea)
         return False
 
-    lang = ""
-    if brand is not None:
-        lang = str(getattr(brand, "languages", "") or "")
-    turkish = not lang or lang.lower().startswith("tr")
+    lang = getattr(brand, "languages", None) if brand is not None else None
+    turkish = resolve_language_code(lang) != "en"
     opening = _purpose_opening(key, brand, turkish)
     if not opening:
         return False

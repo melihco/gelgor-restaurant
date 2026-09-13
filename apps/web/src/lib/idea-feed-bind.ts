@@ -22,7 +22,42 @@ import {
   resolveIdeationTagline,
 } from '@/lib/production-idea-parse';
 import { enforceDisplayHeadline } from '@/lib/grafiker-quality';
+import { isCaptionOpeningHeadline } from '@/lib/feed-slot-pack';
+import { lookJobKind } from '@/lib/look-job-kind';
 import type { PunchlineLockSource } from '@/lib/slot-production-bundle';
+
+const ABSTRACT_SUBJECTS = new Set([
+  '',
+  'none',
+  'other',
+  'brand',
+  'logo',
+  'n/a',
+  'na',
+  'unknown',
+  'misc',
+  'general',
+  'atmosphere',
+  'lifestyle',
+  'venue',
+  'background',
+]);
+
+export function isConcreteProductSubject(subjectKey?: string | null): boolean {
+  return !ABSTRACT_SUBJECTS.has(String(subjectKey ?? '').trim().toLowerCase());
+}
+
+/**
+ * Sell + a real SKU: gallery / photo score stays on the weekly product.
+ * The Hub motto may still be the on-canvas punchline (inviting line).
+ */
+export function sellSlotLocksProductGallery(input: {
+  catalogSlotKey?: string | null;
+  subjectKey?: string | null;
+}): boolean {
+  if (!isConcreteProductSubject(input.subjectKey)) return false;
+  return lookJobKind({ catalogSlotKey: String(input.catalogSlotKey ?? '').trim() }) === 'sell';
+}
 
 export type IdeaFeedBind = {
   /** Unwrapped Hub/calendar quote (may be empty). */
@@ -31,9 +66,12 @@ export type IdeaFeedBind = {
   canvasTagline: string;
   /** True when the clamped tagline is the punchline SSOT for this slot. */
   taglinePublishable: boolean;
-  /** On-canvas marketing line (clamped Hub quote when locked). */
+  /** On-canvas marketing line (Hub motto when publishable). */
   paintHeadline: string;
-  /** Gallery scorer headline — identical to paintHeadline (no batch/drain drift). */
+  /**
+   * Gallery scorer headline. On sell + SKU this is the product line, even when
+   * paintHeadline is the motto — photo pick must not score a greeting.
+   */
   galleryMatchHeadline: string;
   /** Gallery MatchIntent caption blob (never content_brief). */
   galleryMatchCaption: string;
@@ -65,14 +103,20 @@ function resolveCanvasTagline(
  * Gallery MatchIntent caption — tagline-led for calendar; caption ± mood otherwise.
  * Never includes content_brief (scene brief pollutes ranking).
  */
-export function resolveGalleryMatchCaptionForIdea(idea: Record<string, unknown>): string {
+export function resolveGalleryMatchCaptionForIdea(
+  idea: Record<string, unknown>,
+  opts?: { catalogSlotKey?: string | null },
+): string {
   const tagline = resolveIdeationTagline(idea);
   const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
-  const subject = String(idea.subject_key ?? idea.subjectKey ?? '')
-    .replace(/_/g, ' ')
-    .trim();
+  const subjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim();
+  const subject = subjectKey.replace(/_/g, ' ');
   const mood = String(idea.photo_mood ?? idea.mood ?? idea.visual_direction ?? '').trim();
   const planning = String(idea.headline ?? idea.concept_title ?? '').trim();
+  const catalogSlotKey = String(opts?.catalogSlotKey ?? idea.catalog_slot_key ?? '').trim();
+  if (sellSlotLocksProductGallery({ catalogSlotKey, subjectKey })) {
+    return [caption, subject, planning, mood].filter(Boolean).join(' — ');
+  }
   if (isCalendarProductionIdea(idea) || tagline) {
     return [tagline, caption, subject, planning, mood].filter(Boolean).join(' — ');
   }
@@ -98,29 +142,37 @@ export function resolveIdeaFeedBind(
     opts?.channel ?? 'feed_post',
     opts?.brandName,
   );
-  const taglinePublishable = canvasTagline.length > 0;
-  const overlay = resolveIdeationOverlayHeadline(idea);
-  const planning = resolveIdeationHeadline(idea);
-  // Locked slots paint the clamped Hub line, so the gallery must score against
-  // that exact string — otherwise batch (orchestrator) and drain (loop) diverge.
-  const paintHeadline = taglinePublishable
-    ? canvasTagline
-    : enforceDisplayHeadline((overlay || planning).trim(), 72);
-
   const catalogSlotKey = String(
     opts?.catalogSlotKey
       ?? idea.catalog_slot_key
       ?? '',
   ).trim() || undefined;
   const subjectKey = String(idea.subject_key ?? idea.subjectKey ?? '').trim() || undefined;
+  const productLocksGallery = sellSlotLocksProductGallery({
+    catalogSlotKey,
+    subjectKey,
+  });
+  const taglinePublishable = canvasTagline.length > 0;
+  const caption = String(idea.caption_draft ?? idea.caption ?? '').trim();
+  const overlay = resolveIdeationOverlayHeadline(idea);
+  const planning = resolveIdeationHeadline(idea);
+  const productLine = enforceDisplayHeadline(planning.trim(), 72);
+  let paintHeadline = taglinePublishable
+    ? canvasTagline
+    : enforceDisplayHeadline((overlay || planning).trim(), 72);
+  if (!taglinePublishable && paintHeadline && isCaptionOpeningHeadline(paintHeadline, caption)) {
+    paintHeadline = '';
+  }
 
   return {
     tagline,
     canvasTagline,
     taglinePublishable,
     paintHeadline,
-    galleryMatchHeadline: paintHeadline,
-    galleryMatchCaption: resolveGalleryMatchCaptionForIdea(idea),
+    galleryMatchHeadline: productLocksGallery
+      ? productLine
+      : (paintHeadline || productLine),
+    galleryMatchCaption: resolveGalleryMatchCaptionForIdea(idea, { catalogSlotKey }),
     punchlineLockSource: taglinePublishable ? 'mission_tagline' : null,
     subjectKey,
     catalogSlotKey,

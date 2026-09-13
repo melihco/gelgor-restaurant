@@ -3,9 +3,30 @@ import {
   harmonizeCaptionAndCta,
   localizeCta,
   pickLocalizedCta,
+  resolveBrandLanguageCode,
+  resolveLookPromptLanguage,
 } from '@/lib/cta-localization';
 
 describe('cta localization', () => {
+  it('empty brand languages resolve to tr, explicit en stays en', () => {
+    expect(resolveBrandLanguageCode(undefined)).toBe('tr');
+    expect(resolveBrandLanguageCode('')).toBe('tr');
+    expect(resolveBrandLanguageCode([])).toBe('tr');
+    expect(resolveBrandLanguageCode('en')).toBe('en');
+    expect(resolveBrandLanguageCode('en-US')).toBe('en');
+    expect(resolveBrandLanguageCode('de')).toBe('tr');
+  });
+
+  it('look prompt language maps empty and codes the same way for shop and beach', () => {
+    expect(resolveLookPromptLanguage(undefined)).toBe('Turkish');
+    expect(resolveLookPromptLanguage('')).toBe('Turkish');
+    expect(resolveLookPromptLanguage('tr')).toBe('Turkish');
+    expect(resolveLookPromptLanguage('Turkish')).toBe('Turkish');
+    expect(resolveLookPromptLanguage('en')).toBe('English');
+    expect(resolveLookPromptLanguage('English')).toBe('English');
+    expect(resolveLookPromptLanguage('en-GB')).toBe('English');
+  });
+
   it('maps service-profile Turkish presets to English', () => {
     expect(localizeCta('Rezervasyon Yap', 'en')).toBe('Book now');
     expect(localizeCta('Masanı Ayır', 'en')).toBe('Reserve a table');

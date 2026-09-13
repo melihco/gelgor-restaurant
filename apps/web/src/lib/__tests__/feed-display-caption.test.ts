@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildArtifactListTitle,
+  buildInstagramCaptionFromGalleryMeta,
   hasPublishableIdeationHeadline,
   resolveFeedDisplayCaption,
   resolveFeedDisplayHeadline,
@@ -76,6 +77,17 @@ describe('feed display copy — Meon wedding example', () => {
       hasPublishableIdeationHeadline('The image shows a bride and groom on the beach'),
     ).toBe(false);
     expect(hasPublishableIdeationHeadline(MEON.ideationHeadline)).toBe(true);
+  });
+
+  it('shop: empty gallery fallback stays Turkish', () => {
+    const built = buildInstagramCaptionFromGalleryMeta(undefined, 'Dükkan');
+    expect(built.caption).toBe('Dükkan deneyimini keşfedin.');
+  });
+
+  it('beach: empty gallery fallback is English when the brand language is en', () => {
+    const built = buildInstagramCaptionFromGalleryMeta(undefined, 'Yula', undefined, 'en');
+    expect(built.caption).toBe('Yula.');
+    expect(built.caption).not.toMatch(/keşfedin/);
   });
 
   it('rejects slot format labels as ideation headline', () => {

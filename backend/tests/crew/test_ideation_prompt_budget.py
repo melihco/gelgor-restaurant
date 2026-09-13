@@ -175,6 +175,33 @@ def test_ideation_context_drops_raw_json_keeps_scene_block_two_sectors() -> None
         assert brand.gallery_analysis not in body
 
 
+def test_empty_languages_write_turkish_for_shop_and_beach() -> None:
+    dummy = Agent(role="x", goal="x", backstory="x")
+    for sector in ("local_products_shop", "beach_club"):
+        brand = BrandInfo(
+            business_name="Test Marka",
+            business_type=sector,
+            description="Yerel ürün ve mekan.",
+            languages="",
+        )
+        body = str(create_content_ideation_task(dummy, brand, count=4).description or "")
+        assert "NATIVE LANGUAGE: Turkish" in body
+        assert "NATIVE LANGUAGE: English" not in body
+
+
+def test_explicit_en_languages_write_english_for_shop_and_beach() -> None:
+    dummy = Agent(role="x", goal="x", backstory="x")
+    for sector in ("local_products_shop", "beach_club"):
+        brand = BrandInfo(
+            business_name="Harbor Shop",
+            business_type=sector,
+            description="Local goods and venue.",
+            languages="en",
+        )
+        body = str(create_content_ideation_task(dummy, brand, count=4).description or "")
+        assert "NATIVE LANGUAGE: English" in body
+
+
 def test_ideation_loop_defaults_are_two_iters_and_one_topup() -> None:
     from app.config import Settings
     from app.services.package_weekly_geometry import CONTENT_IDEATION_MAX_TOPUPS

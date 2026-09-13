@@ -14,7 +14,7 @@ from crewai import Agent, LLM
 
 from app.config import get_settings
 from app.crew.context import BrandInfo, build_brand_context_prompt, build_ideation_brand_context
-from app.crew.cta_localization import localize_ctas, resolve_language_code, resolve_output_language
+from app.crew.cta_localization import resolve_output_language
 from app.crew.prompts.content_prompts import (
     CONTENT_AGENT_BACKSTORY,
     CONTENT_AGENT_GOAL,
@@ -64,9 +64,7 @@ def create_content_agent(
     else:
         brand_context_block = build_brand_context_prompt(brand)
 
-    lang_map = {"en": "English", "tr": "Turkish", "de": "German", "fr": "French", "es": "Spanish"}
-    raw_lang = (brand.languages or "tr").split(",")[0].strip().lower()
-    output_language = lang_map.get(raw_lang, raw_lang.capitalize())
+    output_language = resolve_output_language(brand.languages)
 
     backstory = CONTENT_AGENT_BACKSTORY.format(
         business_name=brand.business_name,

@@ -37,6 +37,15 @@ vi.mock('@/lib/premium-editorial', () => ({
   premiumEditorialArtifactMetadata: () => ({ editorial: true }),
 }));
 
+vi.mock('@/lib/typography-text-validation', () => ({
+  validateFalCanvasText: vi.fn(async () => ({
+    valid: true,
+    headlineValid: true,
+    subtitleValid: true,
+    confidence: 1,
+  })),
+}));
+
 import { premiumEditorialHandler } from '../premium-editorial-pipeline';
 
 function emptyState(): SlotProductionState {
@@ -118,6 +127,10 @@ describe('premiumEditorialHandler template lock', () => {
     });
     expect(state.brandDesignTemplateId).toBe('tpl-beach');
     expect(state.imageUrl).toBe('https://cdn.example.com/out.jpg');
+    expect(state.artifactMetaPatch).toMatchObject({
+      typography_text_valid: true,
+      text_validated: true,
+    });
     expect(runCampaign).toHaveBeenCalledWith(expect.objectContaining({
       forceNewComposition: false,
       templateLayoutImageUrl: 'https://cdn.example.com/shell.png',

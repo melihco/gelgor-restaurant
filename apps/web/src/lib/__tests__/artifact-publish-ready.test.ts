@@ -298,6 +298,52 @@ describe('resolveArtifactPublishReady', () => {
     expect(isArtifactFeedReady(artifact)).toBe(true);
   });
 
+  it('shop editorial: already-stamped typography fail stays off Akış', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'premium_editorial',
+        production_role: 'premium_editorial_campaign_post',
+        fal_designer_produced: true,
+        grafiker_pass: false,
+        grafiker_score: 5,
+        typography_text_valid: false,
+        publish_ready: true,
+        publish_blocked: false,
+        agency_produced: true,
+        auto_produced: true,
+      },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/clip-shop.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.blockFeed).toBe(true);
+    expect(d.code).toBe('quality_hard_block');
+  });
+
+  it('beach designed: already-stamped typography fail stays off Akış', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_pass: false,
+        grafiker_score: 5,
+        typography_text_valid: false,
+        publish_ready: true,
+        publish_blocked: false,
+        agency_produced: true,
+        auto_produced: true,
+      },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/clip-beach.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.blockFeed).toBe(true);
+    expect(d.code).toBe('quality_hard_block');
+  });
+
   it('keeps a real typography fail off the feed after stamp recompute', () => {
     const d = resolveArtifactPublishReady({
       meta: {
@@ -643,6 +689,24 @@ describe('persistIfPublishReady', () => {
     }));
     expect(ready.persist).toBe(true);
     expect(soft.persist).toBe(true);
+  });
+
+  it('shop editorial: typography fail withholds even without text_validated', () => {
+    const type = persistIfPublishReady(resolveArtifactPublishReady({
+      meta: {
+        ...shopDesigned,
+        pipeline: 'premium_editorial',
+        production_role: 'premium_editorial_campaign_post',
+        grafiker_score: 5,
+        grafiker_pass: false,
+        typography_text_valid: false,
+      },
+      content: { kind: 'instagram_post', imageUrl: 'https://cdn.example.com/editorial.jpg' },
+      format: 'post',
+      designedVisualReady: true,
+    }));
+    expect(type.persist).toBe(false);
+    if (!type.persist) expect(type.errorCode).toBe('quality_hard_block');
   });
 
   it('beach_club: grafiker 3 withholds; typography fail withholds', () => {

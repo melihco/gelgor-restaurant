@@ -444,7 +444,11 @@ export function canonicalSubjectRelation(
 ): CanonicalSubjectRelation {
   const a = normalizeSubjectForRelation(captionKey);
   const b = normalizeSubjectForRelation(photoKey);
-  if (NON_CONCRETE_SUBJECTS.has(a) || NON_CONCRETE_SUBJECTS.has(b)) return 'unknown';
+  if (NON_CONCRETE_SUBJECTS.has(a) || NON_CONCRETE_SUBJECTS.has(b)) {
+    const abstractUnknown = new Set(['', 'none', 'other', 'n/a', 'na', 'unknown', 'misc', 'general']);
+    if (a && b && a === b && !abstractUnknown.has(a)) return 'match';
+    return 'unknown';
+  }
   if (isJamFamilySubject(a) && isJamFamilySubject(b)) return 'match';
   if (a === b) return 'match';
   if (a.includes(b) || b.includes(a)) return 'match';
@@ -1336,6 +1340,45 @@ function buildSearchable(meta: GalleryPhotoMeta, url?: string): string {
   return buildGalleryPhotoSearchable(meta, url);
 }
 
+const IDENTITY_SCORE = 40;
+
+/**
+ * Language-neutral identity first. Caption token overlap is secondary so an
+ * English honey line still keeps a Turkish-labeled jar. No new synonym lists.
+ */
+function scoreSubjectAndLabelIdentity(
+  meta: GalleryPhotoMeta,
+  input: MatchPhotoInput,
+  searchable: string,
+): { score: number; reasons: string[]; matched: boolean } {
+  const captionClusters = resolveCaptionSubjectClusters(matchCaptionBlob(input), input.subjectKey);
+  const photoClusters = resolvePhotoSubjectClusters(searchable, meta.primarySubject);
+  for (const idx of captionClusters) {
+    if (photoClusters.has(idx)) {
+      return {
+        score: IDENTITY_SCORE,
+        reasons: [`identity_subject:${LOCAL_PRODUCT_SKU_CLUSTERS[idx]?.id ?? idx}`],
+        matched: true,
+      };
+    }
+  }
+  const label = String(meta.visibleLabelText ?? '').trim();
+  if (label) {
+    const labelClusters = detectLocalProductClusters(label);
+    const keyClusters = subjectClustersFromToken(input.subjectKey);
+    const want = keyClusters.size ? keyClusters : captionClusters;
+    for (const idx of want) {
+      if (labelClusters.has(idx)) {
+        return { score: IDENTITY_SCORE, reasons: ['identity_visible_label'], matched: true };
+      }
+    }
+  }
+  if (canonicalSubjectRelationForMeta(input.subjectKey, meta) === 'match') {
+    return { score: IDENTITY_SCORE, reasons: ['identity_subject_key'], matched: true };
+  }
+  return { score: 0, reasons: [], matched: false };
+}
+
 function isGenericFallbackGalleryDescription(description: string): boolean {
   const text = description.toLowerCase();
   return text.includes('metadata fallback analysis for a brand gallery image')
@@ -1356,6 +1399,11 @@ function scorePhotoForContent(
   const searchable = buildSearchable(meta, url);
   const reasons: string[] = [];
   let score = 0;
+  const identity = scoreSubjectAndLabelIdentity(meta, input, searchable);
+  if (identity.matched) {
+    score += identity.score;
+    reasons.push(...identity.reasons);
+  }
 
   // ── Universal subject category boosts ─────────────────────────────────
   // SUBJECT_SYNONYMS are now universal cross-sector categories (people, food,
@@ -1583,13 +1631,15 @@ function scorePhotoForContent(
   // raw keyword scraping; dictionary detection is the fallback inside the resolvers.
   const captionSubjectClusters = resolveCaptionSubjectClusters(text, input.subjectKey);
   const photoSubjectClusters = resolvePhotoSubjectClusters(searchable, meta.primarySubject);
-  let productClusterMatched = false;
-  for (const idx of captionSubjectClusters) {
-    if (photoSubjectClusters.has(idx)) {
-      score += 24;
-      reasons.push(`product_match:${LOCAL_PRODUCT_SKU_CLUSTERS[idx]?.id ?? idx}`);
-      productClusterMatched = true;
-      break;
+  let productClusterMatched = identity.matched;
+  if (!productClusterMatched) {
+    for (const idx of captionSubjectClusters) {
+      if (photoSubjectClusters.has(idx)) {
+        score += 24;
+        reasons.push(`product_match:${LOCAL_PRODUCT_SKU_CLUSTERS[idx]?.id ?? idx}`);
+        productClusterMatched = true;
+        break;
+      }
     }
   }
 
@@ -1625,7 +1675,7 @@ function scorePhotoForContent(
     // mismatch (haircut↔nail, burger↔pizza) block without a keyword list.
     if (captionSubjectClusters.size === 0 && productConflict < STRONG_MATCH_SCORE) {
       const relation = canonicalSubjectRelationForMeta(input.subjectKey, meta);
-      if (relation === 'match') {
+      if (relation === 'match' && !identity.matched) {
         score += 24;
         reasons.push('subject_key_match');
       } else if (relation === 'conflict' && (meta.subjectConfidence ?? 1) >= 0.4) {
@@ -1633,6 +1683,11 @@ function scorePhotoForContent(
         reasons.push('subject_key_conflict_veto');
       }
     }
+  }
+
+  const vetoed = reasons.some((r) => /veto|hard_/.test(r)) || score <= -100;
+  if (identity.matched && !vetoed) {
+    score = Math.max(score, MIN_ACCEPT_SCORE);
   }
 
   return { score, reasons };

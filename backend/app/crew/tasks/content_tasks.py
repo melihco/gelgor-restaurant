@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from crewai import Agent, Task
 
 from app.crew.context import BrandInfo, build_urgency_directive, omit_raw_gallery_analysis
+from app.crew.cta_localization import resolve_output_language
 from app.crew.prompts.content_prompts import (
     CONTENT_CALENDAR_TASK,
     CONTENT_IDEATION_TASK,
@@ -647,10 +648,7 @@ def create_content_ideation_task(
     gallery_scene_block = _build_gallery_scene_block(brand)
     recent_titles_block = _build_recent_titles_block(brand)
 
-    # Resolve output language — "en" → English, "tr" → Turkish, etc.
-    lang_map = {"en": "English", "tr": "Turkish", "de": "German", "fr": "French", "es": "Spanish"}
-    raw_lang = (brand.languages or "en").split(",")[0].strip().lower()
-    output_language = lang_map.get(raw_lang, raw_lang.capitalize())
+    output_language = resolve_output_language(brand.languages)
     loc_default = "not specified" if output_language == "English" else "belirtilmemiş"
     aud_default = "general audience" if output_language == "English" else "genel kitle"
 

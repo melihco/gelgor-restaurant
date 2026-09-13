@@ -251,7 +251,8 @@ describe('feed-slot-look — shop + beach', () => {
     if (result.ok) {
       expect(result.pack.caption).toMatch(/Sızma/);
       expect(result.pack.caption).not.toMatch(/Erken hasat|Datça/);
-      expect(result.pack.headline).toMatch(/Sızma zeytinyağımız raflarda/);
+      expect(result.pack.headline).toMatch(/damla yeter/i);
+      expect(result.pack.headline).not.toMatch(/^Sızma zeytinyağımız raflarda$/);
     }
   });
 
@@ -444,7 +445,7 @@ describe('feed-slot-look — shop + beach', () => {
     if (result.ok) {
       expect(result.pack.photoUrl).toBe('https://cdn.example.com/jar.jpg');
       expect(result.pack.caption).toMatch(/Çam/);
-      expect(result.pack.headline).toMatch(/Çam balımız rafta/);
+      expect(result.pack.headline).toMatch(/kaşık|kasik/i);
     }
     const messages = captured.content as Array<{ role: string; content: unknown }>;
     expect(JSON.stringify(messages)).toMatch(/sell job/i);
@@ -733,7 +734,7 @@ describe('feed-slot-look — shop + beach', () => {
     const adaptive = lookSystemPrompt(true);
     const base = lookSystemPrompt(false);
     expect(base).toMatch(/job_kind/);
-    expect(base).toMatch(/Do not return null only because the hint does not match/);
+    expect(base).toMatch(/do not switch to a different product/i);
     expect(base).not.toMatch(/or return pickIndex null/);
     expect(adaptive).toMatch(/best-caption-first|ordered best-caption-first/);
     expect(adaptive).toMatch(/restage the still/i);
@@ -778,6 +779,58 @@ describe('feed-slot-look — shop + beach', () => {
     const blob = JSON.stringify(messages);
     expect(blob).toMatch(/language\\":\\"English/);
     expect(blob).toMatch(/brand_tone\\":\\"luxury/);
+  });
+
+  it('shop: omitted language writes Turkish, not English', async () => {
+    const captured: Captured = {};
+    await lookFeedSlotPack(
+      {
+        slotJob: 'ürün hero',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          description: 'Labeled olive oil tin',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'Labeled olive oil tin',
+          caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+          headline: 'Raflarda sızma',
+          shellDirection: 'product_hero',
+        }, captured),
+      },
+    );
+    const blob = JSON.stringify(captured.content);
+    expect(blob).toMatch(/language\\":\\"Turkish/);
+    expect(blob).not.toMatch(/language\\":\\"English/);
+  });
+
+  it('beach: language code en becomes English in the look prompt', async () => {
+    const captured: Captured = {};
+    await lookFeedSlotPack(
+      {
+        slotJob: 'gün batımı',
+        language: 'en',
+        candidates: [{
+          url: 'https://cdn.example.com/terrace.jpg',
+          description: 'Terrace, umbrellas, open sea horizon',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'venue',
+          evidenceNote: 'Terrace, umbrellas, open sea horizon',
+          caption: 'The terrace holds the last light. The sea stays open.',
+          headline: 'Last light on the terrace',
+          shellDirection: 'venue_ambiance',
+        }, captured),
+      },
+    );
+    const blob = JSON.stringify(captured.content);
+    expect(blob).toMatch(/language\\":\\"English/);
   });
 
   it('adaptive scene keeps the weekly process sentence on a bottle still', async () => {
@@ -834,7 +887,7 @@ describe('feed-slot-look — shop + beach', () => {
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.pack.headline).toMatch(/Sızma zeytinyağımız raflarda/i);
+      expect(result.pack.headline).toMatch(/damla yeter/i);
       expect(result.pack.headline.toLowerCase()).not.toMatch(/üretim sürecine/);
     }
   });
@@ -906,8 +959,8 @@ describe('feed-slot-look — shop + beach', () => {
           pickIndex: 0,
           photoRole: 'venue',
           evidenceNote: 'iskele, açık deniz ufku',
-          caption: 'Deniz duruyor. Kenarda kalın.',
-          headline: 'Deniz duruyor',
+          caption: 'Deniz duruyor. İskele yerinde.',
+          headline: 'İskele yerinde',
           shellDirection: 'venue_ambiance',
         }, calls),
       },

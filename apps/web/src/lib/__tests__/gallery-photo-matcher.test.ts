@@ -980,6 +980,120 @@ describe('subject aliases / family feed multilingual matching', () => {
   });
 });
 
+describe('EN/TR identity ranks before caption tokens (shop + beach)', () => {
+  const HONEY = 'https://cdn.example.com/tr-honey-jar.jpg';
+  const OIL = 'https://cdn.example.com/en-oil-bottle.jpg';
+  const TERRACE = 'https://cdn.example.com/tr-terrace.jpg';
+  const PLATE = 'https://cdn.example.com/en-plate.jpg';
+
+  const shopGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [HONEY]: {
+      visibleLabelText: 'SÜZME ÇİÇEK BALI',
+      description: 'Etiketli cam kavanoz rafta.',
+      suggestedAssetType: 'product_image',
+    },
+    [OIL]: {
+      primarySubject: 'olive_oil',
+      description: 'Bottle from the hills this week, open wooden shelf.',
+      contentTags: ['bottle', 'week', 'hills'],
+      suggestedAssetType: 'product_image',
+    },
+  });
+
+  const beachGallery = (): Record<string, GalleryPhotoMeta> => ({
+    [TERRACE]: {
+      primarySubject: 'venue',
+      description: 'Gün batımı terası, kapalı şemsiyeler, açık deniz ufku',
+      suggestedAssetType: 'venue_reference',
+    },
+    [PLATE]: {
+      primarySubject: 'plate',
+      description: 'The last light on a lunch plate with lemon and herbs.',
+      contentTags: ['plate', 'lunch', 'light'],
+      suggestedAssetType: 'food_drink_photo',
+    },
+  });
+
+  it('shop: EN honey caption keeps the TR-labeled jar over an English oil still', () => {
+    const gallery = shopGallery();
+    const urls = [OIL, HONEY];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Wildflower honey from the hills this week.',
+        headline: 'Wildflower honey',
+        businessType: 'local_products_shop',
+        subjectKey: 'honey',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(HONEY);
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(MIN_ACCEPT_SCORE);
+  });
+
+  it('shop: TR oil caption keeps the labeled tin over the honey jar', () => {
+    const gallery = shopGallery();
+    const urls = [HONEY, OIL];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Erken hasat zeytinyağımız bu hafta raflarda.',
+        headline: 'Erken hasat',
+        businessType: 'local_products_shop',
+        subjectKey: 'olive_oil',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(OIL);
+  });
+
+  it('beach: EN terrace caption keeps the TR venue still over an English plate', () => {
+    const gallery = beachGallery();
+    const urls = [PLATE, TERRACE];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'The terrace holds the last light. The sea stays open.',
+        headline: 'Last light on the terrace',
+        businessType: 'beach_club',
+        subjectKey: 'venue',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(TERRACE);
+    expect(ranked[0]?.score).toBeGreaterThanOrEqual(MIN_ACCEPT_SCORE);
+  });
+
+  it('beach: TR plate caption keeps the plate over the terrace', () => {
+    const gallery = beachGallery();
+    const urls = [TERRACE, PLATE];
+    const ranked = rankPhotosForContent(
+      {
+        caption: 'Tabağımızda bugünün ızgarası. Limon yanında.',
+        headline: 'Bugünün tabağı',
+        businessType: 'beach_club',
+        subjectKey: 'plate',
+      },
+      urls,
+      buildGalleryLookup(gallery, urls),
+      new Set(),
+      gallery,
+    );
+    expect(ranked[0]?.url).toBe(PLATE);
+  });
+
+  it('same place token is identity, not unknown', () => {
+    expect(canonicalSubjectRelation('venue', 'venue')).toBe('match');
+    expect(canonicalSubjectRelation('none', 'none')).toBe('unknown');
+  });
+});
+
 describe('bindGalleryUrlToAnalysis', () => {
   it('binds a same-filename media key to the website analysis row', () => {
     const site = 'https://shop.example.com/wp-content/uploads/2026/03/honey.jpg';

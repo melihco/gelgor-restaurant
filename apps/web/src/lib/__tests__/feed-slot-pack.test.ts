@@ -4,8 +4,12 @@ import {
   isMeaningfulFalOverlayText,
 } from '@/lib/fal-caption-headline';
 import {
+  captionOpensWithHeadline,
   describeFeedSlotPack,
   fitHeadlineToMottoBox,
+  galleryInventoryText,
+  galleryInventoryTextForIdea,
+  GALLERY_INVENTORY_CLAIM_BUDGET,
   groundFeedSlotCopy,
   headlineTakenFromCaption,
   isStampedFeedSlotPackVisible,
@@ -196,6 +200,7 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
     expect(r.caption.toLowerCase()).not.toMatch(/gelin,|alın\./);
     expect(r.caption.toLowerCase()).not.toMatch(/sizi bekliyoruz|deneyimlemek|keşfedin|experience/);
     expect(headlineTakenFromCaption(r.headline, r.caption)).toBe(true);
+    expect(captionOpensWithHeadline(r.caption, r.headline)).toBe(false);
   });
 
   it('shop: still drops harvest when the ideation hint is missing', () => {
@@ -225,6 +230,7 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
     expect(r.caption.toLowerCase()).not.toMatch(/erken hasat/);
     expect(r.caption.toLowerCase()).toMatch(/karisik|karışık|cesnili|çeşnili/);
     expect(headlineTakenFromCaption(r.headline, r.caption)).toBe(true);
+    expect(captionOpensWithHeadline(r.caption, r.headline)).toBe(false);
   });
 
   it('shop: keeps early harvest when the label proves it', () => {
@@ -262,6 +268,7 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
     expect(isIncompleteOverlayPhrase(r.headline)).toBe(false);
     expect(isMeaningfulFalOverlayText(r.headline)).toBe(true);
     expect(headlineTakenFromCaption(r.headline, r.caption)).toBe(true);
+    expect(captionOpensWithHeadline(r.caption, r.headline)).toBe(false);
   });
 
   it('cafe: keeps reservation copy when the plate and fireplace are in evidence', () => {
@@ -276,7 +283,8 @@ describe('feed-slot-pack — copy from evidence, not leftover ideation', () => {
       ideationHint: caption,
     });
     expect(r.caption).toBe(caption);
-    expect(r.headline).toMatch(/yerinizi ayırtın|şömine/i);
+    expect(r.headline).toMatch(/şömine/i);
+    expect(captionOpensWithHeadline(r.caption, r.headline)).toBe(false);
   });
 });
 
@@ -311,6 +319,65 @@ describe('feed-slot-pack — motto box + caption open', () => {
     expect(fitted).not.toMatch(/şemsiye|şezlong|,/i);
   });
 
+  it('beach: does not invent a pier when the still only names the sea', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'çim alan şemsiye şezlong',
+      photoRole: 'venue',
+      shellDirection: 'venue_ambiance',
+      evidenceNote: 'çim, kapalı şemsiye, begonvil, açık deniz ufku',
+      caption: 'Göz alıcı bir manzara ile dinlenmek için mükemmel bir yer.',
+      headline: 'Deniz manzarası eşliğinde huzur dolu anlar.',
+      photoSideText: 'çim, kapalı şemsiye, begonvil, açık deniz ufku',
+    });
+    expect(r.caption).toBe('Deniz duruyor. Alan açık.');
+    expect(r.caption).not.toMatch(/iskele/i);
+  });
+
+  it('beach: English brand does not paint Deniz duruyor on a sea card', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'sunset terrace',
+      photoRole: 'venue',
+      shellDirection: 'venue_ambiance',
+      evidenceNote: 'Terrace, umbrellas, open sea horizon',
+      caption: 'Check out our weekend events. Umbrellas and lawns wait.',
+      headline: 'Check out our weekend events',
+      photoSideText: 'terrace umbrellas open sea horizon',
+      language: 'English',
+    });
+    expect(r.caption).toBe('The sea is still. The place is open.');
+    expect(r.caption).not.toMatch(/Deniz duruyor|İskele yerinde|The pier holds/);
+    expect(r.headline).not.toMatch(/Deniz duruyor/);
+  });
+
+  it('shop: English brand does not paint Etiket duruyor', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'product hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: "Label: 'HONEY'",
+      caption: 'Early harvest olive oil from the grove this week.',
+      headline: 'Early harvest olive oil from the grove this week.',
+      language: 'en',
+    });
+    expect(r.caption).toMatch(/honey/i);
+    expect(r.caption).toMatch(/The label stays/i);
+    expect(r.caption).not.toMatch(/Etiket duruyor/);
+  });
+
+  it('shop: Turkish brand still paints Etiket duruyor when the label is the only line', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'ürün hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: "Etiket: 'BAL'",
+      caption: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
+      headline: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
+    });
+    expect(r.caption).toMatch(/bal/i);
+    expect(r.caption).toMatch(/Etiket duruyor/);
+    expect(r.caption).not.toMatch(/The label stays/);
+  });
+
   it('beach: inventory place copy rebuilds into a paintable motto', () => {
     const r = groundFeedSlotCopy({
       slotJob: 'çim alan şemsiye şezlong',
@@ -326,6 +393,7 @@ describe('feed-slot-pack — motto box + caption open', () => {
     expect(isIncompleteOverlayPhrase(r.headline)).toBe(false);
     expect(r.caption).toMatch(/deniz/i);
     expect(headlineTakenFromCaption(r.headline, r.caption)).toBe(true);
+    expect(captionOpensWithHeadline(r.caption, r.headline)).toBe(false);
   });
 });
 
@@ -394,5 +462,49 @@ describe('feed-slot-pack — vitrine stamp', () => {
   it('unstamped metadata stays visible so old cards and reels remain', () => {
     expect(isStampedFeedSlotPackVisible({})).toBe(true);
     expect(isStampedFeedSlotPackVisible(null)).toBe(true);
+  });
+});
+
+describe('galleryInventoryTextForIdea — shop + beach', () => {
+  it('shop: almond paste label survives a long oil-first shelf', () => {
+    const gallery: Record<string, { visibleLabelText: string; primarySubject: string }> = {};
+    for (let i = 0; i < 20; i += 1) {
+      gallery[`oil-${i}`] = {
+        visibleLabelText: 'Erken Hasat Zeytinyağı Naturel Sızma Soğuk Sıkım 2000 ml',
+        primarySubject: 'olive_oil',
+      };
+    }
+    gallery.almond = {
+      visibleLabelText: 'Badem Ezmesi Marzipan 215 g',
+      primarySubject: 'almond_paste',
+    };
+    const raw = galleryInventoryText(gallery);
+    expect(raw.length).toBeGreaterThan(GALLERY_INVENTORY_CLAIM_BUDGET);
+    expect(raw.slice(0, GALLERY_INVENTORY_CLAIM_BUDGET)).not.toMatch(/Badem Ezmesi/);
+    const ranked = galleryInventoryTextForIdea(
+      gallery,
+      'Müşterilerimizin en sevdiği lezzetlerden biri: badem ezmesi!',
+    );
+    expect(ranked.length).toBeLessThanOrEqual(GALLERY_INVENTORY_CLAIM_BUDGET);
+    expect(ranked).toMatch(/Badem Ezmesi/);
+  });
+
+  it('beach: spritz label stays in budget ahead of generic venue tags', () => {
+    const gallery: Record<string, { visibleLabelText: string; primarySubject: string }> = {};
+    for (let i = 0; i < 20; i += 1) {
+      gallery[`lawn-${i}`] = {
+        visibleLabelText: 'çim şemsiye şezlong begonvil açık deniz ufku',
+        primarySubject: 'venue',
+      };
+    }
+    gallery.bar = {
+      visibleLabelText: 'YULA SPRITZ',
+      primarySubject: 'cocktail',
+    };
+    const ranked = galleryInventoryTextForIdea(
+      gallery,
+      'Terasta Yula spritz, gün batımında kalın.',
+    );
+    expect(ranked).toMatch(/YULA SPRITZ/);
   });
 });

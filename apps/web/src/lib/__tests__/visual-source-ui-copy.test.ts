@@ -79,5 +79,15 @@ describe('visual-source-ui-copy', () => {
     });
     expect(hint).toMatch(/Tam/);
     expect(hint).toMatch(/Ürün hero/);
+    expect(hint).toMatch(/etiket kilit/);
+  });
+
+  it('venue gallery_enhanced hint forbids invented places', () => {
+    const hint = getVisualSourceModeHint('gallery_enhanced', {
+      sector: 'beach_club',
+      level: 'moderate',
+      subject: 'venue_ambiance',
+    });
+    expect(hint).toMatch(/uydurma yer yok/);
   });
 });

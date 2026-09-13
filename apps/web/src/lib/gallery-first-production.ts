@@ -10,8 +10,10 @@ import {
   RELAXED_MATCH_SCORE,
   assignmentRequiresCaptionPhotoMatch,
   buildGalleryLookup,
+  canonicalSubjectRelationForMeta,
   isHardGalleryThemeMismatch,
   pickMissionDiverseFallbackPhoto,
+  preferSubjectAlignedCandidates,
   rankPhotosForContent,
   rankPhotosForContentSeeded,
   resolveGalleryMatchSubjectKey,
@@ -34,6 +36,7 @@ import {
   captionRequiresStrictGalleryMatch,
   scoreIdeationPhotoMatch,
 } from '@/lib/caption-photo-alignment';
+import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import { generateGalleryCaptionsWithGpt } from '@/lib/gallery-caption-generator';
 import { groundPublishCopyToVisual } from '@/lib/photo-claim-grounding';
 import {
@@ -52,7 +55,7 @@ import {
 } from '@/lib/feed-pack-consistency';
 import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
 import {
-  galleryInventoryText,
+  galleryInventoryTextForIdea,
   groundFeedSlotCopy,
   parseFeedSlotPack,
   type FeedSlotPack,
@@ -498,8 +501,11 @@ function collectFeedSlotLookUrls(input: {
     return out;
   };
   let jobKindPool: string[] = [];
+  const hoursPlace = /hours|saat|weekend/.test(
+    String(input.assignment.catalog_slot_key ?? input.catalogSlotKey ?? ''),
+  );
   if (jobKind === 'place' || jobKind === 'process') {
-    if (adaptive) {
+    if (adaptive && !hoursPlace) {
       jobKindPool = realProving.length > 0
         ? uniqueUrls([...realProving, ...identitySeeds])
         : identitySeeds;
@@ -515,15 +521,24 @@ function collectFeedSlotLookUrls(input: {
       input.matchInput.preferredAssetTypes,
     )
     : [];
+  if (jobKind === 'place' && hoursPlace && jobKindPool.length === 0) {
+    return [];
+  }
   const pool = jobKindPool.length > 0
     ? jobKindPool
     : preferredPool.length > 0
       ? preferredPool
       : input.galleryPhotos;
+  // Sell cards: weekly product owns the shortlist. A clearer honey label
+  // must not enter the look when the caption/subject is olive oil.
+  const weeklySubject = String(input.subjectKey ?? input.matchInput.subjectKey ?? '').trim();
+  const subjectLocked = (jobKind === 'place' || jobKind === 'process')
+    ? pool
+    : preferSubjectAlignedCandidates(pool, input.galleryMeta, weeklySubject || undefined);
   const ranked = input.tieBreakSeed != null
     ? rankPhotosForContentSeeded(
       input.matchInput,
-      pool,
+      subjectLocked,
       lookup,
       input.tieBreakSeed,
       usedBases,
@@ -531,7 +546,7 @@ function collectFeedSlotLookUrls(input: {
     )
     : rankPhotosForContent(
       input.matchInput,
-      pool,
+      subjectLocked,
       lookup,
       usedBases,
       input.galleryMeta,
@@ -559,7 +574,9 @@ function collectFeedSlotLookUrls(input: {
   if (picked.length > 0) {
     return finish(picked);
   }
-  const fallbackPool = jobKindPool.length > 0 ? jobKindPool : input.galleryPhotos;
+  const fallbackPool = (jobKind === 'place' || jobKind === 'process')
+    ? (jobKindPool.length > 0 ? jobKindPool : input.galleryPhotos)
+    : subjectLocked;
   for (const url of fallbackPool) {
     const key = normalizeGalleryUrl(url);
     if (seen.has(key) || usedBases.has(key) || !isUsableGalleryPhotoUrl(url)) continue;
@@ -662,20 +679,12 @@ export async function resolveGalleryFirstForSlot(input: {
   });
 
   if (shouldLookFeedSlotPack(input.assignment)) {
-    const shortlist = collectFeedSlotLookUrls({
-      ...input,
-      tieBreakSeed,
-      matchInput,
-    });
-    if (shortlist.length === 0) {
-      return emptySlotLookResult(['no_pick']);
-    }
     const slotJob = String(input.assignment.catalog_slot_label ?? '').trim()
       || slotJobFromCatalogKey(input.assignment.catalog_slot_key)
       || slotLabelTr(input.assignment);
     const lookFn = input.lookFn ?? lookFeedSlotPack;
     const ideationHint = [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400);
-    const inventoryText = galleryInventoryText(input.galleryMeta);
+    const inventoryText = galleryInventoryTextForIdea(input.galleryMeta, ideationHint);
     const invented = input.judgeProductClaim
       ? await input.judgeProductClaim(ideationHint, inventoryText)
       : await judgeInventedProductClaim({
@@ -685,9 +694,17 @@ export async function resolveGalleryFirstForSlot(input: {
     if (invented) {
       return emptySlotLookResult(['invented_product_claim']);
     }
+    const shortlist = collectFeedSlotLookUrls({
+      ...input,
+      tieBreakSeed,
+      matchInput,
+    });
+    if (shortlist.length === 0) {
+      return emptySlotLookResult(['no_pick']);
+    }
     const looked = await lookFn({
       slotJob,
-      language: input.language ?? 'Turkish',
+      language: resolveLookPromptLanguage(input.language),
       brandTone: input.brandTone,
       adaptiveScene: Boolean(input.adaptiveScene),
       catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
@@ -717,6 +734,17 @@ export async function resolveGalleryFirstForSlot(input: {
       input.galleryMeta,
       input.galleryPhotos,
     );
+    const weeklySubject = resolveGalleryMatchSubjectKey({
+      caption: ideationCaption,
+      headline: ideationHeadline,
+      subjectKey,
+    });
+    if (
+      weeklySubject
+      && canonicalSubjectRelationForMeta(weeklySubject, pickedMeta) === 'conflict'
+    ) {
+      return emptySlotLookResult(['no_pick']);
+    }
     const photoSideText = [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
       .filter(Boolean)
       .join(' ');
@@ -724,6 +752,7 @@ export async function resolveGalleryFirstForSlot(input: {
       ...looked.pack,
       ideationHint,
       photoSideText,
+      language: input.language,
     });
     const sceneCopy = keepWeeklySceneCopy({
       adaptiveScene: Boolean(input.adaptiveScene),
@@ -880,6 +909,7 @@ export async function resolveGalleryFirstForSlot(input: {
     meta as Record<string, unknown> | undefined,
     input.brandName,
     input.brandLocation,
+    input.language,
   );
 
   let caption = built.caption.trim();
@@ -896,7 +926,7 @@ export async function resolveGalleryFirstForSlot(input: {
       brandDescription: input.brandDescription,
       industry: input.businessType,
       existingCaptions: input.existingCaptions,
-      language: input.language ?? 'Turkish',
+      language: resolveLookPromptLanguage(input.language),
       slotHint,
     });
     const match = suggestions.find(

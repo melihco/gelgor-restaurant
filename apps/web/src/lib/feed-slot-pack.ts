@@ -1,3 +1,4 @@
+import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import {
   isIncompleteOverlayPhrase,
   isMeaningfulFalOverlayText,
@@ -168,10 +169,17 @@ export function fitHeadlineToMottoBox(headline: string): string {
 }
 
 export function captionOpensWithHeadline(caption: string, headline: string): boolean {
-  const h = fold(headline);
-  const first = fold(filled(caption).split(/[.!?…\n]/)[0] ?? '');
+  const h = fold(headline).replace(/[.!?…,;:—–]+$/g, '').trim();
+  const first = fold(filled(caption).split(/[.!?…\n]/)[0] ?? '')
+    .replace(/[.!?…,;:—–]+$/g, '')
+    .trim();
   if (h.length < 4 || first.length < 4) return false;
-  return first.includes(h) || h.includes(first);
+  return first.startsWith(h) || h.startsWith(first);
+}
+
+/** On-canvas line must not be the caption's opening thought. */
+export function isCaptionOpeningHeadline(headline: string, caption: string): boolean {
+  return captionOpensWithHeadline(caption, headline);
 }
 
 /** Headline tam cümle kalır. Caption Instagram gövdesidir — headline yapıştırılmaz. */
@@ -184,10 +192,21 @@ export function lockFeedCardCopy(input: {
   return { caption: filled(input.caption), headline };
 }
 
-/** Üst yazı yoksa veya sapmışsa alt yazının ilk cümlesi. Kesilmez. */
+/** Later caption sentence — never the opening thought. Empty if none. */
 export function deriveHeadlineFromCaption(caption: string): string {
-  const cut = filled(caption).split(/[.!?…\n]/)[0]?.trim() || filled(caption);
-  return keepCompleteOverlaySentence(cut) || cut;
+  const parts = filled(caption)
+    .split(/[.!?…\n—–,]/)
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 6);
+  for (const part of parts.slice(1)) {
+    const line = keepCompleteOverlaySentence(part) || part;
+    if (!line || isCaptionOpeningHeadline(line, caption)) continue;
+    const words = line.split(/\s+/).filter(Boolean);
+    if (words.length < 2) continue;
+    if (isIncompleteOverlayPhrase(line) && words.length < 3) continue;
+    return line;
+  }
+  return '';
 }
 
 /** Üst yazı, alt yazının içinden gelmeli — ayrı slogan yok. */
@@ -409,27 +428,69 @@ function tokensOf(text: string): string[] {
   return fold(text).split(' ').filter((w) => w.length >= 3 && !STOP.has(w));
 }
 
+type GalleryInventoryMeta = {
+  visibleLabelText?: string;
+  primarySubject?: string;
+  subjectAliases?: string[];
+  contentTags?: string[];
+};
+
+function photoInventoryChunk(meta: GalleryInventoryMeta): string {
+  return [
+    String(meta.visibleLabelText ?? ''),
+    String(meta.primarySubject ?? ''),
+    ...(meta.subjectAliases ?? []),
+    ...(meta.contentTags ?? []),
+  ].filter((p) => p.trim()).join(' ');
+}
+
 /** Etiket + özne — uzun açıklama yok (rastgele kelime envanter sayılmaz). */
 export function galleryInventoryText(
-  galleryMeta?: Record<string, {
-    visibleLabelText?: string;
-    primarySubject?: string;
-    subjectAliases?: string[];
-    contentTags?: string[];
-  } | undefined> | null,
+  galleryMeta?: Record<string, GalleryInventoryMeta | undefined> | null,
 ): string {
   if (!galleryMeta) return '';
   const parts: string[] = [];
   for (const meta of Object.values(galleryMeta)) {
     if (!meta) continue;
-    parts.push(
-      String(meta.visibleLabelText ?? ''),
-      String(meta.primarySubject ?? ''),
-      ...(meta.subjectAliases ?? []),
-      ...(meta.contentTags ?? []),
-    );
+    const chunk = photoInventoryChunk(meta);
+    if (chunk) parts.push(chunk);
   }
-  return parts.filter((p) => p.trim()).join(' ');
+  return parts.join(' ');
+}
+
+/** Hakim 800 karaktere sığdığında fikirle örtüşen etiket önce gelir. */
+export const GALLERY_INVENTORY_CLAIM_BUDGET = 800;
+
+export function galleryInventoryTextForIdea(
+  galleryMeta: Record<string, GalleryInventoryMeta | undefined> | null | undefined,
+  ideaText: string,
+  budget = GALLERY_INVENTORY_CLAIM_BUDGET,
+): string {
+  if (!galleryMeta) return '';
+  const idea = tokenSet(ideaText);
+  const rows = Object.values(galleryMeta)
+    .filter((meta): meta is GalleryInventoryMeta => Boolean(meta))
+    .map((meta) => {
+      const chunk = photoInventoryChunk(meta);
+      const toks = tokenSet(chunk);
+      let score = 0;
+      for (const token of toks) {
+        if (covers(token, idea)) score += 1;
+      }
+      return { chunk, score };
+    })
+    .filter((row) => row.chunk.trim());
+  rows.sort((a, b) => b.score - a.score);
+  const out: string[] = [];
+  let used = 0;
+  for (const row of rows) {
+    if (used >= budget) break;
+    const room = budget - used;
+    const next = row.chunk.length > room ? row.chunk.slice(0, room) : row.chunk;
+    out.push(next);
+    used += next.length + 1;
+  }
+  return out.join(' ').trim();
 }
 
 function tokenSet(text: string): Set<string> {
@@ -474,9 +535,14 @@ function joinTr(items: string[]): string {
   return `${items.slice(0, -1).join(', ')} ve ${items[items.length - 1]}`;
 }
 
-function looksEnglishCopy(text: string): boolean {
-  return /\b(the|with|our|your|this|weekend|events?|sea|lake)\b/i.test(text)
-    && !/(ve|icin|ile|bir|deniz|gol|cim|semsiye)/i.test(fold(text));
+function joinEn(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+function copyLanguageIsEnglish(language?: unknown): boolean {
+  return resolveLookPromptLanguage(language) === 'English';
 }
 
 function placeFamilyIn(text: string): PlaceFamily | null {
@@ -590,7 +656,7 @@ function compactQuotedLabels(labels: string[]): string[] {
   return pretty.map((p, i) => (i === 0 ? p : prettyPhrase(p.slice(lead.length))));
 }
 
-function productSubjectAndRest(labels: string[]): { subject: string; rest: string } {
+function productSubjectAndRest(labels: string[], english: boolean): { subject: string; rest: string } {
   const compact = compactQuotedLabels(labels);
   if (!compact.length) return { subject: '', rest: '' };
   const head = compact[0] ?? '';
@@ -602,22 +668,49 @@ function productSubjectAndRest(labels: string[]): { subject: string; rest: strin
     const words = phrase.split(/\s+/).filter(Boolean);
     return prettyPhrase(words.slice(-2).join(' '));
   }).filter(Boolean);
-  return { subject, rest: joinTr(rest) };
+  return { subject, rest: english ? joinEn(rest) : joinTr(rest) };
 }
 
-function rebuildProductCaption(evidence: string, _slotJob: string): string {
+function rebuildProductCaption(evidence: string, english: boolean): string {
   const labels = quotedEvidenceLabels(evidence);
-  const { subject, rest } = productSubjectAndRest(labels);
+  const { subject, rest } = productSubjectAndRest(labels, english);
+  const labelLine = english ? 'The label stays.' : 'Etiket duruyor.';
+  const leftoverTail = english ? 'on the label' : 'etiket';
   if (subject) {
-    return rest ? `${prettyPhrase(subject)}. ${prettyPhrase(rest)}.` : `${prettyPhrase(subject)}.`;
+    if (rest) return `${prettyPhrase(subject)}. ${prettyPhrase(rest)}.`;
+    const leftover = prettyPhrase(
+      (labels[0] ?? '')
+        .split(/\s+/)
+        .filter((word) => !fold(subject).includes(fold(word)))
+        .join(' '),
+    );
+    if (leftover.length >= 4) return `${prettyPhrase(subject)}. ${leftover} ${leftoverTail}.`;
+    if (/\betiket/i.test(evidence) || /\blabel\b/i.test(evidence)) {
+      return `${prettyPhrase(subject)}. ${labelLine}`;
+    }
+    return `${prettyPhrase(subject)}.`;
   }
   const phrases = evidence
     .split(/[,.]/)
-    .map((part) => prettyPhrase(part.replace(/\b(etiketlerde|etiket|yazıyor|yaziyor|bir|içinde|icinde|var)\b/gi, ' ')))
+    .map((part) => prettyPhrase(part.replace(/\b(etiketlerde|etiket|yazıyor|yaziyor|bir|içinde|icinde|var|label)\b/gi, ' ')))
     .filter((part) => fold(part).length >= 6)
     .slice(0, 2);
+  if (phrases.length >= 2) return `${phrases.join('. ')}.`;
+  if (phrases.length === 1 && (/\betiket/i.test(evidence) || /\blabel\b/i.test(evidence))) {
+    return `${phrases[0]}. ${labelLine}`;
+  }
   if (phrases.length) return `${phrases.join('. ')}.`;
   return `${prettyPhrase(evidence.slice(0, 48))}.`;
+}
+
+function usableDerivedHeadline(
+  caption: string,
+  input: Pick<FeedSlotCopyGroundInput, 'photoRole' | 'shellDirection'>,
+): string {
+  const line = deriveHeadlineFromCaption(caption);
+  if (!line) return '';
+  if (isEmptyPlaceCommand(line, input.photoRole, input.shellDirection)) return '';
+  return line;
 }
 
 function isPlaceInventoryCopy(text: string): boolean {
@@ -631,12 +724,17 @@ function rebuildPlaceCaption(input: {
   evidenceNote: string;
   slotJob: string;
   photoSideText?: string;
+  language?: unknown;
 }): string {
   const blob = `${input.photoSideText ?? ''} ${input.slotJob} ${input.evidenceNote}`;
-  const english = looksEnglishCopy(blob);
+  const english = copyLanguageIsEnglish(input.language);
   const family = placeFamilyIn(blob);
   if (family === 'sea') {
-    return english ? 'The sea is still. The pier holds.' : 'Deniz duruyor. İskele yerinde.';
+    const pierInFrame = /\b(iskele|pier|dock)\b/i.test(blob);
+    if (english) {
+      return pierInFrame ? 'The sea is still. The pier holds.' : 'The sea is still. The place is open.';
+    }
+    return pierInFrame ? 'Deniz duruyor. İskele yerinde.' : 'Deniz duruyor. Alan açık.';
   }
   if (family === 'lake') {
     return english ? 'The water is still. The edge is open.' : 'Su duruyor. Kenar açık.';
@@ -655,6 +753,8 @@ export type FeedSlotCopyGroundInput = {
   ideationHint?: string;
   /** Foto tarafı: aday açıklama / etiket / özne. Model kanıtı değil. */
   photoSideText?: string;
+  /** Brand content language. Empty → Turkish. looksEnglishCopy does not decide. */
+  language?: unknown;
 };
 
 /**
@@ -672,17 +772,17 @@ export function groundFeedSlotCopy(input: FeedSlotCopyGroundInput): {
   let headline = filled(input.headline);
   const start = `${evidenceNote}\n${caption}\n${headline}`;
 
+  const english = copyLanguageIsEnglish(input.language);
   const authority = placeFamilyIn(`${input.photoSideText ?? ''} ${input.slotJob}`);
   if (authority === 'sea') {
-    const english = looksEnglishCopy(`${caption} ${headline} ${input.photoSideText ?? ''}`);
     evidenceNote = swapLakeToSea(evidenceNote, english);
     caption = swapLakeToSea(caption, english);
     headline = swapLakeToSea(headline, english);
   }
 
   if (sellingCopyMissesEvidence({ ...input, caption, evidenceNote })) {
-    caption = rebuildProductCaption(evidenceNote, input.slotJob);
-    headline = deriveHeadlineFromCaption(caption);
+    caption = rebuildProductCaption(evidenceNote, english);
+    headline = usableDerivedHeadline(caption, input);
   } else if (
     isPlacePack(input)
     && (
@@ -695,12 +795,14 @@ export function groundFeedSlotCopy(input: FeedSlotCopyGroundInput): {
       evidenceNote,
       slotJob: input.slotJob,
       photoSideText: input.photoSideText,
+      language: input.language,
     });
-    headline = deriveHeadlineFromCaption(caption);
+    headline = usableDerivedHeadline(caption, input);
   } else if (
     caption.length >= 16
     && (
       !headline
+      || isCaptionOpeningHeadline(headline, caption)
       || isIncompleteOverlayPhrase(headline)
       || (
         !overlayHeadlineGroundedInCaption(headline, caption)
@@ -708,7 +810,11 @@ export function groundFeedSlotCopy(input: FeedSlotCopyGroundInput): {
       )
     )
   ) {
-    headline = deriveHeadlineFromCaption(caption);
+    const distinct = usableDerivedHeadline(caption, input);
+    if (distinct) headline = distinct;
+    else if (isCaptionOpeningHeadline(headline, caption) || isIncompleteOverlayPhrase(headline)) {
+      headline = '';
+    }
   }
 
   const locked = lockFeedCardCopy({ caption, headline });

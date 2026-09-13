@@ -15,6 +15,7 @@ import {
   librarySlotShellMissingReason,
   templateLayoutReferenceUrl,
 } from '@/lib/brand-design-template-production';
+import { validateFalCanvasText } from '@/lib/typography-text-validation';
 import type {
   ProductionPipelineHandler,
   SlotProductionContext,
@@ -141,6 +142,12 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       state.falGrafikerObservedScore = state.falGrafikerScore;
     }
     state.costDelta += result.costEstimateUsd ?? 0.08;
+    const textCheck = state.imageUrl
+      ? await validateFalCanvasText(state.imageUrl, {
+        headline: inputs.headline,
+        subtitle: inputs.falSubtitle ?? '',
+      })
+      : { valid: false };
     state.artifactMetaPatch = {
       ...premiumEditorialArtifactMetadata(result),
       fal_designer_produced: true,
@@ -148,7 +155,8 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       production_track: 'premium_editorial',
       marky_disabled: true,
       premium_composition: true,
-      typography_text_valid: result.qualityAssessment?.isApproved !== false,
+      typography_text_valid: textCheck.valid,
+      text_validated: true,
     };
 
     if (result.matchedGalleryUrl) {

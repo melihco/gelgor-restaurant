@@ -1,8 +1,9 @@
 """Caption ↔ on-canvas headline.
 
-Caption is the Instagram body. Headline is a complete on-canvas line that
-shares the same claim. It is not required to be the caption's first sentence.
-Empty / hollow / off-claim headlines still fall back to the caption opening.
+Caption is the Instagram body. Headline is a complete on-canvas punchline
+that shares the same claim. It must not be the caption's opening thought.
+Empty / hollow / off-claim / opening-clone headlines fall back to a later
+caption sentence, or stay empty.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_SENTENCE_SPLIT = re.compile(r"[.!?\n]+")
+_SENTENCE_SPLIT = re.compile(r"[.!?\n—–]+")
 _HASHTAG = re.compile(r"[#@]\S+")
 _HOLLOW = re.compile(
     r"kutlayın|keşfedin|celebrate|tadını\s+çıkarın|her\s+şey\s+el\s+yapımı",
@@ -27,17 +28,31 @@ def _fold(text: str) -> str:
     return folded
 
 
+def _first_thought(caption: str) -> str:
+    raw = _HASHTAG.sub("", (caption or "").strip())
+    chunks = [part.strip() for part in _SENTENCE_SPLIT.split(raw) if part.strip()]
+    return chunks[0].rstrip(".,;:") if chunks else ""
+
+
+def caption_opens_with_headline(caption: str, headline: str) -> bool:
+    h = _fold(headline).strip().rstrip(".,;:!?")
+    first = _fold(_first_thought(caption)).strip().rstrip(".,;:!?")
+    if len(h) < 4 or len(first) < 4:
+        return False
+    return first.startswith(h) or h.startswith(first)
+
+
 def overlay_headline_from_caption(caption: str, max_len: int = 48) -> str:
     raw = _HASHTAG.sub("", (caption or "").strip())
     if len(raw) < 8:
         return ""
     chunks = [part.strip() for part in _SENTENCE_SPLIT.split(raw) if len(part.strip()) >= 8]
-    if not chunks:
+    later = next((part.rstrip(".,;:") for part in chunks[1:]), "")
+    if not later:
         return ""
-    first = chunks[0].rstrip(".,;:")
-    if 8 <= len(first) <= max_len:
-        return first
-    return first[:max_len].rsplit(" ", 1)[0] if len(first) > max_len else first
+    if 8 <= len(later) <= max_len:
+        return later
+    return later[:max_len].rsplit(" ", 1)[0] if len(later) > max_len else later
 
 
 def overlay_taken_from_caption(headline: str, caption: str) -> bool:
@@ -68,7 +83,7 @@ def _is_incomplete_headline(headline: str) -> bool:
 
 
 def apply_caption_headline_pair(idea: dict[str, Any], max_len: int = 48) -> dict[str, Any]:
-    """Keep a complete grounded headline; fill only empty / hollow / off-claim lines."""
+    """Keep a complete grounded punchline; never keep or fill the caption opening."""
     caption = str(idea.get("caption_draft") or idea.get("caption") or "").strip()
     current = str(idea.get("headline") or "").strip()
     line = overlay_headline_from_caption(caption, max_len)
@@ -77,6 +92,7 @@ def apply_caption_headline_pair(idea: dict[str, Any], max_len: int = 48) -> dict
         and not _is_incomplete_headline(current)
         and not _HOLLOW.search(current)
         and overlay_headline_grounded(current, caption)
+        and not caption_opens_with_headline(caption, current)
     )
     if keep:
         idea["headline"] = current[:max_len] if len(current) > max_len else current

@@ -248,7 +248,7 @@ import {
   resolveIdeationOverlayHeadline,
   resolveIdeationTagline,
 } from '@/lib/production-idea-parse';
-import { resolveIdeaFeedBind } from '@/lib/idea-feed-bind';
+import { resolveIdeaFeedBind, sellSlotLocksProductGallery } from '@/lib/idea-feed-bind';
 import {
   buildArtifactListTitle,
   hasPublishableIdeationHeadline,
@@ -1929,8 +1929,16 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           cta = '';
         }
       }
-      // Photo match text follows the locked canvas punchline (not concept title).
-      if (shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource) && headline.trim()) {
+      // Photo match follows the punchline only when bind did not split them.
+      // Sell + SKU: motto may paint; gallery still scores the weekly product.
+      if (
+        shouldPreserveLockedPunchlineHeadline(lockedFalPunchlineSource)
+        && headline.trim()
+        && !sellSlotLocksProductGallery({
+          catalogSlotKey: assignment.catalog_slot_key,
+          subjectKey: ideationSubjectKey,
+        })
+      ) {
         galleryMatchHeadline = headline;
       }
     }
@@ -2105,8 +2113,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           lockedFeedSlotPack = gf.pack;
           caption = gf.pack.caption;
           missionSessionCaptions.push(gf.pack.caption);
-          headline = gf.pack.headline;
-          lockedFalPunchlineSource = 'feed_slot_pack';
+          if (calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()) {
+            headline = ideaFeedBind.paintHeadline;
+            lockedFalPunchlineSource = 'mission_tagline';
+          } else {
+            headline = gf.pack.headline;
+            lockedFalPunchlineSource = 'feed_slot_pack';
+          }
         } else {
           if (gf.caption.trim()) {
             if (!originalIdeationCaption.trim() || gf.grounded) {
@@ -2151,10 +2164,17 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       results.push({
         title: headline || '(empty idea)',
         imageUrl: '',
-        error: 'Paket yok',
+        error: describeLookPersistError(['no_pick']),
         slotKey,
       });
       continue;
+    }
+    if (lockedFeedSlotPack) {
+      caption = lockedFeedSlotPack.caption;
+      headline = calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
+        ? ideaFeedBind.paintHeadline
+        : lockedFeedSlotPack.headline;
+      referenceUrl = lockedFeedSlotPack.photoUrl;
     }
 
     const applyVisualClaimGrounding = (opts?: {
@@ -3770,7 +3790,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || isPremiumEditorialPipeline(assignment.pipeline)
       || assignment.slot_role === 'premium_editorial_campaign_post'
       || assignment.slot_role === 'premium_editorial_campaign_story';
-    if (designedCoherenceGate && caption.trim().length >= 24) {
+    if (
+      designedCoherenceGate
+      && caption.trim().length >= 24
+      && !shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive)
+    ) {
       const lockedMeta = resolvedReferenceUrl
         ? resolveGalleryPhotoMeta(resolvedReferenceUrl, galleryMeta, galleryPhotos)
         : undefined;
@@ -5335,8 +5359,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       kind === 'instagram_reel' ? 22
         : (kind === 'instagram_story' || kind === 'instagram_canvas') ? 28
           : 32;
-    let publishHeadline = lockedFeedSlotPack
-      ? lockedFeedSlotPack.headline
+    let publishHeadline = calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
+      ? ideaFeedBind.paintHeadline
+      : lockedFeedSlotPack
+        ? lockedFeedSlotPack.headline
       : sanitizeProductionHeadline({
       headline,
       ideationHeadline: usesFalDesignCopy ? headline : storedIdeationHeadline,
@@ -5689,7 +5715,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_design_engine: falDesignEngine,
             premium_composition: true,
             ...grafikerStamp,
-            typography_text_valid: falGrafikerPass !== false,
           }
         : productionProfile.requireDesignedVisuals
           ? { production_route: 'designed_grafiker', marky_disabled: true, ...grafikerStamp }

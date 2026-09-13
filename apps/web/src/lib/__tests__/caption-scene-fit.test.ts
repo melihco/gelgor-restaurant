@@ -89,7 +89,7 @@ describe('caption-scene-fit — local_products_shop + beach_club', () => {
     });
     expect(kept.caption.toLowerCase()).toMatch(/üretim|iş baş/);
     expect(kept.caption.toLowerCase()).not.toMatch(/erken hasat/);
-    expect(kept.headline.length).toBeGreaterThan(8);
+    expect(kept.headline.toLowerCase()).not.toMatch(/^üretimde bugün iş başındayız/);
   });
 
   it('shop: flag off leaves the bottle copy', () => {

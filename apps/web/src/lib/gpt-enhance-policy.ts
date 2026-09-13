@@ -10,6 +10,7 @@ import type { AiVisualProductionStandard } from '@/lib/ai-visual-production-stan
 import { isNonVenueSector } from '@/lib/sector-gallery-seed';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
 import { canRestageNearestGallery, captionSceneNeedsRestage } from '@/lib/caption-scene-fit';
+import { designedPostAllowsSceneEnhance } from '@/lib/feed-scene-policy';
 
 /** Strong caption↔photo match — no $0.21 enhance needed for organic stills. */
 export const GALLERY_ENHANCE_SKIP_MIN_SCORE = GIS_PILOT_MIN_SCORE + 3;
@@ -118,9 +119,21 @@ export function resolveGptEnhanceSkipReason(input: GptEnhancePolicyInput): GptEn
     return 'format_excluded';
   }
 
-  // High designed-post edit is the paint. A prior enhance restages the still,
-  // breaks labels, and stacks ~$0.21 on the same card.
-  if (isDesignedGptPaintSlot(input)) return 'designed_gpt_paint';
+  // Designed paint is the card. Extra enhance only when Hub + slot job
+  // allow background restage (sell / process). Place slots never invent a venue.
+  if (isDesignedGptPaintSlot(input)) {
+    if (designedPostAllowsSceneEnhance({
+      visualStandard: input.visualStandard,
+      catalogSlotKey: input.assignment.catalog_slot_key,
+      slotJob: input.slotJob,
+      caption: input.caption,
+      evidenceNote: input.evidenceNote,
+      photoRole: input.photoRole,
+    })) {
+      return null;
+    }
+    return 'designed_gpt_paint';
+  }
 
   // Faz 1.4 — venue + strong gallery: skip designed BG when cinematic grade covers it.
   // Honored even in gallery-revision mode (cost gate). Product staging never skips.
@@ -193,7 +206,16 @@ export function shouldRunGptImageEnhance(input: GptEnhancePolicyInput): boolean 
     return false;
   }
 
-  if (isDesignedGptPaintSlot(input)) return false;
+  if (isDesignedGptPaintSlot(input) && !designedPostAllowsSceneEnhance({
+    visualStandard: input.visualStandard,
+    catalogSlotKey: input.assignment.catalog_slot_key,
+    slotJob: input.slotJob,
+    caption: input.caption,
+    evidenceNote: input.evidenceNote,
+    photoRole: input.photoRole,
+  })) {
+    return false;
+  }
 
   if (canSkipDesignedPostEnhanceForGrade(input)) return false;
 

@@ -148,17 +148,12 @@ export function buildProductionQualityScorecard(
   }
 
   // `text_validated` = did a checker look at the painted line.
-  // `false` means it did not run — not that the line is invalid.
-  // `typography_text_valid` is the verdict. On gallery / premium routes it
-  // often just mirrors Grafiker pass; blocking on that reimposes threshold 8.
-  const textValidatorRan = readBoolean(meta, 'text_validated', 'textValidated') === true;
+  // `false` / absent means it did not run — not that the line is invalid.
+  // `typography_text_valid === false` is the verdict (clip, unread, invented).
+  // Produce may leave the flag absent; that stays a legacy pass.
   if (!hardBlock && typographyTextValid === false) {
-    if (textValidatorRan || grafikerScore == null) {
-      hardBlock = true;
-      hardBlockReason = 'Görseldeki metin doğrulanamadı veya yarım kaldı';
-    } else {
-      softWarnings.push('Görseldeki metin doğrulanmadı');
-    }
+    hardBlock = true;
+    hardBlockReason = 'Görseldeki metin doğrulanamadı veya yarım kaldı';
   }
 
   if (!hardBlock && matchCls?.quality === 'weak' && (matchScore ?? 0) > 5) {

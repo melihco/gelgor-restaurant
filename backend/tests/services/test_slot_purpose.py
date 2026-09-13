@@ -60,7 +60,8 @@ def test_align_rewrites_off_slot_shop_and_restaurant():
     assert align_idea_to_slot_purpose(shop) is True
     assert caption_hits_slot_purpose(shop["caption_draft"], shop["catalog_slot_key"])
     assert shop["overlay_headline_source"] == "caption_pair"
-    assert shop["headline"].lower().startswith("hafta sonu")
+    assert "hafta sonu" in shop["caption_draft"].lower()
+    assert not shop["headline"].lower().startswith("hafta sonu")
 
     resto = {
         "catalog_slot_key": "restaurant_cafe_farm_to_table_story",
@@ -70,6 +71,40 @@ def test_align_rewrites_off_slot_shop_and_restaurant():
     assert align_idea_to_slot_purpose(resto) is True
     assert "çiftlik" in resto["caption_draft"].lower() or "hasat" in resto["caption_draft"].lower()
     assert resto["overlay_headline_source"] == "caption_pair"
+
+
+def test_align_uses_english_opening_for_en_shop_and_beach():
+    shop = {
+        "catalog_slot_key": "local_products_shop_weekend_hours_story",
+        "headline": "flavors in the air",
+        "caption_draft": "Nice atmosphere in the shop. Come taste.",
+    }
+    beach = {
+        "catalog_slot_key": "beach_club_weekend_hours_story",
+        "headline": "sunset on the terrace",
+        "caption_draft": "Sunset vibes on the terrace.",
+    }
+
+    class EnBrand:
+        languages = "en"
+
+    assert align_idea_to_slot_purpose(shop, EnBrand()) is True
+    assert shop["caption_draft"].startswith("We're open this weekend.")
+    assert "Hafta sonu" not in shop["caption_draft"]
+
+    assert align_idea_to_slot_purpose(beach, EnBrand()) is True
+    assert beach["caption_draft"].startswith("We're open this weekend.")
+    assert "Hafta sonu" not in beach["caption_draft"]
+
+
+def test_align_keeps_turkish_opening_when_languages_empty():
+    shop = {
+        "catalog_slot_key": "local_products_shop_weekend_hours_story",
+        "headline": "atmosferde doğal lezzetler!",
+        "caption_draft": "Dükkanımızda hoş bir atmosfer var! Keşfetmeye gel!",
+    }
+    assert align_idea_to_slot_purpose(shop) is True
+    assert shop["caption_draft"].lower().startswith("hafta sonu")
 
 
 def test_align_keeps_on_slot_caption():
