@@ -919,37 +919,29 @@ async def reclaim_stale_jobs(
 
 
 async def reclaim_inflight_jobs(mission_id: uuid.UUID) -> int:
-    """Reset all claimed/running rows to pending (operator kick / missing BullMQ worker).
+    """Operator kick: recycle stale in-flight only.
 
-    BullMQ mode marks jobs ``running`` at enqueue time; without a worker process they
-    stay in-flight indefinitely. Operator kick should always recycle these slots.
+    A live GPT / fal paint stays claimed. Cutting every running row on kick
+    re-enqueued the same favorite 4 times and left zombie ``running`` rows.
+    Worker-down slots still return after the BullMQ stale window (15 min).
     """
-    factory = _get_session_factory()
-    async with factory() as db:
-        res = await db.execute(
-            text(
-                """
-                UPDATE production_jobs
-                SET status = 'pending',
-                    claimed_at = NULL,
-                    claimed_by = NULL,
-                    updated_at = now()
-                WHERE mission_id = CAST(:mission_id AS UUID)
-                  AND status IN ('claimed', 'running')
-                RETURNING id
-                """
-            ),
-            {"mission_id": str(mission_id)},
-        )
-        rows = res.fetchall()
-        await db.commit()
-    if rows:
+    from app.config import get_settings
+
+    settings = get_settings()
+    stale_sec = (
+        _BULLMQ_WATCHDOG_STALE_SEC
+        if settings.use_bullmq_executor
+        else _FACTORY_DRAIN_STALE_RECLAIM_SEC
+    )
+    n = await reclaim_stale_jobs(mission_id, stale_sec=stale_sec)
+    if n:
         logger.info(
             "production_jobs.reclaim_inflight",
             mission_id=str(mission_id),
-            reclaimed=len(rows),
+            reclaimed=n,
+            stale_sec=stale_sec,
         )
-    return len(rows)
+    return n
 
 
 async def has_open_jobs(mission_id: uuid.UUID) -> bool:

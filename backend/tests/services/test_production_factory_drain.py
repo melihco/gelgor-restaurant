@@ -205,6 +205,17 @@ def test_bullmq_stale_window_does_not_overlap_live_paint() -> None:
     assert pjs._BULLMQ_WATCHDOG_STALE_SEC >= 900
 
 
+def test_operator_kick_reclaim_is_stale_only() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.reclaim_inflight_jobs)
+    assert "reclaim_stale_jobs" in src
+    assert "AND status IN ('claimed', 'running')" not in src
+    assert "stale_sec" in src
+
+
 def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
     assert pfs._is_ops_defer_reason("production_in_flight") is True
     assert pfs._is_ops_defer_reason("production_worker_offline") is True

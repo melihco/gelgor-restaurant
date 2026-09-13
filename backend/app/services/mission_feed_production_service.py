@@ -347,7 +347,8 @@ async def kick_feed_production(
     # asyncio task while jobs stayed in running/claimed). Do NOT release the
     # feed production lock here — that causes parallel auto-produce → fal.ai storms.
     if settings.use_bullmq_executor:
-        # BullMQ marks jobs running at enqueue; recycle all in-flight on operator kick.
+        # BullMQ marks jobs running at enqueue. Recycle only stale in-flight —
+        # a live paint must not be reset to pending on kick.
         reclaimed = await pj.reclaim_inflight_jobs(mission_id)
     else:
         reclaimed = await pj.reclaim_stale_jobs(mission_id)
