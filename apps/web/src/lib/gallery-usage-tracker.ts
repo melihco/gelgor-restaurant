@@ -1,6 +1,7 @@
 /**
  * Tracks which brand gallery photos are already used per Instagram post type.
- * Source of truth: Nexus OutputArtifacts (pending + approved, not rejected).
+ * Source of truth: Nexus OutputArtifacts that actually shipped to Instagram.
+ * Pending / approved-but-unshared cards do not lock the source still.
  */
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
@@ -88,6 +89,35 @@ function isRejectedReviewStatus(status: unknown): boolean {
   return s === '2' || s === 'rejected' || s === '3' || s.includes('revision');
 }
 
+function publishedToken(raw: unknown): boolean {
+  const s = String(raw ?? '').trim();
+  return s.length >= 4 && s !== 'null' && s !== 'undefined';
+}
+
+/**
+ * Real-account Instagram ship. Hub approve without Share does not count.
+ */
+export function isInstagramPublishedArtifact(
+  artifact: Record<string, unknown>,
+): boolean {
+  if (isRejectedReviewStatus(artifact.reviewStatus ?? artifact.ReviewStatus)) {
+    return false;
+  }
+  const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+  const content = parseJsonRecord(artifact.content ?? artifact.Content);
+  const bag = { ...content, ...meta };
+  if (String(bag.lifecycleStatus ?? '').trim().toLowerCase() === 'published') {
+    return true;
+  }
+  if (publishedToken(bag.ig_media_id) || publishedToken(bag.igMediaId)) return true;
+  if (publishedToken(bag.published_at) || publishedToken(bag.publishedAt)) return true;
+  if (publishedToken(bag.providerActionId)) return true;
+  const permalink = String(bag.permalink ?? bag.published_url ?? bag.publishedUrl ?? '');
+  if (/instagram\.com/i.test(permalink)) return true;
+  if (publishedToken(bag.post_id) || publishedToken(bag.postId)) return true;
+  return false;
+}
+
 function parseJsonRecord(raw: unknown): Record<string, unknown> {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     return raw as Record<string, unknown>;
@@ -131,7 +161,7 @@ function looksGenerated(url: string): boolean {
 export function extractGalleryUrlsFromArtifact(
   artifact: Record<string, unknown>,
 ): { postType: PostTypeBucket; urls: string[] } | null {
-  if (isRejectedReviewStatus(artifact.reviewStatus ?? artifact.ReviewStatus)) {
+  if (!isInstagramPublishedArtifact(artifact)) {
     return null;
   }
 
@@ -316,7 +346,7 @@ function artifactMissionId(artifact: Record<string, unknown>): string {
   ).trim();
 }
 
-/** Gallery source URLs already used by artifacts in one mission (sibling slot dedup). */
+/** Gallery source URLs already shipped to Instagram in one mission. */
 export function collectMissionGalleryUrls(
   artifacts: Record<string, unknown>[],
   missionId: string,
