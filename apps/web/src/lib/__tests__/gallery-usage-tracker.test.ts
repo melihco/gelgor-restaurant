@@ -6,6 +6,7 @@ import {
   extractGalleryUrlsFromArtifact,
   getMissionWideExcludeUrls,
   isInstagramPublishedArtifact,
+  isVitrineVisibleArtifact,
   normalizeGalleryUrl,
 } from '@/lib/gallery-usage-tracker';
 
@@ -65,6 +66,58 @@ describe('gallery-usage-tracker', () => {
     expect(counts.get(PHOTO_B)).toBeUndefined();
   });
 
+  it('shop: vitrine-ready jar is counted but not hard-locked', () => {
+    const jar = 'https://cdn.example.com/gallery/early-harvest.jpg';
+    const sibling = 'https://cdn.example.com/gallery/early-harvest-2.jpg';
+    expect(isVitrineVisibleArtifact({
+      reviewStatus: 'Pending',
+      metadata: {
+        kind: 'instagram_post',
+        selected_gallery_url: jar,
+        publish_ready: true,
+        publish_blocked: false,
+      },
+    })).toBe(true);
+
+    const usage = buildGalleryUsageFromArtifacts([
+      {
+        reviewStatus: 'Pending',
+        metadata: JSON.stringify({
+          kind: 'instagram_post',
+          selected_gallery_url: jar,
+          publish_ready: true,
+          publish_blocked: false,
+        }),
+      },
+      {
+        reviewStatus: 'Pending',
+        metadata: JSON.stringify({
+          kind: 'instagram_story',
+          selected_gallery_url: jar,
+          publish_ready: 'true',
+        }),
+      },
+      {
+        reviewStatus: 'Pending',
+        metadata: JSON.stringify({
+          kind: 'instagram_post',
+          selected_gallery_url: sibling,
+          publish_ready: false,
+          publish_blocked: true,
+        }),
+      },
+    ]);
+    const counts = buildGlobalGalleryUsageCounts(usage);
+    expect(counts.get(jar)).toBe(2);
+    expect(counts.get(sibling)).toBeUndefined();
+    expect(getMissionWideExcludeUrls(usage, {
+      feed: [],
+      story: [],
+      reel: [],
+      carousel: [],
+    }, [])).toEqual([]);
+  });
+
   it('beach: unpublished story stills stay reusable; shipped feed locks the pier', () => {
     const pier = 'https://cdn.example.com/gallery/pier.jpg';
     const lounge = 'https://cdn.example.com/gallery/daybed.jpg';
@@ -90,6 +143,35 @@ describe('gallery-usage-tracker', () => {
     expect(counts.get(lounge)).toBe(1);
   });
 
+  it('beach: vitrine story counts the lounge; hidden plate does not', () => {
+    const lounge = 'https://cdn.example.com/gallery/daybed-a.jpg';
+    const plate = 'https://cdn.example.com/gallery/plate.jpg';
+    const usage = buildGalleryUsageFromArtifacts([
+      {
+        reviewStatus: 'Approved',
+        metadata: JSON.stringify({
+          kind: 'instagram_story',
+          selected_gallery_url: lounge,
+          publish_ready: true,
+          publish_blocked: false,
+        }),
+      },
+      {
+        reviewStatus: 'Pending',
+        metadata: JSON.stringify({
+          kind: 'instagram_post',
+          selected_gallery_url: plate,
+          publish_ready: true,
+          publish_blocked: true,
+        }),
+      },
+    ]);
+    const counts = buildGlobalGalleryUsageCounts(usage);
+    expect(counts.get(lounge)).toBe(1);
+    expect(counts.get(plate)).toBeUndefined();
+    expect(usage.byType.story).toEqual([]);
+  });
+
   it('tracks the look pack source still, not the enhanced R2 output', () => {
     const extracted = extractGalleryUrlsFromArtifact({
       reviewStatus: 'Approved',
@@ -107,14 +189,25 @@ describe('gallery-usage-tracker', () => {
     expect(extracted?.urls.some((u) => u.includes('r2.dev'))).toBe(false);
   });
 
-  it('shop + beach: mission siblings lock only Instagram-shipped stills', () => {
+  it('shop + beach: same-mission vitrine stills lock siblings; IG still hard-locks', () => {
     const mid = '11111111-1111-1111-1111-111111111111';
     const jam = 'https://cdn.example.com/gallery/fig-jam.jpg';
+    const honey = 'https://cdn.example.com/gallery/pine-honey.jpg';
     const pier = 'https://cdn.example.com/gallery/pier.jpg';
     const artifacts = [
       {
         reviewStatus: 'Pending',
         metadata: { mission_id: mid, kind: 'instagram_post', selected_gallery_url: jam },
+      },
+      {
+        reviewStatus: 'Pending',
+        metadata: {
+          mission_id: mid,
+          kind: 'instagram_post',
+          selected_gallery_url: honey,
+          publish_ready: true,
+          publish_blocked: false,
+        },
       },
       {
         reviewStatus: 'Approved',
@@ -126,7 +219,7 @@ describe('gallery-usage-tracker', () => {
         },
       },
     ];
-    expect(collectMissionGalleryUrls(artifacts, mid)).toEqual([pier]);
+    expect(collectMissionGalleryUrls(artifacts, mid)).toEqual([honey, pier]);
     const usage = buildGalleryUsageFromArtifacts(artifacts);
     expect(getMissionWideExcludeUrls(usage, {
       feed: [],
@@ -134,6 +227,8 @@ describe('gallery-usage-tracker', () => {
       reel: [],
       carousel: [],
     }, [])).toEqual([pier]);
+    expect(buildGlobalGalleryUsageCounts(usage).get(honey)).toBe(1);
+    expect(buildGlobalGalleryUsageCounts(usage).get(jam)).toBeUndefined();
   });
 });
 

@@ -398,6 +398,31 @@ def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     assert is_reel_job({"slot_key": "restaurant_cafe_menu_tasting_carousel"}) is False
 
 
+def test_reel_pause_skips_shop_and_beach_until_fal_wallet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.production_job_service import (
+        REEL_PAUSE_SKIP_REASON,
+        TERMINAL_PRODUCE_ERROR_MARKERS,
+        is_reel_job,
+        is_terminal_produce_error,
+        reel_production_paused,
+    )
+
+    monkeypatch.delenv("REEL_PRODUCTION_PAUSED", raising=False)
+    assert reel_production_paused() is True
+    monkeypatch.setenv("REEL_PRODUCTION_PAUSED", "0")
+    assert reel_production_paused() is False
+    monkeypatch.setenv("REEL_PRODUCTION_PAUSED", "1")
+    assert reel_production_paused() is True
+    assert is_reel_job({"slot_key": "local_products_shop_product_detail_reel"}) is True
+    assert is_reel_job({"slot_key": "beach_club_sunset_golden_reel"}) is True
+    assert is_reel_job({"slot_key": "local_products_shop_new_arrival_story"}) is False
+    assert is_reel_job({"slot_key": "beach_club_cocktail_promo_story"}) is False
+    assert is_terminal_produce_error(REEL_PAUSE_SKIP_REASON) is False
+    assert "skip-no-fal-quota" not in str(TERMINAL_PRODUCE_ERROR_MARKERS)
+
+
 def test_publish_code_map_shop_and_beach() -> None:
     from app.services.production_job_service import (
         is_retryable_publish_error,
@@ -538,7 +563,15 @@ class _JobsRecorder:
         self.deferred: list[tuple[uuid.UUID, str]] = []
         self.defer_opts: list[dict] = []
         self.running: list[uuid.UUID] = []
+        self.skipped: list[tuple[uuid.UUID, str]] = []
+        self.reel_skips = 0
         self.live_in_flight = False
+
+    async def skip_open_reel_jobs(self, mission_id: uuid.UUID | None = None, **_kwargs) -> int:
+        return self.reel_skips
+
+    async def mark_skipped(self, job_id: uuid.UUID, reason: str = "") -> None:
+        self.skipped.append((job_id, reason))
 
     async def has_live_in_flight(
         self,
@@ -617,6 +650,8 @@ def _install_drain_doubles(
         "mark_ready",
         "mark_failed",
         "mark_deferred",
+        "mark_skipped",
+        "skip_open_reel_jobs",
         "mission_job_summary",
         "reclaim_stale_jobs",
     ):
@@ -799,7 +834,7 @@ async def test_drain_bullmq_enqueues_only_and_leaves_jobs_running(
     monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
 ) -> None:
     patch_settings(use_bullmq_executor=True)
-    batch = [_job(0, "story"), _job(1, "reel")]
+    batch = [_job(0, "story"), _job(1, "post")]
     jobs = _JobsRecorder(
         claim_batches=[batch],
         summary={"total": 2, "complete": False, "active": 2, "failed": 0, "ready": 0},
@@ -829,7 +864,7 @@ async def test_drain_bullmq_enqueues_only_and_leaves_jobs_running(
     assert captured["enqueue_only"] is True
     assert captured["factory_jobs"] == [
         {"id": str(batch[0]["id"]), "slotKey": "0:story"},
-        {"id": str(batch[1]["id"]), "slotKey": "1:reel"},
+        {"id": str(batch[1]["id"]), "slotKey": "1:post"},
     ]
 
 
@@ -1118,3 +1153,35 @@ async def test_drain_timeout_keeps_shop_and_beach_running(
     assert jobs.deferred == []
     assert jobs.running == [shop["id"], beach["id"]]
     assert out["claimed"] == 2
+
+
+async def test_drain_skips_shop_and_beach_reels_when_fal_paused(
+    monkeypatch: pytest.MonkeyPatch, patch_settings, brand_stub
+) -> None:
+    patch_settings(use_bullmq_executor=True)
+    shop_reel = _job(0, "instagram_reel")
+    beach_reel = _job(1, "fal_reel_motion")
+    shop_story = _job(2, "fal_designed_story")
+    jobs = _JobsRecorder(
+        claim_batches=[[shop_reel, beach_reel, shop_story]],
+        summary={"total": 3, "complete": False, "active": 1, "failed": 0, "ready": 0},
+    )
+    jobs.reel_skips = 2
+    capture: dict = {}
+    _install_drain_doubles(
+        monkeypatch,
+        jobs=jobs,
+        trigger_result={"reason": "enqueued_to_bullmq"},
+        brand=brand_stub,
+        capture_trigger_kwargs=capture,
+    )
+
+    out = await pfs.drain_production_jobs(uuid.uuid4(), uuid.uuid4())
+
+    assert [job_id for job_id, _ in jobs.skipped] == [shop_reel["id"], beach_reel["id"]]
+    assert jobs.running == [shop_story["id"]]
+    assert out["claimed"] == 1
+    assert out["enqueued"] == 1
+    assert capture["factory_jobs"] == [
+        {"id": str(shop_story["id"]), "slotKey": "2:fal_designed_story"},
+    ]

@@ -147,6 +147,20 @@ def resolve_failure_attempt_cap(reason: str | None) -> int:
     return HARD_SLOT_ATTEMPT_CAP
 
 
+REEL_PAUSE_SKIP_REASON = "skip-no-fal-quota: reel paused until fal wallet"
+
+
+def reel_production_paused() -> bool:
+    """Skip reel/fal jobs until the fal wallet is funded.
+
+    Default on. Set ``REEL_PRODUCTION_PAUSED=0`` to claim reels again.
+    """
+    import os
+
+    raw = os.getenv("REEL_PRODUCTION_PAUSED", "1").strip().lower()
+    return raw not in ("0", "false", "off", "no")
+
+
 def is_reel_job(job: dict[str, Any] | None = None, **fields: Any) -> bool:
     """Weekly swipe (post/story/carousel) vs reel/video lane."""
     src = job or {}
@@ -459,15 +473,14 @@ async def claim_batch(
     claimed/running but its worker went stale. Marks claimed rows and returns them.
     One live produce per *lane*: stills (post/story/carousel) ignore a running
     reel so the weekly swipe does not wait on fal.ai. A batch never mixes lanes.
-    Stills are claimed first when both are free.
+    Stills are claimed first when both are free. When reel production is paused
+    (no fal wallet), reels are never claimed.
     """
-    factory = _get_session_factory()
-    async with factory() as db:
-        res = await db.execute(
-            text(
-                f"""
-                WITH lane AS (
-                    SELECT CASE
+    pause_reels = reel_production_paused()
+    want_reel_sql = (
+        "0"
+        if pause_reels
+        else f"""CASE
                       WHEN EXISTS (
                         SELECT 1 FROM production_jobs s
                         WHERE (CAST(:mission_id AS UUID) IS NULL
@@ -482,7 +495,23 @@ async def claim_batch(
                           AND NOT ({_live_inflight_exists_sql("s")})
                           AND {_attempts_under_cap_sql("s")}
                       ) THEN 0 ELSE 1
-                    END AS want_reel
+                    END"""
+    )
+    reel_claim_sql = (
+        f"AND NOT ({_reel_job_sql('j')})"
+        if pause_reels
+        else f"""AND (
+                        (lane.want_reel = 0 AND NOT ({_reel_job_sql("j")}))
+                        OR (lane.want_reel = 1 AND ({_reel_job_sql("j")}))
+                      )"""
+    )
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                f"""
+                WITH lane AS (
+                    SELECT {want_reel_sql} AS want_reel
                 ),
                 claimable AS (
                     SELECT j.id FROM production_jobs j, lane
@@ -497,10 +526,7 @@ async def claim_batch(
                       AND NOT ({_live_inflight_exists_sql("j")})
                       AND {_attempts_under_cap_sql("j")}
                       AND {_video_lane_cooldown_sql()}
-                      AND (
-                        (lane.want_reel = 0 AND NOT ({_reel_job_sql("j")}))
-                        OR (lane.want_reel = 1 AND ({_reel_job_sql("j")}))
-                      )
+                      {reel_claim_sql}
                     ORDER BY COALESCE(j.priority, 0) DESC, j.run_after ASC
                     LIMIT :limit
                     FOR UPDATE SKIP LOCKED
@@ -859,6 +885,52 @@ async def exhaust_open_terminal_error_jobs(*, limit: int = 80) -> int:
     return len(rows)
 
 
+async def skip_open_reel_jobs(
+    mission_id: uuid.UUID | None = None,
+    *,
+    reason: str = REEL_PAUSE_SKIP_REASON,
+) -> int:
+    """Mark open reel rows skipped so they do not sit in the weekly lot.
+
+    Ready artifacts are untouched (status is already terminal).
+    """
+    if not reel_production_paused():
+        return 0
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                f"""
+                UPDATE production_jobs j
+                SET status = 'skipped',
+                    last_error = :reason,
+                    completed_at = now(),
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    updated_at = now()
+                WHERE j.status IN ('pending', 'failed', 'claimed', 'running')
+                  AND ({_reel_job_sql("j")})
+                  AND (CAST(:mission_id AS UUID) IS NULL
+                       OR j.mission_id = CAST(:mission_id AS UUID))
+                RETURNING j.id
+                """
+            ),
+            {
+                "reason": (reason or REEL_PAUSE_SKIP_REASON)[:500],
+                "mission_id": str(mission_id) if mission_id else None,
+            },
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info(
+            "production_jobs.skip_open_reels",
+            skipped=len(rows),
+            mission_id=str(mission_id) if mission_id else None,
+        )
+    return len(rows)
+
+
 async def mark_skipped(job_id: str | uuid.UUID, reason: str = "") -> None:
     factory = _get_session_factory()
     row_dict: dict[str, Any] | None = None
@@ -1153,7 +1225,9 @@ async def has_runnable_jobs(
         else _STALE_CLAIM_SEC
     )
     extra = ""
-    if lane == "still":
+    if reel_production_paused():
+        extra = "AND FALSE" if lane == "video" else f"AND NOT ({_reel_job_sql('j')})"
+    elif lane == "still":
         extra = f"AND NOT ({_reel_job_sql('j')})"
     elif lane == "video":
         extra = f"AND ({_reel_job_sql('j')})"

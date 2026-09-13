@@ -700,6 +700,15 @@ async def drain_production_jobs(
     settings = get_settings()
     use_bullmq = settings.use_bullmq_executor
 
+    if jobs.reel_production_paused():
+        skipped_reels = await jobs.skip_open_reel_jobs(mission_id)
+        if skipped_reels:
+            logger.info(
+                "production_factory.reel_paused_skip",
+                mission_id=str(mission_id),
+                skipped=skipped_reels,
+            )
+
     if not await jobs.has_runnable_jobs(mission_id):
         return {"claimed": 0, "ready": 0, "failed": 0}
 
@@ -748,6 +757,13 @@ async def drain_production_jobs(
         batch = await jobs.claim_batch(mission_id, limit=limit, stale_sec=claim_stale_sec)
         if not batch:
             break
+        if jobs.reel_production_paused():
+            leftover_reels = [job for job in batch if jobs.is_reel_job(job)]
+            for job in leftover_reels:
+                await jobs.mark_skipped(job["id"], jobs.REEL_PAUSE_SKIP_REASON)
+            batch = [job for job in batch if not jobs.is_reel_job(job)]
+            if not batch:
+                continue
         claimed_total += len(batch)
         withheld_jobs = [job for job in batch if _job_gallery_volume_withheld(job)]
         if withheld_jobs:

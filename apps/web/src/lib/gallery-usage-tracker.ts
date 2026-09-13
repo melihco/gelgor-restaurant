@@ -1,7 +1,12 @@
 /**
- * Tracks which brand gallery photos are already used per Instagram post type.
- * Source of truth: Nexus OutputArtifacts that actually shipped to Instagram.
- * Pending / approved-but-unshared cards do not lock the source still.
+ * Tracks which brand gallery photos are already used.
+ *
+ * Soft rank (`countsByUrl`): Akış / vitrine cards + Instagram ships.
+ * Hard lock (`byType`): Instagram ships only — thin galleries must still
+ * be able to reuse a sibling still when it is the only caption match.
+ *
+ * Pending / hub-approve without `publish_ready` do not count. Hidden
+ * (`publish_blocked`) cards do not count.
  */
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 
@@ -21,7 +26,7 @@ const EMPTY_USAGE: UsedGalleryUsage = {
 /** Per prior-use penalty in semantic ranking — higher spreads gallery diversity. */
 export const GALLERY_USAGE_COUNT_PENALTY = 18;
 
-/** Boost never-published gallery photos so missions stop recycling the same heroes. */
+/** Boost never-used-on-vitrine gallery photos so missions stop recycling heroes. */
 export const GALLERY_UNUSED_PHOTO_BOOST = 10;
 
 /** Cross post-type usage counts — drives matcher diversity (multi-tenant). */
@@ -94,6 +99,12 @@ function publishedToken(raw: unknown): boolean {
   return s.length >= 4 && s !== 'null' && s !== 'undefined';
 }
 
+function truthyMetaFlag(raw: unknown): boolean {
+  if (raw === true) return true;
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+}
+
 /**
  * Real-account Instagram ship. Hub approve without Share does not count.
  */
@@ -116,6 +127,27 @@ export function isInstagramPublishedArtifact(
   if (/instagram\.com/i.test(permalink)) return true;
   if (publishedToken(bag.post_id) || publishedToken(bag.postId)) return true;
   return false;
+}
+
+/**
+ * Customer Akış card. Soft-counts the source still so the next mission
+ * prefers a sibling photo. Does not hard-lock the gallery.
+ */
+export function isVitrineVisibleArtifact(
+  artifact: Record<string, unknown>,
+): boolean {
+  if (isRejectedReviewStatus(artifact.reviewStatus ?? artifact.ReviewStatus)) {
+    return false;
+  }
+  const meta = parseJsonRecord(artifact.metadata ?? artifact.Metadata);
+  const content = parseJsonRecord(artifact.content ?? artifact.Content);
+  const bag = { ...content, ...meta };
+  if (truthyMetaFlag(bag.publish_blocked)) return false;
+  return truthyMetaFlag(bag.publish_ready);
+}
+
+function shouldCountGalleryUsage(artifact: Record<string, unknown>): boolean {
+  return isInstagramPublishedArtifact(artifact) || isVitrineVisibleArtifact(artifact);
 }
 
 function parseJsonRecord(raw: unknown): Record<string, unknown> {
@@ -161,7 +193,7 @@ function looksGenerated(url: string): boolean {
 export function extractGalleryUrlsFromArtifact(
   artifact: Record<string, unknown>,
 ): { postType: PostTypeBucket; urls: string[] } | null {
-  if (!isInstagramPublishedArtifact(artifact)) {
+  if (!shouldCountGalleryUsage(artifact)) {
     return null;
   }
 
@@ -227,10 +259,11 @@ export function buildGalleryUsageFromArtifacts(
   for (const artifact of artifacts) {
     const extracted = extractGalleryUrlsFromArtifact(artifact);
     if (!extracted) continue;
+    const hardLock = isInstagramPublishedArtifact(artifact);
     for (const url of extracted.urls) {
       const base = normalizeGalleryUrl(url);
-      byType[extracted.postType].add(base);
       countsByUrl.set(base, (countsByUrl.get(base) ?? 0) + 1);
+      if (hardLock) byType[extracted.postType].add(base);
     }
   }
 
@@ -346,7 +379,7 @@ function artifactMissionId(artifact: Record<string, unknown>): string {
   ).trim();
 }
 
-/** Gallery source URLs already shipped to Instagram in one mission. */
+/** Gallery source URLs already on vitrine or Instagram in one mission. */
 export function collectMissionGalleryUrls(
   artifacts: Record<string, unknown>[],
   missionId: string,
