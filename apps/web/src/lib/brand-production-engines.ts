@@ -1,5 +1,5 @@
 /**
- * Brand-level production engine config — Satori / FAL routing.
+ * Brand-level production engine config — FAL routing + Mission Hub showcase.
  * Stored on brand_theme.production_engines (JSONB).
  */
 
@@ -17,12 +17,6 @@ export interface BrandProductionThroughputConfig {
   factory_drain_batch?: number;
 }
 
-/** Local Satori typography — gallery photo + brand font/color overlay (text-heavy slots). */
-export interface BrandSatoriEngineConfig {
-  /** When false, text-heavy slots fall back to fal/gpt-image even if LOCAL_TYPOGRAPHY_ENABLED. */
-  local_typography_enabled: boolean;
-}
-
 /** Mission Hub "Üretilen içerikler" flip-card gallery — per-brand UI config. */
 export interface BrandSlotShowcaseConfig {
   /** Hide the flip-card gallery in the mission detail sheet when false. */
@@ -33,7 +27,6 @@ export interface BrandSlotShowcaseConfig {
 
 export interface BrandProductionEnginesConfig {
   fal: BrandFalEngineConfig;
-  satori: BrandSatoriEngineConfig;
   showcase?: BrandSlotShowcaseConfig;
   throughput?: BrandProductionThroughputConfig;
 }
@@ -44,9 +37,6 @@ const DEFAULT_ENGINES: BrandProductionEnginesConfig = {
     typography_design_enabled: true,
     max_motion_plates_per_mission: 3,
     max_typography_per_mission: 1,
-  },
-  satori: {
-    local_typography_enabled: true,
   },
   showcase: {
     enabled: true,
@@ -63,7 +53,6 @@ function readEngines(theme: Record<string, unknown> | null | undefined): BrandPr
   if (!raw) return DEFAULT_ENGINES;
 
   const fal: Partial<BrandFalEngineConfig> = raw.fal ?? {};
-  const satori: Partial<BrandSatoriEngineConfig> = raw.satori ?? {};
   const showcase: Partial<BrandSlotShowcaseConfig> = raw.showcase ?? {};
   const throughput: Partial<BrandProductionThroughputConfig> = raw.throughput ?? {};
 
@@ -73,9 +62,6 @@ function readEngines(theme: Record<string, unknown> | null | undefined): BrandPr
       typography_design_enabled: fal.typography_design_enabled !== false,
       max_motion_plates_per_mission: fal.max_motion_plates_per_mission ?? DEFAULT_ENGINES.fal.max_motion_plates_per_mission,
       max_typography_per_mission: fal.max_typography_per_mission ?? DEFAULT_ENGINES.fal.max_typography_per_mission,
-    },
-    satori: {
-      local_typography_enabled: satori.local_typography_enabled !== false,
     },
     showcase: {
       enabled: showcase.enabled !== false,
@@ -95,13 +81,6 @@ export function resolveProductionEngines(
 
 export function defaultProductionEngines(): BrandProductionEnginesConfig {
   return DEFAULT_ENGINES;
-}
-
-/** Brand-level opt-in/out for Satori local typography (global flag still required). */
-export function isLocalTypographyEnabledForBrand(
-  theme: Record<string, unknown> | null | undefined,
-): boolean {
-  return readEngines(theme).satori.local_typography_enabled !== false;
 }
 
 /** Mission Hub flip-card showcase config for a brand (defaults: enabled + filters on). */

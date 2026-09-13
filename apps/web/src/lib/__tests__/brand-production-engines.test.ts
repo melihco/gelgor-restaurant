@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   resolveSlotShowcaseConfig,
   resolveProductionEngines,
-  isLocalTypographyEnabledForBrand,
 } from '../brand-production-engines';
 
 describe('resolveSlotShowcaseConfig', () => {
@@ -46,18 +45,6 @@ describe('resolveProductionEngines showcase defaults', () => {
       production_engines: { showcase: { enabled: false } },
     });
     expect(engines.fal.motion_plates_enabled).toBe(true);
-    expect(engines.satori.local_typography_enabled).toBe(true);
     expect(engines.showcase?.enabled).toBe(false);
-  });
-});
-
-describe('isLocalTypographyEnabledForBrand', () => {
-  it('is unaffected by showcase config', () => {
-    expect(isLocalTypographyEnabledForBrand({
-      production_engines: { showcase: { enabled: false } },
-    })).toBe(true);
-    expect(isLocalTypographyEnabledForBrand({
-      production_engines: { satori: { local_typography_enabled: false } },
-    })).toBe(false);
   });
 });

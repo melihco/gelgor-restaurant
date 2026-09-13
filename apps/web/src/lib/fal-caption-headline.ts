@@ -1498,16 +1498,15 @@ export function resolveOverlayHeadlineWordBudget(input: {
   } else if (intensity === 'balanced') {
     maxWords = 3;
   } else if (intensity === 'designed' || intensity === 'bold_editorial') {
-    // Designed story/reel: keep a complete planned sentence, not a 22/3 crumb.
+    // Feed stays a short planned sentence. Story/reel keep the mission line —
+    // do not invent a 3-word motto that later fails the type gate.
     maxWords = channel === 'feed_post' ? 4 : 8;
   }
 
-  const designedSentence = intensity === 'designed' || intensity === 'bold_editorial';
-  if (designedSentence && (channel === 'reel' || channel === 'story')) {
-    return { maxWords: 8, maxLen: FAL_MISSION_TAGLINE_MAX_CHARS };
-  }
-
-  let maxLen = channelMaxLen;
+  let maxLen = (intensity === 'designed' || intensity === 'bold_editorial')
+    && channel !== 'feed_post'
+    ? FAL_MISSION_TAGLINE_MAX_CHARS
+    : channelMaxLen;
 
   const sample = String(input.sampleHeadline ?? '').trim();
   if (sample.length >= 2) {
@@ -1892,6 +1891,8 @@ export function clampFalOverlayHeadlineForCanvas(
   if (!clean) return '';
   if (isInternalStrategyBriefing(clean)) return '';
   if (isIncompleteOverlayPhrase(clean) && clean.length > FAL_FEED_OVERLAY_MAX_CHARS) return '';
+  const complete = keepCompleteOverlaySentence(clean);
+  if (complete) return complete;
   const budget = budgetOverride ?? resolveOverlayHeadlineWordBudget({ channel, designIntensity });
   const tightened = tightenOverlayHeadline(clean, budget.maxLen, budget.maxWords);
   if (tightened && isMeaningfulFalOverlayText(tightened) && !isIncompleteOverlayPhrase(tightened)) {

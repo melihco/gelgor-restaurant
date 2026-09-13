@@ -26,7 +26,6 @@ import {
   buildTemplateReplicaPrompt,
   pickTemplateReferenceUrls,
   catalogTemplateWithholdReason,
-  librarySlotPaintLocked,
   librarySlotShellMissingReason,
   resolveFalTemplateLockOptions,
   assertTemplateStyleReference,
@@ -36,8 +35,6 @@ import {
   templateStyleReferenceUrls,
 } from '@/lib/brand-design-template-production';
 import { fetchReviewableFrameBuffer } from '@/lib/external-image-fetch';
-import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
-import type { BrandTemplateFalBinding } from '@/lib/brand-design-template-production';
 import {
   catalogSlotAllowsOnCanvasCta,
   resolveSlotSublineForRender,
@@ -67,19 +64,12 @@ import {
 import { resolveFalTemplateProductionSettings } from '@/lib/fal-template-production-settings';
 import { normalizeGalleryUrl } from '@/lib/gallery-usage-tracker';
 import { serverConfig } from '@/lib/server-config';
-import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
-import { studioForbidsSatoriEscape } from '@/studio/paint';
 import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { resolveDesignedPostProductionOrder } from '@/lib/designed-post-production-order';
 import { composePackagingLockedPaintPrompt } from '@/lib/product-packaging-fidelity';
 import { deriveHeadlineFromCaption } from '@/lib/feed-slot-pack';
 import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
-import {
-  composeDesignSpecShell,
-  DESIGN_SPEC_SHELL_ENGINE,
-  type ShellComposeMode,
-} from '@/lib/design-spec-shell-compose';
 import { isHardDesignWithholdBreak } from '@/lib/caption-design-post-coherence';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
@@ -153,12 +143,6 @@ export interface FalDesignedPostInput {
   productionTier?: string | null;
   /** production-loop punchline lock — paint must not stem/rewrite. */
   punchlineLockSource?: string | null;
-  /**
-   * auto: paint layout boxes on the real photo when geometry exists.
-   * off (default): GPT JPEG replica.
-   * only: fail if the shell cannot compose.
-   */
-  shellCompose?: ShellComposeMode;
   slotRole?: string | null;
   catalogSlotKey?: string | null;
   announcementType?: string | null;
@@ -396,55 +380,6 @@ export async function produceFalDesignedPost(
       if (!canvasHeadline) {
         console.warn('[auto-produce] [fal-design] no valid overlay headline — skipping GPT designed post');
       } else {
-      const replicaLocked = librarySlotPaintLocked(binding?.matched);
-      const shellMode = replicaLocked ? 'off' : (input.shellCompose ?? 'off');
-      if (shellMode !== 'off' && referenceUrl) {
-        const shell = await composeDesignSpecShell({
-          headline: canvasHeadline,
-          subtitle: dedupedSubtitle,
-          brandColors,
-          vibe: designVibe,
-          archetypeId: input.canvaArchetypeId
-            ?? binding?.matched?.canvaArchetypeId
-            ?? null,
-          format: aspectRatio === '9:16' ? 'story' : 'post',
-          layoutPattern: binding?.matched?.layoutPattern ?? null,
-          photoUrl: referenceUrl,
-          workspaceId: input.workspaceId,
-          persist: true,
-        });
-        if (shell?.imageUrl) {
-          console.log(
-            `[auto-produce] [fal-design] design_spec_shell archetype=${shell.layout.archetypeId} `
-            + `"${canvasHeadline.slice(0, 40)}"`,
-          );
-          return {
-            imageUrl: shell.imageUrl,
-            falGrafikerScore: null,
-            falGrafikerPass: true,
-            falDesignEngine: DESIGN_SPEC_SHELL_ENGINE,
-            falTextValidated: true,
-            falGrafikerReviewed: false,
-            costDelta: 0,
-            artifactMetaPatch: {
-              design_spec_shell: true,
-              design_spec_layout_version: shell.layout.version,
-              design_spec_archetype: shell.layout.archetypeId,
-              design_spec_copy_fit_ok: shell.fit.ok,
-            },
-          };
-        }
-        if (shellMode === 'only') {
-          return {
-            imageUrl: null,
-            falGrafikerScore: null,
-            falGrafikerPass: false,
-            falDesignEngine: DESIGN_SPEC_SHELL_ENGINE,
-            costDelta: 0,
-            failureReason: 'design_spec_shell_failed',
-          };
-        }
-      }
       // "Yeniden üret" semantics: reuse the template's stored generation prompt
       // (design_spec.prompt) with mission copy swapped in, instead of rebuilding
       // a fresh prompt that may fight the template layout reference.
@@ -850,73 +785,6 @@ export async function produceFalDesignedPost(
 }
 
 /**
- * Render the designed-post typography locally (Satori). Shared by the primary
- * (no real template) path and the safety-net fallback (real template but the
- * fal/GPT designed pipeline produced nothing).
- */
-async function renderDesignedPostLocalTypography(args: {
-  inputs: SlotProductionInputs;
-  templateBinding: BrandTemplateFalBinding;
-  falBrandColors: { primary: string; accent: string };
-  falBrandVibe: TypographyVibe | null;
-  localReferenceUrl: string;
-  headlineOverride?: string;
-}): Promise<Awaited<ReturnType<typeof renderLocalTypography>>> {
-  const { inputs, templateBinding, falBrandColors, falBrandVibe, localReferenceUrl } = args;
-  const overlayHeadline = String(args.headlineOverride ?? inputs.headline).trim() || inputs.headline;
-  const localVibe = templateBinding.lockedVibe ?? resolveTypographyVibeFromContext({
-    caption: inputs.caption,
-    headline: inputs.headline,
-    sector: inputs.brandBusinessType,
-    brandVibe: falBrandVibe,
-    lockPremiumVibe: /beach|club|hotel|resort|spa|fine_dining|restaurant/i.test(
-      inputs.brandBusinessType ?? '',
-    ),
-  });
-  return renderLocalTypography({
-    workspaceId: inputs.workspaceId,
-    headline: overlayHeadline,
-    subtitle: inputs.falSubtitle || inputs.cta,
-    brandName: inputs.resolvedBrandName,
-    brandColors: resolveFalProductionBrandColors(falBrandColors, templateBinding.brandColors),
-    vibe: localVibe,
-    aspectRatio: inputs.falAspectRatio ?? '4:5',
-    referencePhotoUrl: localReferenceUrl,
-    logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
-    sector: inputs.brandBusinessType,
-    occasion: templateBinding.occasion,
-    templateType: templateBinding.matched?.templateType,
-    canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
-    layoutPattern: templateBinding.matched?.layoutPattern,
-    layoutFamilyHint: inputs.layoutFamilyHint,
-    slotRole: inputs.slotRole,
-    slotSeed:
-      inputs.catalogSlotKey
-      ?? templateBinding.matched?.id
-      ?? templateBinding.matched?.templateName
-      ?? inputs.slotRole,
-  });
-}
-
-function applyLocalTypographyToState(
-  state: SlotProductionState,
-  local: NonNullable<Awaited<ReturnType<typeof renderLocalTypography>>>,
-  templateBinding: BrandTemplateFalBinding,
-): void {
-  state.imageUrl = local.imageUrl;
-  state.falGrafikerScore = local.grafikerScore;
-  state.falGrafikerPass = local.grafikerPass;
-  state.falDesignEngine = 'satori_local';
-  state.costDelta += 0.002;
-  if (templateBinding.matched) {
-    state.brandDesignTemplateId = templateBinding.matched.id;
-    state.brandDesignTemplateType = templateBinding.matched.templateType;
-    state.brandDesignTemplateName = templateBinding.matched.templateName;
-    state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
-  }
-}
-
-/**
  * Pipeline handler wrapper for the slot-loop dispatch (b2b). Resolves the fal
  * brand input, produces the designed post, and merges the result into the shared
  * slot state. Behavior is identical to the previous inline production-loop block.
@@ -985,49 +853,6 @@ export const falDesignHandler: ProductionPipelineHandler = {
       state.pipelineFailureReason = withhold;
       console.warn(`[auto-produce] [fal-design] withheld: ${state.pipelineFailureReason}`);
       return;
-    }
-
-    // Local-first ONLY when the slot has no real library design to render.
-    // When a template is hard/soft matched, Satori is skipped so the actual
-    // template design renders via the fal/GPT designed pipeline below — Satori
-    // cannot reproduce a template's layout/graphics, only text-on-photo.
-    const localReferenceUrl = templateBinding.referencePhotoUrl ?? inputs.referenceUrl;
-    const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
-    const localTypographyEligible = Boolean(
-      !inputs.adHocBrief
-      && shouldUseLocalTypography(inputs.slotRole, inputs.pipeline, inputs.brandTheme, {
-        forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
-      })
-      && localReferenceUrl
-      && isUsableGalleryPhotoUrl(localReferenceUrl),
-    );
-    const designedFeedSlot = (
-      inputs.pipeline === 'fal_design'
-      || inputs.slotRole === 'designed_post'
-      || inputs.slotRole === 'designed_typography'
-      || inputs.slotRole === 'fal_designed_post'
-    );
-    if (!state.imageUrl && !templateIsRenderable && localTypographyEligible && !designedFeedSlot) {
-      const local = await renderDesignedPostLocalTypography({
-        inputs,
-        templateBinding,
-        falBrandColors: falBrand.brandColors,
-        falBrandVibe: falBrand.vibe,
-        localReferenceUrl: localReferenceUrl as string,
-      });
-      if (local) {
-        applyLocalTypographyToState(state, local, templateBinding);
-        console.log(
-          `[auto-produce] [fal-design] local typography (no template): "${inputs.headline.slice(0, 40)}" ` +
-          `layout=${local.layoutFamily}`,
-        );
-        return;
-      }
-    } else if (templateIsRenderable) {
-      console.log(
-        `[auto-produce] [fal-design] template "${templateBinding.matched?.templateName}" ` +
-        `(${templateBinding.matched?.matchQuality}) — rendering real design (Satori skipped)`,
-      );
     }
 
     // Mission gallery is SSOT for coherence — same rule as produceFalDesignedPost.
@@ -1120,64 +945,6 @@ export const falDesignHandler: ProductionPipelineHandler = {
         state.brandDesignTemplateType = templateBinding.matched.templateType;
         state.brandDesignTemplateName = templateBinding.matched.templateName;
         state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
-      }
-    }
-
-    // Safety net: GPT/Ideogram produced nothing (coherence overlay skip,
-    // API outage, or LOCAL_TYPOGRAPHY_ENABLED off so the first Satori path
-    // never ran). Paint on the gallery photo — that is still grounded.
-    const satoriFallbackPhoto = localReferenceUrl
-      && isUsableGalleryPhotoUrl(localReferenceUrl)
-      ? localReferenceUrl
-      : null;
-    if (
-      allowDegradedVisualFallback()
-      && !state.imageUrl
-      && satoriFallbackPhoto
-      && !inputs.adHocBrief
-      && !studioForbidsSatoriEscape(inputs)
-      && !librarySlotPaintLocked(templateBinding.matched)
-    ) {
-      const paintFallback = resolveSlotPaintOverlay({
-        headline: inputs.headline,
-        subtitle: gatedFalSubtitle || inputs.cta,
-        caption: inputs.caption,
-        cta: inputs.cta,
-        channel: inputs.falAspectRatio === '9:16' ? 'story' : 'feed_post',
-        brandName: inputs.resolvedBrandName,
-        businessType: inputs.brandBusinessType,
-        punchlineLockSource: inputs.punchlineLockSource,
-        captionAwareHeadline: inputs.captionAwareHeadline,
-        sampleHeadline: templateBinding.matched?.sampleHeadline,
-        sampleSubtitle: templateBinding.matched?.sampleSubtitle,
-        showSubline: catalogSlotAllowsOnCanvasCta(inputs.catalogSlotKey)
-          && templateBinding.matched?.showSubline !== false,
-        typeBudget: templateBinding.matched?.typeBudget,
-        photoUrl: satoriFallbackPhoto,
-        designMatchIsSoft: templateBinding.matched?.matchQuality === 'soft',
-        adaptiveScene: resolveAiVisualProductionStandard(inputs.brandTheme).adaptiveScene,
-        catalogSlotKey: inputs.catalogSlotKey,
-      });
-      if (isHardDesignWithholdBreak(paintFallback.coherence.breaks)) {
-        state.pipelineFailureReason = state.pipelineFailureReason
-          ?? `caption_design_incoherent:${paintFallback.coherence.breaks.join('+')}`;
-        return;
-      }
-      const local = await renderDesignedPostLocalTypography({
-        inputs,
-        templateBinding,
-        falBrandColors: falBrand.brandColors,
-        falBrandVibe: falBrand.vibe,
-        localReferenceUrl: satoriFallbackPhoto,
-        headlineOverride: paintFallback.headline,
-      });
-      if (local) {
-        applyLocalTypographyToState(state, local, templateBinding);
-        state.pipelineFailureReason = null;
-        console.log(
-          `[auto-produce] [fal-design] designed pipeline empty — Satori fallback: ` +
-          `"${paintFallback.headline.slice(0, 40)}" layout=${local.layoutFamily}`,
-        );
       }
     }
   },

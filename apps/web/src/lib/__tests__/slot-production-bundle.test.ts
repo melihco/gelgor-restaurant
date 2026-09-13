@@ -111,6 +111,49 @@ describe('slot-production-bundle', () => {
     expect(result.preserved).toBe(false);
   });
 
+  it('shop story: keeps the planned honey sentence', () => {
+    const line = 'Kekik ve Çiçek Balı çeşitlerimizle sağlıklı bir tat deneyimi yaşayın';
+    const result = resolveSlotPaintOverlay({
+      headline: line,
+      caption: 'Kekik ve çiçek balı raflarda. Tadım için bekleriz.',
+      channel: 'story',
+      brandName: 'Yerel dükkan',
+      businessType: 'local_products_shop',
+      designIntensity: 'designed',
+    });
+    expect(result.headline.toLocaleLowerCase('tr-TR')).toContain('çeşitlerimizle');
+    expect(result.headline.toLocaleLowerCase('tr-TR')).toContain('kekik');
+  });
+
+  it('beach story: keeps the planned sunset sentence', () => {
+    const line = 'Sunset cocktails on the deck tonight';
+    const result = resolveSlotPaintOverlay({
+      headline: line,
+      caption: 'Sunset cocktails on the deck tonight. Come early.',
+      channel: 'story',
+      brandName: 'Beach Club',
+      businessType: 'beach_club',
+      designIntensity: 'bold_editorial',
+    });
+    expect(result.headline.toLowerCase()).toContain('sunset cocktails');
+    expect(result.headline.toLowerCase()).not.toBe('come early');
+  });
+
+  it('shop story locked punchline stays the planned sentence', () => {
+    const line = 'Kekik ve Çiçek Balı çeşitlerimizle sağlıklı bir tat deneyimi yaşayın';
+    const result = resolveSlotPaintOverlay({
+      headline: line,
+      caption: 'Kekik ve çiçek balı raflarda.',
+      channel: 'story',
+      brandName: 'Yerel dükkan',
+      businessType: 'local_products_shop',
+      punchlineLockSource: 'feed_slot_pack',
+      designIntensity: 'designed',
+    });
+    expect(result.preserved).toBe(true);
+    expect(result.headline.toLocaleLowerCase('tr-TR')).toContain('çeşitlerimizle');
+  });
+
   it('locked retry shorten uses soft-clamp only', () => {
     const line = 'Sunset cocktails on the deck tonight.';
     expect(shortenLockedPunchlineForImageRetry(line, 'feed_post')).toContain('Sunset');

@@ -73,7 +73,13 @@ describe('resolveOverlayHeadlineWordBudget', () => {
       designIntensity: 'designed',
     });
     expect(designedReel.maxWords).toBe(8);
-    expect(designedReel.maxLen).toBeGreaterThanOrEqual(40);
+    expect(designedReel.maxLen).toBe(48);
+    const designedStory = resolveOverlayHeadlineWordBudget({
+      channel: 'story',
+      designIntensity: 'bold_editorial',
+    });
+    expect(designedStory.maxWords).toBe(8);
+    expect(designedStory.maxLen).toBe(48);
   });
 });
 
@@ -134,7 +140,7 @@ describe('resolveMissionFalDesignCopy', () => {
     expect(result.headline.toLowerCase()).not.toMatch(/sizi bekliyoruz|özlemle|serinletici yaz/);
   });
 
-  it('keeps Hub mission tagline phrase on story (no 2–3 word stem)', () => {
+  it('keeps Hub mission tagline whole on story — no 1-word stem', () => {
     const result = resolveMissionFalDesignCopy({
       idea: {
         concept_title: 'Crafting Citrus Cocktails',
@@ -152,8 +158,8 @@ describe('resolveMissionFalDesignCopy', () => {
       designIntensity: 'balanced',
     });
     expect(result.source).toBe('mission_tagline');
-    expect(result.headline.toLowerCase()).toContain('cocktail making');
-    expect(result.headline.split(/\s+/).length).toBeGreaterThanOrEqual(5);
+    expect(result.headline.toLowerCase()).toMatch(/discover the art of cocktail making/);
+    expect(result.headline.toLowerCase()).not.toBe('discover');
   });
 
   it('preserves Hub quote under operator type_budget (beach_club + local_products)', () => {

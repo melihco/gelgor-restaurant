@@ -345,13 +345,9 @@ describe('shortenFalOverlayForImageRetry', () => {
 });
 
 describe('clampFalOverlayHeadlineForCanvas', () => {
-  it('shortens long reel headlines to ≤3 words / 22 chars', () => {
-    const result = clampFalOverlayHeadlineForCanvas(
-      'What Our Happy Excellent Customers Are Saying',
-      'reel',
-    );
-    expect(result.split(/\s+/).length).toBeLessThanOrEqual(3);
-    expect(result.length).toBeLessThanOrEqual(22);
+  it('keeps a complete reel sentence instead of inventing a motto', () => {
+    const line = 'What Our Happy Excellent Customers Are Saying';
+    expect(clampFalOverlayHeadlineForCanvas(line, 'reel')).toBe(line);
   });
 
   it('keeps complete Turkish marketing sentences on feed (≤48)', () => {
@@ -673,13 +669,13 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
     expect(beach.toLocaleLowerCase('tr-TR')).toMatch(/daybed|rezerv|hafta/);
   });
 
-  it('keeps a complete designed-reel sentence instead of the 22/3 tail', () => {
+  it('keeps designed 9:16 copy whole — no motto stem', () => {
     const shop = clampFalOverlayHeadlineForCanvas(
       'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
       'reel',
       'designed',
     );
-    expect(shop).toMatch(/Zeytinyağı Yapım Sürecimize Tanıklık Et/i);
+    expect(shop.toLocaleLowerCase('tr-TR')).toMatch(/zeytinyağı yapım sürecimize tanıklık et/);
     expect(shop.toLocaleLowerCase('tr-TR')).not.toMatch(/^tanıklık et$/);
 
     const beach = clampFalOverlayHeadlineForCanvas(
@@ -687,7 +683,7 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
       'story',
       'designed',
     );
-    expect(beach).toMatch(/Hafta Sonu Daybed Rezervasyonuna Davet/i);
+    expect(beach.toLocaleLowerCase('tr-TR')).toMatch(/hafta sonu daybed rezervasyonuna davet/);
     expect(beach.toLocaleLowerCase('tr-TR')).not.toBe('davet');
   });
 
@@ -701,7 +697,8 @@ describe('clampFalOverlayHeadlineForCanvas', () => {
 
     const beachFull = 'Hafta Sonu Daybed Rezervasyonuna Davet!';
     expect(keepCompleteOverlaySentence(beachFull)).toMatch(/Daybed Rezervasyonuna Davet/i);
-    expect(clampMissionTaglineForCanvas(beachFull, 'story').length).toBeGreaterThan(28);
+    const storyClamp = clampMissionTaglineForCanvas(beachFull, 'story');
+    expect(storyClamp.toLocaleLowerCase('tr-TR')).toMatch(/hafta sonu daybed rezervasyonuna davet/);
   });
 
   it('treats -ın imperatives as verbs, not genitives', () => {

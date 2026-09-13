@@ -15,7 +15,8 @@ import {
   librarySlotShellMissingReason,
   templateLayoutReferenceUrl,
 } from '@/lib/brand-design-template-production';
-import { validateFalCanvasText } from '@/lib/typography-text-validation';
+import { stampDesignedTypographyValid, validateFalCanvasText } from '@/lib/typography-text-validation';
+import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import type {
   ProductionPipelineHandler,
   SlotProductionContext,
@@ -85,13 +86,40 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       state.brandDesignTemplateMatchQuality = templateBinding.matched.matchQuality;
     }
 
+    const paintChannel = outputType === 'story' ? 'story' : 'feed_post';
+    const paintOverlay = resolveSlotPaintOverlay({
+      headline: inputs.headline,
+      subtitle: inputs.falSubtitle || inputs.cta,
+      caption: inputs.caption,
+      cta: inputs.cta,
+      channel: paintChannel,
+      brandName: inputs.resolvedBrandName,
+      businessType: inputs.brandBusinessType,
+      punchlineLockSource: inputs.punchlineLockSource,
+      captionAwareHeadline: inputs.captionAwareHeadline,
+      sampleHeadline: templateBinding.matched?.sampleHeadline,
+      sampleSubtitle: templateBinding.matched?.sampleSubtitle,
+      showSubline: templateBinding.matched?.showSubline !== false,
+      typeBudget: templateBinding.matched?.typeBudget,
+      photoUrl: matchedGalleryUrl,
+      catalogSlotKey: inputs.catalogSlotKey,
+    });
+    const paintHeadline = paintOverlay.headline.trim() || inputs.headline;
+    const paintSubtitle = paintOverlay.subtitle ?? '';
+    if (paintHeadline !== inputs.headline) {
+      console.log(
+        `[premium_editorial] story/post type budget `
+        + `"${inputs.headline.slice(0, 36)}" → "${paintHeadline.slice(0, 36)}"`,
+      );
+    }
+
     const result = await runPremiumEditorialCampaign({
       brandId: inputs.workspaceId,
       workspaceId: inputs.workspaceId,
-      contentTopic: inputs.headline || inputs.caption.slice(0, 80) || 'Premium editorial campaign',
+      contentTopic: paintHeadline || inputs.caption.slice(0, 80) || 'Premium editorial campaign',
       campaignGoal: inputs.strategicPurpose ?? inputs.mood ?? null,
-      headline: inputs.headline,
-      subheadline: inputs.falSubtitle ?? '',
+      headline: paintHeadline,
+      subheadline: paintSubtitle,
       cta: inputs.cta,
       caption: inputs.caption,
       mood: inputs.mood ?? null,
@@ -144,10 +172,22 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
     state.costDelta += result.costEstimateUsd ?? 0.08;
     const textCheck = state.imageUrl
       ? await validateFalCanvasText(state.imageUrl, {
-        headline: inputs.headline,
-        subtitle: inputs.falSubtitle ?? '',
+        headline: paintHeadline,
+        subtitle: paintSubtitle,
       })
-      : { valid: false };
+      : { valid: false, reason: 'premium_editorial_no_image' };
+    state.falTextValidated = textCheck.valid === true;
+    const typeStamp = stampDesignedTypographyValid({
+      overlayWasPainted: Boolean(state.imageUrl),
+      textValidated: state.falTextValidated,
+    });
+    if (!state.falTextValidated) {
+      state.pipelineFailureReason = textCheck.reason
+        ? `görseldeki metin doğrulanamadı: ${textCheck.reason}`
+        : 'görseldeki metin doğrulanamadı';
+      state.imageUrl = null;
+      console.warn(`[premium_editorial] withheld: ${state.pipelineFailureReason}`);
+    }
     state.artifactMetaPatch = {
       ...premiumEditorialArtifactMetadata(result),
       fal_designer_produced: true,
@@ -155,8 +195,7 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       production_track: 'premium_editorial',
       marky_disabled: true,
       premium_composition: true,
-      typography_text_valid: textCheck.valid,
-      text_validated: true,
+      ...typeStamp,
     };
 
     if (result.matchedGalleryUrl) {

@@ -911,7 +911,7 @@ export function BrandFalTemplateGalleryPanel({
     let completedSuccessfully = false;
 
     try {
-      setStatus('Şablon seti üretiliyor… Kota yoksa durur, Fal/Satori fallback yok.');
+      setStatus('Şablon seti üretiliyor… Kota yoksa durur, ikinci motor yok.');
       const full = await runGenerate({
         concurrency: productionSettings.concurrency,
         limit: productionSettings.preview_cap,

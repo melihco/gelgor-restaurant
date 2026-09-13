@@ -471,7 +471,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
     expect(prompt.indexOf('HOUSE TOKENS')).toBeLessThan(prompt.indexOf('HARD CONTRACTS'));
   });
 
-  it('rebuilds COPY FIT from the contracted sentence so designs do not paint a verb crumb', () => {
+  it('paints the planned sentence — no motto stem or verb crumb', () => {
     const shop = buildDesignedVideoReelDesignCardPrompt({
       vibe: 'anatolian_warm',
       headline: 'Zeytinyağı Yapım Sürecimize Tanıklık Et!',
@@ -486,8 +486,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
       ],
     });
     expect(shop).toContain('Zeytinyağı Yapım Sürecimize Tanıklık Et');
-    expect(shop).not.toMatch(/HEADLINE budget: max 3 words/);
-    expect(shop).toMatch(/NEVER drop the subject|every contracted word/i);
+    expect(shop).not.toMatch(/HEADLINE: "Tanıklık Et"/);
 
     const beach = buildDesignedStoryDesignCardPrompt({
       vibe: 'warm_coastal',
@@ -503,8 +502,7 @@ describe('buildDesignedStoryDesignCardPrompt', () => {
       ],
     });
     expect(beach).toContain('Hafta Sonu Daybed Rezervasyonuna Davet');
-    expect(beach).not.toMatch(/HEADLINE budget: max 3 words/);
-    expect(beach).toMatch(/NEVER drop the subject|every contracted word/i);
+    expect(beach).not.toMatch(/HEADLINE: "Davet"/);
   });
 
   it('buildBrandSoulLock extracts DNA and uniqueness from brandDirectives', () => {

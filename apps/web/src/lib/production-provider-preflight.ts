@@ -163,7 +163,7 @@ export function getProductionProviderPreflight(): ProductionProviderPreflight {
     return {
       ok: false,
       code: 'provider_billing_circuit_open',
-      reason: 'OpenAI kotası doldu — Fal veya Satori fallback yok. Kota açılınca tekrar dene.',
+      reason: 'OpenAI kotası doldu — ikinci motor yok. Kota açılınca tekrar dene.',
       providers,
     };
   }

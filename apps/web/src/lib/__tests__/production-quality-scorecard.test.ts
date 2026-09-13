@@ -164,14 +164,21 @@ describe('buildProductionQualityScorecard hard blocks', () => {
     expect(card.hardBlock).toBe(false);
   });
 
-  it('designed carousel cover still hard-blocks at the floor', () => {
-    const card = buildProductionQualityScorecard(stubArtifact({}), {
-      pipeline: 'carousel_gallery',
-      production_role: 'organic_carousel',
-      fal_designer_produced: true,
-      grafiker_score: 3,
-    });
-    expect(card.hardBlock).toBe(true);
+  it('designed carousel cover at the floor is a warning — shop + beach still ship', () => {
+    for (const extra of [
+      { catalog_slot_key: 'local_products_shop_product_range_carousel' },
+      { catalog_slot_key: 'beach_club_guest_moments_carousel' },
+    ]) {
+      const card = buildProductionQualityScorecard(stubArtifact({}), {
+        pipeline: 'carousel_gallery',
+        production_role: 'organic_carousel',
+        fal_designer_produced: true,
+        grafiker_score: 3,
+        ...extra,
+      });
+      expect(card.hardBlock).toBe(false);
+      expect(card.softWarnings.join(' ')).toMatch(/denetim|3\/10/i);
+    }
   });
 });
 

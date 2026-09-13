@@ -18,7 +18,6 @@ import {
 const h = vi.hoisted(() => ({
   serverConfig: {
     fal: { configured: true },
-    localTypography: { enabled: false },
     r2: { bucket: '', publicUrl: '' },
     ai: { tier: 'agency' },
     productionFlags: { videoTierScope: true },
@@ -62,7 +61,6 @@ const h = vi.hoisted(() => ({
   })),
   resolveFalProductionOverlayHeadline: vi.fn((_headline: string) => _headline),
   validateTypographyText: vi.fn(async () => true),
-  renderLocalTypography: vi.fn(),
 }));
 
 vi.mock('@/lib/server-config', () => ({ serverConfig: h.serverConfig }));
@@ -202,10 +200,6 @@ vi.mock('@/lib/external-image-fetch', () => ({
 vi.mock('@/lib/grafiker-review-service', () => ({
   runGrafikerVisionReview: h.runGrafikerVisionReview,
 }));
-vi.mock('@/lib/local-typography-renderer', () => ({
-  renderLocalTypography: h.renderLocalTypography,
-  shouldUseLocalTypography: () => false,
-}));
 
 import { falVideoHandler } from '../fal-video-pipeline';
 import { productShowcaseHandler } from '../product-showcase-pipeline';
@@ -283,6 +277,7 @@ describe('falVideoHandler.run', () => {
       grafikerPass: true,
       typographyModel: 'ideogram-v4',
       resolvedHeadline: 'Sunset Session',
+      textValidated: true,
     });
 
     const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
@@ -373,48 +368,44 @@ describe('falVideoHandler.run', () => {
     expect(ctx.state.costDelta).toBe(0);
   });
 
-  it('fal_story with a matched template bypasses Satori and passes the template layout ref', async () => {
-    h.serverConfig.localTypography.enabled = true;
-    try {
-      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
-      h.produceFalDesignedPostStill.mockResolvedValue({
-        imageUrl: 'story-template-replica',
-        grafikerScore: 8,
-        grafikerPass: true,
-        typographyModel: 'gpt-image-1',
-        resolvedHeadline: 'Sunset Session',
-      });
-      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
-        matched: {
-          id: 'tpl-story',
-          templateType: 'daily_story',
-          templateName: 'Günlük Story',
-          matchQuality: 'hard',
-          canvaArchetypeId: 'arc-01',
-          layoutPattern: 'diagonal_split',
-        },
-        lockedVibe: null,
-        referencePhotoUrl: 'https://x/photo.jpg',
-        styleReferenceUrl: 'https://x/story-template.png',
-        brandDirectives: ['dir-1'],
-        brandColors: null,
-        logoUrl: 'https://x/logo.png',
-        occasion: undefined,
-      } as never);
+  it('fal_story with a matched template paints GPT replica from the template layout ref', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.produceFalDesignedPostStill.mockResolvedValue({
+      imageUrl: 'story-template-replica',
+      grafikerScore: 8,
+      grafikerPass: true,
+      typographyModel: 'gpt-image-1',
+      resolvedHeadline: 'Sunset Session',
+      textValidated: true,
+    });
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-story',
+        templateType: 'daily_story',
+        templateName: 'Günlük Story',
+        matchQuality: 'hard',
+        canvaArchetypeId: 'arc-01',
+        layoutPattern: 'diagonal_split',
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/photo.jpg',
+      styleReferenceUrl: 'https://x/story-template.png',
+      brandDirectives: ['dir-1'],
+      brandColors: null,
+      logoUrl: 'https://x/logo.png',
+      occasion: undefined,
+    } as never);
 
-      const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
-      await falVideoHandler.run(ctx);
+    const ctx = makeCtx({ isFalMissionVideo: true, pipeline: 'fal_story' });
+    await falVideoHandler.run(ctx);
 
-      expect(h.produceFalDesignedPostStill).toHaveBeenCalledWith(
-        expect.objectContaining({
-          templateLayoutImageUrl: 'https://x/story-template.png',
-        }),
-      );
-      expect(ctx.state.imageUrl).toBe('story-template-replica');
-      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
-    } finally {
-      h.serverConfig.localTypography.enabled = false;
-    }
+    expect(h.produceFalDesignedPostStill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        templateLayoutImageUrl: 'https://x/story-template.png',
+      }),
+    );
+    expect(ctx.state.imageUrl).toBe('story-template-replica');
+    expect(ctx.state.falDesignEngine).toBe('gpt-image-1');
   });
 
   it('shop + beach: locked catalog slot withholds invent when the shell preview is missing', async () => {
@@ -631,46 +622,38 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.costDelta).toBe(0);
   });
 
-  it('skips Satori and renders the real design when a hard template is matched', async () => {
-    // Karaman regression guard: local typography enabled + a real (hard) library
-    // template must render the actual design (GPT/fal), not collapse to Satori.
-    h.serverConfig.localTypography.enabled = true;
-    try {
-      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
-      h.generateDesignedPostImage.mockResolvedValue('designed-url');
-      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
-        matched: {
-          id: 'tpl-1',
-          templateType: 'menu_highlight',
-          templateName: 'Ürün hero',
-          matchQuality: 'hard',
-          canvaArchetypeId: null,
-          layoutPattern: null,
-        },
-        lockedVibe: null,
-        referencePhotoUrl: 'https://x/photo.jpg',
-        styleReferenceUrl: 'https://x/product-hero-shell.png',
-        brandDirectives: ['dir-1'],
-        brandColors: null,
-        logoUrl: 'https://x/logo.png',
-        occasion: undefined,
-      } as never);
+  it('renders the real GPT design when a hard template is matched — shop + beach catalog', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue('designed-url');
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: {
+        id: 'tpl-1',
+        templateType: 'menu_highlight',
+        templateName: 'Ürün hero',
+        matchQuality: 'hard',
+        canvaArchetypeId: null,
+        layoutPattern: null,
+      },
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/photo.jpg',
+      styleReferenceUrl: 'https://x/product-hero-shell.png',
+      brandDirectives: ['dir-1'],
+      brandColors: null,
+      logoUrl: 'https://x/logo.png',
+      occasion: undefined,
+    } as never);
 
-      const ctx = makeCtx({
-        isFalDesignPost: true,
-        slotRole: 'fal_designed_post',
-        catalogSlotKey: 'local_products_shop_product_hero_post',
-      });
-      await falDesignHandler.run(ctx);
+    const ctx = makeCtx({
+      isFalDesignPost: true,
+      slotRole: 'fal_designed_post',
+      catalogSlotKey: 'local_products_shop_product_hero_post',
+    });
+    await falDesignHandler.run(ctx);
 
-      expect(h.generateDesignedPostImage).toHaveBeenCalledTimes(1);
-      expect(ctx.state.imageUrl).toBe('designed-url');
-      expect(ctx.state.falDesignEngine).toBe('gpt_image_designed');
-      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
-      expect(ctx.state.brandDesignTemplateMatchQuality).toBe('hard');
-    } finally {
-      h.serverConfig.localTypography.enabled = false;
-    }
+    expect(h.generateDesignedPostImage).toHaveBeenCalledTimes(1);
+    expect(ctx.state.imageUrl).toBe('designed-url');
+    expect(ctx.state.falDesignEngine).toBe('gpt_image_designed');
+    expect(ctx.state.brandDesignTemplateMatchQuality).toBe('hard');
   });
 
   it('passes the template preview as layout replica reference to GPT edit', async () => {
@@ -712,19 +695,13 @@ describe('falDesignHandler.run', () => {
     expect(ctx.state.imageUrl).toBe('designed-url');
   });
 
-  it('locked shop slot does not invent a Satori poster when GPT replica returns empty', async () => {
+  it('locked shop slot stays empty when GPT replica returns empty', async () => {
     h.isUsableGalleryPhotoUrl.mockReturnValue(true);
     h.generateDesignedPostImage.mockResolvedValue(null);
     h.produceFalDesignedPostStill.mockResolvedValue({ imageUrl: null });
-    h.renderLocalTypography.mockResolvedValue({
-      imageUrl: 'satori-fallback',
-      grafikerScore: 8,
-      grafikerPass: true,
-      layoutFamily: 'hero_footer',
-    });
     h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
       matched: {
-        id: 'tpl-satori',
+        id: 'tpl-shop',
         templateType: 'product_hero',
         templateName: 'Ürün hero',
         matchQuality: 'hard',
@@ -751,50 +728,36 @@ describe('falDesignHandler.run', () => {
     });
     await falDesignHandler.run(ctx);
 
-    expect(h.renderLocalTypography).not.toHaveBeenCalled();
     expect(ctx.state.imageUrl).toBeNull();
-    expect(ctx.state.falDesignEngine).not.toBe('satori_local');
   });
 
-  it('unlocked beach slot does not paint Satori after GPT miss', async () => {
-    h.serverConfig.localTypography.enabled = true;
-    try {
-      h.isUsableGalleryPhotoUrl.mockReturnValue(true);
-      h.generateDesignedPostImage.mockResolvedValue(null);
-      h.renderLocalTypography.mockResolvedValue({
-        imageUrl: 'satori-fallback',
-        grafikerScore: 8,
-        grafikerPass: true,
-        layoutFamily: 'hero_footer',
-      });
-      h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
-        matched: null,
-        lockedVibe: null,
-        referencePhotoUrl: 'https://x/pier.jpg',
-        styleReferenceUrl: null,
-        brandDirectives: ['dir-1'],
-        brandColors: null,
-        logoUrl: 'https://x/logo.png',
-        occasion: undefined,
-      } as never);
+  it('unlocked beach slot stays empty after GPT miss — no second motor', async () => {
+    h.isUsableGalleryPhotoUrl.mockReturnValue(true);
+    h.generateDesignedPostImage.mockResolvedValue(null);
+    h.bindBrandTemplateForFalProduction.mockResolvedValueOnce({
+      matched: null,
+      lockedVibe: null,
+      referencePhotoUrl: 'https://x/pier.jpg',
+      styleReferenceUrl: null,
+      brandDirectives: ['dir-1'],
+      brandColors: null,
+      logoUrl: 'https://x/logo.png',
+      occasion: undefined,
+    } as never);
 
-      const ctx = makeCtx({
-        isFalDesignPost: true,
-        slotRole: 'fal_designed_post',
-        pipeline: 'fal_design',
-        catalogSlotKey: '',
-        brandBusinessType: 'beach_club',
-        headline: 'Gün batımı',
-        caption: 'İskelede altın saat — gelin.',
-        punchlineLockSource: 'caption_pair',
-      });
-      await falDesignHandler.run(ctx);
+    const ctx = makeCtx({
+      isFalDesignPost: true,
+      slotRole: 'fal_designed_post',
+      pipeline: 'fal_design',
+      catalogSlotKey: '',
+      brandBusinessType: 'beach_club',
+      headline: 'Gün batımı',
+      caption: 'İskelede altın saat — gelin.',
+      punchlineLockSource: 'caption_pair',
+    });
+    await falDesignHandler.run(ctx);
 
-      expect(ctx.state.imageUrl).toBeNull();
-      expect(ctx.state.falDesignEngine).not.toBe('satori_local');
-    } finally {
-      h.serverConfig.localTypography.enabled = false;
-    }
+    expect(ctx.state.imageUrl).toBeNull();
   });
 });
 

@@ -16,7 +16,6 @@ function readEngines(theme: ThemeRecord): BrandProductionEnginesConfig {
   if (!raw) return defaults;
   return {
     fal: { ...defaults.fal, ...raw.fal },
-    satori: { ...defaults.satori, ...raw.satori },
     showcase: { ...defaults.showcase!, ...raw.showcase },
     throughput: {
       factory_drain_batch: raw.throughput?.factory_drain_batch ?? defaults.throughput?.factory_drain_batch,
@@ -64,7 +63,6 @@ export function BrandProductionEnginesPanel({
       ...engines,
       ...patch,
       fal: { ...engines.fal, ...patch.fal },
-      satori: { ...engines.satori, ...patch.satori },
       showcase: { ...engines.showcase!, ...patch.showcase },
       throughput: { ...engines.throughput, ...patch.throughput },
     });
@@ -81,37 +79,8 @@ export function BrandProductionEnginesPanel({
   return (
     <div>
       <div style={{ fontSize: 12, color: t.textTertiary, lineHeight: 1.6, marginBottom: 16 }}>
-        Aktif: <strong>Satori</strong> (lokal tipografi), Mission Hub vitrin ve üretim hızı.
-        Şablon seçimi Template Kütüphanesi&apos;nden; FAL motor varsayılanları sistemde sabit.
-      </div>
-
-      {/* Satori local typography */}
-      <div style={{ fontSize: 11, color: t.labelColor, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>
-        Satori — Lokal Tipografi
-      </div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '10px 12px', borderRadius: 12, marginBottom: 14,
-        border: `0.5px solid ${t.separator}`,
-      }}>
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary }}>Story & tipografi slotları</div>
-        </div>
-        <button
-          type="button"
-          aria-pressed={engines.satori.local_typography_enabled}
-          disabled={saving}
-          onClick={() => savePatch({
-            satori: { local_typography_enabled: !engines.satori.local_typography_enabled },
-          })}
-          style={toggleStyle(engines.satori.local_typography_enabled, '#0D9488')}
-        >
-          <span style={{
-            position: 'absolute', top: 3, left: engines.satori.local_typography_enabled ? 21 : 3,
-            width: 20, height: 20, borderRadius: 10, background: '#fff',
-            transition: 'left 0.15s ease',
-          }} />
-        </button>
+        Aktif: Mission Hub vitrin ve üretim hızı.
+        Şablon seçimi Template Kütüphanesi&apos;nden; boya motoru GPT, FAL varsayılanları sistemde sabit.
       </div>
 
       {/* Mission Hub slot showcase (flip cards) */}

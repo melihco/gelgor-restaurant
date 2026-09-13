@@ -10,6 +10,7 @@ import {
   hasTurkishDiacriticMiss,
   hasWordLevelSpellingDeviation,
   quickTextSimilarity,
+  stampDesignedTypographyValid,
 } from '../typography-text-validation';
 
 describe('hasWordLevelSpellingDeviation', () => {
@@ -75,6 +76,22 @@ describe('hasCollapsedWordSpacing — shop + beach', () => {
     expect(hasCollapsedWordSpacing('Sızma zeytinyağımız raflarda', 'Sızma zeytinyağımız raflarda')).toBe(false);
     expect(hasCollapsedWordSpacing('Deniz duruyor', 'Deniz duruyor')).toBe(false);
     expect(hasCollapsedWordSpacing('Visit us today', 'Visit us today')).toBe(false);
+  });
+});
+
+describe('stampDesignedTypographyValid — shop + beach stories', () => {
+  it('does not license type from an unvalidated grafiker pass', () => {
+    expect(stampDesignedTypographyValid({
+      overlayWasPainted: true,
+      textValidated: false,
+    })).toEqual({ text_validated: false });
+  });
+
+  it('licenses type only after the validator ran', () => {
+    expect(stampDesignedTypographyValid({
+      overlayWasPainted: true,
+      textValidated: true,
+    })).toEqual({ typography_text_valid: true, text_validated: true });
   });
 });
 

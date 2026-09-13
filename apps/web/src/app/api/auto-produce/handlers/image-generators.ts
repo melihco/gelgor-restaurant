@@ -541,6 +541,25 @@ export async function generateMarkyLayerCard(opts: {
   }
 }
 
+/** Slide-1 paint brief when the catalog shell is missing — still a designed cover. */
+export function buildCarouselCoverPaintPrompt(input: {
+  headline: string;
+  caption: string;
+  brandName: string;
+}): string {
+  const headline = String(input.headline ?? '').trim();
+  const caption = String(input.caption ?? '').trim();
+  return [
+    'CAROUSEL COVER LOCK: Slide 1 of an Instagram swipe set. Exact feed 4:5 (1080×1350).',
+    'The caption-matched gallery photo is the hero. Paint ONLY the contracted headline as designed type.',
+    'Do not invent extra dishes, bottles, or products. Do not paint the whole range on this frame.',
+    headline ? `HEADLINE (exact): "${headline}"` : '',
+    caption ? `CAPTION TOPIC: "${caption.slice(0, 180)}"` : '',
+    input.brandName.trim() ? `Brand: ${input.brandName.trim()}.` : '',
+    'Slides 2–N stay raw gallery photos from the same caption-aligned set.',
+  ].filter(Boolean).join('\n');
+}
+
 async function designCarouselHeroSlide(opts: {
   workspaceId: string;
   catalogSlotKey?: string | null;
@@ -553,24 +572,39 @@ async function designCarouselHeroSlide(opts: {
   businessType?: string;
   logoUrl?: string;
 }): Promise<string | null> {
+  if (!isUsableGalleryPhotoUrl(opts.photoUrl)) return null;
   const catalogSlotKey = String(opts.catalogSlotKey ?? '').trim();
-  if (!catalogSlotKey || !isUsableGalleryPhotoUrl(opts.photoUrl)) return null;
-  const matched = await matchDesignTemplateToSlot(opts.workspaceId, {
-    slotRole: opts.slotRole || 'organic_carousel',
-    librarySlotKey: null,
-    format: 'carousel',
-    catalogSlotKey,
-    headline: opts.headline,
-    caption: opts.caption,
-    allowSoftFallbackWhenHardMiss: false,
-  });
-  if (!matched) return null;
-  const prompt = String(matched.designSpecPrompt ?? matched.directive ?? '').trim();
-  if (!prompt) return null;
-  console.log(
-    `[auto-produce] carousel hero binds "${matched.templateName}" (${matched.format}) key=${catalogSlotKey}`,
-  );
-  return generateDesignedPostImage({
+  let prompt = '';
+  let templateLayoutImageUrl: string | undefined;
+  if (catalogSlotKey) {
+    const matched = await matchDesignTemplateToSlot(opts.workspaceId, {
+      slotRole: opts.slotRole || 'organic_carousel',
+      librarySlotKey: null,
+      format: 'carousel',
+      catalogSlotKey,
+      headline: opts.headline,
+      caption: opts.caption,
+      allowSoftFallbackWhenHardMiss: false,
+    });
+    prompt = String(matched?.designSpecPrompt ?? matched?.directive ?? '').trim();
+    templateLayoutImageUrl = matched?.thumbnailUrl || undefined;
+    if (matched) {
+      console.log(
+        `[auto-produce] carousel hero binds "${matched.templateName}" (${matched.format}) key=${catalogSlotKey}`,
+      );
+    }
+  }
+  if (!prompt) {
+    prompt = buildCarouselCoverPaintPrompt({
+      headline: opts.headline,
+      caption: opts.caption,
+      brandName: opts.brandName,
+    });
+    console.log(
+      `[auto-produce] carousel hero paints caption-aligned cover without shell key=${catalogSlotKey || 'none'}`,
+    );
+  }
+  const paint = (layoutUrl?: string) => generateDesignedPostImage({
     workspaceId: opts.workspaceId,
     designCardPrompt: prompt,
     designCardMode: 'post',
@@ -582,8 +616,21 @@ async function designCarouselHeroSlide(opts: {
     location: opts.location,
     businessType: opts.businessType,
     logoUrl: opts.logoUrl,
-    templateLayoutImageUrl: matched.thumbnailUrl,
+    templateLayoutImageUrl: layoutUrl,
   });
+  try {
+    return await paint(templateLayoutImageUrl);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/library_template_replica_required/i.test(msg)) throw err;
+    console.warn('[auto-produce] carousel hero shell missing — paint cover on the aligned photo');
+    prompt = buildCarouselCoverPaintPrompt({
+      headline: opts.headline,
+      caption: opts.caption,
+      brandName: opts.brandName,
+    });
+    return paint(undefined);
+  }
 }
 
 export async function generateVibeCarousel(opts: {

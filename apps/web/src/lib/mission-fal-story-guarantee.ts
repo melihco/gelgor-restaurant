@@ -18,6 +18,7 @@ import { nexusPersistableContentUrl } from '@/app/api/auto-produce/caption-publi
 import type { NexusClient } from '@/app/api/auto-produce/nexus-client';
 import { serverConfig } from '@/lib/server-config';
 import { decideArtifactPersist } from '@/lib/artifact-publish-ready';
+import { stampDesignedTypographyValid } from '@/lib/typography-text-validation';
 
 export type MissionFalStoryGuaranteeResult = {
   artifactId?: string;
@@ -214,7 +215,10 @@ export async function produceAndSaveMissionFalStoryGuarantee(input: {
       fal_design_engine: poster.typographyModel,
       grafiker_score: poster.grafikerScore,
       grafiker_pass: poster.grafikerPass,
-      typography_text_valid: poster.grafikerPass,
+      ...stampDesignedTypographyValid({
+        overlayWasPainted: Boolean(poster.imageUrl),
+        textValidated: poster.textValidated === true,
+      }),
       assignment_rationale: assignment.rationale ?? null,
       mission_fal_story_guarantee: true,
     };

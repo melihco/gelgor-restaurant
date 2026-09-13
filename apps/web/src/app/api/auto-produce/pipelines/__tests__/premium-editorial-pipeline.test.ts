@@ -37,15 +37,20 @@ vi.mock('@/lib/premium-editorial', () => ({
   premiumEditorialArtifactMetadata: () => ({ editorial: true }),
 }));
 
-vi.mock('@/lib/typography-text-validation', () => ({
-  validateFalCanvasText: vi.fn(async () => ({
-    valid: true,
-    headlineValid: true,
-    subtitleValid: true,
-    confidence: 1,
-  })),
-}));
+vi.mock('@/lib/typography-text-validation', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/typography-text-validation')>();
+  return {
+    ...actual,
+    validateFalCanvasText: vi.fn(async () => ({
+      valid: true,
+      headlineValid: true,
+      subtitleValid: true,
+      confidence: 1,
+    })),
+  };
+});
 
+import { validateFalCanvasText } from '@/lib/typography-text-validation';
 import { premiumEditorialHandler } from '../premium-editorial-pipeline';
 
 function emptyState(): SlotProductionState {
@@ -135,6 +140,98 @@ describe('premiumEditorialHandler template lock', () => {
       forceNewComposition: false,
       templateLayoutImageUrl: 'https://cdn.example.com/shell.png',
     }));
+  });
+
+  it('shop story: fits a long honey sentence before GPT paint', async () => {
+    bind.mockResolvedValue({
+      matched: {
+        id: 'tpl-shop-story',
+        templateType: 'campaign_announcement',
+        templateName: 'Premium Editorial Story',
+        matchQuality: 'hard',
+      },
+      styleReferenceUrl: 'https://cdn.example.com/shell.png',
+    });
+    runCampaign.mockResolvedValue({
+      finalImageUrl: 'https://cdn.example.com/out.jpg',
+      modelName: 'gpt-image-2',
+      costEstimateUsd: 0.05,
+    });
+    const state = emptyState();
+    await premiumEditorialHandler.run({
+      inputs: {
+        ...baseInputs,
+        headline: 'Kekik ve Çiçek Balı çeşitlerimizle sağlıklı bir tat deneyimi yaşayın',
+        catalogSlotKey: 'local_products_shop_premium_editorial_campaign_story',
+        slotRole: 'premium_editorial_campaign_story',
+        falAspectRatio: '9:16',
+      },
+      state,
+    });
+    const painted = runCampaign.mock.calls[0]?.[0] as { headline: string };
+    expect(painted.headline.toLocaleLowerCase('tr-TR')).toContain('çeşitlerimizle');
+    expect(painted.headline.toLocaleLowerCase('tr-TR')).toContain('kekik');
+    expect(state.falTextValidated).toBe(true);
+  });
+
+  it('beach story: paints the planned sunset sentence', async () => {
+    bind.mockResolvedValue({
+      matched: {
+        id: 'tpl-beach-story',
+        templateType: 'campaign_announcement',
+        templateName: 'Sunset editorial',
+        matchQuality: 'hard',
+      },
+      styleReferenceUrl: 'https://cdn.example.com/shell.png',
+    });
+    runCampaign.mockResolvedValue({
+      finalImageUrl: 'https://cdn.example.com/out.jpg',
+      modelName: 'gpt-image-2',
+      costEstimateUsd: 0.05,
+    });
+    const state = emptyState();
+    await premiumEditorialHandler.run({
+      inputs: {
+        ...baseInputs,
+        brandBusinessType: 'beach_club',
+        headline: 'Taste the refreshing flavors of summer at sunset tonight',
+        catalogSlotKey: 'beach_club_premium_editorial_campaign_story',
+        slotRole: 'premium_editorial_campaign_story',
+        falAspectRatio: '9:16',
+      },
+      state,
+    });
+    const painted = runCampaign.mock.calls[0]?.[0] as { headline: string };
+    expect(painted.headline.toLowerCase()).toContain('refreshing flavors of summer');
+  });
+
+  it('shop: withholds when painted type is mashed', async () => {
+    bind.mockResolvedValue({
+      matched: {
+        id: 'tpl-shop',
+        templateType: 'campaign_announcement',
+        templateName: 'Editorial',
+        matchQuality: 'hard',
+      },
+      styleReferenceUrl: 'https://cdn.example.com/shell.png',
+    });
+    runCampaign.mockResolvedValue({
+      finalImageUrl: 'https://cdn.example.com/out.jpg',
+      modelName: 'gpt-image-2',
+      costEstimateUsd: 0.05,
+    });
+    vi.mocked(validateFalCanvasText).mockResolvedValueOnce({
+      valid: false,
+      headlineValid: false,
+      subtitleValid: true,
+      confidence: 0.2,
+      reason: 'collapsed word spacing',
+    });
+    const state = emptyState();
+    await premiumEditorialHandler.run({ inputs: baseInputs, state });
+    expect(state.imageUrl).toBeNull();
+    expect(state.falTextValidated).toBe(false);
+    expect(state.pipelineFailureReason).toMatch(/metin doğrulanamadı/);
   });
 
   it('shop: withholds when the locked slot has no saved shell preview', async () => {

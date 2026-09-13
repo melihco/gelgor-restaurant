@@ -18,7 +18,7 @@ import {
   type ProductionAssignment,
   type ProductionSlotRole,
 } from '@/lib/mission-production-manifest';
-import { LOCAL_TYPOGRAPHY_ROLES, isSatoriTypographyMeta } from '@/lib/local-typography-meta';
+import { isSatoriTypographyMeta } from '@/lib/local-typography-meta';
 import {
   getProductionBundleStatus,
   isBundleFailed,
@@ -45,11 +45,9 @@ export interface MissionSlotChecklistItem {
   aiEnhanceStatus?: AiEnhanceUiStatus;
   aiEnhanceLabel?: string;
   aiEnhanceSkipCode?: GptEnhanceSkipCode;
-  /** Production engine when artifact exists (Satori, fal.ai, Galeri, …) */
+  /** Production engine when artifact exists (GPT Image, fal.ai, Galeri, …) */
   engineLabel?: string;
   engineColor?: string;
-  /** True when this slot role is eligible for Satori local typography */
-  satoriEligible?: boolean;
   /** Faz 5 — tenant catalog slot binding (production_slot_definitions.slot_key). */
   catalogSlotKey?: string | null;
   /** Brand-facing catalog label (label_tr) — preferred over the role label in UI. */
@@ -104,11 +102,6 @@ export const SLOT_ROLE_LABEL_TR: Record<ProductionSlotRole, string> = {
   premium_editorial_campaign_post: 'Premium Editorial Campaign',
   premium_editorial_campaign_story: 'Premium Editorial Story',
 };
-
-/** Slot roles that route to Satori when global + brand flags are on. */
-export function isSatoriEligibleSlotRole(role: ProductionSlotRole | string): boolean {
-  return LOCAL_TYPOGRAPHY_ROLES.has(String(role));
-}
 
 function engineChipFromArtifact(
   artifact: OutputArtifact | null | undefined,
@@ -452,7 +445,6 @@ function buildChecklistFromFactorySlots(input: {
       status,
       artifactId: artifact?.id ?? null,
       headline,
-      satoriEligible: isSatoriEligibleSlotRole(role),
       catalogSlotKey: catalogSlotKey ?? null,
       catalogSlotLabel: catalogSlotLabel ?? null,
       lastError: typeof slot.lastError === 'string' && slot.lastError.trim()
@@ -573,7 +565,6 @@ export function buildMissionSlotChecklist(input: {
         status,
         artifactId: artifact?.id ?? null,
         headline,
-        satoriEligible: isSatoriEligibleSlotRole(assignment.slot_role),
         ...catalogBinding,
         ...productionBadge,
         ...resolveAiEnhanceFromArtifact(artifact, debugMode),
@@ -605,7 +596,6 @@ export function buildMissionSlotChecklist(input: {
         status: input.missionInFlight ? 'pending' : 'missing',
         artifactId: null,
         headline: null,
-        satoriEligible: isSatoriEligibleSlotRole(slot.role),
       });
     }
   }
@@ -632,7 +622,6 @@ export function buildMissionSlotChecklist(input: {
         status,
         artifactId: artifact?.id ?? null,
         headline: artifact?.title ?? null,
-        satoriEligible: isSatoriEligibleSlotRole(slot.role),
         ...resolveCatalogBinding(null, slot.role, null, artifactMeta),
         ...productionBadge,
       });

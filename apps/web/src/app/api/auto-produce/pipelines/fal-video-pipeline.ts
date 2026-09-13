@@ -31,11 +31,8 @@ import {
   buildFalReelAgencyPack,
   mergeFalReelMotionCue,
 } from '@/lib/fal-reel-agency-directives';
-import { isRenderableDesignTemplateMatch } from '@/lib/brand-design-template-matcher';
 import { serverConfig } from '@/lib/server-config';
 import { isUsableScenePhotoUrl } from '@/lib/media-url';
-import { renderLocalTypography, shouldUseLocalTypography } from '@/lib/local-typography-renderer';
-import { studioForbidsSatoriEscape } from '@/studio/paint';
 import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-policy';
 import {
   buildReelRecipeMotionCue,
@@ -66,6 +63,8 @@ export async function runFalStoryPosterProduction(input: {
   brandColors: { primary: string; accent: string };
   backgroundStyle: import('@/types/brand-theme').TypographyBackgroundStyle;
   lockOpts: ReturnType<typeof resolveFalTemplateLockOptions>;
+  punchlineLockSource?: string | null;
+  catalogSlotKey?: string | null;
   templateBinding: Awaited<ReturnType<typeof bindBrandTemplateForFalProduction>>;
   designBriefDirectives?: string[];
   visualDnaTone?: string;
@@ -84,6 +83,7 @@ export async function runFalStoryPosterProduction(input: {
   grafikerPass: boolean;
   typographyModel: string;
   resolvedHeadline?: string;
+  textValidated: boolean;
 }> {
   const pipeline = input.pipeline ?? 'fal_story';
   // Matched library template preview = layout law for the grounded compose.
@@ -94,6 +94,12 @@ export async function runFalStoryPosterProduction(input: {
     headline: input.headline,
     subtitle: input.cta || undefined,
     caption: input.caption,
+    punchlineLockSource: input.punchlineLockSource,
+    typeBudget: input.templateBinding.matched?.typeBudget,
+    sampleHeadline: input.templateBinding.matched?.sampleHeadline,
+    sampleSubtitle: input.templateBinding.matched?.sampleSubtitle,
+    showSubline: input.templateBinding.matched?.showSubline,
+    catalogSlotKey: input.catalogSlotKey,
     brandName: input.resolvedBrandName,
     brandColors: input.brandColors,
     vibe: input.designVibe,
@@ -132,6 +138,7 @@ export async function runFalStoryPosterProduction(input: {
     grafikerPass: still.grafikerPass,
     typographyModel: still.typographyModel,
     resolvedHeadline: still.resolvedHeadline,
+    textValidated: still.textValidated === true,
   };
 }
 
@@ -344,143 +351,51 @@ export const falVideoHandler: ProductionPipelineHandler = {
 
     try {
       if (falPipeline === 'fal_story') {
-        // A real (hard/soft) library template match must render the actual
-        // template design via GPT replica — Satori would collapse the layout.
-        const templateIsRenderable = isRenderableDesignTemplateMatch(templateBinding.matched);
-        // Satori only when there is NO library template at all. format_fallback
-        // still has a brand template — prefer GPT poster over cream-card overlay.
-        const noLibraryTemplate = !templateBinding.matched;
-        if (
-          noLibraryTemplate
-          && !templateIsRenderable
-          && shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme, {
-            forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
-          })
-        ) {
-          const local = await renderLocalTypography({
-            workspaceId: inputs.workspaceId,
-            headline: inputs.headline,
-            subtitle: inputs.cta || inputs.falSubtitle,
-            brandName: inputs.resolvedBrandName,
-            brandColors,
-            vibe: designVibe,
-            aspectRatio: '9:16',
-            referencePhotoUrl: scenePhoto,
-            logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
-            sector: inputs.brandBusinessType,
-            occasion: templateBinding.occasion,
-            templateType: templateBinding.matched?.templateType,
-            canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
-            layoutPattern: templateBinding.matched?.layoutPattern,
-            layoutFamilyHint: inputs.layoutFamilyHint,
-            slotRole: inputs.slotRole,
-            slotSeed:
-              inputs.catalogSlotKey
-              ?? templateBinding.matched?.id
-              ?? templateBinding.matched?.templateName
-              ?? inputs.slotRole,
-          });
-          if (local) {
-            state.videoUrl = null;
-            state.imageUrl = local.imageUrl;
-            state.falGrafikerScore = local.grafikerScore;
-            state.falGrafikerPass = local.grafikerPass;
-            state.falDesignEngine = 'satori_local';
-            state.videoProduceMeta = { source: 'fal_video' };
-            state.costDelta += 0.002;
-            console.log(
-              `[auto-produce] [fal-track] fal_story local typography: "${inputs.headline.slice(0, 40)}" ` +
-              `layout=${local.layoutFamily} template=${templateBinding.matched?.templateType ?? 'none'}`,
-            );
-            return;
-          }
-        }
-        try {
-          const poster = await runFalStoryPosterProduction({
-            workspaceId: inputs.workspaceId,
-            headline: inputs.headline,
-            caption: inputs.caption,
-            cta: inputs.cta,
-            resolvedBrandName: inputs.resolvedBrandName,
-            brandBusinessType: inputs.brandBusinessType,
-            brandLocation: inputs.brandLocation,
-            mood: inputs.mood,
-            artDirection: inputs.artDirection,
-            referenceUrl: scenePhoto,
-            styleRefs,
-            designVibe,
-            brandColors,
-            backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
-            lockOpts,
-            templateBinding,
-            designBriefDirectives: inputs.designBriefDirectives,
-            visualDnaTone: falBrand.visualDnaTone,
-            sceneHint: falBrand.sceneHint,
-            designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
-            falLogoPlacement: inputs.falLogoPlacement,
-          });
-          state.videoUrl = null;
-          state.imageUrl = poster.imageUrl;
-          state.falGrafikerScore = poster.grafikerScore;
-          state.falGrafikerPass = poster.grafikerPass;
-          // Mark designed story stills so Feed telemetry is not fal_designer_produced=false.
-          state.falDesignEngine = poster.typographyModel || 'fal_story_poster';
-          state.videoProduceMeta = { source: 'fal_video' };
-          state.costDelta += 0.08;
-          console.log(
-            `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
-            `template=${templateBinding.matched?.templateType ?? 'none'} ` +
-            `model=${poster.typographyModel} grafiker=${poster.grafikerScore ?? '—'}/10`,
-          );
-          return;
-        } catch (posterErr) {
-          // No Satori/Fal second motor — empty slot beats a cream overlay.
-          if (
-            !allowDegradedVisualFallback()
-            || !templateIsRenderable
-            || !shouldUseLocalTypography(inputs.slotRole, falPipeline, inputs.brandTheme, {
-              forbidSatoriEscape: studioForbidsSatoriEscape(inputs),
-            })
-          ) {
-            throw posterErr;
-          }
-          console.warn(
-            '[auto-produce] [fal-track] template poster failed — Satori safety net:',
-            posterErr instanceof Error ? posterErr.message : String(posterErr),
-          );
-          const local = await renderLocalTypography({
-            workspaceId: inputs.workspaceId,
-            headline: inputs.headline,
-            subtitle: inputs.cta || inputs.falSubtitle,
-            brandName: inputs.resolvedBrandName,
-            brandColors,
-            vibe: designVibe,
-            aspectRatio: '9:16',
-            referencePhotoUrl: scenePhoto,
-            logoUrl: templateBinding.logoUrl ?? inputs.brandLogoUrl ?? undefined,
-            sector: inputs.brandBusinessType,
-            occasion: templateBinding.occasion,
-            templateType: templateBinding.matched?.templateType,
-            canvaArchetypeId: templateBinding.matched?.canvaArchetypeId,
-            layoutPattern: templateBinding.matched?.layoutPattern,
-            layoutFamilyHint: inputs.layoutFamilyHint,
-            slotRole: inputs.slotRole,
-            slotSeed:
-              inputs.catalogSlotKey
-              ?? templateBinding.matched?.id
-              ?? templateBinding.matched?.templateName
-              ?? inputs.slotRole,
-          });
-          if (!local) throw posterErr;
-          state.videoUrl = null;
-          state.imageUrl = local.imageUrl;
-          state.falGrafikerScore = local.grafikerScore;
-          state.falGrafikerPass = local.grafikerPass;
-          state.falDesignEngine = 'satori_local';
-          state.videoProduceMeta = { source: 'fal_video' };
-          state.costDelta += 0.002;
+        const poster = await runFalStoryPosterProduction({
+          workspaceId: inputs.workspaceId,
+          headline: inputs.headline,
+          caption: inputs.caption,
+          cta: inputs.cta,
+          resolvedBrandName: inputs.resolvedBrandName,
+          brandBusinessType: inputs.brandBusinessType,
+          brandLocation: inputs.brandLocation,
+          mood: inputs.mood,
+          artDirection: inputs.artDirection,
+          referenceUrl: scenePhoto,
+          styleRefs,
+          designVibe,
+          brandColors,
+          backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
+          lockOpts,
+          punchlineLockSource: inputs.punchlineLockSource,
+          catalogSlotKey: inputs.catalogSlotKey,
+          templateBinding,
+          designBriefDirectives: inputs.designBriefDirectives,
+          visualDnaTone: falBrand.visualDnaTone,
+          sceneHint: falBrand.sceneHint,
+          designIntensityLevel: inputs.falDesignIntensityOverride ?? falBrand.designIntensityLevel,
+          falLogoPlacement: inputs.falLogoPlacement,
+        });
+        state.videoUrl = null;
+        state.imageUrl = poster.imageUrl;
+        state.falGrafikerScore = poster.grafikerScore;
+        state.falGrafikerPass = poster.grafikerPass;
+        state.falTextValidated = poster.textValidated === true;
+        // Mark designed story stills so Feed telemetry is not fal_designer_produced=false.
+        state.falDesignEngine = poster.typographyModel || 'fal_story_poster';
+        state.videoProduceMeta = { source: 'fal_video' };
+        state.costDelta += 0.08;
+        if (!state.falTextValidated) {
+          state.pipelineFailureReason = 'görseldeki metin doğrulanamadı';
+          state.imageUrl = null;
           return;
         }
+        console.log(
+          `[auto-produce] [fal-track] fal_story poster: "${inputs.headline.slice(0, 40)}" ` +
+          `template=${templateBinding.matched?.templateType ?? 'none'} ` +
+          `model=${poster.typographyModel} grafiker=${poster.grafikerScore ?? '—'}/10`,
+        );
+        return;
       }
 
       const designer = await produceFalDesignerVideo({
@@ -498,6 +413,12 @@ export const falVideoHandler: ProductionPipelineHandler = {
         headline: inputs.headline,
         subtitle: inputs.cta || undefined,
         caption: inputs.caption,
+        punchlineLockSource: inputs.punchlineLockSource,
+        typeBudget: templateBinding.matched?.typeBudget,
+        sampleHeadline: templateBinding.matched?.sampleHeadline,
+        sampleSubtitle: templateBinding.matched?.sampleSubtitle,
+        showSubline: templateBinding.matched?.showSubline,
+        catalogSlotKey: inputs.catalogSlotKey,
         brandName: inputs.resolvedBrandName,
         brandColors,
         vibe: designVibe,
@@ -633,6 +554,8 @@ export const falVideoHandler: ProductionPipelineHandler = {
           brandColors,
           backgroundStyle: inputs.falBackgroundStyleOverride ?? falBrand.backgroundStyle,
           lockOpts,
+          punchlineLockSource: inputs.punchlineLockSource,
+          catalogSlotKey: inputs.catalogSlotKey,
           templateBinding,
           designBriefDirectives: [
             ...(inputs.designBriefDirectives ?? []),
@@ -647,8 +570,14 @@ export const falVideoHandler: ProductionPipelineHandler = {
         state.imageUrl = poster.imageUrl;
         state.falGrafikerScore = poster.grafikerScore;
         state.falGrafikerPass = poster.grafikerPass;
+        state.falTextValidated = poster.textValidated === true;
         state.falDesignEngine = poster.typographyModel || 'fal_reel_still';
         state.costDelta += 0.08;
+        if (!state.falTextValidated) {
+          state.pipelineFailureReason = 'görseldeki metin doğrulanamadı';
+          state.imageUrl = null;
+          return;
+        }
 
         // Same locked I2V path as primary designer track — never pass headline into motion
         // (models rewrite letters into gibberish when copy is in the prompt).

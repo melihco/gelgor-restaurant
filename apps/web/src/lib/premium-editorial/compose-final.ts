@@ -27,7 +27,6 @@ export interface ComposeFinalResult {
   finalImageUrl: string;
   logoApplied: boolean;
   textRendered: boolean;
-  satoriFamily: null;
 }
 
 /**
@@ -103,11 +102,5 @@ export async function composeFinalEditorialImage(opts: {
     finalImageUrl,
     logoApplied,
     textRendered: false,
-    satoriFamily: null,
   };
-}
-
-/** Kept for tests that imported the mapper — maps unused after Satori removal. */
-export function mapEditorialToSatoriFamily(): null {
-  return null;
 }

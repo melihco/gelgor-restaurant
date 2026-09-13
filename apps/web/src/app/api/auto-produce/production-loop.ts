@@ -321,6 +321,7 @@ import {
   resolveArtifactPublishReady,
   stampPublishReadyMetadata,
 } from '@/lib/artifact-publish-ready';
+import { stampDesignedTypographyValid } from '@/lib/typography-text-validation';
 import {
   getBrandContextProducePreflight,
   httpStatusForBrandContextPreflight,
@@ -5672,7 +5673,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           marky_disabled: true,
           ...(falDesignEngine ? { fal_design_engine: falDesignEngine } : {}),
           ...grafikerStamp,
-          typography_text_valid: falGrafikerPass !== false,
+          ...stampDesignedTypographyValid({
+            overlayWasPainted,
+            textValidated: falTextValidated,
+          }),
         }
         : (isFalOnlyPost || isFalOnlyVideo) && (imageUrl || videoUrl)
           ? {
@@ -5682,7 +5686,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             marky_disabled: true,
             fal_design_engine: falDesignEngine ?? 'fal_ideogram_only',
             ...grafikerStamp,
-            typography_text_valid: falGrafikerPass !== false,
+            ...stampDesignedTypographyValid({
+              overlayWasPainted,
+              textValidated: falTextValidated,
+            }),
           }
         : isFalDesignPost && imageUrl && falDesignEngine
           ? {
@@ -5692,17 +5699,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_designer_produced: true,
             fal_design_engine: falDesignEngine,
             ...grafikerStamp,
-            // A designed post that came back without painted copy is a failed
-            // design. Beyond that, only the text validator can license this claim:
-            // reading it off falGrafikerPass meant a branch where nothing checked
-            // anything still reported valid typography, because that flag defaults
-            // to true. Unknown is now recorded as absent, not as a pass.
-            ...(overlayWasPainted
-              ? (falTextValidated
-                ? { typography_text_valid: true }
-                : {})
-              : { typography_text_valid: false }),
-            text_validated: falTextValidated,
+            ...stampDesignedTypographyValid({
+              overlayWasPainted,
+              textValidated: falTextValidated,
+            }),
           }
         : isPremiumEditorial && imageUrl && falDesignEngine
           ? {
@@ -5713,6 +5713,10 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             fal_design_engine: falDesignEngine,
             premium_composition: true,
             ...grafikerStamp,
+            ...stampDesignedTypographyValid({
+              overlayWasPainted,
+              textValidated: falTextValidated,
+            }),
           }
         : productionProfile.requireDesignedVisuals
           ? { production_route: 'designed_grafiker', marky_disabled: true, ...grafikerStamp }
@@ -5893,7 +5897,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       ...(designedPosterGrafikerScore != null ? {
         grafiker_score: designedPosterGrafikerScore,
         grafiker_pass: designedPosterGrafikerPass,
-        typography_text_valid: designedPosterGrafikerPass,
       } : {}),
       ...(Object.keys(designedPosterTemplateMeta).length ? designedPosterTemplateMeta : {}),
       ...(selectedVisualDesignCard ? {

@@ -3078,22 +3078,6 @@ function MissionSlotChecklistPanel({
           {summary} · %{pct}
         </span>
       </div>
-      {(() => {
-        const satoriReady = checklist.items.filter((i) => i.engineLabel === 'Satori' && i.status === 'ready').length;
-        const satoriEligible = checklist.items.filter((i) => i.satoriEligible).length;
-        if (satoriEligible === 0) return null;
-        return (
-          <div style={{
-            fontSize: 10, color: t.textMuted, marginBottom: 8, lineHeight: 1.45,
-            padding: '6px 10px', borderRadius: 8,
-            background: t.isDark ? 'rgba(13,148,136,0.08)' : 'rgba(13,148,136,0.06)',
-            border: '0.5px solid rgba(13,148,136,0.2)',
-          }}>
-            Satori tipografi: {satoriReady}/{satoriEligible} slot
-            {satoriReady < satoriEligible ? ' — story ve tipografi postları lokal renderer ile üretilir' : ''}
-          </div>
-        );
-      })()}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {checklist.items.map((item) => {
           const color = SLOT_STATUS_COLOR[item.status];
@@ -3119,14 +3103,6 @@ function MissionSlotChecklistPanel({
                   color: item.engineColor ?? '#9CA3AF',
                 }}>
                   {item.engineLabel}
-                </span>
-              )}
-              {!item.engineLabel && item.satoriEligible && item.status !== 'ready' && (
-                <span style={{
-                  fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 6, flexShrink: 0,
-                  background: 'rgba(13,148,136,0.12)', color: '#0D9488',
-                }}>
-                  Satori
                 </span>
               )}
               {item.headline && (

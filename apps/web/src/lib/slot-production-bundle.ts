@@ -68,7 +68,7 @@ export interface SlotPaintOverlayResult {
 
 /**
  * Single paint-time overlay resolve after template bind.
- * Locked punchlines: soft-clamp only (no type_budget stem, no coherence rewrite).
+ * Locked punchlines: keep the planned sentence (no motto stem, no coherence rewrite).
  * Unlocked: sanitize + optional template fit + coherence repair.
  */
 export function resolveSlotPaintOverlay(

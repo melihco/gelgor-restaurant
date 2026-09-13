@@ -25,6 +25,22 @@ interface ValidationResult {
 }
 
 /**
+ * License `typography_text_valid` only from the text validator.
+ * Grafiker score defaults to pass and must not stamp type as valid.
+ */
+export function stampDesignedTypographyValid(input: {
+  overlayWasPainted: boolean;
+  textValidated: boolean;
+}): { typography_text_valid?: boolean; text_validated: boolean } {
+  return {
+    ...(input.overlayWasPainted
+      ? (input.textValidated ? { typography_text_valid: true } : {})
+      : { typography_text_valid: false }),
+    text_validated: input.textValidated,
+  };
+}
+
+/**
  * Check if the generated image contains text that matches the intended headline.
  * Uses GPT-4o Vision for OCR + fuzzy matching.
  *

@@ -10,7 +10,6 @@ import { studioForbidsSatoriEscape, shouldSkipPaintRematch } from '@/studio/pain
 import { produceSlot } from '@/studio/produce-slot';
 import { needsLookVisionResolve } from '@/studio/look-urls';
 import { produceFromQueueJob } from '@/studio/produce-from-job';
-import { shouldUseLocalTypography } from '@/lib/local-typography-renderer';
 
 function shopHeroPack(): StudioFeedPack {
   return {
@@ -189,17 +188,10 @@ describe('studio golden — beach_club', () => {
 });
 
 describe('studio paint policy', () => {
-  it('forbids Satori once the pack is locked — both sectors', () => {
+  it('forbids a retired local overlay once the pack is locked — both sectors', () => {
     expect(studioForbidsSatoriEscape({ packLocked: true })).toBe(true);
     expect(studioForbidsSatoriEscape({ punchlineLockSource: 'feed_slot_pack' })).toBe(true);
     expect(studioForbidsSatoriEscape({})).toBe(false);
-    process.env.LOCAL_TYPOGRAPHY_ENABLED = 'true';
-    expect(shouldUseLocalTypography('fal_designed_post', 'fal_design', null, {
-      forbidSatoriEscape: true,
-    })).toBe(false);
-    expect(shouldUseLocalTypography('campaign_story_motion', 'fal_story', null, {
-      forbidSatoriEscape: true,
-    })).toBe(false);
   });
 
   it('skips rematch after bind', () => {

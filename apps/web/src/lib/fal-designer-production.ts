@@ -69,6 +69,7 @@ import {
   STORY_CANVAS,
 } from '@/lib/design-canvas-aspect';
 import { resolveBrandMarkMode } from '@/lib/brand-mark-mode';
+import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import { buildSlotCopyFitDirective } from '@/lib/slot-sample-copy';
 import { resolveFalDesignNumericLayout } from '@/lib/fal-design-numeric-layout';
 import { compositeOfficialLogoOnFrameUrl, compositeOfficialLogoOnVideoUrl } from '@/lib/fal-logo-composite';
@@ -230,6 +231,10 @@ export interface FalDesignerInput {
   catalogSlotKey?: string | null;
   slotRole?: string | null;
   brandMotionStyle?: string | null;
+  sampleHeadline?: string | null;
+  sampleSubtitle?: string | null;
+  showSubline?: boolean | null;
+  typeBudget?: import('@/lib/template-type-budget').TemplateTypeBudget | null;
 }
 
 export interface FalDesignerStillResult {
@@ -1640,18 +1645,33 @@ export async function produceFalDesignerStill(
     && !preserveLockedPunchline
     && Boolean(input.caption);
 
-  const overlayCopy = resolveFalOverlayCopy({
+  const paintOverlay = resolveSlotPaintOverlay({
     headline: input.headline,
-    cta: input.subtitle,
-    caption: input.caption,
+    subtitle: input.subtitle,
+    caption: input.caption ?? '',
     channel: canvasChannel,
-    lockIdeationCopy: !useCaptionAware,
-    preservePlannedHeadline: preserveLockedPunchline || !useCaptionAware,
+    brandName: input.brandName,
+    businessType: input.sector,
+    punchlineLockSource: input.punchlineLockSource,
+    captionAwareHeadline: useCaptionAware,
+    designIntensity: input.designIntensityLevel,
+    sampleHeadline: input.sampleHeadline,
+    sampleSubtitle: input.sampleSubtitle,
+    showSubline: input.showSubline,
+    typeBudget: input.typeBudget,
+    photoUrl: input.referencePhotoUrl,
+    catalogSlotKey: input.catalogSlotKey,
   });
-  const displayHeadline = overlayCopy.headline;
-  const captionSubtitle = overlayCopy.subtitle;
+  const displayHeadline = paintOverlay.headline;
+  const captionSubtitle = paintOverlay.subtitle;
 
-  if (useCaptionAware) {
+  if (paintOverlay.budgetSource || displayHeadline !== input.headline) {
+    console.log(
+      `[fal-designer] type-budget overlay src=${paintOverlay.budgetSource ?? 'channel'} `
+      + `preserve=${paintOverlay.preserved} `
+      + `"${String(input.headline).slice(0, 36)}" → "${displayHeadline.slice(0, 36)}"`,
+    );
+  } else if (useCaptionAware) {
     console.log(
       `[fal-designer] Caption-aware overlay: headline="${displayHeadline.slice(0, 40)}"`,
     );

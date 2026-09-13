@@ -35,9 +35,10 @@ export function isBrokenGrafikerRender(meta: Record<string, unknown>): boolean {
     'grafikerObservedScore',
   );
   if (grafikerScore == null || grafikerScore > GRAFIKER_HARD_FLOOR) return false;
+  // Carousel is a swipe set: slide 1 is the designed cover, 2–N are gallery.
+  // A low cover opinion must not kill the whole slot for every tenant.
   const galleryCarousel = String(meta.pipeline ?? '').toLowerCase() === 'carousel_gallery'
-    && String(meta.production_role ?? '').toLowerCase() === 'organic_carousel'
-    && meta.fal_designer_produced !== true;
+    || String(meta.production_role ?? '').toLowerCase() === 'organic_carousel';
   return !galleryCarousel;
 }
 
