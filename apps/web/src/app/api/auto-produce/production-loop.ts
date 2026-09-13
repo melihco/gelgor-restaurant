@@ -2174,7 +2174,6 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       headline = calendarTaglinePublishable && ideaFeedBind.paintHeadline.trim()
         ? ideaFeedBind.paintHeadline
         : lockedFeedSlotPack.headline;
-      referenceUrl = lockedFeedSlotPack.photoUrl;
     }
 
     const applyVisualClaimGrounding = (opts?: {

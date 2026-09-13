@@ -31,8 +31,8 @@ export function resolveFeedSceneAction(input: FeedScenePolicyInput): FeedSceneAc
   }
 
   const kind = lookJobKind({
-    catalogSlotKey: input.catalogSlotKey,
-    slotJob: input.slotJob,
+    catalogSlotKey: input.catalogSlotKey ?? undefined,
+    slotJob: input.slotJob ?? undefined,
   });
 
   if (kind === 'place') return 'none';
