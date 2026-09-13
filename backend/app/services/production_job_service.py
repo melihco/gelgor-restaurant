@@ -206,6 +206,9 @@ _BULLMQ_DRAIN_STALE_RECLAIM_SEC = 900  # 15 min — above editorial + persist
 # Same window as drain reclaim. 11 min overlapped live paints (Next max 10 min +
 # persist) and re-claimed the same story/post — two JPEGs, vitrin flicker.
 _BULLMQ_WATCHDOG_STALE_SEC = _BULLMQ_DRAIN_STALE_RECLAIM_SEC
+# Deploy / crash: worker never callbacks. Only claimed+running events = silent.
+# Posts finish or fail before 10 min; remotion reels keep the 15 min window.
+_SILENT_POST_INFLIGHT_SEC = 600
 
 _WORKER_ID = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
@@ -913,6 +916,62 @@ async def reclaim_stale_jobs(
         logger.info(
             "production_jobs.reclaim_stale",
             mission_id=str(mission_id),
+            reclaimed=len(rows),
+        )
+    return len(rows)
+
+
+async def reclaim_silent_inflight(
+    mission_id: uuid.UUID | None = None,
+    *,
+    silent_sec: int = _SILENT_POST_INFLIGHT_SEC,
+    limit: int = 50,
+) -> int:
+    """Pending a post that stayed running with no produce event.
+
+    Deploy recycles the worker mid-fetch; callback never arrives; the row
+    locks the mission for 15 min (``has_live_in_flight``). Reels stay on
+    the long stale window.
+    """
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                UPDATE production_jobs j
+                SET status = 'pending',
+                    claimed_at = NULL,
+                    claimed_by = NULL,
+                    run_after = now(),
+                    last_error = 'fetch failed [silent-inflight]',
+                    updated_at = now()
+                WHERE j.status IN ('claimed', 'running')
+                  AND j.slot_key NOT ILIKE '%reel%'
+                  AND j.claimed_at < now() - make_interval(secs => :silent_sec)
+                  AND (
+                    CAST(:mission_id AS UUID) IS NULL
+                    OR j.mission_id = CAST(:mission_id AS UUID)
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM production_slot_events e
+                    WHERE e.job_id = j.id
+                      AND e.recorded_at >= j.claimed_at - interval '2 seconds'
+                      AND e.event_type NOT IN ('claimed', 'running')
+                  )
+                RETURNING j.id
+                """
+            ),
+            {
+                "mission_id": str(mission_id) if mission_id else None,
+                "silent_sec": int(silent_sec),
+            },
+        )
+        rows = res.fetchall()
+        await db.commit()
+    if rows:
+        logger.info(
+            "production_jobs.reclaim_silent_inflight",
+            mission_id=str(mission_id) if mission_id else None,
             reclaimed=len(rows),
         )
     return len(rows)

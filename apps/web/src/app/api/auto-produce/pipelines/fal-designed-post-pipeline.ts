@@ -252,6 +252,10 @@ export async function produceFalDesignedPost(
 
   try {
     const binding = input.brandTemplateBinding;
+    const purposePinned = Boolean(
+      binding?.matched
+      && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
+    );
     const lockOpts = resolveFalTemplateLockOptions({
       binding,
       baseGrafikerMaxRetries: input.grafikerMaxRetries,
@@ -679,12 +683,15 @@ export async function produceFalDesignedPost(
       if (
         !imageUrl
         && lastTextValidUrl
-        && shouldKeepGroundedInsteadOfIdeogram({
-          productionTier: input.productionTier,
-          textValidated: true,
-          grafikerScore: lastTextValidScore,
-          templateReplica: Boolean(binding?.matched),
-        })
+        && (
+          purposePinned
+          || shouldKeepGroundedInsteadOfIdeogram({
+            productionTier: input.productionTier,
+            textValidated: true,
+            grafikerScore: lastTextValidScore,
+            templateReplica: Boolean(binding?.matched),
+          })
+        )
       ) {
         console.warn(
           '[auto-produce] [fal-design] keeping text-validated GPT compose — Ideogram fallthrough skipped (cost guard)',
@@ -695,25 +702,12 @@ export async function produceFalDesignedPost(
         costDelta += 0.04;
       }
       }
-      // Purpose-pinned shells (hard/soft): prefer gpt-image replica. If GPT is exhausted,
-      // fall through to Ideogram *with* the locked layout image as reference — hard withhold
-      // was exhausting factory slots with no feed artifact.
-      const purposePinned = Boolean(
-        binding?.matched
-        && (binding.matched.matchQuality === 'hard' || binding.matched.matchQuality === 'soft'),
-      );
+      // Purpose-pinned shells (hard/soft): GPT replica only. No Ideogram / Satori.
+      // Throw only when GPT never painted a text-valid frame.
       if (!imageUrl && purposePinned) {
-        if (!allowDegradedVisualFallback()) {
-          throw new Error(
-            'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
-          );
-        }
-        const layoutRef = templateLayoutReferenceUrl(binding);
-        if (!layoutRef || !serverConfig.fal.configured) {
-          throw new Error(
-            'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
-          );
-        }
+        throw new Error(
+          'library_template_replica_failed: gpt-image exhausted on purpose-pinned template',
+        );
       }
     } else if (input.requireGroundedGallery) {
       throw new Error('Brand gallery photo required for New Brief designed post.');

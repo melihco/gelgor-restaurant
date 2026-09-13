@@ -205,6 +205,19 @@ def test_bullmq_stale_window_does_not_overlap_live_paint() -> None:
     assert pjs._BULLMQ_WATCHDOG_STALE_SEC >= 900
 
 
+def test_silent_post_inflight_reclaim_is_shorter_than_reel_window() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    assert pjs._SILENT_POST_INFLIGHT_SEC == 600
+    assert pjs._SILENT_POST_INFLIGHT_SEC < pjs._BULLMQ_WATCHDOG_STALE_SEC
+    src = inspect.getsource(pjs.reclaim_silent_inflight)
+    assert "production_slot_events" in src
+    assert "NOT ILIKE '%reel%'" in src
+    assert "silent-inflight" in src
+
+
 def test_operator_kick_reclaim_is_stale_only() -> None:
     import inspect
 

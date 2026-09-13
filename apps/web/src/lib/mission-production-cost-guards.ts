@@ -60,7 +60,8 @@ export function resolveGroundedSoftAcceptScore(
 
 /**
  * Keep a text-validated grounded compose instead of falling through to Ideogram.
- * Template replica always keeps grounded (caller already enforces).
+ * Locked template: the GPT replica is the standard. Grafiker below 8 still
+ * ships that frame — Ideogram / Satori drop the house layout.
  */
 export function shouldKeepGroundedInsteadOfIdeogram(input: {
   productionTier?: string | null;
@@ -71,6 +72,7 @@ export function shouldKeepGroundedInsteadOfIdeogram(input: {
 }): boolean {
   if (input.libraryQualityFalFallback) return false;
   if (!input.textValidated) return false;
+  if (input.templateReplica) return true;
   const score = input.grafikerScore;
   return typeof score === 'number' && score >= GROUNDED_KEEP_MIN_SCORE;
 }

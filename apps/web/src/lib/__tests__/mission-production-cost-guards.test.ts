@@ -69,4 +69,25 @@ describe('mission-production-cost-guards', () => {
       textValidated: false,
     })).toBe(false);
   });
+
+  it('shop + beach locked templates keep the text-valid GPT replica', () => {
+    expect(shouldKeepGroundedInsteadOfIdeogram({
+      productionTier: 'agency',
+      textValidated: true,
+      grafikerScore: 6,
+      templateReplica: true,
+    })).toBe(true);
+    expect(shouldKeepGroundedInsteadOfIdeogram({
+      productionTier: 'premium',
+      textValidated: true,
+      grafikerScore: 5,
+      templateReplica: true,
+    })).toBe(true);
+    expect(shouldKeepGroundedInsteadOfIdeogram({
+      productionTier: 'agency',
+      textValidated: false,
+      grafikerScore: 9,
+      templateReplica: true,
+    })).toBe(false);
+  });
 });

@@ -1469,7 +1469,7 @@ async def run_factory_watchdog_tick(*, reclaim_limit: int = 50) -> dict[str, int
     )
 
     exhausted = await jobs.exhaust_open_terminal_error_jobs()
-    reclaimed = 0
+    reclaimed = await jobs.reclaim_silent_inflight(limit=reclaim_limit)
     for mid in await jobs.list_mission_ids_with_any_open_jobs(limit=reclaim_limit):
         reclaimed += await jobs.reclaim_stale_jobs(uuid.UUID(mid), stale_sec=stale_sec)
 
