@@ -17,7 +17,10 @@ import {
   isOpenAiQuotaOrBillingError,
   markOpenAiQuotaBlocked,
 } from '@/lib/openai-error-utils';
+import { isIncompleteOverlayPhrase } from '@/lib/fal-caption-headline';
+import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import {
+  headlineTakenFromCaption,
   parseFeedSlotPack,
   sellingCopyMissesEvidence,
   type FeedSlotPack,
@@ -54,6 +57,58 @@ export function packTellsSameProductStory(pack: FeedSlotPack): boolean {
   };
   return !sellingCopyMissesEvidence({ ...base, caption: pack.caption })
     && !sellingCopyMissesEvidence({ ...base, caption: pack.headline });
+}
+
+function sellEvidenceBase(pack: FeedSlotPack) {
+  return {
+    evidenceNote: pack.evidenceNote,
+    photoRole: pack.photoRole,
+    shellDirection: pack.shellDirection,
+  };
+}
+
+function copySharesEvidence(pack: FeedSlotPack): boolean {
+  return overlayHeadlineGroundedInCaption(pack.headline, pack.evidenceNote)
+    || overlayHeadlineGroundedInCaption(pack.caption, pack.evidenceNote)
+    || headlineTakenFromCaption(pack.headline, pack.evidenceNote);
+}
+
+/**
+ * Üst yazıyı biz caption’dan kestik. Kelime kapısı + kanıt yetiyorsa
+ * ikinci sohbet yok — mini hakem başlığı yeniden yazmasın.
+ */
+function headlineLooksCutFromCaption(headline: string, caption: string): boolean {
+  const h = headline.trim();
+  if (!h) return true;
+  const last = h.split(/\s+/).pop() ?? '';
+  if (last.length <= 1) return true;
+  const first = caption.split(/[.!?…\n—–]/)[0]?.replace(/[.!?…]+$/g, '').trim() ?? '';
+  return Boolean(first && first.startsWith(h) && h.length < first.length);
+}
+
+function packHeadlineNeedsRepair(pack: FeedSlotPack): boolean {
+  const headline = pack.headline.trim();
+  return headline.length < 6
+    || isIncompleteOverlayPhrase(headline)
+    || headlineLooksCutFromCaption(headline, pack.caption);
+}
+
+export function packCopyLockedToCaption(pack: FeedSlotPack): boolean {
+  const headline = pack.headline.trim();
+  if (packHeadlineNeedsRepair(pack)) return false;
+  if (
+    !headlineTakenFromCaption(headline, pack.caption)
+    && !overlayHeadlineGroundedInCaption(headline, pack.caption)
+  ) {
+    return false;
+  }
+  const sell = pack.photoRole === 'product_for_sale' || pack.shellDirection === 'product_hero';
+  if (sell) {
+    const base = sellEvidenceBase(pack);
+    return !sellingCopyMissesEvidence({ ...base, caption: pack.caption })
+      && !sellingCopyMissesEvidence({ ...base, caption: pack.headline });
+  }
+  return copySharesEvidence(pack);
 }
 
 export type JudgeFeedPackConsistencyInput = {
@@ -161,7 +216,7 @@ export async function applyFeedPackConsistency(
   },
 ): Promise<{ ok: true; pack: FeedSlotPack } | { ok: false; issues: ['incoherent_pack'] }> {
   const sameProduct = packTellsSameProductStory(pack);
-  if (sameProduct && !opts?.judge && !opts?.openai) {
+  if (packCopyLockedToCaption(pack) || (sameProduct && !packHeadlineNeedsRepair(pack))) {
     return { ok: true, pack };
   }
   const verdict = opts?.judge

@@ -3,6 +3,7 @@ import type OpenAI from 'openai';
 import {
   applyFeedPackConsistency,
   judgeFeedPackConsistency,
+  packCopyLockedToCaption,
   packTellsSameProductStory,
 } from '@/lib/feed-pack-consistency';
 import type { FeedSlotPack } from '@/lib/feed-slot-pack';
@@ -78,6 +79,30 @@ describe('feed-pack-consistency — shop + beach', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('shop: locked caption headline skips the chat judge', async () => {
+    const calls = { count: 0 };
+    const pack = shopPack();
+    expect(packCopyLockedToCaption(pack)).toBe(true);
+    const result = await applyFeedPackConsistency(pack, {
+      openai: fakeVerdictOpenai({ ok: false, headline: 'Başka ürün' }, calls),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.pack.headline).toBe(pack.headline);
+    expect(calls.count).toBe(0);
+  });
+
+  it('beach: locked sunset copy skips the chat judge', async () => {
+    const calls = { count: 0 };
+    const pack = beachPack();
+    expect(packCopyLockedToCaption(pack)).toBe(true);
+    const result = await applyFeedPackConsistency(pack, {
+      openai: fakeVerdictOpenai({ ok: false, headline: 'Öğle tabağı' }, calls),
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.pack.headline).toBe(pack.headline);
+    expect(calls.count).toBe(0);
+  });
+
   it('shop: oil caption on a jam label withholds before paint', async () => {
     const calls = { count: 0 };
     const mismatch = {
@@ -87,6 +112,7 @@ describe('feed-pack-consistency — shop + beach', () => {
       evidenceNote: 'Etiket: İNCİR REÇELİ',
     };
     expect(packTellsSameProductStory(mismatch)).toBe(false);
+    expect(packCopyLockedToCaption(mismatch)).toBe(false);
     const result = await applyFeedPackConsistency(mismatch, {
       judge: async () => {
         calls.count += 1;
@@ -104,6 +130,7 @@ describe('feed-pack-consistency — shop + beach', () => {
       ...shopPack(),
       headline: 'Sızma zeytinyağımız r',
     };
+    expect(packCopyLockedToCaption(cut)).toBe(false);
     const result = await applyFeedPackConsistency(cut, {
       openai: fakeVerdictOpenai({
         ok: true,
@@ -118,12 +145,14 @@ describe('feed-pack-consistency — shop + beach', () => {
   });
 
   it('beach: sunset copy on a lunch plate withholds', async () => {
-    const result = await applyFeedPackConsistency({
+    const lunch = {
       ...beachPack(),
       caption: 'Öğle tabağı hazır. Masada kalın.',
       headline: 'Öğle tabağı hazır',
       evidenceNote: 'iskele, açık deniz ufku',
-    }, {
+    };
+    expect(packCopyLockedToCaption(lunch)).toBe(false);
+    const result = await applyFeedPackConsistency(lunch, {
       judge: async () => ({ ok: false }),
     });
     expect(result.ok).toBe(false);
