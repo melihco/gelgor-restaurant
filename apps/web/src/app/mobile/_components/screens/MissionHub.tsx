@@ -49,8 +49,13 @@ import {
 } from '@/lib/mission-feed-package';
 import {
   buildMissionSlotChecklist,
+  customerSlotDisplayName,
+  customerSlotStatusLabel,
+  customerStatusFromFactoryJob,
   extractFeedDirectorReportFromNodes,
   formatSlotChecklistSummary,
+  formatSlotProductionHeadline,
+  slotProductionPercents,
   slotStatusLabel,
   type MissionSlotChecklist,
   type SlotDeliveryStatus,
@@ -130,6 +135,12 @@ import { resolveStoryVideoUrl } from '@/lib/production-bundle';
 import { resolveArtifactProductionBadge } from '@/lib/artifact-production-badge';
 import { SafeCoverImage } from '../SafeCoverImage';
 import { formatUsd, formatUsdCompact } from '@/lib/ai-cost-catalog';
+import {
+  formatCustomerSlotTraceLine,
+  lookupFactorySlotTrace,
+  matchSlotCostUsd,
+} from '@/lib/mission-slot-trace';
+import type { MissionSlotCostRollup } from '@/lib/production-cost-types';
 import { missionFeedStatusLabel, formatMobileContentTypeLabel } from '@/lib/mobile-customer-copy';
 import { missionProductionStatusCopy } from '@/lib/mission-production-status';
 import { useMissionFactoryJobs } from '../../_lib/use-mission-factory-jobs';
@@ -2509,6 +2520,103 @@ const SLOT_STATUS_COLOR: Record<SlotDeliveryStatus, string> = {
   pending: '#F59E0B',
 };
 
+type CustomerSlotProgressItem = {
+  key: string;
+  name: string;
+  status: SlotDeliveryStatus;
+  traceLine: string;
+};
+
+function MissionCustomerSlotProgress({
+  ready,
+  total,
+  items,
+  missionSpendUsd,
+  t,
+}: {
+  ready: number;
+  total: number;
+  items: CustomerSlotProgressItem[];
+  missionSpendUsd?: number | null;
+  t: T;
+}) {
+  const percents = slotProductionPercents(ready, total);
+  const barPct = percents.donePct;
+  const spend = Number(missionSpendUsd) || 0;
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
+          Slot üretimi
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 800, color: barPct >= 80 ? '#10B981' : '#3B82F6' }}>
+          %{barPct} bitti
+        </span>
+      </div>
+      <div style={{
+        height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 8,
+        background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+      }}>
+        <div style={{
+          width: `${barPct}%`, height: '100%', borderRadius: 3,
+          background: 'linear-gradient(90deg, #3B82F6, #60A5FA)',
+          transition: 'width 0.4s ease',
+        }} />
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: t.textPrimary, marginBottom: 6, lineHeight: 1.45 }}>
+        {formatSlotProductionHeadline(percents.ready, percents.total)}
+      </div>
+      {spend > 0 && (
+        <div style={{ fontSize: 12, color: t.textSecondary, marginBottom: 10, lineHeight: 1.45 }}>
+          Bu mission {formatUsdCompact(spend)} harcandı
+        </div>
+      )}
+      {items.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+          {items.map((item) => {
+            const color = SLOT_STATUS_COLOR[item.status];
+            return (
+              <div
+                key={item.key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 10,
+                  minHeight: 44,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                }}
+              >
+                <span style={{
+                  width: 8, height: 8, borderRadius: 99, flexShrink: 0, background: color, marginTop: 5,
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between',
+                  }}>
+                    <span style={{
+                      fontSize: 13, fontWeight: 700, color: t.textPrimary, lineHeight: 1.35,
+                    }}>
+                      {item.name}
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 800, color, flexShrink: 0 }}>
+                      {customerSlotStatusLabel(item.status)}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3, lineHeight: 1.4 }}>
+                    {item.traceLine}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function MissionAiCostPanel({
   summary,
   t,
@@ -2838,6 +2946,8 @@ function MissionSlotChecklistPanel({
   isReproducingFeed,
   feedProductionActive = false,
   debugMode = false,
+  slotCosts,
+  missionSpendUsd,
   t,
 }: {
   checklist: MissionSlotChecklist | null;
@@ -2855,6 +2965,8 @@ function MissionSlotChecklistPanel({
   isReproducingFeed?: boolean;
   feedProductionActive?: boolean;
   debugMode?: boolean;
+  slotCosts?: MissionSlotCostRollup[] | null;
+  missionSpendUsd?: number | null;
   t: T;
 }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -2872,19 +2984,48 @@ function MissionSlotChecklistPanel({
     );
   }
   if (!checklist || checklist.items.length === 0) {
-    if (!pipelineSummary) return null;
     if (!debugMode) {
-      const ready = pipelineSummary.publishReady;
-      const total = pipelineSummary.productionTarget;
+      if (!pipelineSummary && !(factorySummary?.slots?.length)) return null;
+      const factorySlots = factorySummary?.slots ?? [];
+      const ready = factorySummary?.total
+        ? factorySummary.ready
+        : (pipelineSummary?.publishReady ?? 0);
+      const total = factorySummary?.total
+        ? factorySummary.total
+        : (pipelineSummary?.productionTarget ?? 0);
       return (
         <div style={{
           padding: '14px 16px', borderRadius: 14, marginBottom: 16,
           background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
           border: '0.5px solid rgba(59,130,246,0.25)',
         }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
-            {ready >= total ? 'İçerik paketi hazır' : `${ready}/${total} içerik hazır`}
-          </div>
+          {factorySlots.length > 0 ? (
+            <MissionCustomerSlotProgress
+              ready={ready}
+              total={total}
+              missionSpendUsd={missionSpendUsd}
+              items={factorySlots.map((slot, index) => ({
+                key: `${slot.ideaIndex}:${slot.slotRole}:${index}`,
+                name: customerSlotDisplayName({
+                  catalogSlotLabel: slot.catalogSlotLabel,
+                  slotRole: slot.slotRole,
+                }),
+                status: customerStatusFromFactoryJob(slot.status),
+                traceLine: formatCustomerSlotTraceLine({
+                  attempts: slot.attempts,
+                  maxAttempts: slot.maxAttempts,
+                  costUsd: matchSlotCostUsd(slotCosts, slot.ideaIndex, slot.slotRole),
+                  status: slot.status,
+                  lastError: slot.lastError,
+                }),
+              }))}
+              t={t}
+            />
+          ) : (
+            <div style={{ fontSize: 13, fontWeight: 700, color: t.textPrimary, marginBottom: 6 }}>
+              {ready >= total && total > 0 ? 'İçerik paketi hazır' : `${ready}/${total} içerik hazır`}
+            </div>
+          )}
           <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
             {ready > 0
               ? 'Onay bekleyen gönderiler İçerik sekmesinde.'
@@ -2923,6 +3064,7 @@ function MissionSlotChecklistPanel({
         </div>
       );
     }
+    if (!pipelineSummary) return null;
     return (
       <div style={{
         padding: '14px 16px', borderRadius: 14, marginBottom: 16,
@@ -2951,7 +3093,6 @@ function MissionSlotChecklistPanel({
   if (!debugMode) {
     const ready = checklist.readyRequired;
     const total = checklist.requiredTotal;
-    const pct = checklist.coveragePct;
     const manifestReady = pipelineSummary?.manifestReady ?? ready;
     const manifestRequired = pipelineSummary?.manifestRequired ?? total;
     const packageIncomplete = manifestReady < manifestRequired;
@@ -2965,8 +3106,8 @@ function MissionSlotChecklistPanel({
       || checklist.renderingCount > 0
       || statusCopy.inProgress,
     );
-    const displayReady = manifestReady;
-    const displayTotal = manifestRequired;
+    const displayReady = factorySummary?.total ? factorySummary.ready : manifestReady;
+    const displayTotal = factorySummary?.total ? factorySummary.total : manifestRequired;
 
     return (
       <div style={{
@@ -2974,24 +3115,35 @@ function MissionSlotChecklistPanel({
         background: t.isDark ? 'rgba(59,130,246,0.06)' : 'rgba(59,130,246,0.05)',
         border: `0.5px solid rgba(59,130,246,0.25)`,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: t.textPrimary }}>
-            Haftalık içerik paketi
-          </div>
-          <span style={{ fontSize: 13, fontWeight: 800, color: pct >= 80 ? '#10B981' : '#3B82F6' }}>
-            {displayReady}/{displayTotal}
-          </span>
-        </div>
-        <div style={{
-          height: 6, borderRadius: 3, overflow: 'hidden', marginBottom: 10,
-          background: t.isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-        }}>
-          <div style={{
-            width: `${pct}%`, height: '100%', borderRadius: 3,
-            background: 'linear-gradient(90deg, #3B82F6, #60A5FA)',
-            transition: 'width 0.4s ease',
-          }} />
-        </div>
+        <MissionCustomerSlotProgress
+          ready={displayReady}
+          total={displayTotal}
+          missionSpendUsd={missionSpendUsd}
+          items={checklist.items.map((item) => {
+            const factory = lookupFactorySlotTrace(
+              factorySummary?.slots,
+              item.ideaIndex,
+              item.role,
+            );
+            return {
+              key: `${item.role}-${item.assignmentIndex}`,
+              name: customerSlotDisplayName({
+                catalogSlotLabel: item.catalogSlotLabel,
+                label: item.label,
+                slotRole: item.role,
+              }),
+              status: item.status,
+              traceLine: formatCustomerSlotTraceLine({
+                attempts: factory?.attempts,
+                maxAttempts: factory?.maxAttempts,
+                costUsd: matchSlotCostUsd(slotCosts, item.ideaIndex, item.role),
+                status: factory?.status ?? item.status,
+                lastError: factory?.lastError ?? item.lastError,
+              }),
+            };
+          })}
+          t={t}
+        />
         <div style={{ fontSize: 12, color: t.textSecondary, lineHeight: 1.5 }}>
           {inProgress
             ? statusCopy.subtitle
@@ -3075,12 +3227,13 @@ function MissionSlotChecklistPanel({
           Üretim manifesti
         </div>
         <span style={{ fontSize: 11, fontWeight: 800, color: pct >= 80 ? '#10B981' : '#F59E0B' }}>
-          {summary} · %{pct}
+          {summary} · %{pct} bitti · %{Math.max(0, 100 - pct)} kaldı
         </span>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {checklist.items.map((item) => {
           const color = SLOT_STATUS_COLOR[item.status];
+          const factory = lookupFactorySlotTrace(factorySummary?.slots, item.ideaIndex, item.role);
           return (
             <div key={`${item.role}-${item.assignmentIndex}`} style={{
               display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
@@ -3095,6 +3248,15 @@ function MissionSlotChecklistPanel({
                 {item.ideaIndex != null && item.ideaIndex >= 0 && (
                   <span style={{ color: t.textMuted, fontWeight: 600 }}> #{item.ideaIndex}</span>
                 )}
+                <span style={{ display: 'block', color: t.textMuted, fontWeight: 600, fontSize: 10, marginTop: 2 }}>
+                  {formatCustomerSlotTraceLine({
+                    attempts: factory?.attempts,
+                    maxAttempts: factory?.maxAttempts,
+                    costUsd: matchSlotCostUsd(slotCosts, item.ideaIndex, item.role),
+                    status: factory?.status ?? item.status,
+                    lastError: factory?.lastError ?? item.lastError,
+                  })}
+                </span>
               </span>
               {item.engineLabel && (
                 <span style={{
@@ -3393,9 +3555,12 @@ function MissionPublishPackageCard({
           border: '0.5px solid rgba(16,185,129,0.28)',
         }}>
           <span style={{ fontSize: 11, fontWeight: 800, color: '#10B981', letterSpacing: '0.04em' }}>
-            {isMobileOperatorMode()
-              ? `ÜRETİM HATTI ${factoryJobs.ready}/${factoryJobs.total}`
-              : `${factoryJobs.ready}/${factoryJobs.total} hazır`}
+            {(() => {
+              const headline = formatSlotProductionHeadline(factoryJobs.ready, factoryJobs.total);
+              return isMobileOperatorMode()
+                ? `ÜRETİM HATTI ${headline}`
+                : headline;
+            })()}
           </span>
           {(factoryJobs.inFlight ?? 0) > 0 && (
             <span style={{ fontSize: 10, color: t.textSecondary }}>
@@ -3681,8 +3846,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     queryKey: ['mission-production-cost', workspaceId, mission.id],
     queryFn: () => getMissionProductionCost(workspaceId, mission.id),
     enabled: Boolean(workspaceId && mission.id),
-    staleTime: 30_000,
-    refetchInterval: missionInFlight ? 45_000 : false,
+    staleTime: 15_000,
+    refetchInterval: missionInFlight || showFeedPackage ? 20_000 : false,
     ...mobileQueryDefaults,
   });
 
@@ -3833,9 +3998,15 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
   };
 
   const completedNodes = (prog?.nodes ?? []).filter(n => n.status === 'completed');
-  const rate = mission.total_nodes > 0
+  const planRate = mission.total_nodes > 0
     ? Math.round((mission.completed_nodes / mission.total_nodes) * 100)
     : 0;
+  const slotPercents = factoryJobsSummary?.total
+    ? slotProductionPercents(factoryJobsSummary.ready, factoryJobsSummary.total)
+    : slotChecklist && slotChecklist.items.length > 0
+      ? slotProductionPercents(slotChecklist.readyRequired, slotChecklist.requiredTotal)
+      : null;
+  const rate = slotPercents && slotPercents.total > 0 ? slotPercents.donePct : planRate;
   const hasPreviewContent = previewArtifacts.length > 0 || (feedPackage?.totalPublishable ?? 0) > 0;
   const slotRendering = (slotChecklist?.renderingCount ?? 0) > 0;
 
@@ -3922,7 +4093,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
     <ResponsiveAppSheet
       onClose={onClose}
       title={mission.title}
-      subtitle={`${mission.completed_nodes}/${mission.total_nodes} plan adımı · ${timeAgo(mission.completed_at)}`}
+      subtitle={slotPercents && slotPercents.total > 0
+        ? formatSlotProductionHeadline(slotPercents.ready, slotPercents.total)
+        : `${mission.completed_nodes}/${mission.total_nodes} plan adımı · ${timeAgo(mission.completed_at)}`}
       fullScreen
       closeButton="x-right"
       ariaLabel="Plan detayı"
@@ -3933,7 +4106,9 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               <span style={{ fontSize: 9, padding: '2px 7px', borderRadius: 20,
                 background: rate >= 80 ? 'rgba(16,185,129,0.10)' : 'rgba(245,158,11,0.10)',
                 color: rate >= 80 ? '#10B981' : '#F59E0B', fontWeight: 700 }}>
-                %{rate} · {TYPE_LABEL[mission.type] ?? mission.type}
+                {slotPercents && slotPercents.total > 0
+                  ? `%${slotPercents.donePct} bitti · %${slotPercents.remainingPct} kaldı · ${TYPE_LABEL[mission.type] ?? mission.type}`
+                  : `%${rate} · ${TYPE_LABEL[mission.type] ?? mission.type}`}
               </span>
             </div>
             {mission.objective && (
@@ -4118,6 +4293,8 @@ function MissionDetailSheet({ mission, workspaceId, onClose }: {
               isReproducingFeed={kickFeedMutation.isPending || reproduceFeedMutation.isPending}
               feedProductionActive={feedProductionActive}
               debugMode={debugMode}
+              slotCosts={missionLedger?.slots}
+              missionSpendUsd={missionLedger?.total_usd}
               t={t}
             />
           )}

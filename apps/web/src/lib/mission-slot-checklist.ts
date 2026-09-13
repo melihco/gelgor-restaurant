@@ -134,6 +134,76 @@ export function slotStatusLabel(status: SlotDeliveryStatus): string {
   return STATUS_TR[status] ?? status;
 }
 
+/** Customer Mission Hub — hide operator words like Render / Bekliyor. */
+export function customerSlotStatusLabel(status: SlotDeliveryStatus): string {
+  switch (status) {
+    case 'ready':
+      return 'Hazır';
+    case 'rendering':
+      return 'Üretiliyor';
+    case 'failed':
+      return 'Tekrar denenecek';
+    case 'missing':
+      return 'Eksik';
+    case 'pending':
+      return 'Sırada';
+    default:
+      return slotStatusLabel(status);
+  }
+}
+
+export function slotProductionPercents(ready: number, total: number): {
+  ready: number;
+  total: number;
+  remaining: number;
+  donePct: number;
+  remainingPct: number;
+} {
+  const safeTotal = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0;
+  const rawReady = Number.isFinite(ready) ? Math.floor(ready) : 0;
+  const safeReady = Math.min(Math.max(0, rawReady), safeTotal);
+  const remaining = Math.max(0, safeTotal - safeReady);
+  const donePct = safeTotal === 0 ? 0 : Math.round((safeReady / safeTotal) * 100);
+  return {
+    ready: safeReady,
+    total: safeTotal,
+    remaining,
+    donePct,
+    remainingPct: safeTotal === 0 ? 0 : 100 - donePct,
+  };
+}
+
+export function formatSlotProductionHeadline(ready: number, total: number): string {
+  const p = slotProductionPercents(ready, total);
+  if (p.total === 0) return 'Slot listesi henüz yok';
+  if (p.donePct >= 100) return `${p.ready}/${p.total} hazır · %100 bitti`;
+  return `${p.ready}/${p.total} hazır · %${p.donePct} bitti · %${p.remainingPct} kaldı`;
+}
+
+export function customerStatusFromFactoryJob(status: string | undefined): SlotDeliveryStatus {
+  const st = String(status ?? '').toLowerCase();
+  if (st === 'ready') return 'ready';
+  if (st === 'running' || st === 'claimed') return 'rendering';
+  if (st === 'failed' || st === 'exhausted') return 'failed';
+  if (st === 'skipped') return 'missing';
+  return 'pending';
+}
+
+export function customerSlotDisplayName(input: {
+  catalogSlotLabel?: string | null;
+  label?: string | null;
+  slotRole?: string | null;
+}): string {
+  const stripEngine = (value: string) => value.replace(/^fal\.ai\s+/i, '').trim();
+  const catalog = stripEngine(String(input.catalogSlotLabel ?? '').trim());
+  if (catalog) return catalog;
+  const label = stripEngine(String(input.label ?? '').trim());
+  if (label) return label;
+  const role = String(input.slotRole ?? '').trim() as ProductionSlotRole;
+  if (role && SLOT_ROLE_LABEL_TR[role]) return stripEngine(SLOT_ROLE_LABEL_TR[role]);
+  return role || 'İçerik';
+}
+
 export function inferManifestMissionType(input: {
   missionType?: string;
   title?: string | null;

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { buildMissionSlotChecklist } from '@/lib/mission-slot-checklist';
+import {
+  buildMissionSlotChecklist,
+  customerSlotDisplayName,
+  customerSlotStatusLabel,
+  customerStatusFromFactoryJob,
+  formatSlotProductionHeadline,
+  slotProductionPercents,
+} from '@/lib/mission-slot-checklist';
 
 // Faz 5 — flip cards must follow durable production_jobs rows (catalog label + template),
 // not Feed Director generic roles or static manifest padding.
@@ -136,5 +143,47 @@ describe('buildMissionSlotChecklist catalog-first FD', () => {
     expect(checklist.items).toHaveLength(2);
     expect(checklist.items.every((i) => i.catalogSlotKey)).toBe(true);
     expect(checklist.items.some((i) => i.label.includes('fal.ai'))).toBe(false);
+  });
+});
+
+describe('customer slot production percents', () => {
+  it('writes done and remaining percent for a shop pack', () => {
+    expect(slotProductionPercents(3, 8)).toEqual({
+      ready: 3,
+      total: 8,
+      remaining: 5,
+      donePct: 38,
+      remainingPct: 62,
+    });
+    expect(formatSlotProductionHeadline(3, 8)).toBe(
+      '3/8 hazır · %38 bitti · %62 kaldı',
+    );
+  });
+
+  it('writes 100% done for a beach pack that finished', () => {
+    expect(slotProductionPercents(6, 6)).toEqual({
+      ready: 6,
+      total: 6,
+      remaining: 0,
+      donePct: 100,
+      remainingPct: 0,
+    });
+    expect(formatSlotProductionHeadline(6, 6)).toBe('6/6 hazır · %100 bitti');
+  });
+
+  it('uses catalog names and customer status words', () => {
+    expect(customerSlotDisplayName({
+      catalogSlotLabel: 'Hasat Sezonu',
+      label: 'fal.ai editorial post',
+      slotRole: 'fal_only_post',
+    })).toBe('Hasat Sezonu');
+    expect(customerSlotDisplayName({
+      label: 'fal.ai sinematik story',
+      slotRole: 'fal_only_story',
+    })).toBe('sinematik story');
+    expect(customerSlotStatusLabel('rendering')).toBe('Üretiliyor');
+    expect(customerSlotStatusLabel('pending')).toBe('Sırada');
+    expect(customerStatusFromFactoryJob('claimed')).toBe('rendering');
+    expect(customerStatusFromFactoryJob('skipped')).toBe('missing');
   });
 });
