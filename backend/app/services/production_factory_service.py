@@ -1321,6 +1321,8 @@ def _bullmq_defer_delay_sec(reason: str) -> float:
         return 60.0
     if reason in {"enqueue_failed", "bullmq enqueue failed"}:
         return 30.0
+    if "fetch failed" in lower or "silent-inflight" in lower:
+        return float(jobs.LANE_LOOK_OPS_BACKOFF_SEC)
     return 45.0
 
 

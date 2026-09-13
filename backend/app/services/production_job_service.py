@@ -1190,10 +1190,19 @@ async def reclaim_silent_inflight(
             text(
                 """
                 UPDATE production_jobs j
-                SET status = 'pending',
+                SET attempts = j.attempts + 1,
+                    status = CASE
+                        WHEN j.attempts + 1 >= COALESCE(j.max_attempts, 3)
+                            THEN 'exhausted'
+                        ELSE 'pending' END,
                     claimed_at = NULL,
                     claimed_by = NULL,
-                    run_after = now(),
+                    run_after = now() + make_interval(
+                        secs => LEAST(
+                            :cap,
+                            :backoff * power(2, GREATEST(j.attempts, 0))
+                        )
+                    ),
                     last_error = 'fetch failed [silent-inflight]',
                     updated_at = now()
                 WHERE j.status IN ('claimed', 'running')
@@ -1216,6 +1225,8 @@ async def reclaim_silent_inflight(
             {
                 "mission_id": str(mission_id) if mission_id else None,
                 "silent_sec": int(silent_sec),
+                "backoff": int(LANE_LOOK_OPS_BACKOFF_SEC),
+                "cap": int(_BACKOFF_CAP_SEC),
             },
         )
         rows = res.fetchall()

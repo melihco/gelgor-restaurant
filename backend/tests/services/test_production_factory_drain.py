@@ -217,6 +217,9 @@ def test_silent_post_inflight_reclaim_is_shorter_than_reel_window() -> None:
     assert "NOT ILIKE '%reel%'" in src
     assert "silent-inflight" in src
     assert "updated_at" in src
+    assert "attempts = j.attempts + 1" in src
+    assert ":backoff" in src
+    assert "run_after = now() +" in src
 
 
 def test_touch_running_only_bumps_updated_at() -> None:
@@ -285,6 +288,8 @@ def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
     assert pfs._is_ops_defer_reason("production_in_flight") is True
     assert pfs._is_ops_defer_reason("production_worker_offline") is True
     assert pfs._is_ops_defer_reason("fetch failed") is True
+    assert pfs._bullmq_defer_delay_sec("fetch failed") == 180.0
+    assert pfs._bullmq_defer_delay_sec("fetch failed [silent-inflight]") == 180.0
     assert pfs._is_ops_defer_reason(
         "Caption–tasarım–görsel tutarsız (overlay_ungrounded)",
     ) is True
