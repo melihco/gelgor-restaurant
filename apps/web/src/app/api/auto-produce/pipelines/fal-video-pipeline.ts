@@ -418,7 +418,6 @@ export const falVideoHandler: ProductionPipelineHandler = {
         sampleHeadline: templateBinding.matched?.sampleHeadline,
         sampleSubtitle: templateBinding.matched?.sampleSubtitle,
         showSubline: templateBinding.matched?.showSubline,
-        catalogSlotKey: inputs.catalogSlotKey,
         brandName: inputs.resolvedBrandName,
         brandColors,
         vibe: designVibe,
