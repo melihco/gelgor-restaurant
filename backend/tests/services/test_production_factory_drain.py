@@ -241,7 +241,13 @@ def test_ops_defer_reasons_are_worker_locks_not_empty_wallet() -> None:
     ) is True
     assert pfs._is_ops_defer_reason("withheld_quality_gate") is False
     assert pfs._is_ops_defer_reason("no_artifact") is False
-    assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is False
+    assert pfs._is_ops_defer_reason("provider_billing_circuit_open [skip-no-fal-quota]") is True
+    assert pfs._is_ops_defer_reason("provider_billing_circuit_open") is True
+    assert pfs._bullmq_defer_delay_sec("provider_billing_circuit_open") == 1800.0
+    assert pfs._resolve_bullmq_batch_reason(
+        {"error": "provider_billing_circuit_open"},
+        http_status=402,
+    ) == "provider_billing_circuit_open"
     assert pfs._is_ops_defer_reason("budget_exhausted") is False
     assert pfs._is_ops_defer_reason(
         "Aylık kredi limiti doldu (25,689 / 25,000 SA Kredi)",
@@ -307,6 +313,18 @@ def test_empty_wallet_and_missing_pack_are_terminal() -> None:
     assert pfs._is_non_retryable_slot_failure(shop_credits) is True
     assert pfs._is_ops_defer_reason(shop_pack) is False
     assert pfs._is_ops_defer_reason(beach_billing) is False
+    shop_circuit = "provider_billing_circuit_open: OpenAI kotası doldu"
+    beach_circuit = "provider_billing_circuit_open [skip-no-fal-quota]"
+    assert is_terminal_produce_error(shop_circuit) is False
+    assert is_terminal_produce_error(beach_circuit) is False
+    assert pfs._is_ops_defer_reason(shop_circuit) is True
+    assert pfs._is_ops_defer_reason(beach_circuit) is True
+    shop_type = "Görseldeki metin doğrulanamadı veya yarım kaldı"
+    beach_type = "Görseldeki metin doğrulanamadı veya yarım kaldı"
+    assert is_terminal_produce_error(shop_type) is True
+    assert is_terminal_produce_error(beach_type) is True
+    assert pfs._is_non_retryable_slot_failure(shop_type) is True
+    assert pfs._is_non_retryable_slot_failure(beach_type) is True
 
 
 def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
@@ -375,7 +393,8 @@ def test_publish_code_map_shop_and_beach() -> None:
     beach_reel = "Reel için video gerekli"
 
     assert is_retryable_publish_error(shop_quality) is True
-    assert is_retryable_publish_error(beach_type) is True
+    assert is_retryable_publish_error(beach_type) is False
+    assert is_terminal_produce_error(beach_type) is True
     assert is_retryable_publish_error(shop_cohere) is True
     assert is_retryable_publish_error("quality_hard_block") is True
     assert is_terminal_produce_error(shop_quality) is False
@@ -425,7 +444,7 @@ def test_publish_code_map_shop_and_beach() -> None:
     ) is False
     assert pfs._is_non_retryable_slot_failure(
         beach_type, produce_data=beach_hidden, slot_key="1:fal_designed_story"
-    ) is False
+    ) is True
     assert pfs._is_non_retryable_slot_failure(
         shop_pack, produce_data=shop_half, slot_key="2:fal_designed_post"
     ) is True
@@ -479,7 +498,7 @@ def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     assert pfs._defer_max_age_sec(ops) == pfs._ops_defer_max_age_sec()
     assert pfs._defer_max_age_sec("no_artifact") is None
     assert pfs._quality_defer_max_age_sec() < pfs._ops_defer_max_age_sec()
-    assert pfs._defer_max_age_sec("provider_billing_circuit_open") is None
+    assert pfs._defer_max_age_sec("provider_billing_circuit_open") == pfs._ops_defer_max_age_sec()
 
 
 # ── Drain flow helpers ───────────────────────────────────────────────────────
@@ -938,9 +957,13 @@ async def test_factory_watchdog_reclaims_and_schedules_drains(
     async def _exhaust(*, limit: int = 80):
         return 3
 
+    async def _silent(*_a, **_k):
+        return 0
+
     monkeypatch.setattr(
         pfs.jobs, "list_mission_ids_with_any_open_jobs", _list_any, raising=True
     )
+    monkeypatch.setattr(pfs.jobs, "reclaim_silent_inflight", _silent, raising=True)
     monkeypatch.setattr(pfs.jobs, "reclaim_stale_jobs", _reclaim, raising=True)
     monkeypatch.setattr(
         pfs.jobs, "exhaust_open_terminal_error_jobs", _exhaust, raising=True

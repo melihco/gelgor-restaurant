@@ -496,12 +496,12 @@ def _is_non_retryable_slot_failure(
     """
     if jobs.is_retryable_publish_error(reason):
         return False
+    if jobs.is_terminal_produce_error(reason):
+        return True
     code = _publish_code_for_slot(reason, produce_data=produce_data, slot_key=slot_key)
     if code in _RETRYABLE_PUBLISH_CODES:
         return False
     if code in _TERMINAL_PUBLISH_CODES:
-        return True
-    if jobs.is_terminal_produce_error(reason):
         return True
     lower = (reason or "").strip().lower()
     if any(marker in lower for marker in _NON_RETRYABLE_FAILURE_MARKERS):
@@ -1112,6 +1112,8 @@ _TRANSIENT_OPS_DEFER_MARKERS = (
     "fetch failed",
     "this operation was aborted",
     "aborted",
+    "provider_billing_circuit_open",
+    "skip-no-fal-quota",
 )
 
 # Quality / template gates — the slot's own inputs failed a gate, so every retry
@@ -1211,6 +1213,13 @@ def _resolve_bullmq_batch_reason(
             or ""
         ).strip()
         return err[:500] if err else "budget_exhausted"
+    if http_status == 402:
+        err = str(
+            (produce_data or {}).get("error")
+            or (produce_data or {}).get("reason")
+            or ""
+        ).strip()
+        return err[:500] if err else "provider_billing_circuit_open"
     if http_status == 0:
         err = str((produce_data or {}).get("error") or "").strip()
         return err[:500] if err else "auto_produce_unreachable"
@@ -1238,7 +1247,7 @@ def _bullmq_defer_delay_sec(reason: str) -> float:
     if "aylık kredi" in lower or "sa kredi" in lower or "token_wallet" in lower:
         return 900.0
     if "provider_billing" in lower or "skip-no-fal-quota" in lower:
-        return 900.0
+        return 1800.0
     if "budget" in lower or "günlük" in lower:
         return 600.0
     if (
@@ -1273,6 +1282,7 @@ def _bullmq_defer_reasons() -> frozenset[str]:
         "bullmq enqueue failed",
         "route_still_running",
         "budget_exhausted",
+        "provider_billing_circuit_open",
     })
 
 
