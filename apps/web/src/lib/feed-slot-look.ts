@@ -91,6 +91,8 @@ export type FeedSlotLookIssue =
   | 'look_call_failed'
   | 'look_no_credits'
   | 'no_pick'
+  | 'empty_shortlist'
+  | 'subject_conflict'
   | 'incomplete_headline';
 
 export type FeedSlotLookResult =
@@ -173,6 +175,20 @@ function candidateHasReadableIdentity(candidate: FeedSlotLookCandidate): boolean
   return String(candidate.visibleLabelText ?? '').trim().length >= 3;
 }
 
+/** Sell shortlist is already SKU-ranked. Model null / scene_fill must not drop the card. Place never lands here. */
+function bindSellShortlistPick(input: {
+  pickIndex: number | null;
+  jobKind: LookJobKind;
+  restage: boolean;
+  candidates: readonly FeedSlotLookCandidate[];
+}): number | null {
+  if (input.pickIndex != null) return input.pickIndex;
+  if (input.jobKind !== 'sell' || input.candidates.length === 0) return null;
+  const labeled = input.candidates.findIndex(candidateHasReadableIdentity);
+  if (labeled >= 0) return labeled;
+  return input.restage ? 0 : null;
+}
+
 function fillAdaptiveLookDraft(
   draft: Partial<FeedSlotPack>,
   seed: FeedSlotLookCandidate,
@@ -180,24 +196,29 @@ function fillAdaptiveLookDraft(
 ): Partial<FeedSlotPack> {
   const label = String(seed.visibleLabelText ?? '').trim();
   const desc = String(seed.description ?? '').trim();
+  const hint = String(ideationHint ?? '').trim();
   const evidence = String(draft.evidenceNote ?? '').trim().length >= 4
     ? String(draft.evidenceNote)
-    : (label ? `Etiket: ${label}${desc ? `. ${desc}` : ''}` : desc);
-  const hint = String(ideationHint ?? '').trim();
+    : (label ? `Etiket: ${label}${desc ? `. ${desc}` : ''}` : (desc || hint));
   const weeklyScene = (isPlaceSceneText(hint) || isProcessOrBtsSceneText(hint))
     && hint.length >= 16
     ? hint
     : '';
   const caption = String(draft.caption ?? '').trim().length >= 16
     ? String(draft.caption)
-    : (weeklyScene || evidence);
+    : (weeklyScene || (hint.length >= 16 ? hint : '') || evidence);
   const role = draft.photoRole && draft.photoRole !== 'scene_fill'
     ? draft.photoRole
     : (label ? 'product_for_sale' : 'venue');
   const shell = draft.shellDirection
     ?? (role === 'product_for_sale' ? 'product_hero' : 'venue_ambiance');
-  const headline = String(draft.headline ?? '').trim()
+  let headline = String(draft.headline ?? '').trim()
     || completeHeadlineFromCaption(caption);
+  if (!headline || isIncompleteOverlayPhrase(headline)) {
+    const first = caption.split(/[.!?…\n—–,]/)[0]?.trim() ?? '';
+    const rescued = keepCompleteOverlaySentence(first) || first;
+    if (rescued.length >= 4) headline = rescued;
+  }
   return {
     ...draft,
     photoRole: role,
@@ -313,6 +334,8 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   look_call_failed: 'Bakış yapılamadı (bakış çağrısı)',
   look_no_credits: 'Bakış yapılamadı (no credits remaining)',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',
+  empty_shortlist: 'Aday fotoğraf listesi boş',
+  subject_conflict: 'Seçilen fotoğraf haftalık ürüne uymuyor',
   incomplete_headline: 'Üst yazı yarım kaldı',
 };
 
@@ -613,15 +636,27 @@ export async function lookFeedSlotPack(
       ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
     }
     const modelPick = pickIndex;
-    pickIndex = contract.bindPickIndex(pickIndex);
+    pickIndex = bindSellShortlistPick({
+      pickIndex: contract.bindPickIndex(pickIndex),
+      jobKind,
+      restage: contract.restage,
+      candidates,
+    });
     if (pickIndex == null) {
       return { ok: false, issues: ['no_pick'] };
     }
     const picked = candidates[pickIndex];
     draft = { ...draft, photoUrl: picked?.url };
-    if (contract.restage && picked) {
+    if (picked && (contract.restage || (jobKind === 'sell' && modelPick == null))) {
       const seedDraft = modelPick == null
-        ? { ...draft, photoRole: undefined, shellDirection: undefined }
+        ? {
+          ...draft,
+          photoRole: undefined,
+          shellDirection: undefined,
+          caption: '',
+          headline: '',
+          evidenceNote: '',
+        }
         : draft;
       draft = fillAdaptiveLookDraft(seedDraft, picked, input.ideationHint);
     }

@@ -700,7 +700,7 @@ export async function resolveGalleryFirstForSlot(input: {
       matchInput,
     });
     if (shortlist.length === 0) {
-      return emptySlotLookResult(['no_pick']);
+      return emptySlotLookResult(['empty_shortlist']);
     }
     const looked = await lookFn({
       slotJob,
@@ -743,7 +743,7 @@ export async function resolveGalleryFirstForSlot(input: {
       weeklySubject
       && canonicalSubjectRelationForMeta(weeklySubject, pickedMeta) === 'conflict'
     ) {
-      return emptySlotLookResult(['no_pick']);
+      return emptySlotLookResult(['subject_conflict']);
     }
     const photoSideText = [pickedMeta?.visibleLabelText, pickedMeta?.description, pickedMeta?.primarySubject]
       .filter(Boolean)

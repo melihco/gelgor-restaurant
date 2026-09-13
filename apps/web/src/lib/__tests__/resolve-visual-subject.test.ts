@@ -132,6 +132,23 @@ describe('resolveAutoVisualSubject / P3', () => {
     ).toBe('venue_ambiance');
   });
 
+  it('camelCase Hub flags reach adaptiveScene the same as snake_case', () => {
+    const camel = resolveAiVisualProductionStandard({
+      aiPhotoEnhance: true,
+      aiAdaptiveScene: true,
+      aiAdaptiveSceneMode: 'auto',
+    });
+    const snake = resolveAiVisualProductionStandard({
+      ai_photo_enhance: true,
+      ai_adaptive_scene: true,
+      ai_adaptive_scene_mode: 'auto',
+    });
+    expect(camel.enabled).toBe(true);
+    expect(camel.adaptiveScene).toBe(true);
+    expect(snake.adaptiveScene).toBe(true);
+    expect(camel.adaptiveScene).toBe(snake.adaptiveScene);
+  });
+
   it('enhance-off noop: resolving subject does not enable visual standard', () => {
     const std = resolveAiVisualProductionStandard({
       ai_photo_enhance: false,

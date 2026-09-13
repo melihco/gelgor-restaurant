@@ -621,10 +621,10 @@ describe('gallery-first — one look owns the pack', () => {
       }),
     });
     expect(gf?.applied).toBe(false);
-    expect(gf?.lookIssues).toContain('no_pick');
+    expect(gf?.lookIssues).toContain('subject_conflict');
   });
 
-  it('shop hours: wedding copy + only jars is paket yok, not an oil pick', () => {
+  it('shop hours: wedding copy + only jars is empty shortlist, not an oil pick', async () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: {
         idea_index: 5,
@@ -644,6 +644,32 @@ describe('gallery-first — one look owns the pack', () => {
       ideationHeadline: 'Düğünlerimize gelin',
     });
     expect(shortlist).toHaveLength(0);
+
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: {
+        idea_index: 5,
+        slot_role: 'fal_designed_post',
+        pipeline: 'fal_design',
+        copy_bundle_id: 'copy_a',
+        publish_channel: 'instagram_organic',
+        catalog_slot_key: 'local_products_shop_weekend_hours_story',
+        catalog_slot_label: 'hafta sonu saatleri',
+      },
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Düğünlerimize gelin, tatmaya bekliyoruz!',
+      ideationHeadline: 'Düğünlerimize gelin',
+      language: 'Turkish',
+      judgeProductClaim: async () => false,
+      lookFn: async () => {
+        throw new Error('look must not run on empty shortlist');
+      },
+    });
+    expect(gf?.applied).toBe(false);
+    expect(gf?.lookIssues).toContain('empty_shortlist');
   });
 
   it('beach: place shortlist is not emptied by a missing product subject', () => {
