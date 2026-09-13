@@ -31,25 +31,29 @@ const CONSISTENCY_SYSTEM = [
   '{"ok": true} or {"ok": false} or {"ok": true, "headline": "<complete line from caption>"}.',
   'ok=false when evidence, caption, or headline name a different product,',
   'or when a place/process card sells a product.',
+  'Do not fail because a generic selling line omitted a visible jar label.',
+  'A range / new-packs / natural-flavors caption on a multi-SKU still is the same story.',
+  'If caption or headline names a label that is in evidence, that is a match — use it.',
   'A slot that names the audience (favorite, range, review, social proof)',
-  'and a product_hero shell are the same job when caption and evidence name the same product.',
+  'and a product_hero shell are the same job when they sell the same product or range.',
   'ok=true when they tell the same story, including grade/process wording.',
   'Add headline only when ok=true AND the given headline is cut, generic, or not the caption claim.',
   'The replacement headline must be a complete sentence taken from the caption — no new product.',
   'If unsure, {"ok": true}.',
 ].join(' ');
 
-/** Satılık kart: yazı ve etiket aynı ürünü söylüyorsa slot adı ikinci iş değildir. */
+/** Satılık kart: genel yelpaze yazısı veya etiketle aynı ürün — slot adı ikinci iş değil. */
 export function packTellsSameProductStory(pack: FeedSlotPack): boolean {
   if (pack.photoRole !== 'product_for_sale' && pack.shellDirection !== 'product_hero') {
     return false;
   }
-  return !sellingCopyMissesEvidence({
-    caption: pack.caption,
+  const base = {
     evidenceNote: pack.evidenceNote,
     photoRole: pack.photoRole,
     shellDirection: pack.shellDirection,
-  });
+  };
+  return !sellingCopyMissesEvidence({ ...base, caption: pack.caption })
+    && !sellingCopyMissesEvidence({ ...base, caption: pack.headline });
 }
 
 export type JudgeFeedPackConsistencyInput = {

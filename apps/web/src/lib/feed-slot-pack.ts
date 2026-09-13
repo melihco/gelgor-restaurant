@@ -353,7 +353,7 @@ const ISSUE_TR: Record<FeedSlotPackIssue, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
-  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  copy_misses_evidence: 'Yazı, fotoğrafta görünmeyen bir ürün söylüyor',
   invented_product_claim: 'Yazı, rafta / etikette olmayan bir ürün söylüyor',
   incoherent_pack: 'Yazı, fotoğraf ve slot aynı işi söylemiyor',
   empty_place_command: 'Yer kartında emir slogan yok',
@@ -395,6 +395,18 @@ const STOP = new Set([
   'olan', 'olarak', 'var', 'yok', 'yaz', 'yazi', 'etiket', 'etiketlerde', 'yaziyor',
   'icinde', 'arka', 'planda', 'gorunmekte', 'gorunuyor', 'the', 'and', 'for',
   'from', 'with', 'our', 'your', 'this', 'that', 'are', 'was',
+  'gore', 'gelen',
+]);
+
+/** Satış dili — etiket değil. Yağ / hasat sözlüğü yok. */
+const GENERIC_SELL = new Set([
+  'dogal', 'katkisiz', 'lezzet', 'deney', 'tadin', 'kesfed',
+  'paket', 'yeni', 'rafta', 'raflar', 'sofra',
+  'kavanoz', 'sise', 'musteri', 'favori', 'yorum',
+  'kaliyor', 'yeter', 'sunar', 'kasik', 'damla', 'kahvalti', 'tabak',
+  'natural', 'flavor', 'flavour', 'taste', 'try', 'range',
+  'pack', 'new', 'jar', 'bottle', 'customer', 'favorite', 'review',
+  'additive',
 ]);
 
 const PLACE_BROCHURE = [
@@ -585,9 +597,18 @@ function evidenceClaimTokens(evidence: string): string[] {
   return tokensOf(source).filter((w) => w.length >= 4);
 }
 
+function foldStem(token: string): string {
+  const stripped = token.replace(/(imiz|umuz|leri|lar|ler|miz|muz|ing|ed)$/g, '');
+  const next = stripped.replace(/(si|su)$/g, '');
+  return next.length >= 4 ? next : token;
+}
+
 function tokenHitsCaption(captionFold: string, token: string): boolean {
   if (captionFold.includes(token)) return true;
-  return captionFold.split(' ').some((w) => covers(w, new Set([token])));
+  const words = captionFold.split(' ');
+  if (words.some((w) => covers(w, new Set([token])))) return true;
+  const stem = foldStem(token);
+  return stem.length >= 4 && words.some((w) => foldStem(w) === stem);
 }
 
 function labelsSupportedByCaption(caption: string, labels: string[]): number {
@@ -611,10 +632,23 @@ function labelsSupportedByCaption(caption: string, labels: string[]): number {
   return supported;
 }
 
+function isGenericSellToken(token: string): boolean {
+  if (GENERIC_SELL.has(token)) return true;
+  for (const stem of GENERIC_SELL) {
+    if (stem.length < 4 || token.length < 4) continue;
+    if (token.startsWith(stem) || stem.startsWith(token)) return true;
+  }
+  return false;
+}
+
+function distinctiveSellTokens(text: string): string[] {
+  return tokensOf(text).filter((w) => w.length >= 4 && !isGenericSellToken(w));
+}
+
 /**
- * Satılık kart: yazı kanıttaki kimliği taşımalı.
- * Tek ortak aile kelimesi (ör. zeytinyağı) yetmez — kanıtın çoğunluğu
- * yazıda durmalı. Yağ / hasat sözlüğü yok.
+ * Satılık kart: yazı kanıtta olmayan bir ürün söylüyorsa kaçırır.
+ * Genel satış cümlesi etiket aramaz. Etiket yazıda duruyorsa kullanılır.
+ * Yağ / hasat sözlüğü yok.
  */
 export function sellingCopyMissesEvidence(input: {
   caption: string;
@@ -635,14 +669,15 @@ export function sellingCopyMissesEvidence(input: {
   ) {
     return false;
   }
+  const claims = distinctiveSellTokens(input.caption);
+  if (claims.length === 0) return false;
   const labels = quotedEvidenceLabels(input.evidenceNote);
   if (labels.length) {
     return labelsSupportedByCaption(input.caption, labels) === 0;
   }
-  const claims = evidenceClaimTokens(input.evidenceNote);
-  if (claims.length === 0) return false;
-  const cap = fold(input.caption);
-  const hits = claims.filter((t) => tokenHitsCaption(cap, t)).length;
+  const evidence = fold(input.evidenceNote);
+  if (!evidence) return false;
+  const hits = claims.filter((t) => tokenHitsCaption(evidence, t)).length;
   const need = claims.length >= 3 ? 2 : 1;
   return hits < need;
 }

@@ -408,7 +408,7 @@ describe('feed-slot-pack — vitrine stamp', () => {
     evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
   };
 
-  it('shop: adaptive favorite sentence on an oil still stamps visible', () => {
+  it('shop: generic favorite sentence on an oil still stamps visible', () => {
     const favorite = {
       slotJob: 'müşteri favorisi',
       photoUrl: 'https://cdn.example.com/oil.jpg',
@@ -418,11 +418,33 @@ describe('feed-slot-pack — vitrine stamp', () => {
       shellDirection: 'product_hero' as const,
       evidenceNote: 'Etiket: NATUREL SIZMA ZEYTİNYAĞI',
     };
-    expect(validateFeedSlotPack(favorite)).toContain('copy_misses_evidence');
-    expect(validateFeedSlotPack(favorite, { adaptiveScene: true })).not.toContain('copy_misses_evidence');
-    const stamp = stampFeedSlotPackMetadata(favorite, { adaptiveScene: true });
+    expect(validateFeedSlotPack(favorite)).not.toContain('copy_misses_evidence');
+    const stamp = stampFeedSlotPackMetadata(favorite);
     expect(stamp.feed_slot_pack_ok).toBe(true);
-    expect(isStampedFeedSlotPackVisible({ ...stamp, adaptive_scene: true })).toBe(true);
+    expect(isStampedFeedSlotPackVisible(stamp)).toBe(true);
+  });
+
+  it('shop: generic assortment copy on a multi-jar still does not hunt labels', () => {
+    const pack = {
+      slotJob: 'müşteri favorisi',
+      photoUrl: 'https://cdn.example.com/honey.jpg',
+      photoRole: 'product_for_sale' as const,
+      caption: 'Doğal ve katkısız lezzetleri deneyin',
+      headline: 'Çam balı',
+      shellDirection: 'product_hero' as const,
+      evidenceNote:
+        "Üç kavanoz bal, etiketlerde 'Çam Balı', 'Kekik Balı', 'Çiçek Balı' yazıyor.",
+    };
+    expect(validateFeedSlotPack(pack)).toEqual([]);
+    const grounded = groundFeedSlotCopy({
+      slotJob: pack.slotJob,
+      photoRole: pack.photoRole,
+      shellDirection: pack.shellDirection,
+      evidenceNote: pack.evidenceNote,
+      caption: pack.caption,
+      headline: pack.headline,
+    });
+    expect(grounded.caption).toBe(pack.caption);
   });
 
   it('shop: stamps a full pack visible', () => {

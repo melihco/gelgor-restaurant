@@ -720,12 +720,13 @@ describe('feed-slot-look — shop + beach', () => {
       ...fullShop,
       caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
       headline: 'Bu kavanoz sofrada kalıyor',
-    })).toBe(false);
+    })).toBe(true);
     expect(isLookedFeedSlotPersistable(shopWeekly, {
       ...fullShop,
-      caption: 'Müşterilerimizden gelen yorumlara göre bu kavanoz sofrada kalıyor.',
-      headline: 'Bu kavanoz sofrada kalıyor',
-    }, { adaptiveScene: true })).toBe(true);
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+      headline: 'Sızma zeytinyağımız raflarda',
+      evidenceNote: "Etiket: 'İNCİR REÇELİ'",
+    })).toBe(false);
     expect(isLookedFeedSlotPersistable(shopWeekly, null)).toBe(false);
     expect(isLookedFeedSlotPersistable(beachWeekly, fullBeach)).toBe(true);
     expect(isLookedFeedSlotPersistable(beachWeekly, null)).toBe(false);

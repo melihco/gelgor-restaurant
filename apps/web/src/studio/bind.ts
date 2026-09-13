@@ -39,7 +39,7 @@ const BIND_MESSAGE: Record<BindFailureCode, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
-  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  copy_misses_evidence: 'Yazı, fotoğrafta görünmeyen bir ürün söylüyor',
   empty_place_command: 'Yer kartında emir slogan yok',
   look_unavailable: 'Bakış yapılamadı',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',

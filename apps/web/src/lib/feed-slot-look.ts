@@ -342,7 +342,7 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   prop_cannot_sell: 'Masadaki dekor, ürün kabuğuna giydirilemez',
   product_needs_identity: 'Satılık ürün dedik ama kanıtta kimlik yok',
   place_cannot_sell: 'Yer/alan işine ürün kabuğu veya satılık sepet giydirilemez',
-  copy_misses_evidence: 'Yazı, fotoğrafın kanıtını söylemiyor',
+  copy_misses_evidence: 'Yazı, fotoğrafta görünmeyen bir ürün söylüyor',
   invented_product_claim: 'Yazı, rafta / etikette olmayan bir ürün söylüyor',
   incoherent_pack: 'Yazı, fotoğraf ve slot aynı işi söylemiyor',
   empty_place_command: 'Yer kartında emir slogan yok',

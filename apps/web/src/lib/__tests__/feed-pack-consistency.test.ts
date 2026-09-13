@@ -47,6 +47,22 @@ function fakeVerdictOpenai(body: Record<string, unknown>, calls: { count: number
 }
 
 describe('feed-pack-consistency — shop + beach', () => {
+  it('shop: generic assortment copy on a multi-jar still is the same story', async () => {
+    const assortment = {
+      ...shopPack(),
+      slotJob: 'müşteri favorisi',
+      caption: 'Doğal ve katkısız lezzetleri deneyin',
+      headline: 'Çam balı',
+      evidenceNote:
+        "Üç kavanoz bal, etiketlerde 'Çam Balı', 'Kekik Balı', 'Çiçek Balı' yazıyor.",
+    };
+    expect(packTellsSameProductStory(assortment)).toBe(true);
+    const result = await applyFeedPackConsistency(assortment, {
+      judge: async () => ({ ok: false }),
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it('shop: favorite slot + product shell is the same story when the label matches', async () => {
     const favorite = {
       ...shopPack(),
