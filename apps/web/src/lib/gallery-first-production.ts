@@ -56,6 +56,7 @@ import {
 import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
 import {
   galleryInventoryTextForIdea,
+  galleryShelfLabelTextForIdea,
   groundFeedSlotCopy,
   parseFeedSlotPack,
   type FeedSlotPack,
@@ -685,11 +686,12 @@ export async function resolveGalleryFirstForSlot(input: {
     const lookFn = input.lookFn ?? lookFeedSlotPack;
     const ideationHint = [ideationHeadline, ideationCaption].filter(Boolean).join(' — ').slice(0, 400);
     const inventoryText = galleryInventoryTextForIdea(input.galleryMeta, ideationHint);
+    const shelfLabels = galleryShelfLabelTextForIdea(input.galleryMeta, ideationHint);
     const invented = input.judgeProductClaim
-      ? await input.judgeProductClaim(ideationHint, inventoryText)
+      ? await input.judgeProductClaim(ideationHint, shelfLabels)
       : await judgeInventedProductClaim({
         ideaText: ideationHint,
-        inventoryText,
+        inventoryText: shelfLabels,
       });
     if (invented) {
       return emptySlotLookResult(['invented_product_claim']);

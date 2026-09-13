@@ -56,6 +56,26 @@ async def complete_production_jobs(request: ProductionJobCompleteRequest) -> dic
     return {"ok": True, **result}
 
 
+class ProductionJobHeartbeatRequest(BaseModel):
+    job_ids: list[str] = Field(default_factory=list)
+
+
+@router.post("/heartbeat")
+async def heartbeat_production_jobs(request: ProductionJobHeartbeatRequest) -> dict:
+    """BullMQ worker pulse — live paints must not look silent to the watchdog."""
+    from app.services import production_job_service as pj
+
+    touched = 0
+    for raw in request.job_ids[:20]:
+        try:
+            job_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if await pj.touch_running(job_id):
+            touched += 1
+    return {"ok": True, "touched": touched}
+
+
 class RequeueBillingRequest(BaseModel):
     workspace_id: str | None = None
     lookback_hours: int = 72

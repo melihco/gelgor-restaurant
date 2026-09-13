@@ -553,8 +553,8 @@ export async function lookFeedSlotPack(
 
   const inventory = [
     String(input.inventoryText ?? ''),
-    ...incoming.map((c) => [c.visibleLabelText, c.primarySubject].filter(Boolean).join(' ')),
-  ].join(' ');
+    ...incoming.map((c) => String(c.visibleLabelText ?? '').trim()),
+  ].filter(Boolean).join(' ');
   const ideaText = String(input.ideationHint ?? '');
   if (!input.productClaimChecked) {
     const invented = deps?.judgeProductClaim

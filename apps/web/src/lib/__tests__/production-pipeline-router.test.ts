@@ -826,5 +826,9 @@ describe('assignmentRequiresDesignedStill', () => {
       pipeline: 'gallery_photo',
       slot_role: 'organic_post',
     })).toBe(false);
+    expect(assignmentRequiresDesignedStill({
+      pipeline: 'premium_editorial',
+      slot_role: 'premium_editorial_campaign_story',
+    })).toBe(true);
   });
 });

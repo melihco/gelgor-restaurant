@@ -5339,9 +5339,14 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       }
     }
 
+    const composedStillUrl = String(
+      (pipelineArtifactMetaPatch as Record<string, unknown> | null)?.final_composed_image_url
+      ?? '',
+    ).trim();
     const nexusPrimaryContentUrl = videoUrl
       ?? imageUrl
-      ?? (designedStoryRequired ? '' : (galleryPreviewUrl ?? ''));
+      ?? (composedStillUrl || null)
+      ?? ((designedStillRequired || designedStoryRequired) ? '' : (galleryPreviewUrl ?? ''));
     if (!nexusPrimaryContentUrl) {
       console.warn(`[auto-produce] no nexus contentUrl for "${headline.slice(0, 50)}", skipping save`);
       results.push({ title: headline, imageUrl: '', error: 'Production failed: no persistable content URL', slotKey });
@@ -5980,13 +5985,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       || (Boolean(imageUrl) && (isFalMissionVideo || isFalOnlyVideo) && !isPlayableVideoUrl(videoUrl)),
     );
     // Never let designed stills fall back to a raw gallery URL in ContentUrl.
-    const persistContentUrl = designedStillIntent && !isPlayableVideoUrl(nexusPrimaryContentUrl)
-      ? nexusPersistableContentUrl(nexusPrimaryContentUrl, [])
-      : nexusPersistableContentUrl(nexusPrimaryContentUrl, [
-        referenceUrl ?? '',
-        ...carouselGalleryUrls,
-        ...carouselUrls,
-      ]);
+    const persistContentUrl = designedStillIntent && !isPlayableVideoUrl(videoUrl) && composedStillUrl
+      ? nexusPersistableContentUrl(composedStillUrl, [])
+      : designedStillIntent && !isPlayableVideoUrl(nexusPrimaryContentUrl)
+        ? nexusPersistableContentUrl(nexusPrimaryContentUrl, [])
+        : nexusPersistableContentUrl(nexusPrimaryContentUrl, [
+          referenceUrl ?? '',
+          ...carouselGalleryUrls,
+          ...carouselUrls,
+        ]);
     if (
       designedStillIntent
       && !isPlayableVideoUrl(persistContentUrl)

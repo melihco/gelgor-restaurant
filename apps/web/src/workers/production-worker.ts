@@ -44,6 +44,36 @@ async function isNextJsReachable(): Promise<boolean> {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+const HEARTBEAT_MS = Math.max(
+  15_000,
+  Number(process.env.PRODUCTION_WORKER_HEARTBEAT_MS ?? 45_000),
+);
+
+function heartbeatUrl(callbackUrl: string): string {
+  return callbackUrl.replace(/\/complete\/?$/, '/heartbeat');
+}
+
+async function touchFactoryJobs(
+  callbackUrl: string,
+  factoryJobs: ProductionSlotJobData['factoryJobs'],
+): Promise<void> {
+  const jobIds = factoryJobs.map((row) => String(row.id ?? '').trim()).filter(Boolean);
+  if (!callbackUrl || jobIds.length === 0) return;
+  try {
+    await fetch(heartbeatUrl(callbackUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Api-Key': INTERNAL_KEY,
+      },
+      body: JSON.stringify({ job_ids: jobIds }),
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch {
+    /* watchdog still has the silent window */
+  }
+}
+
 async function processSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
   const acquired = await tryAcquireGlobalProductionSlot();
   if (!acquired) {
@@ -87,98 +117,106 @@ async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
 
   let produceData: Record<string, unknown> = {};
   let httpStatus = 0;
+  const heartbeatTimer = setInterval(() => {
+    void touchFactoryJobs(callbackUrl, factoryJobs);
+  }, HEARTBEAT_MS);
+  void touchFactoryJobs(callbackUrl, factoryJobs);
 
-  for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
-    if (!(await isNextJsReachable())) {
+  try {
+    for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
+      if (!(await isNextJsReachable())) {
+        const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
+        if (retryDelay === undefined) {
+          console.warn(
+            `[production-worker] auto-produce unreachable after health-check (all retries exhausted) mission=${missionId}`,
+          );
+          break;
+        }
+        console.warn(
+          `[production-worker] Next.js health-check failed mission=${missionId} — retrying in ${retryDelay}ms (attempt ${attempt + 1})`,
+        );
+        await sleep(retryDelay);
+        continue;
+      }
+
+      const abortController = new AbortController();
+      const fetchTimer = setTimeout(() => abortController.abort(), fetchTimeoutMs);
+      try {
+        const resp = await fetch(`${WEB_BASE_URL}/api/auto-produce`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Internal-Api-Key': INTERNAL_KEY,
+            'X-Tenant-Id': workspaceId,
+          },
+          body: JSON.stringify(pinnedAutoProduceBody),
+          signal: abortController.signal,
+        });
+        httpStatus = resp.status;
+        produceData = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+        if (httpStatus === 409) {
+          produceData = {
+            ...produceData,
+            reason: 'production_in_flight',
+            skipped: true,
+            produced: 0,
+          };
+        } else if (httpStatus === 429) {
+          const budgetReason = String(
+            produceData.reason || produceData.error || 'budget_exhausted',
+          );
+          produceData = {
+            ...produceData,
+            reason: budgetReason,
+            error: budgetReason,
+            skipped: true,
+            produced: 0,
+          };
+        }
+      } catch (err) {
+        produceData = { error: err instanceof Error ? err.message : 'auto-produce fetch failed' };
+      } finally {
+        clearTimeout(fetchTimer);
+      }
+
+      if (httpStatus !== 0) break;
+
       const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
       if (retryDelay === undefined) {
         console.warn(
-          `[production-worker] auto-produce unreachable after health-check (all retries exhausted) mission=${missionId}`,
+          `[production-worker] auto-produce unreachable mission=${missionId} error=${String(produceData.error ?? 'unknown')} — all retries exhausted`,
         );
         break;
       }
       console.warn(
-        `[production-worker] Next.js health-check failed mission=${missionId} — retrying in ${retryDelay}ms (attempt ${attempt + 1})`,
+        `[production-worker] auto-produce fetch failed mission=${missionId} — retrying in ${retryDelay}ms (attempt ${attempt + 1})`,
       );
       await sleep(retryDelay);
-      continue;
     }
 
-    const abortController = new AbortController();
-    const fetchTimer = setTimeout(() => abortController.abort(), fetchTimeoutMs);
     try {
-      const resp = await fetch(`${WEB_BASE_URL}/api/auto-produce`, {
+      await fetch(callbackUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Internal-Api-Key': INTERNAL_KEY,
-          'X-Tenant-Id': workspaceId,
         },
-        body: JSON.stringify(pinnedAutoProduceBody),
-        signal: abortController.signal,
+        body: JSON.stringify({
+          mission_id: missionId,
+          workspace_id: workspaceId,
+          factory_jobs: factoryJobs,
+          produce_data: produceData,
+          http_status: httpStatus,
+        }),
       });
-      httpStatus = resp.status;
-      produceData = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
-      if (httpStatus === 409) {
-        produceData = {
-          ...produceData,
-          reason: 'production_in_flight',
-          skipped: true,
-          produced: 0,
-        };
-      } else if (httpStatus === 429) {
-        const budgetReason = String(
-          produceData.reason || produceData.error || 'budget_exhausted',
-        );
-        produceData = {
-          ...produceData,
-          reason: budgetReason,
-          error: budgetReason,
-          skipped: true,
-          produced: 0,
-        };
-      }
     } catch (err) {
-      produceData = { error: err instanceof Error ? err.message : 'auto-produce fetch failed' };
-    } finally {
-      clearTimeout(fetchTimer);
+      throw new Error(`callback failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    if (httpStatus !== 0) break;
-
-    const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
-    if (retryDelay === undefined) {
-      console.warn(
-        `[production-worker] auto-produce unreachable mission=${missionId} error=${String(produceData.error ?? 'unknown')} — all retries exhausted`,
-      );
-      break;
-    }
-    console.warn(
-      `[production-worker] auto-produce fetch failed mission=${missionId} — retrying in ${retryDelay}ms (attempt ${attempt + 1})`,
-    );
-    await sleep(retryDelay);
+    return { missionId, slots: factoryJobs.length, httpStatus };
+  } finally {
+    clearInterval(heartbeatTimer);
   }
-
-  try {
-    await fetch(callbackUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Key': INTERNAL_KEY,
-      },
-      body: JSON.stringify({
-        mission_id: missionId,
-        workspace_id: workspaceId,
-        factory_jobs: factoryJobs,
-        produce_data: produceData,
-        http_status: httpStatus,
-      }),
-    });
-  } catch (err) {
-    throw new Error(`callback failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
-  return { missionId, slots: factoryJobs.length, httpStatus };
 }
 
 function main(): void {

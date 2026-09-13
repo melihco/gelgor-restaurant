@@ -1489,8 +1489,8 @@ async def drain_all_open_missions(limit: int | None = None) -> int:
     already have open ``production_jobs`` rows are touched (no new feed starts).
 
     Enforces workspace-level serialization: only N missions per workspace drain
-    concurrently (default 1 via PRODUCTION_MAX_CONCURRENT_PER_WORKSPACE).
-    This prevents fal/Remotion parallel storms across missions of the same tenant.
+    concurrently (default 2 via PRODUCTION_MAX_CONCURRENT_PER_WORKSPACE).
+    Same-mission still lane stays 1 — two missions, not two paints of one slot.
 
     When ``production_fair_share_enabled``, open missions are chosen one per
     workspace (oldest wait first) so a single tenant cannot monopolize the tick.

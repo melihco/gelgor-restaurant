@@ -210,12 +210,64 @@ def test_silent_post_inflight_reclaim_is_shorter_than_reel_window() -> None:
 
     from app.services import production_job_service as pjs
 
-    assert pjs._SILENT_POST_INFLIGHT_SEC == 600
+    assert pjs._SILENT_POST_INFLIGHT_SEC == 180
     assert pjs._SILENT_POST_INFLIGHT_SEC < pjs._BULLMQ_WATCHDOG_STALE_SEC
     src = inspect.getsource(pjs.reclaim_silent_inflight)
     assert "production_slot_events" in src
     assert "NOT ILIKE '%reel%'" in src
     assert "silent-inflight" in src
+    assert "updated_at" in src
+
+
+def test_touch_running_only_bumps_updated_at() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.touch_running)
+    assert "updated_at = now()" in src
+    assert "status IN ('claimed', 'running')" in src
+    assert "emit_from_job_row" not in src
+
+
+def test_silent_reclaim_drops_auto_produce_redis_locks() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.reclaim_silent_inflight)
+    assert "release_auto_produce_locks" in src
+    lock_src = inspect.getsource(pjs.release_auto_produce_locks)
+    assert "prod_lock:ws:" in lock_src
+    assert "prod_lock:mission:" in lock_src
+
+
+def test_mark_running_ignores_deferred_pending() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.mark_running)
+    assert "AND status IN ('claimed', 'running')" in src
+
+
+def test_silent_inflight_includes_null_claim_running() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.reclaim_silent_inflight)
+    assert "COALESCE(j.updated_at, j.started_at, j.claimed_at)" in src
+
+
+def test_reclaim_stale_includes_null_claim_running() -> None:
+    import inspect
+
+    from app.services import production_job_service as pjs
+
+    src = inspect.getsource(pjs.reclaim_stale_jobs)
+    assert "claimed_at IS NULL" in src
+    assert "started_at" in src
 
 
 def test_operator_kick_reclaim_is_stale_only() -> None:
@@ -389,6 +441,8 @@ def test_lane_blockers_shop_and_beach_do_not_hog_the_paint_lane() -> None:
     assert "exhausted balance" not in sql
     inflight_sql = _live_inflight_exists_sql("j")
     assert "reel" in inflight_sql
+    assert "updated_at" in inflight_sql
+    assert ":silent_sec" in inflight_sql
     video_sql = _video_lane_cooldown_sql()
     assert "user is locked" in video_sql
     assert "exhausted balance" in video_sql

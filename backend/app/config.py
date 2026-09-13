@@ -234,9 +234,9 @@ class Settings(BaseSettings):
     workspace_daily_budget_usd: float = 50.0  # full-quality runs (fal video + design + GPT enhance)
     # Varsayılan kapalı kota; AUTO_PRODUCE_BYPASS_LIMITS=false ile günlük USD limiti açılır
     auto_produce_bypass_limits: bool = True
-    # Max missions draining concurrently per workspace (serial queue = 1)
-    production_max_concurrent_per_workspace: int = 1
-    # Fair-share drain: one runnable mission per workspace, oldest wait first.
+    # Max missions draining concurrently per workspace (2 stills across missions)
+    production_max_concurrent_per_workspace: int = 2
+    # Fair-share drain: up to N missions per workspace, oldest wait first.
     production_fair_share_enabled: bool = True
     # Missions scheduled per watchdog / drain tick (was hardcoded 25).
     production_drain_tick_limit: int = 50

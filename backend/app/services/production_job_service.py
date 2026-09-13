@@ -272,8 +272,9 @@ _BULLMQ_DRAIN_STALE_RECLAIM_SEC = 900  # 15 min — above editorial + persist
 # persist) and re-claimed the same story/post — two JPEGs, vitrin flicker.
 _BULLMQ_WATCHDOG_STALE_SEC = _BULLMQ_DRAIN_STALE_RECLAIM_SEC
 # Deploy / crash: worker never callbacks. Only claimed+running events = silent.
-# Posts finish or fail before 10 min; remotion reels keep the 15 min window.
-_SILENT_POST_INFLIGHT_SEC = 600
+# Heartbeat (touch_running) keeps updated_at fresh during a live 6–10 min paint.
+# No heartbeat for 3 min = dead lock; 10 min was parking the weekly swipe.
+_SILENT_POST_INFLIGHT_SEC = 180
 
 _WORKER_ID = f"{socket.gethostname()}:{uuid.uuid4().hex[:8]}"
 
@@ -389,10 +390,23 @@ async def upsert_jobs(
     return inserted
 
 
-def _live_inflight_exists_sql(alias: str = "j") -> str:
-    """True when another non-stale job already holds this mission *lane*.
+def _still_heartbeat_alive_sql(alias: str = "live") -> str:
+    """Still lane is live only while the worker heartbeats ``updated_at``."""
+    return (
+        f"COALESCE({alias}.updated_at, {alias}.started_at, {alias}.claimed_at) "
+        f">= now() - make_interval(secs => :silent_sec)"
+    )
 
-    A running reel must not block a still claim (and the reverse).
+
+def _reel_claim_alive_sql(alias: str = "live") -> str:
+    return f"{alias}.claimed_at >= now() - make_interval(secs => :stale_sec)"
+
+
+def _live_inflight_exists_sql(alias: str = "j") -> str:
+    """True when another *alive* job already holds this mission *lane*.
+
+    Stills use the heartbeat clock — a silent ``running`` row must not park
+    the weekly swipe. Reels keep the long claimed_at window (fal/Remotion).
     """
     reel_j = _reel_job_sql(alias)
     reel_live = _reel_job_sql("live")
@@ -401,10 +415,12 @@ def _live_inflight_exists_sql(alias: str = "j") -> str:
         SELECT 1 FROM production_jobs live
         WHERE live.mission_id = {alias}.mission_id
           AND live.status IN ('claimed', 'running')
-          AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
           AND (
-            (({reel_j}) AND ({reel_live}))
-            OR (NOT ({reel_j}) AND NOT ({reel_live}))
+            (({reel_j}) AND ({reel_live}) AND {_reel_claim_alive_sql("live")})
+            OR (
+              NOT ({reel_j}) AND NOT ({reel_live})
+              AND {_still_heartbeat_alive_sql("live")}
+            )
           )
     )
     """
@@ -421,6 +437,11 @@ async def has_live_in_flight(
     ``lane='both'`` is true only when still *and* reel are in flight.
     """
     reel = _reel_job_sql("live")
+    params = {
+        "mission_id": str(mission_id),
+        "stale_sec": int(stale_sec),
+        "silent_sec": int(_SILENT_POST_INFLIGHT_SEC),
+    }
     factory = _get_session_factory()
     async with factory() as db:
         if lane == "both":
@@ -428,35 +449,39 @@ async def has_live_in_flight(
                 text(
                     f"""
                     SELECT
-                      bool_or(NOT ({reel})) AS still_live,
-                      bool_or({reel}) AS video_live
+                      bool_or(NOT ({reel}) AND {_still_heartbeat_alive_sql("live")}) AS still_live,
+                      bool_or(({reel}) AND {_reel_claim_alive_sql("live")}) AS video_live
                     FROM production_jobs live
                     WHERE live.mission_id = CAST(:mission_id AS UUID)
                       AND live.status IN ('claimed', 'running')
-                      AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
                     """
                 ),
-                {"mission_id": str(mission_id), "stale_sec": int(stale_sec)},
+                params,
             )
             row = res.first()
             return bool(row and row[0] and row[1])
         extra = ""
+        alive = _still_heartbeat_alive_sql("live")
         if lane == "still":
-            extra = f"AND NOT ({reel})"
+            extra = f"AND NOT ({reel}) AND {alive}"
         elif lane == "video":
-            extra = f"AND ({reel})"
+            extra = f"AND ({reel}) AND {_reel_claim_alive_sql('live')}"
+        else:
+            extra = f"""AND (
+                (({reel}) AND {_reel_claim_alive_sql("live")})
+                OR (NOT ({reel}) AND {alive})
+            )"""
         res = await db.execute(
             text(
                 f"""
                 SELECT 1 FROM production_jobs live
                 WHERE live.mission_id = CAST(:mission_id AS UUID)
                   AND live.status IN ('claimed', 'running')
-                  AND live.claimed_at >= now() - make_interval(secs => :stale_sec)
                   {extra}
                 LIMIT 1
                 """
             ),
-            {"mission_id": str(mission_id), "stale_sec": int(stale_sec)},
+            params,
         )
         return res.first() is not None
 
@@ -520,7 +545,14 @@ async def claim_batch(
                       AND (
                         (j.status IN ('pending', 'failed') AND j.run_after <= now())
                         OR (j.status IN ('claimed', 'running')
-                            AND j.claimed_at < now() - make_interval(secs => :stale_sec))
+                            AND (
+                              j.claimed_at < now() - make_interval(secs => :stale_sec)
+                              OR (
+                                j.claimed_at IS NULL
+                                AND COALESCE(j.started_at, j.updated_at)
+                                  < now() - make_interval(secs => :stale_sec)
+                              )
+                            ))
                       )
                       AND NOT ({_terminal_error_sql("j.last_error")})
                       AND NOT ({_live_inflight_exists_sql("j")})
@@ -550,6 +582,7 @@ async def claim_batch(
                 "mission_id": str(mission_id) if mission_id else None,
                 "limit": int(limit),
                 "stale_sec": int(stale_sec),
+                "silent_sec": int(_SILENT_POST_INFLIGHT_SEC),
                 "worker": _WORKER_ID,
             },
         )
@@ -586,6 +619,7 @@ async def mark_running(job_id: str | uuid.UUID) -> None:
                     started_at = now(),
                     updated_at = now()
                 WHERE id = CAST(:id AS UUID)
+                  AND status IN ('claimed', 'running')
                 RETURNING *
                 """
             ),
@@ -599,6 +633,31 @@ async def mark_running(job_id: str | uuid.UUID) -> None:
         from app.services.production_line_telemetry_service import emit_from_job_row
 
         await emit_from_job_row(row_dict, "running", status="running")
+
+
+async def touch_running(job_id: str | uuid.UUID) -> bool:
+    """Keep a live paint off the silent-inflight reclaim clock.
+
+    Updates ``updated_at`` only — no slot event (a heartbeat event would
+    make ``reclaim_silent_inflight`` treat the row as producing forever).
+    """
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                UPDATE production_jobs
+                SET updated_at = now()
+                WHERE id = CAST(:id AS UUID)
+                  AND status IN ('claimed', 'running')
+                RETURNING id
+                """
+            ),
+            {"id": str(job_id)},
+        )
+        row = res.first()
+        await db.commit()
+    return row is not None
 
 
 async def merge_job_payload(
@@ -1088,7 +1147,14 @@ async def reclaim_stale_jobs(
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND status IN ('claimed', 'running')
-                  AND claimed_at < now() - make_interval(secs => :stale_sec)
+                  AND (
+                    claimed_at < now() - make_interval(secs => :stale_sec)
+                    OR (
+                      claimed_at IS NULL
+                      AND COALESCE(started_at, updated_at)
+                        < now() - make_interval(secs => :stale_sec)
+                    )
+                  )
                 RETURNING id
                 """
             ),
@@ -1097,6 +1163,7 @@ async def reclaim_stale_jobs(
         rows = res.fetchall()
         await db.commit()
     if rows:
+        await _release_auto_produce_locks_for_mission(mission_id)
         logger.info(
             "production_jobs.reclaim_stale",
             mission_id=str(mission_id),
@@ -1131,7 +1198,8 @@ async def reclaim_silent_inflight(
                     updated_at = now()
                 WHERE j.status IN ('claimed', 'running')
                   AND j.slot_key NOT ILIKE '%reel%'
-                  AND j.claimed_at < now() - make_interval(secs => :silent_sec)
+                  AND COALESCE(j.updated_at, j.started_at, j.claimed_at)
+                    < now() - make_interval(secs => :silent_sec)
                   AND (
                     CAST(:mission_id AS UUID) IS NULL
                     OR j.mission_id = CAST(:mission_id AS UUID)
@@ -1142,7 +1210,7 @@ async def reclaim_silent_inflight(
                       AND e.recorded_at >= j.claimed_at - interval '2 seconds'
                       AND e.event_type NOT IN ('claimed', 'running')
                   )
-                RETURNING j.id
+                RETURNING j.id, j.workspace_id, j.mission_id
                 """
             ),
             {
@@ -1153,12 +1221,60 @@ async def reclaim_silent_inflight(
         rows = res.fetchall()
         await db.commit()
     if rows:
+        seen: set[tuple[str, str]] = set()
+        for row in rows:
+            ws, mid = str(row[1]), str(row[2])
+            if (ws, mid) in seen:
+                continue
+            seen.add((ws, mid))
+            await release_auto_produce_locks(workspace_id=ws, mission_id=mid)
         logger.info(
             "production_jobs.reclaim_silent_inflight",
             mission_id=str(mission_id) if mission_id else None,
             reclaimed=len(rows),
         )
     return len(rows)
+
+
+async def release_auto_produce_locks(
+    *,
+    workspace_id: str | uuid.UUID,
+    mission_id: str | uuid.UUID | None = None,
+) -> None:
+    """Drop Next.js Redis produce locks so a zombie cannot 409 the brand."""
+    from app.services.redis_cache import cache
+
+    keys = [
+        f"prod_lock:ws:{workspace_id}",
+        f"prod_lock:ws-video:{workspace_id}",
+    ]
+    if mission_id:
+        keys.extend(
+            [
+                f"prod_lock:mission:{mission_id}",
+                f"prod_lock:mission-video:{mission_id}",
+            ]
+        )
+    await cache.delete(*keys)
+
+
+async def _release_auto_produce_locks_for_mission(mission_id: uuid.UUID) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT workspace_id FROM production_jobs
+                    WHERE mission_id = CAST(:mission_id AS UUID)
+                    LIMIT 1
+                    """
+                ),
+                {"mission_id": str(mission_id)},
+            )
+        ).first()
+    if row:
+        await release_auto_produce_locks(workspace_id=row[0], mission_id=mission_id)
 
 
 async def reclaim_inflight_jobs(mission_id: uuid.UUID) -> int:

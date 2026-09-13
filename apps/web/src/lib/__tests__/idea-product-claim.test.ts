@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type OpenAI from 'openai';
 import { galleryInventoryText } from '@/lib/feed-slot-pack';
-import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import {
+  ideaCoveredByShelfLabels,
+  judgeInventedProductClaim,
+} from '@/lib/idea-product-claim';
 
 function fakeJudgeOpenai(invented: boolean, calls: { count: number }) {
   return {
@@ -60,7 +63,7 @@ describe('judgeInventedProductClaim — shop + beach', () => {
       inventoryText: 'NATUREL SIZMA ZEYTİNYAĞI olive_oil',
       openai: fakeJudgeOpenai(false, calls),
     })).toBe(false);
-    expect(calls.count).toBe(2);
+    expect(calls.count).toBe(1);
   });
 
   it('beach: invented drink name can withhold; labeled spritz stays open', async () => {
@@ -75,7 +78,40 @@ describe('judgeInventedProductClaim — shop + beach', () => {
       inventoryText: 'YULA SPRITZ cocktail sunset',
       openai: fakeJudgeOpenai(false, calls),
     })).toBe(false);
-    expect(calls.count).toBe(2);
+    expect(calls.count).toBe(1);
+  });
+
+  it('shop: labeled çam balı does not call the model', async () => {
+    const calls = { count: 0 };
+    const invented = await judgeInventedProductClaim({
+      ideaText: 'Müşterilerimiz çam balını çok seviyor. Datça’nın çam balı.',
+      inventoryText: 'DİKEN BALI ÇAM BALI PINE HONEY honey',
+      openai: fakeJudgeOpenai(true, calls),
+    });
+    expect(invented).toBe(false);
+    expect(calls.count).toBe(0);
+  });
+
+  it('restaurant: empty shelf does not invent a breakfast claim', async () => {
+    const calls = { count: 0 };
+    const invented = await judgeInventedProductClaim({
+      ideaText: 'Bu yaz bahçemizde sunulan serpme köy kahvaltımızla buluşun.',
+      inventoryText: '',
+      openai: fakeJudgeOpenai(true, calls),
+    });
+    expect(invented).toBe(false);
+    expect(calls.count).toBe(0);
+  });
+
+  it('beach: unlabeled venue tags are not a drink catalog', async () => {
+    const calls = { count: 0 };
+    const invented = await judgeInventedProductClaim({
+      ideaText: 'Signature cocktail at sunset on the terrace.',
+      inventoryText: '',
+      openai: fakeJudgeOpenai(true, calls),
+    });
+    expect(invented).toBe(false);
+    expect(calls.count).toBe(0);
   });
 
   it('fail-opens when the model throws', async () => {
@@ -93,5 +129,28 @@ describe('judgeInventedProductClaim — shop + beach', () => {
       } as unknown as OpenAI,
     });
     expect(invented).toBe(false);
+  });
+});
+
+describe('ideaCoveredByShelfLabels — shop + restaurant', () => {
+  it('shop: çam balı hits ÇAM BALI / PINE HONEY', () => {
+    expect(ideaCoveredByShelfLabels(
+      'Çam balımız doğadan sofranıza',
+      'DİKEN BALI ÇAM BALI PINE HONEY',
+    )).toBe(true);
+  });
+
+  it('shop: şam balı does not ride on çam labels', () => {
+    expect(ideaCoveredByShelfLabels(
+      'Müşterilerimiz şam balını çok seviyor',
+      'DİKEN BALI ÇAM BALI',
+    )).toBe(false);
+  });
+
+  it('restaurant: breakfast copy is not covered by garden tags', () => {
+    expect(ideaCoveredByShelfLabels(
+      'Serpme köy kahvaltımızla buluşun',
+      'garden table dining turkish_breakfast',
+    )).toBe(false);
   });
 });

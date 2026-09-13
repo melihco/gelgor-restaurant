@@ -112,7 +112,7 @@ services:
       - key: PRODUCTION_FAIR_SHARE_ENABLED
         value: "true"
       - key: PRODUCTION_MAX_CONCURRENT_PER_WORKSPACE
-        value: "1"
+        value: "2"
       - key: PRODUCTION_DRAIN_TICK_LIMIT
         value: "50"
       - key: PRODUCTION_FACTORY_DRAIN_BATCH

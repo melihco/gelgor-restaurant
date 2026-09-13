@@ -1,6 +1,9 @@
 /**
  * Fikir, raftaki etiketlerin bilmediği bir ürün söylüyorsa kart yok.
  * Çeşit / hasat sözlüğü yok — tek katalog tenant etiket metni; karar ucuz sohbet.
+ *
+ * Etiket yoksa (restoran / yazısız plaj) açık bırak. Fikir etiketle
+ * örtüşüyorsa (çam balı ↔ ÇAM BALI) modele sormadan açık bırak.
  */
 
 import OpenAI from 'openai';
@@ -22,11 +25,12 @@ const CLAIM_SYSTEM = [
   'that the shelf labels do not support.',
   'Shelf text is the only catalog. No brand rules. No variety dictionaries.',
   'Return JSON: {"invented": true} or {"invented": false}.',
-  'invented=true only when the idea asserts a named product / variety / drink',
-  'that is not on the shelf.',
-  'invented=false when the named product is on the shelf (inflection OK),',
+  'invented=true only when the idea asserts a named sellable SKU / variety / drink',
+  'that is not on the shelf labels.',
+  'invented=false when the named product is on the shelf (inflection / language OK),',
   'the wording is a grade or process (not a new SKU), the idea is generic,',
-  'or it is place / hours / scene — or you are unsure.',
+  'or it is place / hours / scene / menu / breakfast / tasting / reservation',
+  '— or the shelf has no product labels — or you are unsure.',
 ].join(' ');
 
 export type JudgeInventedProductClaimInput = {
@@ -38,6 +42,44 @@ export type JudgeInventedProductClaimInput = {
   workspaceId?: string | null;
   slotKey?: string | null;
 };
+
+function foldClaim(text: string): string {
+  return text
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function claimTokens(text: string): string[] {
+  return foldClaim(text).split(' ').filter((w) => w.length >= 3);
+}
+
+/**
+ * Fikir, etiket katmanında duruyor mu? İki ayrı etiket kökü gerekir.
+ * Şam ≠ çam — tek harf kayması örtüşme sayılmaz.
+ */
+export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): boolean {
+  const idea = claimTokens(ideaText);
+  const shelf = claimTokens(labelText);
+  if (idea.length === 0 || shelf.length === 0) return false;
+  const matched = new Set<string>();
+  for (const token of idea) {
+    for (const label of shelf) {
+      const exact = token === label;
+      const prefixed = token.length >= 4
+        && label.length >= 4
+        && (token.startsWith(label) || label.startsWith(token));
+      if (exact || prefixed) matched.add(label);
+    }
+  }
+  // Tek ortak cins (bal / spritz) yetmez. Çam+balı geçer; şam+balı ve
+  // lagoon+spritz modele kalır.
+  return matched.size >= 2;
+}
 
 function shelfReady(ideaText: string, inventoryText: string): boolean {
   return ideaText.trim().length >= 8 && inventoryText.trim().length >= 6;
@@ -59,6 +101,7 @@ export async function judgeInventedProductClaim(
   const idea = String(input.ideaText ?? '').trim().slice(0, 400);
   const inventory = String(input.inventoryText ?? '').trim().slice(0, 800);
   if (!shelfReady(idea, inventory)) return false;
+  if (ideaCoveredByShelfLabels(idea, inventory)) return false;
 
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey && !input.openai) return false;

@@ -9,6 +9,7 @@ import {
   fitHeadlineToMottoBox,
   galleryInventoryText,
   galleryInventoryTextForIdea,
+  galleryShelfLabelTextForIdea,
   GALLERY_INVENTORY_CLAIM_BUDGET,
   groundFeedSlotCopy,
   headlineTakenFromCaption,
@@ -528,5 +529,38 @@ describe('galleryInventoryTextForIdea — shop + beach', () => {
       'Terasta Yula spritz, gün batımında kalın.',
     );
     expect(ranked).toMatch(/YULA SPRITZ/);
+  });
+
+  it('restaurant: garden tags are not shelf labels', () => {
+    const ranked = galleryShelfLabelTextForIdea(
+      {
+        garden: {
+          visibleLabelText: '',
+          primarySubject: 'garden',
+          contentTags: ['garden', 'table', 'turkish_breakfast'],
+        },
+      },
+      'Serpme köy kahvaltımızla bahçede buluşun',
+    );
+    expect(ranked).toBe('');
+  });
+
+  it('shop: çam balı label ranks ahead of oil-only tags', () => {
+    const gallery: Record<string, { visibleLabelText: string; primarySubject: string }> = {};
+    for (let i = 0; i < 20; i += 1) {
+      gallery[`oil-${i}`] = {
+        visibleLabelText: 'Erken Hasat Zeytinyağı Naturel Sızma',
+        primarySubject: 'olive_oil',
+      };
+    }
+    gallery.honey = {
+      visibleLabelText: 'ÇAM BALI PINE HONEY',
+      primarySubject: 'honey',
+    };
+    const ranked = galleryShelfLabelTextForIdea(
+      gallery,
+      'Müşterilerimiz çam balını çok seviyor',
+    );
+    expect(ranked).toMatch(/ÇAM BALI/);
   });
 });

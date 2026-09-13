@@ -456,6 +456,10 @@ function photoInventoryChunk(meta: GalleryInventoryMeta): string {
   ].filter((p) => p.trim()).join(' ');
 }
 
+function photoShelfLabelChunk(meta: GalleryInventoryMeta): string {
+  return String(meta.visibleLabelText ?? '').trim();
+}
+
 /** Etiket + özne — uzun açıklama yok (rastgele kelime envanter sayılmaz). */
 export function galleryInventoryText(
   galleryMeta?: Record<string, GalleryInventoryMeta | undefined> | null,
@@ -478,12 +482,33 @@ export function galleryInventoryTextForIdea(
   ideaText: string,
   budget = GALLERY_INVENTORY_CLAIM_BUDGET,
 ): string {
+  return rankGalleryInventoryChunks(galleryMeta, ideaText, photoInventoryChunk, budget);
+}
+
+/**
+ * Uydurma SKU kapısı yalnız okunabilir etiket. Bahçe / masa etiketi
+ * katalog değildir — restoran ve yazısız plaj açık kalır.
+ */
+export function galleryShelfLabelTextForIdea(
+  galleryMeta: Record<string, GalleryInventoryMeta | undefined> | null | undefined,
+  ideaText: string,
+  budget = GALLERY_INVENTORY_CLAIM_BUDGET,
+): string {
+  return rankGalleryInventoryChunks(galleryMeta, ideaText, photoShelfLabelChunk, budget);
+}
+
+function rankGalleryInventoryChunks(
+  galleryMeta: Record<string, GalleryInventoryMeta | undefined> | null | undefined,
+  ideaText: string,
+  chunkOf: (meta: GalleryInventoryMeta) => string,
+  budget: number,
+): string {
   if (!galleryMeta) return '';
   const idea = tokenSet(ideaText);
   const rows = Object.values(galleryMeta)
     .filter((meta): meta is GalleryInventoryMeta => Boolean(meta))
     .map((meta) => {
-      const chunk = photoInventoryChunk(meta);
+      const chunk = chunkOf(meta);
       const toks = tokenSet(chunk);
       let score = 0;
       for (const token of toks) {

@@ -69,6 +69,18 @@ function beachAssignment(): ProductionAssignment {
   };
 }
 
+function restaurantAssignment(): ProductionAssignment {
+  return {
+    idea_index: 0,
+    slot_role: 'fal_designed_post',
+    pipeline: 'fal_design',
+    copy_bundle_id: 'copy_a',
+    publish_channel: 'instagram_organic',
+    catalog_slot_key: 'restaurant_cafe_dining_ambiance_post',
+    catalog_slot_label: 'bahçe ambiyans',
+  };
+}
+
 function reelAssignment(): ProductionAssignment {
   return {
     idea_index: 0,
@@ -602,6 +614,71 @@ describe('gallery-first — one look owns the pack', () => {
     expect(called).toBe(0);
     expect(gf?.applied).toBe(false);
     expect(gf?.lookIssues).toContain('invented_product_claim');
+  });
+
+  it('shop: labeled çam balı reaches look', async () => {
+    const HONEY = 'https://cdn.example.com/gallery/pine-honey.jpg';
+    let called = 0;
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+        catalog_slot_label: 'müşteri favorisi',
+      },
+      galleryPhotos: [HONEY],
+      galleryMeta: {
+        [HONEY]: {
+          primarySubject: 'honey',
+          visibleLabelText: 'ÇAM BALI PINE HONEY',
+          contentTags: ['honey', 'jar'],
+          suggestedAssetType: 'product_image',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Müşterilerimiz çam balını çok seviyor. Doğal çam balımız rafta.',
+      ideationHeadline: 'Çam balı',
+      lookFn: async (): Promise<FeedSlotLookResult> => {
+        called += 1;
+        return { ok: false, issues: ['no_pick'] };
+      },
+    });
+    expect(called).toBe(1);
+    expect(gf?.lookIssues ?? []).not.toContain('invented_product_claim');
+  });
+
+  it('restaurant: unlabeled garden does not invent serpme kahvaltı', async () => {
+    const GARDEN = 'https://cdn.example.com/gallery/garden-tables.jpg';
+    let called = 0;
+    let judged: string | null = null;
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: restaurantAssignment(),
+      galleryPhotos: [GARDEN],
+      galleryMeta: {
+        [GARDEN]: {
+          primarySubject: 'garden',
+          contentTags: ['garden', 'table', 'turkish_breakfast'],
+          suggestedAssetType: 'venue_reference',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Lokanta',
+      businessType: 'restaurant_cafe',
+      ideationCaption: 'Bu yaz bahçemizde sunulan serpme köy kahvaltımızla buluşun.',
+      ideationHeadline: 'Serpme köy kahvaltımız',
+      judgeProductClaim: async (_idea, inventory) => {
+        judged = inventory;
+        return Boolean(inventory.trim());
+      },
+      lookFn: async (): Promise<FeedSlotLookResult> => {
+        called += 1;
+        return { ok: false, issues: ['no_pick'] };
+      },
+    });
+    expect(judged).toBe('');
+    expect(called).toBe(1);
+    expect(gf?.lookIssues ?? []).not.toContain('invented_product_claim');
   });
 
   it('shop: oil caption cannot look a honey jar even when look tries', async () => {

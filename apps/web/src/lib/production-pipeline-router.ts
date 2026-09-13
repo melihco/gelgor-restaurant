@@ -471,7 +471,9 @@ export function assignmentRequiresDesignedStoryVisual(
 ): boolean {
   return assignment.pipeline === 'fal_story'
     || assignment.pipeline === 'fal_only_story'
-    || assignment.slot_role === 'campaign_story_motion';
+    || assignment.pipeline === 'premium_editorial'
+    || assignment.slot_role === 'campaign_story_motion'
+    || assignment.slot_role === 'premium_editorial_campaign_story';
 }
 
 /**
@@ -490,7 +492,9 @@ export function assignmentRequiresDesignedStill(
     || pipeline === 'premium_editorial'
     || role === 'fal_designed_post'
     || role === 'designed_post'
-    || role === 'designed_typography';
+    || role === 'designed_typography'
+    || role === 'premium_editorial_campaign_story'
+    || role === 'premium_editorial_campaign_post';
 }
 
 export function shouldUseGalleryOnlyPost(assignment: ProductionAssignment): boolean {
