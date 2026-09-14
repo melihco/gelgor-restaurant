@@ -3,6 +3,8 @@ import { cleanupOldBuckets } from '@/app/api/auto-produce/budget';
 import {
   acquireProductionLocksForRun,
   releaseAllProductionLocks,
+  touchProductionLocks,
+  PRODUCTION_LOCK_TOUCH_MS,
   resolveProductionLockLane,
 } from '@/lib/production-in-process-lock';
 import {
@@ -153,6 +155,11 @@ export async function executeAutoProduce(
     }
   }
 
+  // Keep the lock stamped while this run is alive; a dead container's lock
+  // then goes stale within minutes instead of blocking the brand for the TTL.
+  const lockPulse = setInterval(() => {
+    void touchProductionLocks(workspaceId, missionId, lockLane);
+  }, PRODUCTION_LOCK_TOUCH_MS);
   try {
     const alreadyScheduleOverlay = Array.isArray(ideas)
       && ideas.some((row) => (row as Record<string, unknown>).publish_schedule_day != null);
@@ -237,6 +244,7 @@ export async function executeAutoProduce(
     console.error('[studio] Unhandled error:', message);
     return { status: 500, body: { error: message, code: 'auto_produce_internal_error' } };
   } finally {
+    clearInterval(lockPulse);
     await releaseAllProductionLocks(workspaceId, missionId, lockLane);
   }
 }

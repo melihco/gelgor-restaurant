@@ -6,6 +6,9 @@ import {
   releaseAllProductionLocks,
   releaseProductionLock,
   resolveProductionLockLane,
+  touchProductionLocks,
+  lockAgeFromToken,
+  isLockStaleByAge,
 } from '@/lib/production-in-process-lock';
 
 describe('production-in-process-lock', () => {
@@ -28,6 +31,20 @@ describe('production-in-process-lock', () => {
     expect(recovered.workspace).toBe(true);
 
     await releaseProductionLock(ws);
+  });
+
+  it('a touched lock reads as live; an untouched token past the window reads stale', async () => {
+    const shop = '44444444-4444-4444-4444-444444444444';
+    expect(await acquireProductionLock(shop)).toBe(true);
+    await touchProductionLocks(shop, null, 'still');
+    const live = await acquireProductionLocksForRun(shop, null, { recoverStale: true });
+    expect(live.workspace).toBe(false);
+    await releaseProductionLock(shop);
+
+    const now = Date.now();
+    expect(isLockStaleByAge(lockAgeFromToken(`${now - 30_000}-abc`, now))).toBe(false);
+    expect(isLockStaleByAge(lockAgeFromToken(`${now - 5 * 60_000}-abc`, now))).toBe(true);
+    expect(isLockStaleByAge(lockAgeFromToken(null))).toBe(true);
   });
 
   it('forceReleaseProductionLock clears an orphaned workspace lock', async () => {

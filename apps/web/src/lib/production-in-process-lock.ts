@@ -206,15 +206,74 @@ export async function releaseAllProductionLocks(
 }
 
 /**
- * A held lock younger than this is a *live* paint, not an orphan. The worker
- * retries a dropped HTTP connection while the route is still painting; stealing
- * the lock then ran the same slot twice in parallel (double judge, double GPT,
- * second run exhausting the job under the first). Tokens embed their birth time.
+ * A held lock touched more recently than this is a *live* paint, not an
+ * orphan. The worker retries a dropped HTTP connection while the route is
+ * still painting; stealing the lock then ran the same slot twice in parallel
+ * (double judge, double GPT, second run exhausting the job under the first).
+ * Tokens embed their last-touch time; the running route re-touches every
+ * `PRODUCTION_LOCK_TOUCH_MS`, so a container killed mid-paint (deploy
+ * rollover) frees its lock after ~4 min instead of the 12 min TTL.
  */
 export const PRODUCTION_LOCK_STALE_AFTER_MS = Math.max(
   60_000,
-  Number(process.env.PRODUCTION_LOCK_STALE_AFTER_MS ?? 9 * 60 * 1000),
+  Number(process.env.PRODUCTION_LOCK_STALE_AFTER_MS ?? 4 * 60 * 1000),
 );
+export const PRODUCTION_LOCK_TOUCH_MS = 60_000;
+
+const TOUCH_LUA = `if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('set', KEYS[1], ARGV[2], 'EX', ARGV[3]) else return nil end`;
+
+async function touch(key: string, lockMap: Map<string, number>): Promise<boolean> {
+  const now = Date.now();
+  if (useIoRedis || useUpstash) {
+    const old = _heldTokens.get(key);
+    if (!old) return false;
+    const fresh = newToken();
+    if (useIoRedis) {
+      const client = getRedisClient();
+      if (!client) return false;
+      try {
+        const res = await client.eval(TOUCH_LUA, 1, key, old, fresh, PRODUCTION_LOCK_TTL_SEC);
+        if (res === 'OK') _heldTokens.set(key, fresh);
+        return res === 'OK';
+      } catch {
+        return false;
+      }
+    }
+    // Upstash REST has no compare-and-set; best effort — only when still ours.
+    if ((await readLockToken(key)) !== old) return false;
+    const ok = await (async () => {
+      try {
+        const resp = await fetch(
+          `${UPSTASH_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(fresh)}/EX/${PRODUCTION_LOCK_TTL_SEC}`,
+          { method: 'POST', headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` } },
+        );
+        const data = (await resp.json()) as { result: string | null };
+        return data.result === 'OK';
+      } catch {
+        return false;
+      }
+    })();
+    if (ok) _heldTokens.set(key, fresh);
+    return ok;
+  }
+  if (!lockMap.has(key)) return false;
+  lockMap.set(key, now + PRODUCTION_LOCK_TTL_MS);
+  return true;
+}
+
+/** Re-stamp the locks this process holds for a run — call while the paint is alive. */
+export async function touchProductionLocks(
+  workspaceId: string,
+  missionId?: string | null,
+  lane: ProductionLockLane = 'still',
+): Promise<void> {
+  const wsKey = lane === 'video' ? lockKey('ws-video', workspaceId) : lockKey('ws', workspaceId);
+  await touch(wsKey, _workspaceProductionLock);
+  if (missionId) {
+    const mKey = lane === 'video' ? lockKey('mission-video', missionId) : lockKey('mission', missionId);
+    await touch(mKey, _missionProductionLock);
+  }
+}
 
 async function readLockToken(key: string): Promise<string | null> {
   if (useIoRedis) {
