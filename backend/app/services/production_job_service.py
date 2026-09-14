@@ -713,6 +713,54 @@ async def merge_job_payload(
         await db.commit()
 
 
+async def find_persisted_artifact_for_job(
+    workspace_id: str | uuid.UUID,
+    mission_id: str | uuid.UUID,
+    job: dict[str, Any],
+) -> str | None:
+    """Newest live OutputArtifact the Next route already persisted for this slot.
+
+    The route persists the artifact before the worker's HTTP response comes
+    back; when that response is lost (connection drop, deploy rollover, 409 on
+    a retry) the job never reaches ``ready`` and the next claim repaints the
+    same slot — one story was painted five times. Match on mission + idea
+    index + catalog slot, created after the job row.
+    """
+    slot_key = str(job.get("slot_key") or "").strip()
+    idea_index = job.get("idea_index")
+    if not slot_key or idea_index is None:
+        return None
+    factory = _get_session_factory()
+    async with factory() as db:
+        res = await db.execute(
+            text(
+                """
+                SELECT a."Id"::text AS id
+                  FROM "OutputArtifacts" a
+                 WHERE a."TenantId" = CAST(:ws AS UUID)
+                   AND a."IsDeleted" = false
+                   AND COALESCE(a."Metadata"->>'mission_id', a."Metadata"->>'missionId') = :mid
+                   AND a."Metadata"->>'idea_index' = :idea
+                   AND COALESCE(a."Metadata"->>'catalog_slot_key', a."Metadata"->>'library_slot_key') = :slot
+                   AND a."CreatedAt" >= COALESCE(
+                         (SELECT j.created_at FROM production_jobs j WHERE j.id = CAST(:job AS UUID)),
+                         a."CreatedAt")
+                 ORDER BY a."CreatedAt" DESC
+                 LIMIT 1
+                """
+            ),
+            {
+                "ws": str(workspace_id),
+                "mid": str(mission_id),
+                "idea": str(int(idea_index)),
+                "slot": slot_key,
+                "job": str(job.get("id")),
+            },
+        )
+        row = res.first()
+    return str(row[0]) if row else None
+
+
 async def mark_ready(
     job_id: str | uuid.UUID,
     *,

@@ -784,6 +784,28 @@ async def drain_production_jobs(
             batch = [job for job in batch if not _job_gallery_volume_withheld(job)]
             if not batch:
                 continue
+        # A slot the route already persisted (response lost on the way back)
+        # is adopted, not repainted.
+        adopted: list[dict] = []
+        for job in batch:
+            try:
+                aid = await jobs.find_persisted_artifact_for_job(workspace_id, mission_id, job)
+            except Exception as exc:  # pragma: no cover - lookup must never block the drain
+                logger.warning("production_factory.adopt_lookup_failed", error=str(exc)[:160])
+                aid = None
+            if aid:
+                await jobs.mark_ready(job["id"], artifact_id=aid)
+                adopted.append(job)
+                ready_total += 1
+        if adopted:
+            logger.info(
+                "production_factory.adopted_persisted_artifacts",
+                mission_id=str(mission_id),
+                slots=[f"{j['idea_index']}:{j['slot_role']}" for j in adopted],
+            )
+            batch = [job for job in batch if job not in adopted]
+            if not batch:
+                continue
         slot_keys = [f"{job['idea_index']}:{job['slot_role']}" for job in batch]
         gallery_slot_assignments = _gallery_assignments_from_batch(batch)
         catalog_slot_bindings = _catalog_bindings_from_batch(batch)
