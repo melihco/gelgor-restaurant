@@ -17,6 +17,7 @@ import {
 import { persistImageBuffer } from '@/lib/persist-enhanced-images';
 import { resolveMediaFetchUrl } from '@/lib/logo-compositor';
 import type { PremiumEditorialAspectRatio } from './types';
+import { bookOpenAiImagePaint, recordOpenAiPaintSpend } from '@/lib/openai-image-cost';
 
 export interface BackgroundGenerationResult {
   imageUrl: string;
@@ -112,7 +113,24 @@ export async function generateEditorialBackground(opts: {
   preferGalleryGrounding?: boolean;
   /** Catalog shell preview — required second edit image when the slot is locked. */
   templateLayoutImageUrl?: string | null;
+  /** Ledger context — paints booked per call (kept or discarded). */
+  costContext?: import('@/lib/openai-image-cost').OpenAiImageCostContext | null;
 }): Promise<BackgroundGenerationResult> {
+  const bookPaint = (
+    op: 'edit' | 'generate',
+    response: unknown,
+    paintModel: string,
+    paintSize: unknown,
+    paintQuality: unknown,
+  ) => {
+    const usd = bookOpenAiImagePaint({
+      model: paintModel, size: String(paintSize ?? ''), quality: String(paintQuality ?? ''), op,
+      response: response as { usage?: import('@/lib/openai-image-cost').OpenAiImageUsageLike | null },
+      context: { workspaceId: opts.workspaceId, pipeline: 'premium_editorial', ...(opts.costContext ?? {}) },
+      detail: 'premium_editorial_bg',
+    });
+    recordOpenAiPaintSpend(usd);
+  };
   const apiKey = serverConfig.openai.apiKey;
   if (!apiKey) {
     throw new Error('OpenAI image generation is not configured. Set OPENAI_API_KEY.');
@@ -182,6 +200,7 @@ export async function generateEditorialBackground(opts: {
           quality,
           ...(supportsInputFidelity ? { input_fidelity: 'high' as const } : {}),
         } as Parameters<typeof openai.images.edit>[0]);
+        bookPaint('edit', editedRaw, model, size, quality);
 
         const edited = editedRaw as { data?: Array<{ url?: string; b64_json?: string }> };
         const ed = edited.data?.[0];
@@ -218,6 +237,7 @@ export async function generateEditorialBackground(opts: {
     quality,
     output_format: 'webp',
   } as Parameters<typeof openai.images.generate>[0]);
+  bookPaint('generate', generatedRaw, model, size, quality);
 
   const generated = generatedRaw as { data?: Array<{ url?: string; b64_json?: string }> };
   const data = generated.data?.[0];

@@ -328,6 +328,8 @@ export async function generateDesignedPostImage(opts: {
   backgroundIntent?: string;
   /** Approved brand template preview — second edit image for exact layout replica. */
   templateLayoutImageUrl?: string | null;
+  /** Ledger context (mission/slot/attempt) — every paint is booked, kept or not. */
+  costContext?: import('@/lib/openai-image-cost').OpenAiImageCostContext | null;
 }): Promise<string | null> {
   const refs = opts.referenceImageUrls.filter((u) => u && isUsableGalleryPhotoUrl(u)).slice(0, 1);
   if (!opts.designCardPrompt.trim() || refs.length === 0) {
@@ -356,6 +358,7 @@ export async function generateDesignedPostImage(opts: {
       logoPlacement: opts.logoPlacement,
       deferLogoComposite: opts.deferLogoComposite,
       templateLayoutImageUrl: opts.templateLayoutImageUrl ?? undefined,
+      costContext: opts.costContext ?? undefined,
     });
     let res: Response | null = null;
     let lastFetchErr: unknown;
@@ -393,7 +396,11 @@ export async function generateDesignedPostImage(opts: {
       );
       return null;
     }
-    const data = await res.json().catch(() => ({})) as { imageUrl?: string };
+    const data = await res.json().catch(() => ({})) as { imageUrl?: string; costUsd?: number; paintCount?: number };
+    if (typeof data.costUsd === 'number' && data.costUsd > 0) {
+      const { recordOpenAiPaintSpend } = await import('@/lib/openai-image-cost');
+      recordOpenAiPaintSpend(data.costUsd, data.paintCount ?? 1);
+    }
     return typeof data.imageUrl === 'string' ? data.imageUrl : null;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

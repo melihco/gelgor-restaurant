@@ -16,6 +16,8 @@
 
 export type AiCallType =
   | 'gpt_image_enhance'
+  /** One gpt-image `images.edit`/`images.generate` response, kept or discarded. */
+  | 'gpt_image_paint'
   | 'fal_still'
   | 'fal_designed_post'
   | 'fal_only'
@@ -59,6 +61,9 @@ export interface AiCostLine {
   falRequestIds?: string[] | null;
   /** When true, also persist to cost_ledger tables (default: true when workspaceId set). */
   persist?: boolean;
+  /** Explicit ledger idempotency key — for calls with no provider request id
+   *  that must never collapse into one row (every paint is a separate charge). */
+  idempotencyKey?: string;
 }
 
 /**
@@ -157,7 +162,9 @@ async function persistAiCostLine(line: AiCostLine): Promise<void> {
       : undefined);
 
   // Prefer fal request id as stable idempotency — prevents double-count on retries.
-  const idempotencyKey = line.falRequestId
+  const idempotencyKey = line.idempotencyKey
+    ? line.idempotencyKey
+    : line.falRequestId
     ? `fal:${line.falRequestId}`
     : [
       line.artifactId ? 'artifact' : (line.missionId ? 'mission' : 'ws'),

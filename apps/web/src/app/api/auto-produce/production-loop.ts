@@ -20,6 +20,11 @@ import {
   clearFalRequestSlot,
   getCapturedFalRequests,
 } from '@/lib/fal-request-tracker';
+import {
+  beginOpenAiPaintSlot,
+  clearOpenAiPaintSlot,
+  getOpenAiPaintSlotSpend,
+} from '@/lib/openai-image-cost';
 // matchPhotoToContent, pickScoredCarouselSlides, MatchPhotoInput → caption-publish-resolver / image-generators
 import { slotNeedsSceneBrief } from '@/lib/scene-brief-policy';
 import {
@@ -1985,6 +1990,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
     let slotCostPipeline = '';
     try {
     beginFalRequestSlot();
+    beginOpenAiPaintSlot();
     const ideaDedupeKey = buildIdeaProductionDedupeKey(
       missionId,
       idea as Record<string, unknown>,
@@ -6223,8 +6229,15 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             + (slotCostArtifactId ? '' : ' (orphan)'),
           );
         }
-        // Residual = pipeline estimate minus fal catalog lines already recorded.
-        const residual = Math.max(0, slotCostIdeaUsd - falFlush.recordedUsd);
+        // Residual = pipeline estimate minus per-call lines already booked at the
+        // source (fal catalog lines + gpt-image paints echoed back by the route).
+        const openAiPaint = getOpenAiPaintSlotSpend();
+        if (openAiPaint.paints > 0) {
+          console.log(
+            `[auto-produce] gpt-image paints: ${openAiPaint.paints} ≈ $${openAiPaint.usd.toFixed(3)} (booked per paint)`,
+          );
+        }
+        const residual = Math.max(0, slotCostIdeaUsd - falFlush.recordedUsd - openAiPaint.usd);
         if (slotCostArtifactId && residual > 0.001) {
           const { recordArtifactProductionCost } = await import('@/lib/cost-ledger-client');
           await recordArtifactProductionCost({
@@ -6248,6 +6261,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         );
       }
       clearFalRequestSlot();
+      clearOpenAiPaintSlot();
     }
 
     // Soft-pushed billing errors (no throw) still trip the circuit and stop drain.

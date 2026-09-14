@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import { toFile } from 'openai/uploads';
 import { API_BASE_URL, getNextjsInternalOrigin } from '@/lib/runtime-config';
 import { serverConfig } from '@/lib/server-config';
+import { bookOpenAiImagePaint, runWithOpenAiImageCostScope } from '@/lib/openai-image-cost';
 import { shouldPassthroughReferencePhoto, shouldPreserveVenuePhotos } from '@/lib/venue-photo-policy';
 import { isUsableGalleryPhotoUrl } from '@/lib/media-url';
 import {
@@ -192,6 +193,8 @@ type InstagramImageInput = {
   shotType?: string;
   slotRole?: string;
   catalogSlotKey?: string;
+  /** Ledger context for gpt-image paints (mission/slot/attempt) — see openai-image-cost. */
+  costContext?: import('@/lib/openai-image-cost').OpenAiImageCostContext;
   promptPackSummary?: string;
   scratchBriefSources?: string[];
   scratchBriefThin?: boolean;
@@ -1043,14 +1046,19 @@ async function enhanceWithOpenAI(
 
   // Enhance only — uses the configured model, never falls back to pure generation.
   const editModel = serverConfig.imageGen.editModel;
+  const enhanceSize = sizeFor(contentType, editModel);
   const editedRaw = await openai.images.edit({
     model: editModel,
     image: file,
     prompt: enhancePrompt.slice(0, 4000),
     n: 1,
-    size: sizeFor(contentType, editModel) as '1024x1024' | '1024x1536' | '1536x1024' | 'auto',
+    size: enhanceSize as '1024x1024' | '1024x1536' | '1536x1024' | 'auto',
     quality: openAiEditQuality(quality),
   } as Parameters<typeof openai.images.edit>[0]);
+  bookOpenAiImagePaint({
+    model: editModel, quality: openAiEditQuality(quality), size: String(enhanceSize), op: 'edit',
+    response: editedRaw as { usage?: import('@/lib/openai-image-cost').OpenAiImageUsageLike | null }, detail: 'enhance',
+  });
   const edited = editedRaw as { data?: Array<{ url?: string; b64_json?: string }> };
   const ed = edited.data?.[0];
   const imageUrl = ed?.url ?? (ed?.b64_json ? `data:image/png;base64,${ed.b64_json}` : undefined);
@@ -1158,6 +1166,13 @@ async function generateWithOpenAI(
           + ` contentType=${contentType} designCard=${isDesignCard} mode=${designCardMode}`,
         );
         const editedRaw2 = await openai.images.edit(editPayload);
+        // Booked here, before validation/grafiker: a discarded frame costs the same as a kept one.
+        bookOpenAiImagePaint({
+          model: editModel, quality: openAiEditQuality(quality),
+          size: String((editPayload as { size?: string }).size ?? ''), op: 'edit',
+          response: editedRaw2 as { usage?: import('@/lib/openai-image-cost').OpenAiImageUsageLike | null },
+          detail: isDesignCard ? `design_card:${designCardMode}` : 'photo_edit',
+        });
         const editedR = editedRaw2 as { data?: Array<{ url?: string; b64_json?: string }> };
         const ed = editedR.data?.[0];
         const imageUrl = ed?.url ?? (ed?.b64_json ? `data:image/png;base64,${ed.b64_json}` : undefined);
@@ -1209,6 +1224,14 @@ async function generateWithOpenAI(
         } as any),
   );
 
+  bookOpenAiImagePaint({
+    model,
+    quality: isDalleModel(model) ? (quality === 'high' ? 'hd' : 'standard') : openAiEditQuality(quality),
+    size: sizeFor(contentType, model, isDesignCard, designCardMode), op: 'generate',
+    response: image as { usage?: import('@/lib/openai-image-cost').OpenAiImageUsageLike | null },
+    detail: isDesignCard ? 'design_card' : 'scene',
+  });
+
   const data = image.data?.[0];
   const imageUrl = data?.url ?? (data?.b64_json ? `data:image/webp;base64,${data.b64_json}` : undefined);
   if (!imageUrl) {
@@ -1230,6 +1253,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
   }
+  // Every gpt-image paint inside this request is booked to the caller's
+  // mission/slot (kept or discarded) and the spend is echoed back as `costUsd`
+  // so the production loop does not re-estimate it.
+  const costContext = input.costContext ?? {};
+  return runWithOpenAiImageCostScope(
+    { workspaceId: input.workspaceId ?? null, ...costContext },
+    async (scope) => {
+      const res = await handleGenerateRequest(input);
+      if (scope.paints === 0 || !res.headers.get('content-type')?.includes('application/json')) return res;
+      try {
+        const body = await res.json() as Record<string, unknown>;
+        return NextResponse.json(
+          { ...body, costUsd: Math.round(scope.spentUsd * 100000) / 100000, paintCount: scope.paints },
+          { status: res.status },
+        );
+      } catch {
+        return res;
+      }
+    },
+  );
+}
+
+async function handleGenerateRequest(input: InstagramImageInput): Promise<NextResponse> {
 
   if (!input?.title || typeof input.title !== 'string') {
     return NextResponse.json({ error: 'Field "title" is required' }, { status: 400 });

@@ -98,6 +98,7 @@ CATEGORY_LABELS_TR: dict[str, str] = {
     "feed_art_director": "Feed Art Director",
     "scene_brief": "Sahne yönetmeni (scene brief)",
     "gpt_image_enhance": "GPT fotoğraf iyileştirme",
+    "gpt_image_paint": "GPT tasarım boyaması",
     "gallery_vision_analysis": "Galeri vision analizi",
     "market_intelligence": "Pazar analizi",
     "gallery_match": "Galeri eşleştirme",

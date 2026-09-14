@@ -146,6 +146,9 @@ export interface FalDesignedPostInput {
   slotRole?: string | null;
   catalogSlotKey?: string | null;
   announcementType?: string | null;
+  /** Ledger context — gpt-image paints are booked per attempt under this mission/slot. */
+  missionId?: string | null;
+  ideaIndex?: number | null;
 }
 
 export interface FalDesignedPostResult {
@@ -542,6 +545,13 @@ export async function produceFalDesignedPost(
           logoUrl: logoUrl || undefined,
           logoPlacement,
           templateLayoutImageUrl,
+          costContext: {
+            missionId: input.missionId ?? null,
+            ideaIndex: input.ideaIndex ?? null,
+            slotRole: input.slotRole ?? null,
+            pipeline: 'fal_designed_post',
+            attempt,
+          },
         });
         if (!designedUrl) break;
         const textCheck = await validateFalCanvasText(designedUrl, {
@@ -933,6 +943,8 @@ export const falDesignHandler: ProductionPipelineHandler = {
       slotRole: inputs.slotRole,
       catalogSlotKey: inputs.catalogSlotKey,
       announcementType: inputs.announcementType,
+      missionId: inputs.missionId ?? null,
+      ideaIndex: inputs.ideaIndex,
       galleryPhotoMeta,
       brandTheme: inputs.brandTheme,
       canvaArchetypeId: inputs.canvaArchetypeId

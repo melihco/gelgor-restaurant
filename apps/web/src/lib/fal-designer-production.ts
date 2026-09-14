@@ -1818,6 +1818,12 @@ export async function produceFalDesignerStill(
           overlayColor: input.brandColors.primary,
           backgroundIntent: input.sceneHint,
           templateLayoutImageUrl: input.templateLayoutImageUrl ?? undefined,
+          costContext: {
+            missionId: input.missionId ?? null,
+            slotRole: input.slotRole ?? null,
+            pipeline: 'fal_designer_still',
+            attempt: groundedAttempt,
+          },
         });
         if (!groundedUrl) {
           console.warn(
