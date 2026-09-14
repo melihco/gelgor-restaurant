@@ -209,6 +209,32 @@ describe('feed-slot-look — shop + beach', () => {
     if (!result.ok) expect(result.issues).toContain('incoherent_pack');
   });
 
+  it('refuses a pack whose copy is the English photo analysis on a Turkish brand', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'yeni gelenler story',
+        language: 'Turkish',
+        ideationHint: 'Yeni gelen doğal lezzetleri keşfedin.',
+        candidates: [{
+          url: 'https://cdn.example.com/honey-board.jpg',
+          description: 'A wooden serving board displaying five jars of honey with distinct labels. A glass cup of herbal tea.',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: 'A wooden serving board displaying five jars of honey with distinct labels.',
+          caption: 'A wooden serving board displaying five jars of honey with distinct labels. A glass cup of herbal tea.',
+          headline: 'A glass cup of herbal tea',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('language_mismatch');
+  });
+
   it('grounds a copied early-harvest sentence to the label on the bottle', async () => {
     const result = await lookFeedSlotPack(
       {

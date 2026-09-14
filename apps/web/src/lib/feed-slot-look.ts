@@ -36,6 +36,7 @@ import { resolveLookPromptLanguage } from '@/lib/cta-localization';
 import {
   isIncompleteOverlayPhrase,
   keepCompleteOverlaySentence,
+  detectOverlayLocale,
 } from '@/lib/fal-caption-headline';
 import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import { isLookModelVisionUrl } from '@/studio/look-urls';
@@ -97,6 +98,7 @@ export type FeedSlotLookIssue =
   | 'look_call_failed'
   | 'look_no_credits'
   | 'no_pick'
+  | 'language_mismatch'
   | 'empty_shortlist'
   | 'subject_conflict'
   | 'incomplete_headline';
@@ -253,9 +255,12 @@ function fillAdaptiveLookDraft(
   const fromLabel = label.length >= 3
     ? `${label.replace(/\s+/g, ' ').trim()}. Şimdi burada.`
     : '';
+  // Evidence / gallery description is analysis text (English, machine-written)
+  // — it grounds the pack, it is never the customer-facing caption. When no
+  // authored line exists the caption stays empty and the pack fails closed.
   const caption = String(draft.caption ?? '').trim().length >= 16
     ? String(draft.caption)
-    : (weeklyScene || fromLabel || (hint.length >= 16 ? hint : '') || evidence);
+    : (weeklyScene || fromLabel || (hint.length >= 16 ? hint : ''));
   const role = draft.photoRole && draft.photoRole !== 'scene_fill'
     ? draft.photoRole
     : (label ? 'product_for_sale' : 'venue');
@@ -383,6 +388,7 @@ const LOOK_ISSUE_TR: Record<FeedSlotLookIssue, string> = {
   look_call_failed: 'Bakış yapılamadı (bakış çağrısı)',
   look_no_credits: 'Bakış yapılamadı (no credits remaining)',
   no_pick: 'Aday fotoğraflar bu işi kanıtlamıyor',
+  language_mismatch: 'Yazı marka dilinde değil (foto analizi sızdı)',
   empty_shortlist: 'Aday fotoğraf listesi boş',
   subject_conflict: 'Seçilen fotoğraf haftalık ürüne uymuyor',
   incomplete_headline: 'Üst yazı yarım kaldı',
@@ -776,6 +782,21 @@ export async function lookFeedSlotPack(
       headline: sceneCopy.headline,
     }, { adaptiveScene: Boolean(input.adaptiveScene), headlineOpen: true });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
+    // Brand language is SSOT for on-card copy. A pack whose caption or headline
+    // came back in the other language (photo-analysis leak like "A glass cup of
+    // herbal tea") must not paint.
+    const brandLanguage = resolveLookPromptLanguage(input.language) === 'English' ? 'en' : 'tr';
+    const otherLanguage = brandLanguage === 'tr' ? 'en' : 'tr';
+    // Only a *definite* other-language read fails the pack; ASCII Turkish
+    // ("Sofraya bir damla yeter") is unknown to the detector and must pass.
+    const wrongLanguage = (text: string) => detectOverlayLocale(text) === otherLanguage;
+    if (wrongLanguage(parsed.pack.caption) || wrongLanguage(parsed.pack.headline)) {
+      console.warn(
+        `[feed-slot-look] language mismatch (brand=${brandLanguage}) — `
+        + `caption="${String(parsed.pack.caption).slice(0, 60)}" headline="${String(parsed.pack.headline).slice(0, 40)}"`,
+      );
+      return { ok: false, issues: ['language_mismatch'] };
+    }
     const complete = completeLookPack(parsed.pack, {
       adaptiveScene: Boolean(input.adaptiveScene),
     }) ?? { ...parsed.pack, headline: '' };

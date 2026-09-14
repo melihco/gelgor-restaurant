@@ -203,6 +203,18 @@ function fallbackForLocale(dna: BrandCopyDna, locale: 'tr' | 'en'): string {
   return locale === 'en' ? dna.fallbackHeadlineEn : dna.fallbackHeadlineTr;
 }
 
+/**
+ * Word-safe fit. A character slice paints half a word on the card
+ * ("Yerel üretim sürecimizi gözl"); drop whole trailing words instead and
+ * give up (empty) when what is left is no longer a line.
+ */
+function fitWords(line: string, maxLen: number): string {
+  let words = line.split(/\s+/).filter(Boolean);
+  while (words.length && words.join(' ').length > maxLen) words = words.slice(0, -1);
+  const out = words.join(' ').replace(/[,:;—–-]+$/u, '').trim();
+  return out.length >= 6 && (words.length >= 2 || out.length >= 8) ? out : '';
+}
+
 function captionHook(caption: string, maxLen: number, dna: BrandCopyDna): string {
   const clause = caption
     .split(/[.!?\n]+/)
@@ -211,7 +223,7 @@ function captionHook(caption: string, maxLen: number, dna: BrandCopyDna): string
   if (!clause) return '';
   const words = clause.replace(/[#@]/g, '').split(/\s+/).filter(Boolean).slice(0, 7);
   const line = words.join(' ').replace(/[,:;]+$/, '').trim();
-  return line.slice(0, maxLen);
+  return line.length <= maxLen ? line : fitWords(line, maxLen);
 }
 
 export function applyCopyDnaHeadline(input: {
@@ -229,7 +241,10 @@ export function applyCopyDnaHeadline(input: {
   const keyOf = (text: string) => strategistHeadlineKey({ headline: text });
 
   const replace = (next: string, reason: string) => {
-    const clipped = next.trim().slice(0, maxLen);
+    const line = next.trim();
+    const clipped = line.length <= maxLen
+      ? line
+      : (fitWords(line, maxLen) || fallbackForLocale(input.dna, locale).trim().slice(0, maxLen));
     return { headline: clipped, replaced: true, reason };
   };
 

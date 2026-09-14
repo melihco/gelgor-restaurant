@@ -78,6 +78,26 @@ describe('copy-dna', () => {
     expect(r.headline).not.toBe(current);
   });
 
+  it('never cuts a replacement hook mid-word to fit the story budget', () => {
+    const dna = resolveCopyDna({ sector: 'local_products_shop', language: 'tr' });
+    const current = 'Zeytinlerimizi topluyoruz';
+    const r = applyCopyDnaHeadline({
+      headline: current,
+      caption: 'Yerel üretim sürecimizi gözler önüne seriyoruz. Taze zeytinlerden elde ettiğimiz zeytinyağının serüveni burada.',
+      brandName: 'Karaman',
+      dna,
+      recentKeys: new Set([strategistHeadlineKey({ headline: current })]),
+      maxLen: 28,
+    });
+    expect(r.replaced).toBe(true);
+    expect(r.headline.length).toBeLessThanOrEqual(28);
+    expect(r.headline).not.toMatch(/gözl$/);
+    // Every painted word is a whole word from the caption.
+    for (const w of r.headline.split(/\s+/)) {
+      expect('Yerel üretim sürecimizi gözler önüne seriyoruz Bahçe açık Sen neredesin'.split(/\s+/)).toContain(w.replace(/[.?]$/, ''));
+    }
+  });
+
   it('locks CTA locale to headline and bans beauty urgency', () => {
     const dna = resolveCopyDna({ sector: 'beauty_wellness' });
     expect(lockOverlayCta({
