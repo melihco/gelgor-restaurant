@@ -440,6 +440,36 @@ describe('bindBrandTemplateForFalProduction', () => {
     expect(binding.logoUrl).toBe(matched.logoUrl);
   });
 
+  it('freeform_brand skips the shell lock, keeps the mission photo and adds art direction', async () => {
+    vi.mocked(matchDesignTemplateToSlot).mockResolvedValue(matched);
+    for (const [slotRole, catalogSlotKey] of [
+      ['fal_designed_post', 'local_products_shop_gift_bundle_post'],
+      ['fal_story', 'beach_club_sunset_story'],
+    ] as const) {
+      const binding = await bindBrandTemplateForFalProduction({
+        workspaceId: 'ws-any',
+        slotRole,
+        librarySlotKey: null,
+        catalogSlotKey,
+        format: slotRole === 'fal_story' ? 'story' : 'post',
+        caption: 'Hediye paketi hazır',
+        missionReferenceUrl: 'https://cdn.example.com/mission.jpg',
+        baseDirectives: ['base'],
+        brandColors: { primary: '#000', accent: '#fff' },
+        brandVibe: 'editorial_serif',
+        designProductionMode: 'freeform_brand',
+      });
+      expect(binding.freeform).toBe(true);
+      expect(binding.matched).toBeNull();
+      expect(binding.styleReferenceUrl).toBeNull();
+      expect(binding.referencePhotoUrl).toBe('https://cdn.example.com/mission.jpg');
+      expect(binding.brandDirectives[0]).toMatch(/ART DIRECTION/);
+      expect(binding.brandDirectives).toContain('base');
+    }
+    // the matcher was never consulted
+    expect(vi.mocked(matchDesignTemplateToSlot)).not.toHaveBeenCalled();
+  });
+
   it('carries design-fit logoPlacement for beach_club includeLogo templates', async () => {
     vi.mocked(matchDesignTemplateToSlot).mockResolvedValue({
       ...matched,

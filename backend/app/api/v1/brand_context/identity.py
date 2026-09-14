@@ -576,6 +576,16 @@ async def patch_ai_theme_settings(
             patch.setdefault("ai_caption_driven_visual", True)
             patch.setdefault("ai_enhance_gallery_selected", True)
 
+    # "Şablon ile üret" toggle: keep the boolean and the mode string in sync.
+    if "use_template_shell" in patch and "design_production_mode" not in patch:
+        patch["design_production_mode"] = (
+            "template_shell" if patch["use_template_shell"] else "freeform_brand"
+        )
+    elif "design_production_mode" in patch:
+        if patch["design_production_mode"] not in ("template_shell", "freeform_brand"):
+            raise HTTPException(422, "design_production_mode must be template_shell or freeform_brand")
+        patch["use_template_shell"] = patch["design_production_mode"] == "template_shell"
+
     theme.update(patch)
 
     await db.execute(

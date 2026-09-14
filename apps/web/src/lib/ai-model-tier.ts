@@ -21,9 +21,17 @@ export interface AiModelProfile {
   chatCreative: string;
   /** Hero gallery vision (still cheap on starter). */
   chatHero: string;
-  /** Grafiker / visual QA vision model. */
+  /** Look / gallery judge / text-validation vision model (tier-priced). */
   visionGrafiker: string;
   visionDetail: 'low' | 'high' | 'auto';
+  /**
+   * Grafiker design QA — the final verdict on a painted frame. Separate from
+   * the cheaper look vision: mini/low hallucinated edge clipping on legible
+   * frames and burned 3× repaints, so every tier judges with gpt-4o/high
+   * (~$0.005 per look, far below one discarded paint).
+   */
+  grafikerModel: string;
+  grafikerDetail: 'low' | 'high';
   /** OpenAI images.generate / edit when provider=openai. */
   imageOpenAiModel: string;
   imageOpenAiQuality: 'low' | 'medium' | 'high';
@@ -44,6 +52,8 @@ export const AI_MODEL_PROFILES: Record<AiModelTier, AiModelProfile> = {
     chatHero: 'gpt-4o-mini',
     visionGrafiker: 'gpt-4o-mini',
     visionDetail: 'low',
+    grafikerModel: 'gpt-4o',
+    grafikerDetail: 'high',
     imageOpenAiModel: 'gpt-image-2',
     imageOpenAiQuality: 'high',
     imageProvider: 'flux',
@@ -58,6 +68,8 @@ export const AI_MODEL_PROFILES: Record<AiModelTier, AiModelProfile> = {
     chatHero: 'gpt-4o',
     visionGrafiker: 'gpt-4o-mini',
     visionDetail: 'low',
+    grafikerModel: 'gpt-4o',
+    grafikerDetail: 'high',
     imageOpenAiModel: 'gpt-image-2',
     /** Designed-post / template paint. Override: SMART_AGENCY_IMAGE_QUALITY. */
     imageOpenAiQuality: 'high',
@@ -73,6 +85,8 @@ export const AI_MODEL_PROFILES: Record<AiModelTier, AiModelProfile> = {
     chatHero: 'gpt-4o',
     visionGrafiker: 'gpt-4o',
     visionDetail: 'high',
+    grafikerModel: 'gpt-4o',
+    grafikerDetail: 'high',
     imageOpenAiModel: 'gpt-image-2',
     imageOpenAiQuality: 'high',
     imageProvider: 'flux',

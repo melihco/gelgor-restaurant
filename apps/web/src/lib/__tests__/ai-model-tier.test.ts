@@ -63,4 +63,12 @@ describe('ai-model-tier', () => {
     expect(AI_MODEL_PROFILES.agency.imageOpenAiModel).toBe('gpt-image-2');
     expect(AI_MODEL_PROFILES.premium.imageOpenAiQuality).toBe('high');
   });
+
+  it('grafiker design QA is gpt-4o/high on every tier; look/judge vision keeps tier pricing', () => {
+    for (const tier of ['starter', 'agency', 'premium'] as const) {
+      expect(AI_MODEL_PROFILES[tier].grafikerModel).toBe('gpt-4o');
+      expect(AI_MODEL_PROFILES[tier].grafikerDetail).toBe('high');
+    }
+    expect(AI_MODEL_PROFILES.starter.visionGrafiker).toBe('gpt-4o-mini');
+  });
 });

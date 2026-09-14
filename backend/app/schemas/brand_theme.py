@@ -185,6 +185,9 @@ class AiThemeSettingsPatch(BaseModel):
     ai_adaptive_scene_mode: str | None = None
     ai_caption_driven_visual: bool | None = None
     enable_visual_production_director: bool | None = None  # experimental VPD crew
+    # Brand Hub "Şablon ile üret": template_shell (default) | freeform_brand
+    design_production_mode: str | None = None
+    use_template_shell: bool | None = None
     # Mertcafe / Zernio Instagram publish (per-tenant overrides)
     mertcafe_api_key: str | None = None
     mertcafe_instagram_account_id: str | None = None

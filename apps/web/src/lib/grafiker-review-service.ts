@@ -93,15 +93,17 @@ export async function runGrafikerVisionReview(
   const openaiKey = serverConfig.openai.apiKey;
   if (!openaiKey || imageBuffer.length < 100) return null;
 
-  // Tier-aware vision: starter/economy → mini + low detail; premium → gpt-4o + high.
+  // Design QA verdict uses the profile's grafiker model (gpt-4o/high on every
+  // live tier). The mini/low → confirm path below remains for any profile or
+  // env override that still judges cheap first.
   const productionTier: ProductionProfileTier | undefined =
     tier === 'economy' ? 'economy'
       : tier === 'premium' ? 'premium'
         : tier === 'agency' ? 'agency'
           : undefined;
   const aiProfile = getAiModelProfile(resolveAiModelTier({ productionTier }));
-  const model = aiProfile.visionGrafiker;
-  const imageDetail: 'low' | 'high' = aiProfile.visionDetail === 'high' ? 'high' : 'low';
+  const model = aiProfile.grafikerModel ?? aiProfile.visionGrafiker;
+  const imageDetail: 'low' | 'high' = (aiProfile.grafikerDetail ?? aiProfile.visionDetail) === 'high' ? 'high' : 'low';
 
   try {
     const { default: OpenAI } = await import('openai');

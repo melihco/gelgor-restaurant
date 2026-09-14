@@ -36,6 +36,7 @@ import {
 } from '@/lib/gallery-photo-spatial';
 import { catalogReelProducesAsDesignedPost } from '@/lib/sector-production-profile';
 import { resolveBrandLanguageCode } from '@/lib/cta-localization';
+import type { DesignProductionMode } from '@/lib/design-production-mode';
 import { detectOverlayLocale } from '@/lib/fal-caption-headline';
 import {
   buildRecipeReplicaPrompt,
@@ -57,6 +58,12 @@ export interface BrandTemplateFalBinding {
   /** Design-fit logo seat for post-composite (template library SSOT). */
   logoPlacement: ResolvedFalLogoPlacement | null;
   occasion: { name: string; mood?: string } | undefined;
+  /**
+   * Brand Hub "Şablon ile üret" is off: no shell lock, the card is designed
+   * from brand DNA on the mission photo. Withholds for a missing template do
+   * not apply.
+   */
+  freeform?: boolean;
 }
 
 /** Phase 1 — fal slot count unchanged; stronger lock when onboarding template matches. */
@@ -141,7 +148,10 @@ export function requiresLibraryTemplateReplica(
 export function catalogTemplateWithholdReason(
   catalogSlotKey: string | null | undefined,
   matched: MatchedDesignTemplate | null | undefined,
+  binding?: Pick<BrandTemplateFalBinding, 'freeform'> | null,
 ): string | null {
+  // Freeform brand design: the template library is not a gate.
+  if (binding?.freeform) return null;
   const key = String(catalogSlotKey ?? '').trim();
   if (!key) return null;
   if (requiresLibraryTemplateReplica(matched)) return null;
@@ -295,6 +305,22 @@ export function assertTemplateStyleReference(
   }
 }
 
+/**
+ * Freeform mode has no saved shell to copy, so the painter gets the agency
+ * art-director brief instead: design from the brand's own DNA (palette,
+ * typography, anti-patterns are already in the base directives) on the real
+ * mission photo, with the same on-canvas text contract.
+ */
+export const FREEFORM_BRAND_ART_DIRECTION: readonly string[] = [
+  'ART DIRECTION: you are this brand\'s in-house social designer. Design this card from the brand identity below — '
+  + 'its palette, typography feel, mood words and anti-patterns — not from a generic template.',
+  'The real mission photograph carries the card (about 70% of the canvas). Compose one calm text zone on it; '
+  + 'the photo stays recognizable and un-invented.',
+  'Vary the composition to suit this photo and copy (full-bleed, split panel, masthead or corner block), '
+  + 'but keep one consistent house feel: same type family, same palette discipline, same margins.',
+  'Render only the contracted headline / subline text. No placeholder words, no extra slogans, no stickers or bursts.',
+];
+
 export async function bindBrandTemplateForFalProduction(input: {
   workspaceId: string;
   slotRole: string;
@@ -322,6 +348,8 @@ export async function bindBrandTemplateForFalProduction(input: {
   brandVibe: TypographyVibe | null;
   /** Brand Hub Görsel Kaynak — gates template galleryRef photo fallback. */
   visualSourceMode?: VisualSourceMode | null;
+  /** Brand Hub "Şablon ile üret" — `freeform_brand` skips the shell lock entirely. */
+  designProductionMode?: DesignProductionMode | null;
 }): Promise<BrandTemplateFalBinding> {
   const empty: BrandTemplateFalBinding = {
     matched: null,
@@ -334,6 +362,17 @@ export async function bindBrandTemplateForFalProduction(input: {
     logoPlacement: null,
     occasion: undefined,
   };
+  if (input.designProductionMode === 'freeform_brand') {
+    console.log(
+      `[design-matcher] freeform brand design (template shell off) workspace=${input.workspaceId} `
+      + `role=${input.slotRole} catalog=${input.catalogSlotKey ?? '-'}`,
+    );
+    return {
+      ...empty,
+      freeform: true,
+      brandDirectives: [...FREEFORM_BRAND_ART_DIRECTION, ...input.baseDirectives],
+    };
+  }
   const catalogPinned = Boolean(String(input.catalogSlotKey ?? '').trim());
   if (input.adHocBrief && !catalogPinned) return empty;
 

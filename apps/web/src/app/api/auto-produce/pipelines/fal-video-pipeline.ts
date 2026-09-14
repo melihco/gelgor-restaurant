@@ -5,6 +5,7 @@
  * fal_reel  → designed still + Kling locked-composition video.
  */
 
+import { resolveDesignProductionMode } from '@/lib/design-production-mode';
 import {
   produceFalDesignedPostStill,
   produceFalDesignerVideo,
@@ -236,6 +237,9 @@ export const falVideoHandler: ProductionPipelineHandler = {
       brandColors: falBrand.brandColors,
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
+      designProductionMode: resolveDesignProductionMode(
+        inputs.brandTheme as Record<string, unknown> | null | undefined,
+      ),
     });
 
     const designVibe =
@@ -328,7 +332,7 @@ export const falVideoHandler: ProductionPipelineHandler = {
     // Fail closed rather than inventing a generic Ideogram/Satori layout.
     const catalogPinned = Boolean(String(inputs.catalogSlotKey ?? '').trim());
     const libraryReplicaRequired = catalogPinned || requiresLibraryTemplateReplica(templateBinding.matched);
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched, templateBinding)
       ?? librarySlotShellMissingReason(
         templateBinding.matched,
         templateLayoutReferenceUrl(templateBinding),

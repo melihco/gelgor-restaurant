@@ -14,6 +14,17 @@ vi.mock('@/lib/server-config', () => ({
 
 vi.mock('@/lib/ai-cost-telemetry', () => ({ emitOpenAiCostLine: vi.fn() }));
 
+// Live profiles judge with gpt-4o/high on every tier; the cheap-fail
+// confirmation path stays for any profile that still judges mini/low first,
+// so pin such a profile here to keep it covered.
+vi.mock('@/lib/ai-model-tier', () => ({
+  resolveAiModelTier: ({ productionTier }: { productionTier?: string }) =>
+    (productionTier === 'premium' ? 'premium' : 'agency'),
+  getAiModelProfile: (tier: string) => (tier === 'premium'
+    ? { grafikerModel: 'gpt-4o', grafikerDetail: 'high' }
+    : { grafikerModel: 'gpt-4o-mini', grafikerDetail: 'low' }),
+}));
+
 function reply(obj: Record<string, unknown>) {
   return { choices: [{ message: { content: JSON.stringify(obj) } }], usage: {} };
 }

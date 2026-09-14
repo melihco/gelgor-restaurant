@@ -91,8 +91,11 @@ export async function runDesignTemplateIdentityRegen(
     const { runGenerateDesignTemplates } = await import(
       '@/lib/run-generate-design-templates'
     );
+    // Identity changed → every shell is stale, so repaint the whole library.
+    // Archiving all is only honoured when every slot actually got a new shell.
     const result = await runGenerateDesignTemplates(workspaceId, {
       archiveExisting: true,
+      fullLibrary: true,
     });
     if (result.generated === 0) {
       await setDesignTemplateJobStatus({

@@ -84,6 +84,7 @@ import { isDebugUiMode } from '../mobile-client-config';
 import { prepareGalleryDisplayUrls, resolveGalleryImageSrc, upscaleCdnUrl, galleryUrlIdentityKey } from '@/lib/gallery-display-url';
 import { themeFlag, themeString, themeStringArray, resolveVisualSourceMode } from '@/lib/brand-theme-ai-settings';
 import type { VisualSourceMode } from '@/lib/brand-theme-ai-settings';
+import { buildDesignProductionModePatch, resolveDesignProductionMode } from '@/lib/design-production-mode';
 import {
   buildVisualSourceModeFromFlags,
   buildVisualSourceModePatch,
@@ -4677,6 +4678,34 @@ export function BrandConstitution() {
                               </div>
                             );
                           })()}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ── Şablon ile üret / serbest marka tasarımı ── */}
+                    {(() => {
+                      const useShell = resolveDesignProductionMode(currentTheme) === 'template_shell';
+                      return (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                          padding: '12px 14px', borderRadius: 14, marginBottom: 16,
+                          background: t.isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
+                          border: `0.5px solid ${useShell ? t.accent : t.separator}`,
+                        }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: t.textPrimary }}>Şablon ile üret</div>
+                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, lineHeight: 1.35 }}>
+                              {useShell
+                                ? 'Açık: her kart kayıtlı marka şablonunun kopyası olarak boyanır.'
+                                : 'Kapalı: şablon kilidi yok — kart marka kimliğinden (renk, yazı, ruh) fotoğraf üstüne özgün tasarlanır.'}
+                            </div>
+                          </div>
+                          <Toggle
+                            t={t}
+                            on={useShell}
+                            label="Şablon ile üret"
+                            onToggle={() => saveAiSetting(buildDesignProductionModePatch(!useShell))}
+                          />
                         </div>
                       );
                     })()}

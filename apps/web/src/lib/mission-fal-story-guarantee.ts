@@ -2,6 +2,7 @@
  * Mission story guarantee — Fal.ai 9:16 designed poster when no story artifact is publish-ready.
  * Replaces the legacy Remotion MP4 guarantee that could block production on Render timeouts.
  */
+import { resolveDesignProductionMode } from '@/lib/design-production-mode';
 import { resolveFalBrandInput, resolveFalProductionBrandColors } from '@/lib/fal-brand-input';
 import {
   bindBrandTemplateForFalProduction,
@@ -135,6 +136,7 @@ export async function produceAndSaveMissionFalStoryGuarantee(input: {
       brandColors: falBrand.brandColors,
       logoUrl: brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
+      designProductionMode: resolveDesignProductionMode(brandTheme),
     });
 
     const designVibe = templateBinding.lockedVibe

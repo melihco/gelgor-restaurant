@@ -14,6 +14,8 @@ const AI_KEYS_SNAKE = [
   'ai_caption_driven_visual',
   'visual_source_mode',
   'enable_visual_production_director',
+  'design_production_mode',
+  'use_template_shell',
 ] as const;
 
 const CAMEL_TO_SNAKE: Record<string, string> = {
@@ -30,6 +32,8 @@ const CAMEL_TO_SNAKE: Record<string, string> = {
   aiCaptionDrivenVisual: 'ai_caption_driven_visual',
   visualSourceMode: 'visual_source_mode',
   enableVisualProductionDirector: 'enable_visual_production_director',
+  designProductionMode: 'design_production_mode',
+  useTemplateShell: 'use_template_shell',
 };
 
 export function normalizeBrandThemeRecord(

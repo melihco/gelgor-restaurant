@@ -9,6 +9,7 @@
  * Behavior is identical to the previous inline block.
  */
 
+import { resolveDesignProductionMode } from '@/lib/design-production-mode';
 import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   buildDesignedPostDesignCardPrompt,
@@ -860,6 +861,9 @@ export const falDesignHandler: ProductionPipelineHandler = {
       visualSourceMode: resolveVisualSourceMode(
         inputs.brandTheme as Record<string, unknown> | null | undefined,
       ),
+      designProductionMode: resolveDesignProductionMode(
+        inputs.brandTheme as Record<string, unknown> | null | undefined,
+      ),
     });
     if (templateBinding.matched) {
       console.log(
@@ -871,7 +875,7 @@ export const falDesignHandler: ProductionPipelineHandler = {
       matchedShowSubline: templateBinding.matched?.showSubline,
     });
 
-    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched)
+    const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched, templateBinding)
       ?? librarySlotShellMissingReason(
         templateBinding.matched,
         templateLayoutReferenceUrl(templateBinding),

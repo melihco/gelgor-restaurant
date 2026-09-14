@@ -41,6 +41,12 @@ export type GenerateBody = {
   locale?: string;
   /** false for partial/smoke runs so existing templates stay active */
   archiveExisting?: boolean;
+  /**
+   * Regenerate every enabled catalog slot (house identity change) instead of
+   * the onboarding preview cap. Without it a capped run must never archive
+   * shells it did not repaint.
+   */
+  fullLibrary?: boolean;
   /** When true, return 202 and run generation via after() */
   background?: boolean;
 };
@@ -304,7 +310,7 @@ export async function runGenerateDesignTemplates(
     workspaceId,
     sector,
     {
-      limit: body.limit ?? productionSettings.preview_cap,
+      limit: body.limit ?? (body.fullLibrary ? Number.MAX_SAFE_INTEGER : productionSettings.preview_cap),
       constitution,
       templateNeeds: constitution.templateNeeds,
     },
@@ -380,6 +386,23 @@ export async function runGenerateDesignTemplates(
 
   // ── Persist (bulk upsert replaces prior auto-generated set) ────────────────
   const persistableTemplates = result.templates.filter((t) => Boolean(t.thumbnail_url));
+  // Archive the whole live set only when this run repainted every enabled slot.
+  // A capped or partly failed run keeps the shells it did not repaint; the
+  // backend still archives the colliding keys (archive_existing=false).
+  const persistedKeys = new Set(
+    persistableTemplates
+      .map((t) => String((t as { catalog_slot_key?: string | null }).catalog_slot_key ?? '').trim())
+      .filter(Boolean),
+  );
+  const coversEveryEnabledSlot = catalogPresets.enabledSlotCount > 0
+    && persistedKeys.size >= catalogPresets.enabledSlotCount;
+  const archiveExisting = body.archiveExisting !== false && coversEveryEnabledSlot;
+  if (body.archiveExisting !== false && !archiveExisting) {
+    console.warn(
+      `[generate-design-templates] partial library run (${persistedKeys.size}/${catalogPresets.enabledSlotCount} slots) `
+      + '— keeping shells that were not repainted (collision-only archive)',
+    );
+  }
   const persistRes = persistableTemplates.length > 0
     ? await fetchCrewBackendJson<GeneratedDesignTemplate[]>(
       `/api/v1/design-templates/${workspaceId}/bulk`,
@@ -389,7 +412,7 @@ export async function runGenerateDesignTemplates(
         timeoutMs: 60_000,
         body: {
           templates: persistableTemplates,
-          archive_existing: body.archiveExisting !== false,
+          archive_existing: archiveExisting,
         },
       },
     )
