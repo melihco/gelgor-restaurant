@@ -1696,7 +1696,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    persistCreativeArtifact({
+    // Pipeline (design-card) paints are server-to-server: no user context, and the
+    // production loop persists the chosen frame itself. The legacy creative mirror
+    // can only 401 here (and would duplicate withheld frames into the feed if it
+    // ever succeeded) — skip it for design-card requests.
+    if (!isDesignedCard) persistCreativeArtifact({
       title: input.title,
       imageUrl: persistedImageUrl,
       contentUrl: r2Url.startsWith('http') || r2Url.startsWith('/api/media') ? r2Url : contentUrlForPersistence(finalImageUrl),
