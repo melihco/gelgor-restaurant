@@ -1256,6 +1256,14 @@ const INCOMPLETE_TR_SOFT_ACCUSATIVE_TAIL_RX =
   /\b[\p{L}']+(atı|eti|iti|uti|ütü|ağı|eği|ığı|iği|uğu|üğü)\s*$/iu;
 
 /**
+ * Lexicalised noun-noun compounds whose head carries the same -ı/-i as an
+ * accusative: "erken hasat zeytinyağı", "köy ekmeği", "su böreği", "ev
+ * yemeği". Product names, not clipped objects — every food sector paints them.
+ */
+const TR_LEXICAL_COMPOUND_HEAD_RX =
+  /\b\p{L}*(yağı|peteği|ekmeği|böreği|yemeği|çöreği|bardağı|kaşığı)\s*$/iu;
+
+/**
  * Ablative case left dangling — "Müşterilerimiz kahvaltımızdan" (verb cut by maxLen).
  * Marketing overlays almost never end on ablative alone.
  */
@@ -1323,7 +1331,11 @@ export function isIncompleteOverlayPhrase(text: string): boolean {
   if (words.length === 2 && INCOMPLETE_EN_BARE_NP_SUBJECT_RX.test(clean)) return true;
   // Longer clauses ending mid-case (dative / soft accusative) are caption clamps.
   if (words.length >= 3 && INCOMPLETE_TR_DATIVE_TAIL_RX.test(clean)) return true;
-  if (words.length >= 3 && INCOMPLETE_TR_SOFT_ACCUSATIVE_TAIL_RX.test(clean)) return true;
+  if (
+    words.length >= 3
+    && INCOMPLETE_TR_SOFT_ACCUSATIVE_TAIL_RX.test(clean)
+    && !TR_LEXICAL_COMPOUND_HEAD_RX.test(clean)
+  ) return true;
   if (words.length >= 4 && !/[.!?…]$/.test(clean) && STRATEGY_BRIEFING_START_RX.test(clean)) return true;
   return false;
 }

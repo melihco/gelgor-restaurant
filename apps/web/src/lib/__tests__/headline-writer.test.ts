@@ -98,3 +98,13 @@ describe('headline-writer — order', () => {
     expect(p.system).toMatch(/exactly 2 lines/);
   });
 });
+
+describe('acceptFeedHeadline refuses caption meta lines (shop + beach)', () => {
+  it('never lets the label filler become the headline', () => {
+    expect(acceptFeedHeadline({ headline: 'Etiket duruyor', caption: 'Erken hasat zeytinyağı. Etiket duruyor.' })).toBe(false);
+    expect(acceptFeedHeadline({ headline: 'The label stays', caption: 'Sunset spritz. The label stays.' })).toBe(false);
+  });
+  it('accepts a lexical compound product name as a complete line', () => {
+    expect(acceptFeedHeadline({ headline: 'Erken hasat zeytinyağı', caption: 'Bu hafta tezgahta erken hasat zeytinyağı var. Tadına bakın.' })).toBe(true);
+  });
+});

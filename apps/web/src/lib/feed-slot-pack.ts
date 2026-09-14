@@ -194,6 +194,16 @@ export function lockFeedCardCopy(input: {
 }
 
 /** Later caption sentence — never the opening thought. Empty if none. */
+/**
+ * Caption meta lines that describe the photo, never the offer — the label
+ * filler appended when a still only has its label. Fine in the caption body,
+ * never on the card as the headline ("Etiket duruyor" painted big is a defect).
+ */
+export function isCaptionMetaLine(text: string): boolean {
+  const f = fold(text).replace(/[.!?]+$/g, '').trim();
+  return f === 'etiket duruyor' || f === 'the label stays' || /\betiket duruyor$/.test(f);
+}
+
 export function deriveHeadlineFromCaption(caption: string): string {
   const parts = filled(caption)
     .split(/[.!?…\n—–,]/)
@@ -202,6 +212,7 @@ export function deriveHeadlineFromCaption(caption: string): string {
   for (const part of parts.slice(1)) {
     const line = keepCompleteOverlaySentence(part) || part;
     if (!line || isCaptionOpeningHeadline(line, caption)) continue;
+    if (isCaptionMetaLine(line)) continue;
     const words = line.split(/\s+/).filter(Boolean);
     if (words.length < 2) continue;
     if (isIncompleteOverlayPhrase(line) && words.length < 3) continue;
@@ -772,7 +783,9 @@ function productSubjectAndRest(labels: string[], english: boolean): { subject: s
 function rebuildProductCaption(evidence: string, english: boolean): string {
   const labels = quotedEvidenceLabels(evidence);
   const { subject, rest } = productSubjectAndRest(labels, english);
-  const labelLine = english ? 'The label stays.' : 'Etiket duruyor.';
+  // Second line when the still only has its label. Must read as an offer on
+  // the card too (it can become the headline) — not a note about the photo.
+  const labelLine = english ? 'Here now.' : 'Şimdi burada.';
   const leftoverTail = english ? 'on the label' : 'etiket';
   if (subject) {
     if (rest) return `${prettyPhrase(subject)}. ${prettyPhrase(rest)}.`;

@@ -350,7 +350,7 @@ describe('feed-slot-pack — motto box + caption open', () => {
     expect(r.headline).not.toMatch(/Deniz duruyor/);
   });
 
-  it('shop: English brand does not paint Etiket duruyor', () => {
+  it('shop: English brand gets the English label line', () => {
     const r = groundFeedSlotCopy({
       slotJob: 'product hero',
       photoRole: 'product_for_sale',
@@ -361,11 +361,11 @@ describe('feed-slot-pack — motto box + caption open', () => {
       language: 'en',
     });
     expect(r.caption).toMatch(/honey/i);
-    expect(r.caption).toMatch(/The label stays/i);
-    expect(r.caption).not.toMatch(/Etiket duruyor/);
+    expect(r.caption).toMatch(/Here now/i);
+    expect(r.caption).not.toMatch(/Şimdi burada|Etiket duruyor/);
   });
 
-  it('shop: Turkish brand still paints Etiket duruyor when the label is the only line', () => {
+  it('shop: Turkish brand gets an offer line, not a photo note, when the label is the only line', () => {
     const r = groundFeedSlotCopy({
       slotJob: 'ürün hero',
       photoRole: 'product_for_sale',
@@ -375,8 +375,8 @@ describe('feed-slot-pack — motto box + caption open', () => {
       headline: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
     });
     expect(r.caption).toMatch(/bal/i);
-    expect(r.caption).toMatch(/Etiket duruyor/);
-    expect(r.caption).not.toMatch(/The label stays/);
+    expect(r.caption).toMatch(/Şimdi burada/);
+    expect(r.caption).not.toMatch(/Etiket duruyor|Here now/);
   });
 
   it('shop: Turkish suffixes on the label word keep the model caption (no rebuild)', () => {

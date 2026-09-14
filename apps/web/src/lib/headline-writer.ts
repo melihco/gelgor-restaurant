@@ -34,6 +34,7 @@ import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-groundin
 import {
   captionOpensWithHeadline,
   deriveHeadlineFromCaption,
+  isCaptionMetaLine,
   FEED_MOTTO_BOX,
   isEmptyPlaceCommand,
   lockFeedCardCopy,
@@ -128,6 +129,7 @@ export function acceptFeedHeadline(input: HeadlineGateInput): boolean {
   if (words.length > HEADLINE_MAX_WORDS) return false;
   if (isIncompleteOverlayPhrase(headline)) return false;
   if (!isMeaningfulFalOverlayText(headline)) return false;
+  if (isCaptionMetaLine(headline)) return false;
   const brand = fold(input.brandName ?? '');
   if (brand && fold(headline) === brand) return false;
   if (caption.length >= 16) {

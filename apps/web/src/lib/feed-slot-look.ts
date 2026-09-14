@@ -245,7 +245,7 @@ function fillAdaptiveLookDraft(
     ? hint
     : '';
   const fromLabel = label.length >= 3
-    ? `${label.replace(/\s+/g, ' ').trim()}. Etiket duruyor.`
+    ? `${label.replace(/\s+/g, ' ').trim()}. Şimdi burada.`
     : '';
   const caption = String(draft.caption ?? '').trim().length >= 16
     ? String(draft.caption)
