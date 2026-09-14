@@ -1217,6 +1217,8 @@ def _defer_max_age_sec(reason: str) -> float | None:
     """Wall-clock backstop for this defer reason."""
     if _is_quality_defer_reason(reason):
         return _quality_defer_max_age_sec()
+    if _is_no_paint_defer_reason(reason):
+        return _no_paint_defer_max_age_sec()
     return _ops_defer_max_age_sec() if _is_ops_defer_reason(reason) else None
 
 
@@ -1236,11 +1238,35 @@ def _should_keep_running_for_inflight(
     return code == "route_still_running" or "route_still_running" in (reason or "").lower()
 
 
+# Refusals where the Next route never started a paint: the lock guard said
+# 409 before any judge/GPT call, or the enqueue itself failed. Since the lock
+# is no longer stolen from a live paint, a 409 is a *wait*, not a spent run.
+_NO_PAINT_DEFER_MARKERS: tuple[str, ...] = (
+    "production_in_flight",
+    "production_worker_offline",
+    "enqueue_failed",
+    "bullmq enqueue failed",
+)
+
+
+def _is_no_paint_defer_reason(reason: str) -> bool:
+    lower = (reason or "").strip().lower()
+    if not lower or "route_still_running" in lower:
+        return False
+    return any(m in lower for m in _NO_PAINT_DEFER_MARKERS)
+
+
+def _no_paint_defer_max_age_sec() -> float:
+    return _env_positive_float("PRODUCTION_LOCK_WAIT_MAX_AGE_SEC", 3 * 3600.0)  # 3h
+
+
 def _defer_counts_attempt(reason: str) -> bool:
-    """Every deferred produce burns a slot. Free defers (fetch failed,
-    stale reclaim, in-flight) were 7 paints on a 3-attempt story.
+    """Every deferred produce that may have painted burns a slot (fetch failed,
+    route_still_running, quality). A lock refusal / failed enqueue painted
+    nothing — two Karaman missions sharing one brand lock exhausted a story
+    at 3/3 without a single paint. Those wait on a wall clock instead.
     """
-    return True
+    return not _is_no_paint_defer_reason(reason)
 
 
 def _is_ops_defer_reason(reason: str) -> bool:

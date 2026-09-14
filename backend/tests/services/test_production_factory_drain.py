@@ -570,15 +570,19 @@ def test_quality_defers_burn_attempts_and_ops_defers_are_age_capped() -> None:
     """A flat-delay defer that never burns an attempt loops ~60x/hour forever."""
     quality = "Caption–tasarım–görsel tutarsız (overlay_meaningless)"
     template = "library_template_required: no renderable template for catalog_slot_key=x"
-    ops = "production_in_flight"
+    ops = "provider_billing_circuit_open"
 
     # Quality gates re-run the same inputs — bound by attempts, not just wall clock.
     assert pfs._defer_counts_attempt(quality) is True
     assert pfs._defer_counts_attempt(template) is True
     shop_lock = "production_in_flight"
     beach_lock = "production_in_flight [route_still_running]"
-    assert pfs._defer_counts_attempt(ops) is True
-    assert pfs._defer_counts_attempt(shop_lock) is True
+    assert pfs._defer_counts_attempt(ops) is True  # provider may have been called
+    # A lock refusal painted nothing — wait on the wall clock, keep the attempts.
+    assert pfs._defer_counts_attempt(shop_lock) is False
+    assert pfs._defer_max_age_sec(shop_lock) == pfs._no_paint_defer_max_age_sec()
+    assert pfs._defer_counts_attempt("bullmq enqueue failed") is False
+    # The route may still be painting behind a client timeout — that one counts.
     assert pfs._defer_counts_attempt(beach_lock) is True
     assert pfs._is_inflight_defer_reason(shop_lock) is True
     assert pfs._bullmq_defer_delay_sec("production_in_flight") == 240.0
