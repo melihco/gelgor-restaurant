@@ -1627,17 +1627,25 @@ export function fitMissionOverlayToTemplateBudget(input: {
   const allowSoftFloor = budget.source !== 'operator_type_budget';
   const rawH = correctTurkishSpelling(sanitizeFalOverlayText(input.headline));
 
-  // Complete mission sentence: never stem to the type-zone char/word saw.
-  // Operator-set zones stay exact — they are a designed box, not a default cap.
+  const fitsTypeZone = Boolean(
+    rawH
+    && rawH.split(/\s+/).filter(Boolean).length <= budget.headline.maxWords
+    && rawH.length <= budget.headline.maxLen,
+  );
+
+  // Complete mission sentence may skip the saw only when it already fits the
+  // designed box. Long locked pack lines used to paint the full caption and
+  // overflow GPT-image slots.
   const keepCompleteHeadline = Boolean(
     allowSoftFloor
-    && rawH
+    && fitsTypeZone
     && !isIncompleteOverlayPhrase(rawH)
     && isMeaningfulFalOverlayText(rawH),
   );
 
-  // Locked / complete headline: keep phrase, fit subtitle only.
-  if (input.preserveHeadline || keepCompleteHeadline) {
+  // Locked / complete headline that already fits: keep phrase, fit subtitle only.
+  // Locked but overflowing: fall through and tighten the SAME line — never the sample.
+  if ((input.preserveHeadline && fitsTypeZone) || keepCompleteHeadline) {
     const headline = keepCompleteHeadline
       ? rawH
       : (clampMissionTaglineForCanvas(rawH, input.channel) || rawH);
@@ -1749,7 +1757,7 @@ export function fitMissionOverlayToTemplateBudget(input: {
       headline = sceneTight;
     }
   }
-  if (!headlineOk(headline)) {
+  if (!headlineOk(headline) && !input.preserveHeadline) {
     const sampleH = String(input.sampleHeadline ?? '').trim();
     if (
       sampleH

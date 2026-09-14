@@ -91,41 +91,25 @@ export function resolveSlotPaintOverlay(
 
   let headline = overlayCopy.headline;
   let subtitle = overlayCopy.subtitle;
-  let budgetSource: string | undefined;
-
   if (preserved) {
     headline = clampMissionTaglineForCanvas(headline, input.channel) || headline;
-    // Subtitle may still fit the template zone; headline stays Hub/canva phrase.
-    if (subtitle) {
-      const fitted = fitMissionOverlayToTemplateBudget({
-        headline,
-        subtitle,
-        channel: input.channel,
-        designIntensity: input.designIntensity,
-        sampleHeadline: input.sampleHeadline,
-        sampleSubtitle: input.sampleSubtitle,
-        showSubline: input.showSubline,
-        typeBudget: input.typeBudget,
-        preserveHeadline: true,
-      });
-      subtitle = fitted.subtitle;
-      budgetSource = fitted.budget.source;
-    }
-  } else {
-    const fitted = fitMissionOverlayToTemplateBudget({
-      headline,
-      subtitle,
-      channel: input.channel,
-      designIntensity: input.designIntensity,
-      sampleHeadline: input.sampleHeadline,
-      sampleSubtitle: input.sampleSubtitle,
-      showSubline: input.showSubline,
-      typeBudget: input.typeBudget,
-    });
-    headline = fitted.headline;
-    subtitle = fitted.subtitle;
-    budgetSource = fitted.budget.source;
   }
+  // Same claim as the pack — but always fit the template type zone.
+  // preserveHeadline blocks sample-motto swap, not the box.
+  const fitted = fitMissionOverlayToTemplateBudget({
+    headline,
+    subtitle,
+    channel: input.channel,
+    designIntensity: input.designIntensity,
+    sampleHeadline: input.sampleHeadline,
+    sampleSubtitle: input.sampleSubtitle,
+    showSubline: input.showSubline,
+    typeBudget: input.typeBudget,
+    preserveHeadline: preserved,
+  });
+  headline = fitted.headline;
+  subtitle = fitted.subtitle;
+  const budgetSource = fitted.budget.source;
 
   const gatedSub = resolveSlotSublineForRender(subtitle, {
     catalogSlotKey: input.catalogSlotKey,
