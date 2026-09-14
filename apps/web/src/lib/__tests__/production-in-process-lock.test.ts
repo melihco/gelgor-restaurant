@@ -11,14 +11,20 @@ import {
 describe('production-in-process-lock', () => {
   const ws = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 
-  it('acquireProductionLocksForRun recovers stale in-memory workspace lock once', async () => {
+  it('acquireProductionLocksForRun recovers a stale lock but never steals a live paint', async () => {
     const first = await acquireProductionLock(ws);
     expect(first).toBe(true);
 
     const blocked = await acquireProductionLocksForRun(ws, null, { recoverStale: false });
     expect(blocked.workspace).toBe(false);
 
-    const recovered = await acquireProductionLocksForRun(ws, null, { recoverStale: true });
+    // Worker retry a few seconds after a dropped connection: the route is still
+    // painting — the lock is live, the duplicate run must be refused.
+    const live = await acquireProductionLocksForRun(ws, null, { recoverStale: true });
+    expect(live.workspace).toBe(false);
+
+    // Past the stale threshold the orphan is recovered once.
+    const recovered = await acquireProductionLocksForRun(ws, null, { recoverStale: true, staleAfterMs: 0 });
     expect(recovered.workspace).toBe(true);
 
     await releaseProductionLock(ws);

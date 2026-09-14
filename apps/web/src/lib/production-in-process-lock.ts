@@ -205,6 +205,67 @@ export async function releaseAllProductionLocks(
   if (missionId) await releaseMissionProductionLock(missionId);
 }
 
+/**
+ * A held lock younger than this is a *live* paint, not an orphan. The worker
+ * retries a dropped HTTP connection while the route is still painting; stealing
+ * the lock then ran the same slot twice in parallel (double judge, double GPT,
+ * second run exhausting the job under the first). Tokens embed their birth time.
+ */
+export const PRODUCTION_LOCK_STALE_AFTER_MS = Math.max(
+  60_000,
+  Number(process.env.PRODUCTION_LOCK_STALE_AFTER_MS ?? 9 * 60 * 1000),
+);
+
+async function readLockToken(key: string): Promise<string | null> {
+  if (useIoRedis) {
+    const client = getRedisClient();
+    if (!client) return null;
+    try {
+      return await client.get(key);
+    } catch {
+      return null;
+    }
+  }
+  if (useUpstash) {
+    if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
+    try {
+      const resp = await fetch(`${UPSTASH_URL}/get/${encodeURIComponent(key)}`, {
+        headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+      });
+      const data = (await resp.json()) as { result: string | null };
+      return data.result ?? null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function lockAgeFromToken(token: string | null | undefined, now = Date.now()): number | null {
+  const born = Number(String(token ?? '').split('-')[0]);
+  if (!Number.isFinite(born) || born <= 0) return null;
+  return Math.max(0, now - born);
+}
+
+/** Age of a held lock in ms; null when the lock is free or unreadable (treat as stale). */
+export async function productionLockAgeMs(
+  key: string,
+  lockMap: Map<string, number>,
+): Promise<number | null> {
+  if (useIoRedis || useUpstash) {
+    return lockAgeFromToken(await readLockToken(key));
+  }
+  const expiresAt = lockMap.get(key);
+  if (expiresAt == null) return null;
+  return Math.max(0, PRODUCTION_LOCK_TTL_MS - (expiresAt - Date.now()));
+}
+
+export function isLockStaleByAge(ageMs: number | null, staleAfterMs = PRODUCTION_LOCK_STALE_AFTER_MS): boolean {
+  // Unreadable / token-less lock → cannot prove it is live → recover (old behaviour).
+  if (ageMs == null) return true;
+  return ageMs >= staleAfterMs;
+}
+
 /** Internal recovery — clears workspace lock even when this process did not acquire it. */
 export async function forceReleaseProductionLock(workspaceId: string): Promise<void> {
   const key = lockKey('ws', workspaceId);
@@ -267,9 +328,10 @@ export interface ProductionLockAcquireResult {
 export async function acquireProductionLocksForRun(
   workspaceId: string,
   missionId?: string | null,
-  opts?: { recoverStale?: boolean; lane?: ProductionLockLane },
+  opts?: { recoverStale?: boolean; lane?: ProductionLockLane; staleAfterMs?: number },
 ): Promise<ProductionLockAcquireResult> {
   const recover = opts?.recoverStale === true;
+  const staleAfterMs = opts?.staleAfterMs ?? PRODUCTION_LOCK_STALE_AFTER_MS;
   if ((opts?.lane ?? 'still') === 'video') {
     let locks = await acquireVideoProductionLocks(workspaceId, missionId);
     if (!locks.workspace && recover) {
@@ -285,8 +347,15 @@ export async function acquireProductionLocksForRun(
 
   let workspaceOk = await acquireProductionLock(workspaceId);
   if (!workspaceOk && recover) {
-    await forceReleaseProductionLock(workspaceId);
-    workspaceOk = await acquireProductionLock(workspaceId);
+    const age = await productionLockAgeMs(lockKey('ws', workspaceId), _workspaceProductionLock);
+    if (isLockStaleByAge(age, staleAfterMs)) {
+      await forceReleaseProductionLock(workspaceId);
+      workspaceOk = await acquireProductionLock(workspaceId);
+    } else {
+      console.warn(
+        `[production-lock] workspace ${workspaceId} lock is live (${Math.round((age ?? 0) / 1000)}s) — not stealing`,
+      );
+    }
   }
   if (!workspaceOk) {
     return { workspace: false, mission: false };
@@ -298,8 +367,15 @@ export async function acquireProductionLocksForRun(
 
   let missionOk = await acquireMissionProductionLock(missionId);
   if (!missionOk && recover) {
-    await forceReleaseMissionProductionLock(missionId);
-    missionOk = await acquireMissionProductionLock(missionId);
+    const age = await productionLockAgeMs(lockKey('mission', missionId), _missionProductionLock);
+    if (isLockStaleByAge(age, staleAfterMs)) {
+      await forceReleaseMissionProductionLock(missionId);
+      missionOk = await acquireMissionProductionLock(missionId);
+    } else {
+      console.warn(
+        `[production-lock] mission ${missionId} lock is live (${Math.round((age ?? 0) / 1000)}s) — not stealing`,
+      );
+    }
   }
   if (!missionOk) {
     await releaseProductionLock(workspaceId);

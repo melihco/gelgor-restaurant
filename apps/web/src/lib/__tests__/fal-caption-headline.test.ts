@@ -31,6 +31,7 @@ import {
   isFalCanvasMetaOnlyHeadline,
   isBareGenericOverlayCta,
   fitMissionOverlayToTemplateBudget,
+  tightenOverlayHeadline,
   fitPunchlineUnderBudget,
   isAcceptablePunchlineStem,
   endsOnStrandedTurkishDependent,
@@ -883,5 +884,36 @@ describe('compound-verb and prose-slice guards', () => {
     // A separator does close a segment, so the phrase after it is a real start.
     expect(fitPunchlineUnderBudget('Dolunay temalı gece etkinliği / özel menü', 20, 3))
       .toBe('özel menü');
+  });
+});
+
+describe('type box fitter keeps Turkish grammar (shop + beach)', () => {
+  it('never pulls "ile"/"ve" out of the middle of a sentence', () => {
+    expect(tightenOverlayHeadline('Zeytinyağı ile lezzet katın', 22, 3)).not.toMatch(/Zeytinyağı lezzet/);
+    expect(tightenOverlayHeadline('Kekik ve Çiçek Balı çeşitlerimizle sağlıklı bir tat', 28, 3))
+      .toBe('Kekik ve Çiçek Balı');
+    expect(tightenOverlayHeadline('Taste the refreshing flavors of summer at sunset', 28, 3))
+      .toBe('Taste the refreshing flavors');
+  });
+
+  it('keeps the possessive apostrophe inside a word', () => {
+    expect(tightenOverlayHeadline("Datça'nın eşsiz balını hemen deneyin.", 16, 2)).toMatch(/^Datça.nın eşsiz$/);
+  });
+
+  it('locked complete sentence slightly over the generated box stays whole (type shrinks)', () => {
+    const fitted = fitMissionOverlayToTemplateBudget({
+      headline: 'Zeytinyağı ile lezzet katın',
+      channel: 'feed_post',
+      preserveHeadline: true,
+      typeBudget: { source: 'generated', headline: { maxChars: 22, maxWords: 3, maxLines: 1 } },
+    });
+    expect(fitted.headline).toBe('Zeytinyağı ile lezzet katın');
+    const beach = fitMissionOverlayToTemplateBudget({
+      headline: 'Sunset drinks by the sea',
+      channel: 'feed_post',
+      preserveHeadline: true,
+      typeBudget: { source: 'generated', headline: { maxChars: 20, maxWords: 4, maxLines: 1 } },
+    });
+    expect(beach.headline).toBe('Sunset drinks by the sea');
   });
 });

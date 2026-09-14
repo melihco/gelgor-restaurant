@@ -169,8 +169,10 @@ describe('premiumEditorialHandler template lock', () => {
       state,
     });
     const painted = runCampaign.mock.calls[0]?.[0] as { headline: string };
-    expect(painted.headline.toLocaleLowerCase('tr-TR')).toContain('çeşitlerimizle');
-    expect(painted.headline.toLocaleLowerCase('tr-TR')).toContain('kekik');
+    // Story type box is the law (28 chars / 3 words + coordination head):
+    // the painted line is a whole noun phrase, never a mid-sentence saw.
+    expect(painted.headline.toLocaleLowerCase('tr-TR')).toContain('kekik ve çiçek balı');
+    expect(painted.headline.length).toBeLessThanOrEqual(28);
     expect(state.falTextValidated).toBe(true);
   });
 
@@ -202,7 +204,9 @@ describe('premiumEditorialHandler template lock', () => {
       state,
     });
     const painted = runCampaign.mock.calls[0]?.[0] as { headline: string };
-    expect(painted.headline.toLowerCase()).toContain('refreshing flavors of summer');
+    expect(painted.headline.toLowerCase()).toContain('the refreshing flavors');
+    expect(painted.headline.toLowerCase()).not.toMatch(/\b(of|the|and)$/);
+    expect(painted.headline.length).toBeLessThanOrEqual(28);
   });
 
   it('shop: withholds when painted type is mashed', async () => {

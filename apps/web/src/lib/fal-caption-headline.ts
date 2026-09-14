@@ -1643,9 +1643,23 @@ export function fitMissionOverlayToTemplateBudget(input: {
     && isMeaningfulFalOverlayText(rawH),
   );
 
+  // A locked complete sentence that overflows the zone by a little keeps its
+  // words — the type shrinks. Cutting "Zeytinyağı ile lezzet katın" to fit 22
+  // chars produced a fragment that the bind gate rejected after the paint.
+  const nearFit = Boolean(
+    input.preserveHeadline
+    && allowSoftFloor
+    && rawH
+    && !fitsTypeZone
+    && rawH.length <= Math.ceil(budget.headline.maxLen * 1.3)
+    && rawH.split(/\s+/).filter(Boolean).length <= budget.headline.maxWords + 1
+    && !isIncompleteOverlayPhrase(rawH)
+    && isMeaningfulFalOverlayText(rawH),
+  );
+
   // Locked / complete headline that already fits: keep phrase, fit subtitle only.
   // Locked but overflowing: fall through and tighten the SAME line — never the sample.
-  if ((input.preserveHeadline && fitsTypeZone) || keepCompleteHeadline) {
+  if ((input.preserveHeadline && (fitsTypeZone || nearFit)) || keepCompleteHeadline) {
     const headline = keepCompleteHeadline
       ? rawH
       : (clampMissionTaglineForCanvas(rawH, input.channel) || rawH);
@@ -2173,7 +2187,11 @@ function finalizeHeadline(text: string, maxLen: number): { headline: string; sou
 function tightenVideoHeadline(text: string, maxLen: number, maxWords: number): string {
   const normalized = correctTurkishSpelling(
     text
-      .replace(/[!"'():;[\]{}]+/g, ' ')
+      // Keep the Turkish possessive apostrophe inside a word ("Datça'nın");
+      // stripping it left "Datça nın" as two headline words.
+      .replace(/(?<=\p{L})['’](?=\p{L})/gu, '\u0000')
+      .replace(/[!"'’():;[\]{}]+/g, ' ')
+      .replace(/\u0000/g, '’')
       .replace(/\s+/g, ' ')
       .trim(),
   );
@@ -2193,23 +2211,37 @@ function tightenVideoHeadline(text: string, maxLen: number, maxWords: number): s
     return sanitized && isMeaningfulFalOverlayText(sanitized) ? sanitized : '';
   }
 
-  const filtered = words.filter((word, index) => {
-    const lower = word.toLowerCase();
-    if (index === 0 && /^(yaz|kış|bahar|sonbahar)$/.test(lower)) return true;
-    FILLER_WORDS.lastIndex = 0;
-    return !FILLER_WORDS.test(lower);
-  });
-  FILLER_WORDS.lastIndex = 0;
+  // Over budget. Never pull connectors out of the middle of a sentence —
+  // "Zeytinyağı ile lezzet katın" → "Zeytinyağı lezzet katın" is broken
+  // Turkish that the bind gate then rejects after the paint was already paid.
+  // 1) the first complete clause that fits the zone ("Erken hasat zeytinyağı,
+  //    en taze…" → "Erken hasat zeytinyağı"); 2) a word-boundary prefix.
+  const firstClause = (normalized.split(/\s*(?:[,;:—–]|\s-\s)\s*/)[0] ?? '').trim();
+  if (firstClause && firstClause !== normalized) {
+    const clauseWords = firstClause.split(/\s+/).filter(Boolean).length;
+    if (clauseWords <= maxWords && firstClause.length <= maxLen) {
+      const clause = sanitizeFalOverlayText(
+        capitalizeFirst(stripDanglingOverlayTail(firstClause.replace(/[,.!?]+$/g, '').trim())),
+      );
+      if (clause && clauseWords >= 2 && !isIncompleteOverlayPhrase(clause) && isMeaningfulFalOverlayText(clause)) {
+        return clause;
+      }
+    }
+  }
 
-  const pool = filtered.length > 0 ? filtered : words;
+  // Word cap counts content words; the char box is the law. Function words
+  // ("ve", "ile", "for", "a") stay in place so the prefix reads as a sentence —
+  // "Kekik ve Çiçek Balı", "Get ready for a sunset" — instead of a chopped list.
+  const FUNCTION_WORD = /^(ve|ile|için|icin|veya|bir|bu|da|de|the|a|an|and|or|of|for|to|with|at|in|on|by)$/i;
   let result = '';
   let used = 0;
-  for (const word of pool) {
-    if (used >= maxWords) break;
+  for (const word of words) {
+    const isFunction = FUNCTION_WORD.test(word);
+    if (used >= maxWords && !isFunction) break;
     const candidate = result ? `${result} ${word}` : word;
     if (candidate.length > maxLen) break;
     result = candidate;
-    used += 1;
+    if (!isFunction) used += 1;
   }
 
   let compact = capitalizeFirst(result || truncateAtWordBoundary(normalized, maxLen));

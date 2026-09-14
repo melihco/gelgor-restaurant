@@ -103,7 +103,27 @@ export type FeedSlotLookIssue =
 
 export type FeedSlotLookResult =
   | { ok: true; pack: FeedSlotPack }
-  | { ok: false; issues: FeedSlotLookIssue[] };
+  | {
+    ok: false;
+    issues: FeedSlotLookIssue[];
+    /** Why the look said no — model reason + candidate labels. Diagnosis only. */
+    note?: string;
+  };
+
+function lookNoPickNote(input: {
+  raw: string;
+  candidates: FeedSlotLookCandidate[];
+  branch: string;
+}): string {
+  const parsed = parseLookJson(input.raw);
+  const reason = String(
+    parsed.reason ?? parsed.why ?? parsed.no_pick_reason ?? parsed.evidenceNote ?? parsed.evidence_note ?? '',
+  ).replace(/\s+/g, ' ').trim().slice(0, 240);
+  const labels = input.candidates
+    .map((c, i) => `${i}:${String(c.visibleLabelText || c.primarySubject || '—').slice(0, 40)}`)
+    .join(' | ');
+  return `${input.branch}; candidates=${input.candidates.length} [${labels}]${reason ? `; model: ${reason}` : ''}`.slice(0, 600);
+}
 
 const LOOK_MAX_CANDIDATES = 4;
 
@@ -683,7 +703,11 @@ export async function lookFeedSlotPack(
       ? contract.bindPickIndex(pickIndex)
       : pickIndex;
     if (pickIndex == null) {
-      return { ok: false, issues: ['no_pick'] };
+      return {
+        ok: false,
+        issues: ['no_pick'],
+        note: lookNoPickNote({ raw, candidates, branch: `model_null(${jobKind})` }),
+      };
     }
     const picked = candidates[pickIndex];
     if (
@@ -693,7 +717,11 @@ export async function lookFeedSlotPack(
         String(picked?.visibleLabelText ?? ''),
       )
     ) {
-      return { ok: false, issues: ['no_pick'] };
+      return {
+        ok: false,
+        issues: ['no_pick'],
+        note: lookNoPickNote({ raw, candidates, branch: `pick_${pickIndex}_misses_named_idea` }),
+      };
     }
     draft = { ...draft, photoUrl: picked?.url };
     if (picked && contract.restage && jobKind === 'process') {

@@ -2112,9 +2112,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           slotKey,
           metadata: {
             lookIssues: gf.lookIssues ?? [],
+            ...(gf.lookNote ? { lookNote: gf.lookNote } : {}),
             ...(lookPackSnapshot(gf.pack) ? { lookPack: lookPackSnapshot(gf.pack) } : {}),
           },
         });
+        if (gf.lookNote) {
+          console.warn(`[auto-produce] look note ${assignment.slot_role}: ${gf.lookNote.slice(0, 300)}`);
+        }
         continue;
       }
       if (gf?.applied) {

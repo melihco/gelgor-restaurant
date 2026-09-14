@@ -540,6 +540,9 @@ def _slot_look_snapshot(produce_data: dict | None, slot_key: str) -> dict[str, A
         issues = meta.get("lookIssues")
         if isinstance(issues, list) and issues:
             snap["lookIssues"] = [str(item)[:80] for item in issues[:12]]
+        note = meta.get("lookNote")
+        if isinstance(note, str) and note.strip():
+            snap["lookNote"] = note.strip()[:600]
         return snap or None
     return None
 

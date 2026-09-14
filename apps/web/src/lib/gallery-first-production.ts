@@ -101,6 +101,8 @@ export interface GalleryFirstSlotResult {
   grounded?: boolean;
   pack?: FeedSlotPack;
   lookIssues?: FeedSlotLookIssue[];
+  /** Look's own reason for a refusal — stored on the job for diagnosis. */
+  lookNote?: string;
 }
 
 type SlotFormat = 'post' | 'story' | 'reel' | 'carousel';
@@ -446,7 +448,7 @@ function trimLookShortlistToCaptionFit(
     .slice(0, LOOK_CANDIDATE_LIMIT);
 }
 
-function emptySlotLookResult(issues: FeedSlotLookIssue[]): GalleryFirstSlotResult {
+function emptySlotLookResult(issues: FeedSlotLookIssue[], note?: string): GalleryFirstSlotResult {
   return {
     photoUrl: null,
     caption: '',
@@ -456,6 +458,7 @@ function emptySlotLookResult(issues: FeedSlotLookIssue[]): GalleryFirstSlotResul
     source: 'slot_look',
     applied: false,
     lookIssues: issues,
+    ...(note ? { lookNote: note } : {}),
   };
 }
 
@@ -774,7 +777,7 @@ export async function resolveGalleryFirstForSlot(input: {
       }),
     });
     if (!looked.ok) {
-      return emptySlotLookResult(looked.issues);
+      return emptySlotLookResult(looked.issues, looked.note);
     }
     const pickedMeta = resolveGalleryPhotoMeta(
       looked.pack.photoUrl,
@@ -826,7 +829,10 @@ export async function resolveGalleryFirstForSlot(input: {
       headline: written.headline,
     }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!locked.ok) {
-      return emptySlotLookResult(locked.issues);
+      return emptySlotLookResult(
+        locked.issues,
+        `pack_parse; headline="${written.headline.slice(0, 80)}" source=${written.source}; caption="${groundedCopy.caption.slice(0, 160)}"`,
+      );
     }
     const coherent = await applyFeedPackConsistency(locked.pack, {
       adaptiveScene: Boolean(input.adaptiveScene),
@@ -840,7 +846,10 @@ export async function resolveGalleryFirstForSlot(input: {
       adaptiveScene: Boolean(input.adaptiveScene),
     });
     if (!accepted.ok) {
-      return emptySlotLookResult(accepted.codes);
+      return emptySlotLookResult(
+        accepted.codes,
+        `bind; headline="${coherent.pack.headline.slice(0, 80)}" source=${written.source}; caption="${coherent.pack.caption.slice(0, 160)}"`,
+      );
     }
     const matchScore = shortlist.find(
       (row) => normalizeGalleryUrl(row.url) === normalizeGalleryUrl(accepted.pack.photoUrl),
