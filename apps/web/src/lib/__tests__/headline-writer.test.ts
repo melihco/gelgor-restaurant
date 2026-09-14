@@ -103,6 +103,10 @@ describe('acceptFeedHeadline refuses caption meta lines (shop + beach)', () => {
   it('never lets the label filler become the headline', () => {
     expect(acceptFeedHeadline({ headline: 'Etiket duruyor', caption: 'Erken hasat zeytinyağı. Etiket duruyor.' })).toBe(false);
     expect(acceptFeedHeadline({ headline: 'The label stays', caption: 'Sunset spritz. The label stays.' })).toBe(false);
+    // Place-evidence rebuilds: photo notes for shop and beach, never a card line.
+    expect(acceptFeedHeadline({ headline: 'Yer duruyor', caption: 'Alan açık. Yer duruyor.' })).toBe(false);
+    expect(acceptFeedHeadline({ headline: 'Deniz duruyor', caption: 'Deniz duruyor. İskele yerinde.' })).toBe(false);
+    expect(acceptFeedHeadline({ headline: 'The sea is still', caption: 'The sea is still. The pier holds.' })).toBe(false);
   });
   it('accepts a lexical compound product name as a complete line', () => {
     expect(acceptFeedHeadline({ headline: 'Erken hasat zeytinyağı', caption: 'Bu hafta tezgahta erken hasat zeytinyağı var. Tadına bakın.' })).toBe(true);

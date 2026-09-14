@@ -199,9 +199,17 @@ export function lockFeedCardCopy(input: {
  * filler appended when a still only has its label. Fine in the caption body,
  * never on the card as the headline ("Etiket duruyor" painted big is a defect).
  */
+const CAPTION_META_LINES = new Set([
+  'etiket duruyor', 'the label stays',
+  'yer duruyor', 'alan acik', 'deniz duruyor', 'iskele yerinde', 'su duruyor', 'kenar acik',
+  'the place is open', 'the ground holds', 'the sea is still', 'the pier holds',
+  'the water is still', 'the edge is open',
+]);
+
 export function isCaptionMetaLine(text: string): boolean {
   const f = fold(text).replace(/[.!?]+$/g, '').trim();
-  return f === 'etiket duruyor' || f === 'the label stays' || /\betiket duruyor$/.test(f);
+  if (CAPTION_META_LINES.has(f)) return true;
+  return /\b(etiket|yer|deniz|su) duruyor$/.test(f) || /\b(alan|kenar) acik$/.test(f);
 }
 
 export function deriveHeadlineFromCaption(caption: string): string {
@@ -840,17 +848,21 @@ function rebuildPlaceCaption(input: {
   const blob = `${input.photoSideText ?? ''} ${input.slotJob} ${input.evidenceNote}`;
   const english = copyLanguageIsEnglish(input.language);
   const family = placeFamilyIn(blob);
+  // Evidence-only place copy. The second sentence is what the card can carry
+  // as its line, so it reads as an experience ("Sakin bir gün"), not a note
+  // about the photo ("Yer duruyor") — those painted as headlines were defects.
+  const day = english ? 'A calm day.' : 'Sakin bir gün.';
   if (family === 'sea') {
     const pierInFrame = /\b(iskele|pier|dock)\b/i.test(blob);
     if (english) {
-      return pierInFrame ? 'The sea is still. The pier holds.' : 'The sea is still. The place is open.';
+      return pierInFrame ? `At the end of the pier. ${day}` : `By the sea. ${day}`;
     }
-    return pierInFrame ? 'Deniz duruyor. İskele yerinde.' : 'Deniz duruyor. Alan açık.';
+    return pierInFrame ? `İskelenin ucundayız. ${day}` : `Deniz kıyısındayız. ${day}`;
   }
   if (family === 'lake') {
-    return english ? 'The water is still. The edge is open.' : 'Su duruyor. Kenar açık.';
+    return english ? `By the water. ${day}` : `Su kenarındayız. ${day}`;
   }
-  return english ? 'The place is open. The ground holds.' : 'Alan açık. Yer duruyor.';
+  return english ? `Out in the open. ${day}` : `Açık havadayız. ${day}`;
 }
 
 export type FeedSlotCopyGroundInput = {

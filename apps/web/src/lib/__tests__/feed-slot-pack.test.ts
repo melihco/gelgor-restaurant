@@ -330,7 +330,7 @@ describe('feed-slot-pack — motto box + caption open', () => {
       headline: 'Deniz manzarası eşliğinde huzur dolu anlar.',
       photoSideText: 'çim, kapalı şemsiye, begonvil, açık deniz ufku',
     });
-    expect(r.caption).toBe('Deniz duruyor. Alan açık.');
+    expect(r.caption).toBe('Deniz kıyısındayız. Sakin bir gün.');
     expect(r.caption).not.toMatch(/iskele/i);
   });
 
@@ -345,7 +345,7 @@ describe('feed-slot-pack — motto box + caption open', () => {
       photoSideText: 'terrace umbrellas open sea horizon',
       language: 'English',
     });
-    expect(r.caption).toBe('The sea is still. The place is open.');
+    expect(r.caption).toBe('By the sea. A calm day.');
     expect(r.caption).not.toMatch(/Deniz duruyor|İskele yerinde|The pier holds/);
     expect(r.headline).not.toMatch(/Deniz duruyor/);
   });
