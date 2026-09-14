@@ -174,7 +174,7 @@ services:
       - key: SMART_AGENCY_IMAGE_PROVIDER
         value: flux
       - key: SMART_AGENCY_IMAGE_MODEL
-        value: gpt-image-1
+        value: gpt-image-2
       - key: SMART_AGENCY_IMAGE_QUALITY
         value: high
       - key: FAL_IMAGE_MODEL
@@ -318,7 +318,7 @@ services:
       - key: SMART_AGENCY_IMAGE_PROVIDER
         value: flux
       - key: SMART_AGENCY_IMAGE_MODEL
-        value: gpt-image-1
+        value: gpt-image-2
       - key: SMART_AGENCY_IMAGE_QUALITY
         value: high
       - key: FAL_IMAGE_MODEL
