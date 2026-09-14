@@ -112,6 +112,36 @@ RETRYABLE_PRODUCE_ERROR_MARKERS: tuple[str, ...] = (
 )
 
 
+# Quality verdicts on a *painted* frame. One repaint may land differently, so the
+# first failure retries; the same verdict twice in a row means the inputs (idea,
+# photo, template, headline) did not change and a third paint only burns credits.
+QUALITY_VERDICT_MARKERS: tuple[str, ...] = (
+    "quality_hard_block",
+    "caption_design_incoherent",
+    "tasarım kalitesi onay için yeterli değil",
+    "yazı, foto ve başlık",
+    "yazı, şablon ve başlık",
+)
+
+
+def quality_verdict_marker(reason: str | None) -> str | None:
+    lower = (reason or "").strip().lower()
+    if not lower:
+        return None
+    for marker in QUALITY_VERDICT_MARKERS:
+        if marker in lower:
+            return marker
+    return None
+
+
+def is_repeated_quality_verdict(previous_error: str | None, new_error: str | None) -> bool:
+    """Same quality verdict as the previous attempt → repainting the same inputs is futile."""
+    new_marker = quality_verdict_marker(new_error)
+    if new_marker is None:
+        return False
+    return quality_verdict_marker(previous_error) == new_marker
+
+
 def is_retryable_publish_error(reason: str | None) -> bool:
     lower = (reason or "").strip().lower()
     return bool(lower) and any(marker in lower for marker in RETRYABLE_PRODUCE_ERROR_MARKERS)
@@ -849,6 +879,21 @@ async def mark_failed(
     base = float(delay_sec) if delay_sec and delay_sec > 0 else float(_BACKOFF_BASE_SEC)
     effective_cap = max(1, int(attempt_cap or resolve_failure_attempt_cap(error)))
     async with factory() as db:
+        if retryable and quality_verdict_marker(error) is not None:
+            prev = await db.execute(
+                text("SELECT last_error FROM production_jobs WHERE id = CAST(:id AS UUID)"),
+                {"id": str(job_id)},
+            )
+            prev_row = prev.first()
+            previous_error = str(prev_row[0] or "") if prev_row else ""
+            if is_repeated_quality_verdict(previous_error, error):
+                retryable = False
+                error = f"{error} [repeat verdict, same inputs — not repainting]"
+                logger.info(
+                    "production_jobs.quality_verdict_repeated",
+                    job_id=str(job_id),
+                    marker=quality_verdict_marker(error),
+                )
         res = await db.execute(
             text(
                 """
@@ -1599,7 +1644,8 @@ async def _clear_gallery_urls_from_job_payloads(
                 """
                 UPDATE production_jobs
                 SET payload = COALESCE(payload, '{}'::jsonb)
-                    - 'galleryPhotoUrl' - 'gallery_photo_url' - 'galleryMatchScore',
+                    - 'galleryPhotoUrl' - 'gallery_photo_url' - 'galleryMatchScore'
+                    - 'galleryAssignDecided',
                     updated_at = now()
                 WHERE mission_id = CAST(:mission_id AS UUID)
                   AND id = ANY(CAST(:ids AS UUID[]))

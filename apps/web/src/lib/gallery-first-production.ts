@@ -54,9 +54,14 @@ import {
   type FeedPackConsistencyVerdict,
 } from '@/lib/feed-pack-consistency';
 import {
-  ideaShelfLabelOverlap,
+  ideaShelfLabelOverlapRooted,
   judgeInventedProductClaim,
 } from '@/lib/idea-product-claim';
+import {
+  writeFeedHeadline,
+  type HeadlineWriterInput,
+  type HeadlineWriterResult,
+} from '@/lib/headline-writer';
 import {
   galleryInventoryTextForIdea,
   galleryShelfLabelTextForIdea,
@@ -556,10 +561,12 @@ function collectFeedSlotLookUrls(input: {
   const skipCaptionTrim = (jobKind === 'place' || jobKind === 'process')
     && !(adaptive && realProving.length === 0 && identitySeeds.length > 0);
   const ideaText = [input.ideationHeadline, input.ideationCaption].filter(Boolean).join(' ');
+  // Label rescue runs for every non-place/process job (sell + other), so a
+  // story and a post about the same labeled product get the same shortlist.
   const restrictNamedSku = (rows: Array<{ url: string; score: number }>) => {
-    if (jobKind !== 'sell') return rows;
+    if (jobKind === 'place' || jobKind === 'process') return rows;
     const overlapOf = (url: string) => (
-      ideaShelfLabelOverlap(ideaText, String(metaFor(url)?.visibleLabelText ?? ''))
+      ideaShelfLabelOverlapRooted(ideaText, String(metaFor(url)?.visibleLabelText ?? ''))
     );
     const keepBest = (cands: Array<{ url: string; score: number; skuOverlap: number }>) => {
       const max = Math.max(0, ...cands.map((row) => row.skuOverlap));
@@ -682,6 +689,12 @@ export async function resolveGalleryFirstForSlot(input: {
   /** Test seam — shelf claim check (default: cheap chat, no word lists). */
   judgeProductClaim?: (ideaText: string, inventoryText: string) => Promise<boolean>;
   judgePackConsistency?: (pack: FeedSlotPack) => Promise<FeedPackConsistencyVerdict>;
+  /** Test seam — the single headline writer (default: hint → AI → caption → sample). */
+  writeHeadline?: (input: HeadlineWriterInput) => Promise<HeadlineWriterResult>;
+  /** Cost telemetry ids for the headline writer call. */
+  missionId?: string | null;
+  workspaceId?: string | null;
+  slotKey?: string | null;
   /** Brand flag: keep weekly scene sentence when the still is only a product. */
   adaptiveScene?: boolean;
 }): Promise<GalleryFirstSlotResult | null> {
@@ -788,11 +801,29 @@ export async function resolveGalleryFirstForSlot(input: {
       photoSideText,
       language: input.language,
     });
+    // Single headline owner: the look's line is only a hint. Caption is final
+    // here, so one writer decides (hint → cheap AI → caption sentence → sample).
+    const written = await (input.writeHeadline ?? writeFeedHeadline)({
+      caption: groundedCopy.caption,
+      hint: groundedCopy.headline,
+      evidenceNote: groundedCopy.evidenceNote,
+      slotJob,
+      catalogSlotKey: String(input.assignment.catalog_slot_key ?? '').trim() || undefined,
+      sector: input.businessType,
+      brandName: input.brandName,
+      brandTone: input.brandTone,
+      language: input.language,
+      photoRole: looked.pack.photoRole,
+      shellDirection: looked.pack.shellDirection,
+      missionId: input.missionId,
+      workspaceId: input.workspaceId,
+      slotKey: input.slotKey,
+    });
     const locked = parseFeedSlotPack({
       ...looked.pack,
       evidenceNote: groundedCopy.evidenceNote,
       caption: groundedCopy.caption,
-      headline: groundedCopy.headline,
+      headline: written.headline,
     }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);

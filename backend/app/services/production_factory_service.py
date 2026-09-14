@@ -658,13 +658,17 @@ def _gallery_assignments_from_batch(batch: list[dict[str, Any]]) -> dict[str, di
         if not isinstance(payload, dict):
             payload = {}
         url = str(payload.get("galleryPhotoUrl") or payload.get("gallery_photo_url") or "").strip()
-        if not url:
+        decided = payload.get("galleryAssignDecided") is True
+        if not url and not decided:
             continue
         key = f"{job['idea_index']}::{job['slot_role']}"
         score = payload.get("galleryMatchScore")
         out[key] = {
+            # Empty url + decided=True → plan batch ran and chose no photo;
+            # drain must not recompute the judge for this slot.
             "url": url,
             "score": score if isinstance(score, (int, float)) else None,
+            "decided": decided or bool(url),
         }
     return out
 

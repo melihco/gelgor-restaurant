@@ -2183,20 +2183,85 @@ async def _ensure_mission_feed_production(
     )
 
 
+FEED_RECONCILE_MAX_ATTEMPTS = 6
+_FEED_RECONCILE_BACKOFF_BASE_SEC = 15 * 60
+_FEED_RECONCILE_BACKOFF_CAP_SEC = 24 * 3600
+_FEED_RECONCILE_PER_TICK = 3
+
+
+def feed_reconcile_backoff_sec(attempts: int) -> int:
+    """15m, 30m, 1h, 2h, 4h, … capped at a day. Attempt 0 → 0 (eligible now)."""
+    if attempts <= 0:
+        return 0
+    return int(min(_FEED_RECONCILE_BACKOFF_CAP_SEC, _FEED_RECONCILE_BACKOFF_BASE_SEC * (2 ** (attempts - 1))))
+
+
+def feed_reconcile_eligible(perf: dict, *, now: datetime | None = None) -> bool:
+    """A mission that keeps deferring must not eat the per-tick quota forever.
+
+    ``feed_reconcile`` in performance_summary carries ``attempts`` + ``last_at``.
+    After FEED_RECONCILE_MAX_ATTEMPTS the mission is left to operator requeue.
+    """
+    state = perf.get("feed_reconcile") or {}
+    if not isinstance(state, dict):
+        return True
+    attempts = int(state.get("attempts") or 0)
+    if attempts >= FEED_RECONCILE_MAX_ATTEMPTS:
+        return False
+    last_at_raw = state.get("last_at")
+    if not last_at_raw:
+        return True
+    try:
+        last_at = datetime.fromisoformat(str(last_at_raw))
+    except ValueError:
+        return True
+    if last_at.tzinfo is None:
+        last_at = last_at.replace(tzinfo=timezone.utc)
+    current = now or datetime.now(timezone.utc)
+    return (current - last_at).total_seconds() >= feed_reconcile_backoff_sec(attempts)
+
+
+async def _bump_feed_reconcile_attempt(mission_id: uuid.UUID) -> None:
+    factory = _get_session_factory()
+    async with factory() as db:
+        r = await db.execute(select(Mission.performance_summary).where(Mission.id == mission_id))
+        row = r.one_or_none()
+        summary = dict(row[0] or {}) if row else {}
+        state = dict(summary.get("feed_reconcile") or {})
+        state["attempts"] = int(state.get("attempts") or 0) + 1
+        state["last_at"] = datetime.now(timezone.utc).isoformat()
+        summary["feed_reconcile"] = state
+        await db.execute(
+            update(Mission)
+            .where(Mission.id == mission_id)
+            .execution_options(synchronize_session=False)
+            .values(performance_summary=summary),
+        )
+        await db.commit()
+
+
 async def _reconcile_completed_missions_missing_feed() -> int:
-    """Safety net: completed missions with ideation but incomplete Feed package."""
+    """Safety net: completed missions with ideation but incomplete Feed package.
+
+    Newest missions first — this week's plan must not wait behind old ones.
+    Each mission carries an attempt counter with exponential backoff, so a
+    mission that keeps deferring (incomplete calendar node, disabled workspace)
+    cannot occupy the per-tick quota and starve everything behind it.
+    """
     factory = _get_session_factory()
     reconciled = 0
     async with factory() as db:
         r = await db.execute(
-            select(Mission.id, Mission.workspace_id, Mission.performance_summary, Mission.type).where(
-                Mission.status == MissionStatus.COMPLETED.value,
-            )
+            select(Mission.id, Mission.workspace_id, Mission.performance_summary, Mission.type)
+            .where(Mission.status == MissionStatus.COMPLETED.value)
+            .order_by(Mission.completed_at.desc().nullslast(), Mission.created_at.desc())
         )
         rows = r.all()
 
     for mission_id, workspace_id, perf_raw, mission_type in rows:
         perf = dict(perf_raw or {})
+        if not feed_reconcile_eligible(perf):
+            continue
         package_total = await _resolve_mission_production_package_total(
             mission_id,
             workspace_id=workspace_id,
@@ -2218,9 +2283,10 @@ async def _reconcile_completed_missions_missing_feed() -> int:
             for n in nodes
         ):
             continue
+        await _bump_feed_reconcile_attempt(mission_id)
         await _ensure_mission_feed_production(mission_id, workspace_id)
         reconciled += 1
-        if reconciled >= 3:
+        if reconciled >= _FEED_RECONCILE_PER_TICK:
             break
 
     if reconciled:

@@ -4,6 +4,7 @@ import { galleryInventoryText } from '@/lib/feed-slot-pack';
 import {
   ideaCoveredByShelfLabels,
   ideaShelfLabelOverlap,
+  ideaShelfLabelOverlapRooted,
   judgeInventedProductClaim,
 } from '@/lib/idea-product-claim';
 
@@ -160,6 +161,15 @@ describe('ideaCoveredByShelfLabels — shop + restaurant', () => {
       'Erken hasat zeytinyağlarımızla yemeklerinize lezzet katın',
       'NATUREL SIZMA ZEYTİNYAĞI',
     )).toBe(0);
+    // Shortlist ranking is suffix-tolerant: the family root counts there.
+    expect(ideaShelfLabelOverlapRooted(
+      'Erken hasat zeytinyağlarımızla yemeklerinize lezzet katın',
+      'NATUREL SIZMA ZEYTİNYAĞI',
+    )).toBe(1);
+    expect(ideaShelfLabelOverlapRooted(
+      'Zeytinyağlarımızı deneyen herkesin beğenisini topluyor',
+      'ERKEN HASAT ZEYTİNYAĞI',
+    )).toBe(1);
     expect(ideaShelfLabelOverlap(
       'Sızma zeytinyağımız raflarda',
       'NATUREL SIZMA ZEYTİNYAĞI',

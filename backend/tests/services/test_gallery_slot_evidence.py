@@ -119,6 +119,74 @@ def test_shop_jars_keep_product_drop_farm():
     assert "local_products_shop_farm_visit_post" not in keys
 
 
+SHOP_PLACE = SHOP + [
+    {
+        "slot_key": "local_products_shop_market_day_post",
+        "label_tr": "Pazar günü",
+        "format": "post",
+    },
+    {
+        "slot_key": "local_products_shop_weekend_hours_story",
+        "label_tr": "Hafta sonu saatleri",
+        "format": "story",
+    },
+]
+
+
+def test_product_only_gallery_closes_place_and_process_slots():
+    # 77 jar shots + one logo: no venue, no process family → place/process slots
+    # do not open this week; product slots stay.
+    rows = [
+        {
+            "description": f"Rafta etiketli zeytinyagi sisesi {i}",
+            "contentTags": ["zeytinyagi", "sise", "urun"],
+            "suggestedAssetType": "product_image",
+            "bestFor": ["product"],
+        }
+        for i in range(5)
+    ] + [
+        {
+            "description": "Marka logosu, cicek dali",
+            "contentTags": ["logo"],
+            "suggestedAssetType": "logo",
+        }
+    ]
+    proven = prefer_gallery_proven_slots(SHOP_PLACE, _gallery(*rows))
+    keys = {s["slot_key"] for s in proven}
+    assert "local_products_shop_product_hero_post" in keys
+    assert "local_products_shop_new_arrival_story" in keys
+    assert "local_products_shop_shop_ambiance_post" not in keys
+    assert "local_products_shop_market_day_post" not in keys
+    assert "local_products_shop_weekend_hours_story" not in keys
+    assert "local_products_shop_farm_visit_post" not in keys
+
+
+def test_one_venue_photo_reopens_place_slots_for_beach_club():
+    slots = [
+        {"slot_key": "beach_club_sunset_ambiance_post", "label_tr": "Gün batımı", "format": "post"},
+        {"slot_key": "beach_club_weekend_hours_story", "label_tr": "Hafta sonu saatleri", "format": "story"},
+        {"slot_key": "beach_club_signature_cocktail_post", "label_tr": "İmza kokteyl", "format": "post"},
+    ]
+    gallery = _gallery(
+        {
+            "description": "Şezlonglar ve deniz, akşam ışığı",
+            "contentTags": ["sezlong", "deniz"],
+            "suggestedAssetType": "venue_reference",
+        },
+        {
+            "description": "Bardakta kokteyl",
+            "contentTags": ["kokteyl"],
+            "suggestedAssetType": "product_image",
+        },
+    )
+    keys = {s["slot_key"] for s in prefer_gallery_proven_slots(slots, gallery)}
+    assert keys == {
+        "beach_club_sunset_ambiance_post",
+        "beach_club_weekend_hours_story",
+        "beach_club_signature_cocktail_post",
+    }
+
+
 def test_empty_analysis_keeps_caller_list():
     assert prefer_gallery_proven_slots(HOSPITALITY, None) == []
     assert prefer_gallery_proven_slots(HOSPITALITY, "{}") == []

@@ -523,7 +523,10 @@ export interface RunProductionParams {
   /** Raw content_calendar plan rows — used for empty-slot backfill after main pass. */
   calendarPlans?: Record<string, unknown>[];
   /** Factory plan-phase gallery picks keyed by `${ideaIndex}::${slot_role}`. */
-  gallerySlotAssignments?: Record<string, { url: string; score?: number | null }>;
+  gallerySlotAssignments?: Record<
+    string,
+    { url: string; score?: number | null; decided?: boolean }
+  >;
   /**
    * Faz 5 — persisted production_jobs.slot_key bindings keyed by
    * `${ideaIndex}:${slot_role}`. Hard-pins the tenant catalog slot chosen at
@@ -1326,7 +1329,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
   // fresh batch pass, with plan-reserved photos excluded from their pool.
   const precomputedAssignments = Object.entries(gallerySlotAssignments ?? {})
     .filter(([, entry]) => String(entry?.url ?? '').trim().length > 0);
-  const precomputedKeys = new Set(precomputedAssignments.map(([key]) => key));
+  // A plan decision of "no photo" (decided=true, empty url) is still a decision:
+  // the judge already ran for that slot. Only slots the plan never saw recompute.
+  const precomputedKeys = new Set(
+    Object.entries(gallerySlotAssignments ?? {})
+      .filter(([, entry]) => entry?.decided === true || String(entry?.url ?? '').trim().length > 0)
+      .map(([key]) => key),
+  );
   const uncoveredQueue = precomputedKeys.size > 0
     ? fullProductionQueue.filter(
       (item) => !precomputedKeys.has(
@@ -2087,6 +2096,9 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         adaptiveScene: aiVisualStandard.adaptiveScene,
         language: brandLanguageCode === 'en' ? 'English' : 'Turkish',
         brandTone: String(brandCtx.brand_tone ?? ''),
+        missionId,
+        workspaceId,
+        slotKey,
       });
       if (gf?.source === 'slot_look' && !gf.applied) {
         console.warn(
@@ -3326,7 +3338,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       && normalizeGalleryUrl(slotBatchDecision.url) === normalizeGalleryUrl(normalizedResolvedReferenceUrl),
     );
 
-    if (pickedFromBrandGallery && !referenceIsStock) {
+    // Look pack owns photo + copy together. Re-scoring it against the *ideation*
+    // caption and swapping the photo here would leave the pack's caption/headline
+    // describing a still that is no longer on the card ("yazı doğru, foto başka").
+    const lookPackOwnsPhoto = shouldSkipFeedMeaningRematch(lockedFeedSlotPack, lookAdaptive);
+    if (pickedFromBrandGallery && !referenceIsStock && !lookPackOwnsPhoto) {
       const scorePhoto = (url: string) => scoreIdeationPhotoMatch({
         caption: ideationCaption,
         headline: galleryMatchHeadline,

@@ -379,6 +379,46 @@ describe('feed-slot-pack — motto box + caption open', () => {
     expect(r.caption).not.toMatch(/The label stays/);
   });
 
+  it('shop: Turkish suffixes on the label word keep the model caption (no rebuild)', () => {
+    const caption = 'Zeytinyağlarımızı deneyen herkesin beğenisini topluyor. Sofranıza bir damla yeter.';
+    const r = groundFeedSlotCopy({
+      slotJob: 'ürün hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: "Etiket: 'Erken Hasat Zeytinyağı'",
+      caption,
+      headline: 'Zeytinyağlarımızı deneyen herkesin beğenisini topluyor',
+    });
+    expect(r.caption).toBe(caption);
+    expect(r.caption).not.toMatch(/Etiket duruyor|Erken etiket/);
+  });
+
+  it('shop: rebuild keeps a multi-word label whole instead of splitting it', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'ürün hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: "Etiket: 'Erken Hasat Zeytinyağı'",
+      caption: 'Çiçek balımız kavanozda sizi bekliyor.',
+      headline: 'Çiçek balımız kavanozda sizi bekliyor.',
+    });
+    expect(r.caption).toMatch(/^Erken hasat zeytinyağı\./);
+    expect(r.caption).not.toMatch(/Erken etiket/);
+  });
+
+  it('beach: suffix tolerance does not confuse unrelated short words', () => {
+    const r = groundFeedSlotCopy({
+      slotJob: 'ürün hero',
+      photoRole: 'product_for_sale',
+      shellDirection: 'product_hero',
+      evidenceNote: "Etiket: 'SPRITZ'",
+      caption: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
+      headline: 'Erken hasat zeytinyağımız Datça’dan sofralarınıza gelir.',
+    });
+    expect(r.caption).toMatch(/spr[ıi]tz/i);
+    expect(r.caption).not.toMatch(/zeytinyağ/i);
+  });
+
   it('beach: inventory place copy rebuilds into a paintable motto', () => {
     const r = groundFeedSlotCopy({
       slotJob: 'çim alan şemsiye şezlong',

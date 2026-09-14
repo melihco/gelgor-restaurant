@@ -5,6 +5,7 @@ import {
   keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
 import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
+import { sharesAgglutinativeRoot } from '@/lib/turkish-root';
 
 /**
  * Faz 1 — bir vitrin kartının tek kağıdı.
@@ -221,9 +222,19 @@ export function headlineTakenFromCaption(headline: string, caption: string): boo
   return hits >= Math.ceil(words.length * 0.7);
 }
 
+export type FeedSlotPackParseOptions = {
+  adaptiveScene?: boolean;
+  /**
+   * Headline is decided later by the single headline writer — skip the
+   * headline gates here so the look does not fail-close on a line it does
+   * not own. The writer's gate re-checks everything before the pack locks.
+   */
+  headlineOpen?: boolean;
+};
+
 export function validateFeedSlotPack(
   input: Partial<FeedSlotPack> | null | undefined,
-  opts?: { adaptiveScene?: boolean },
+  opts?: FeedSlotPackParseOptions,
 ): FeedSlotPackIssue[] {
   const p = input ?? {};
   const issues: FeedSlotPackIssue[] = [];
@@ -238,13 +249,15 @@ export function validateFeedSlotPack(
   if (slotJob.length < 4) issues.push('missing_slot_job');
   if (photoUrl.length < 8) issues.push('missing_photo');
   if (caption.length < 16) issues.push('missing_caption');
-  if (headline.length < 4) issues.push('missing_headline');
+  const headlineOpen = opts?.headlineOpen === true;
+  if (!headlineOpen && headline.length < 4) issues.push('missing_headline');
   if (evidence.length < 4) issues.push('missing_evidence');
   if (!role || !PHOTO_ROLES.has(role)) issues.push('missing_photo');
   if (!shell || !SHELLS.has(shell)) issues.push('missing_slot_job');
 
   if (
-    caption.length >= 16
+    !headlineOpen
+    && caption.length >= 16
     && headline.length >= 4
     && !overlayHeadlineGroundedInCaption(headline, caption)
     && !overlayHeadlineGroundedInCaption(headline, filled(p.evidenceNote))
@@ -276,7 +289,7 @@ export function validateFeedSlotPack(
   ) {
     issues.push('copy_misses_evidence');
   }
-  if (isEmptyPlaceCommand(headline, role, shell)) {
+  if (!headlineOpen && isEmptyPlaceCommand(headline, role, shell)) {
     issues.push('empty_place_command');
   }
 
@@ -298,7 +311,7 @@ export function isEmptyPlaceCommand(
 
 export function parseFeedSlotPack(
   input: Partial<FeedSlotPack> | null | undefined,
-  opts?: { adaptiveScene?: boolean },
+  opts?: FeedSlotPackParseOptions,
 ): { ok: true; pack: FeedSlotPack } | { ok: false; issues: FeedSlotPackIssue[] } {
   const issues = validateFeedSlotPack(input, opts);
   if (issues.length || !input) return { ok: false, issues };
@@ -633,7 +646,26 @@ function tokenHitsCaption(captionFold: string, token: string): boolean {
   const words = captionFold.split(' ');
   if (words.some((w) => covers(w, new Set([token])))) return true;
   const stem = foldStem(token);
-  return stem.length >= 4 && words.some((w) => foldStem(w) === stem);
+  if (stem.length >= 4 && words.some((w) => foldStem(w) === stem)) return true;
+  return words.some((w) => sharesAgglutinativeRoot(w, token));
+}
+
+/**
+ * The caption names the label's product (head noun) and every modifier it puts
+ * right before that noun is also on the label. Word-order based, no word list.
+ */
+function headNounAgreesWithCaption(caption: string, headNoun: string, labelParts: string[]): boolean {
+  for (const sentence of caption.split(/[.!?\n]+/)) {
+    const words = fold(sentence).split(' ').filter(Boolean);
+    const idx = words.findIndex((w) => tokenHitsCaption(w, headNoun));
+    if (idx < 0) continue;
+    const modifiers = words
+      .slice(Math.max(0, idx - 2), idx)
+      .filter((w) => w.length >= 4 && !STOP.has(w));
+    const agree = modifiers.every((m) => labelParts.some((p) => tokenHitsCaption(m, p) || tokenHitsCaption(p, m)));
+    if (agree) return true;
+  }
+  return false;
 }
 
 function labelsSupportedByCaption(caption: string, labels: string[]): number {
@@ -652,7 +684,13 @@ function labelsSupportedByCaption(caption: string, labels: string[]): number {
     if (!check.length) continue;
     const hits = check.filter((p) => tokenHitsCaption(cap, p)).length;
     const need = check.length >= 3 ? 2 : 1;
-    if (hits >= need) supported += 1;
+    // Head noun (last word in TR and EN product names: "Erken Hasat Zeytinyağı",
+    // "Early Harvest Olive Oil") is the product itself; the caption may drop the
+    // adjectives ("Zeytinyağlarımızı deneyen…") but must not swap them for
+    // another variety ("Erken hasat zeytinyağımız" against a 'NATUREL SIZMA' label).
+    const headNoun = parts[parts.length - 1] ?? '';
+    const headHit = headNoun.length > 0 && headNounAgreesWithCaption(caption, headNoun, parts);
+    if (hits >= need || headHit) supported += 1;
   }
   return supported;
 }
@@ -719,11 +757,11 @@ function compactQuotedLabels(labels: string[]): string[] {
 function productSubjectAndRest(labels: string[], english: boolean): { subject: string; rest: string } {
   const compact = compactQuotedLabels(labels);
   if (!compact.length) return { subject: '', rest: '' };
+  // The readable label is the product name as printed. Never split it into
+  // "subject = words 2–3, leftover = word 1" — that produced
+  // "Hasat zeytinyağı. Erken etiket." from 'Erken Hasat Zeytinyağı'.
   const head = compact[0] ?? '';
-  const lead = head.split(/\s+/).filter(Boolean);
-  const subject = prettyPhrase(
-    lead.length >= 3 ? lead.slice(1, 3).join(' ') : head,
-  );
+  const subject = prettyPhrase(head);
   const rest = compact.slice(1).map((phrase) => {
     const words = phrase.split(/\s+/).filter(Boolean);
     return prettyPhrase(words.slice(-2).join(' '));

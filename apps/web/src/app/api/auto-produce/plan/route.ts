@@ -345,8 +345,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
             ? {
               galleryPhotoUrl: assigned.url,
               galleryMatchScore: assigned.score ?? null,
+              galleryAssignDecided: true,
             }
-            : null,
+            // The plan batch ran for this slot and chose no photo. Carry that
+            // decision so drain does not re-run the judge on every call.
+            : { galleryAssignDecided: true },
       };
     });
 

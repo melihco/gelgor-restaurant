@@ -243,6 +243,8 @@ export interface FalDesignerStillResult {
   vibe: TypographyVibe;
   grafikerScore: number | null;
   grafikerPass: boolean;
+  /** False when the vision reviewer could not run — frame is unjudged, not passed. */
+  grafikerReviewed?: boolean;
   textValidated: boolean;
   retryCount: number;
   /** The actual headline rendered on the design (may differ from input if caption-aware). */
@@ -265,23 +267,27 @@ async function reviewDesignedFrame(
     workspaceId?: string | null;
     slotKey?: string | null;
   },
-): Promise<{ score: number | null; pass: boolean }> {
+): Promise<{ score: number | null; pass: boolean; reviewed: boolean }> {
   // Rendered frames are persisted as our own relative /api/media paths, which
   // fetchExternalImageBuffer rejects outright — so the review silently never ran
   // and every frame shipped unjudged.
+  //
+  // "Not reviewed" is never "passed": callers keep the frame (repainting cannot
+  // help when the reviewer is down) but record grafikerPass=false so the publish
+  // SSOT sees an unreviewed frame instead of a fake pass.
   const buf = await fetchReviewableFrameBuffer(imageUrl);
-  if (!buf || buf.length < 100) return { score: null, pass: true };
+  if (!buf || buf.length < 100) return { score: null, pass: false, reviewed: false };
   const review = await runGrafikerVisionReview(
     buf,
     headline.slice(0, 60),
     mode,
     telemetry,
   );
-  if (!review) return { score: null, pass: true };
+  if (!review) return { score: null, pass: false, reviewed: false };
   const score = review.score ?? null;
   const pass = review.pass === true
     || (score != null && score >= GRAFIKER_PASS_THRESHOLD);
-  return { score, pass };
+  return { score, pass, reviewed: true };
 }
 
 async function finalizeFalStillWithOfficialLogo(
@@ -1877,6 +1883,7 @@ export async function produceFalDesignerStill(
               vibe: input.vibe,
               grafikerScore: grafikerSoft.score,
               grafikerPass: grafikerSoft.pass,
+              grafikerReviewed: grafikerSoft.reviewed,
               textValidated: true,
               retryCount: groundedAttempt,
               resolvedHeadline: displayHeadline,
@@ -1897,6 +1904,7 @@ export async function produceFalDesignerStill(
           vibe: input.vibe,
           grafikerScore: grafiker.score,
           grafikerPass: grafiker.pass,
+          grafikerReviewed: grafiker.reviewed,
           textValidated: true,
           retryCount: groundedAttempt,
           resolvedHeadline: displayHeadline,
@@ -1904,6 +1912,14 @@ export async function produceFalDesignerStill(
         if (grafiker.pass) {
           console.log(
             `[fal-designer] grounded photo edit success: "${displayHeadline.slice(0, 40)}" refs=${groundedRefUrls.length} attempt=${groundedAttempt + 1}`,
+          );
+          return finalizeFalStillWithOfficialLogo(last, input);
+        }
+        if (!grafiker.reviewed) {
+          // Reviewer unavailable: another paint costs money and cannot change the
+          // verdict. Keep the text-validated frame, leave it marked unreviewed.
+          console.warn(
+            '[fal-designer] grounded photo edit: reviewer unavailable — keeping text-valid frame unjudged',
           );
           return finalizeFalStillWithOfficialLogo(last, input);
         }
@@ -2046,12 +2062,17 @@ export async function produceFalDesignerStill(
       vibe: input.vibe,
       grafikerScore: grafiker.score,
       grafikerPass: grafiker.pass,
+      grafikerReviewed: grafiker.reviewed,
       textValidated: true,
       retryCount: attempt + typoResult.retryCount,
       resolvedHeadline: displayHeadline,
     };
 
     if (grafiker.pass) {
+      return finalizeFalStillWithOfficialLogo(last, input);
+    }
+    if (!grafiker.reviewed) {
+      console.warn('[fal-designer] reviewer unavailable — keeping text-valid frame unjudged');
       return finalizeFalStillWithOfficialLogo(last, input);
     }
     console.warn(

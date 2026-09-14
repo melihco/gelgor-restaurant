@@ -19,6 +19,7 @@ import {
   isOpenAiQuotaOrBillingError,
   markOpenAiQuotaBlocked,
 } from '@/lib/openai-error-utils';
+import { sharesAgglutinativeRoot } from '@/lib/turkish-root';
 
 const CLAIM_SYSTEM = [
   'You decide if a social post idea names a specific sellable product',
@@ -59,7 +60,11 @@ function claimTokens(text: string): string[] {
 }
 
 /** How many shelf-label tokens the idea actually hits. Şam ≠ çam. */
-export function ideaShelfLabelOverlap(ideaText: string, labelText: string): number {
+export function ideaShelfLabelOverlap(
+  ideaText: string,
+  labelText: string,
+  options?: { roots?: boolean },
+): number {
   const idea = claimTokens(ideaText);
   const shelf = claimTokens(labelText);
   if (idea.length === 0 || shelf.length === 0) return 0;
@@ -70,10 +75,18 @@ export function ideaShelfLabelOverlap(ideaText: string, labelText: string): numb
       const prefixed = token.length >= 4
         && label.length >= 4
         && (token.startsWith(label) || label.startsWith(token));
-      if (exact || prefixed) matched.add(label);
+      // zeytinyağlarımızı ↔ ZEYTİNYAĞI: same Turkish root. Opt-in — the
+      // invented-claim gate keeps the stricter prefix rule.
+      const rooted = options?.roots === true && sharesAgglutinativeRoot(token, label);
+      if (exact || prefixed || rooted) matched.add(label);
     }
   }
   return matched.size;
+}
+
+/** Shortlist rescue: suffix-tolerant label overlap for ranking photos. */
+export function ideaShelfLabelOverlapRooted(ideaText: string, labelText: string): number {
+  return ideaShelfLabelOverlap(ideaText, labelText, { roots: true });
 }
 
 export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): boolean {

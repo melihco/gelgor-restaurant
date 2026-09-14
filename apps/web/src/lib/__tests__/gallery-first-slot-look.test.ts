@@ -168,6 +168,48 @@ describe('gallery-first — one look owns the pack', () => {
     expect(gf?.caption).toMatch(/sızma|sizma/i);
   });
 
+  it('shop: look headline that opens the caption is replaced by the writer instead of missing_headline', async () => {
+    const OIL_B = 'https://cdn.example.com/gallery/early-harvest.jpg';
+    const caption = 'Zeytinyağlarımızı deneyen herkesin beğenisini topluyor. Sofranıza bir damla yeter.';
+    const gf = await resolveGalleryFirstForSlot({
+      assignment: shopAssignment(),
+      galleryPhotos: [OIL_B],
+      galleryMeta: {
+        [OIL_B]: {
+          primarySubject: 'olive_oil',
+          visibleLabelText: 'ERKEN HASAT ZEYTİNYAĞI',
+          description: 'Early harvest olive oil tin',
+          suggestedAssetType: 'product_image',
+        },
+      },
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      language: 'Turkish',
+      ideationCaption: caption,
+      ideationHeadline: 'Herkesin beğenisini topluyor',
+      lookFn: async (): Promise<FeedSlotLookResult> => ({
+        ok: true,
+        pack: {
+          slotJob: 'ürün hero',
+          photoUrl: OIL_B,
+          photoRole: 'product_for_sale',
+          caption,
+          headline: 'Zeytinyağlarımızı deneyen herkesin beğenisini topluyor',
+          shellDirection: 'product_hero',
+          evidenceNote: "Etiket: 'Erken Hasat Zeytinyağı'",
+        },
+      }),
+      writeHeadline: async (w) => {
+        expect(w.caption).toBe(caption);
+        return { headline: 'Zeytinyağı sofranıza', source: 'ai', rejected: [w.hint ?? ''] };
+      },
+    });
+    expect(gf?.applied).toBe(true);
+    expect(gf?.headline).toBe('Zeytinyağı sofranıza');
+    expect(gf?.caption).toBe(caption);
+  });
+
   it('beach: fail-closes when the look cannot pack the sunset table', async () => {
     const galleryMeta: Record<string, GalleryPhotoMeta> = {
       [TABLE]: {
@@ -301,6 +343,49 @@ describe('gallery-first — one look owns the pack', () => {
     expect(seen[0]).toBe(JAM);
     expect(gf?.applied).toBe(true);
     expect(gf?.photoUrl).toBe(JAM);
+  });
+
+  it('shop: campaign story with a suffixed product word gets the same labeled shortlist as the post', () => {
+    const HONEY = 'https://cdn.example.com/gallery/honey-jar.jpg';
+    const OIL_B = 'https://cdn.example.com/gallery/early-harvest.jpg';
+    const meta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [HONEY]: {
+        primarySubject: 'honey',
+        visibleLabelText: 'ÇİÇEK BALI',
+        description: 'Honey jar on a wooden table',
+        suggestedAssetType: 'product_image',
+      },
+      [OIL_B]: {
+        primarySubject: 'olive_oil',
+        visibleLabelText: 'ERKEN HASAT ZEYTİNYAĞI',
+        description: 'Early harvest olive oil tin',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const base = {
+      galleryPhotos: [HONEY, JAM, OIL, OIL_B],
+      galleryMeta: meta,
+      excludeUrls: [] as string[],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Erken hasat zeytinyağlarımızı deneyen herkesin beğenisini topluyor.',
+      ideationHeadline: 'Herkesin beğenisini topluyor',
+    };
+    const story = buildCaptionFitLookShortlist({
+      ...base,
+      assignment: {
+        ...shopAssignment(),
+        slot_role: 'campaign_story_motion',
+        catalog_slot_key: 'premium_editorial_campaign_story',
+        catalog_slot_label: 'kampanya hikâyesi',
+      },
+    });
+    const post = buildCaptionFitLookShortlist({ ...base, assignment: shopAssignment() });
+    expect(story.map((r) => r.url)).toContain(OIL_B);
+    expect(story.map((r) => r.url)).not.toContain(HONEY);
+    expect(story.map((r) => r.url)).not.toContain(JAM);
+    expect(post.map((r) => r.url)).toEqual(story.map((r) => r.url));
   });
 
   it('shop: a used jam still is excluded so the next slot can take the oil', () => {

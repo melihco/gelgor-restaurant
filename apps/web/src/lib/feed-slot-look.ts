@@ -732,17 +732,19 @@ export async function lookFeedSlotPack(
       photoSideText,
       photoUrl: picked?.url,
     });
+    // Headline is not the look's to fail on: the single headline writer
+    // (gallery-first) decides it once the caption is final. The look only
+    // proposes a line; a bad proposal becomes an empty hint, not a dead slot.
     const parsed = parseFeedSlotPack({
       ...draft,
       evidenceNote: grounded.evidenceNote,
       caption: sceneCopy.caption,
       headline: sceneCopy.headline,
-    }, { adaptiveScene: Boolean(input.adaptiveScene) });
+    }, { adaptiveScene: Boolean(input.adaptiveScene), headlineOpen: true });
     if (!parsed.ok) return { ok: false, issues: parsed.issues };
     const complete = completeLookPack(parsed.pack, {
       adaptiveScene: Boolean(input.adaptiveScene),
-    });
-    if (!complete) return { ok: false, issues: ['incomplete_headline'] };
+    }) ?? { ...parsed.pack, headline: '' };
     if (
       !input.skipPackConsistency
       && (deps?.judgePackConsistency || !deps?.openai)

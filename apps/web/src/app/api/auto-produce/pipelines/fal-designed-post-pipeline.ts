@@ -14,6 +14,7 @@ import {
   buildDesignedPostDesignCardPrompt,
   buildDesignedStoryDesignCardPrompt,
   produceFalDesignedPostStill,
+  resolveFalCanvasChannel,
   resolveFalRequireGroundedGallery,
   resolveIdeogramBackgroundStyle,
   resolveTypographyVibeFromContext,
@@ -172,6 +173,8 @@ export interface FalDesignedPostResult {
 type DesignedPostReview = {
   score: number | null;
   pass: boolean;
+  /** False when the vision reviewer did not run — unjudged, never "passed". */
+  reviewed: boolean;
   issues?: string[];
   textOverlap?: boolean;
   textLegibility?: 'clear' | 'partial' | 'poor';
@@ -192,6 +195,7 @@ async function scoreDesignedPostRender(
   return {
     score: review.score ?? null,
     pass: review.pass,
+    reviewed: true,
     issues: review.issues,
     textOverlap: review.text_overlap,
     textLegibility: review.text_legibility,
@@ -204,7 +208,7 @@ async function reviewDesignedPostOutput(
   headline: string,
 ): Promise<DesignedPostReview> {
   const review = await scoreDesignedPostRender(imageUrl, headline);
-  if (!review) return { score: null, pass: true };
+  if (!review) return { score: null, pass: false, reviewed: false };
   return {
     ...review,
     pass: templateLockUsesGrafikerPass(review.score, review.pass),
@@ -304,7 +308,8 @@ export async function produceFalDesignedPost(
 
     // Primary engine — GPT-image design grounded on the real gallery photo.
     if (referenceImageUrls.length > 0 && referenceImageUrls.every(isUsableGalleryPhotoUrl)) {
-      const canvasChannel = aspectRatio === '9:16' ? 'reel' : 'feed_post';
+      // 9:16 designed post is a story canvas (type budget + logo seat), not a reel.
+      const canvasChannel = resolveFalCanvasChannel({ aspectRatio });
       // SSOT: bind overlay once after template match — locked punchlines never stem.
       const paintOverlay = resolveSlotPaintOverlay({
         headline: input.headline,
@@ -568,14 +573,27 @@ export async function produceFalDesignedPost(
         // That is the only thing that licenses a typography_text_valid claim.
         falTextValidated = true;
         if (binding?.matched) {
-          const grafiker = await reviewDesignedPostOutput(designedUrl, input.headline);
+          // Review the line that was actually painted (canvasHeadline), not the
+          // pre-fit mission headline — otherwise the reviewer scores a mismatch.
+          const grafiker = await reviewDesignedPostOutput(designedUrl, canvasHeadline);
           falGrafikerScore = grafiker.score;
           falGrafikerPass = grafiker.pass;
           falGrafikerObservedScore = grafiker.score;
-          falGrafikerReviewed = grafiker.score != null;
+          falGrafikerReviewed = grafiker.reviewed;
           lastTextValidUrl = designedUrl;
           lastTextValidScore = grafiker.score;
           if (grafiker.pass) {
+            imageUrl = designedUrl;
+            falDesignEngine = 'gpt_image_designed';
+            costDelta += 0.04;
+            break;
+          }
+          if (!grafiker.reviewed) {
+            // Reviewer down: repainting cannot change the verdict. Keep the
+            // text-validated frame, unjudged (grafiker_pass=false, reviewed=false).
+            console.warn(
+              '[auto-produce] [fal-design] grafiker unavailable — keeping text-valid frame unjudged',
+            );
             imageUrl = designedUrl;
             falDesignEngine = 'gpt_image_designed';
             costDelta += 0.04;
@@ -595,7 +613,7 @@ export async function produceFalDesignedPost(
           );
           continue;
         }
-        const observed = await scoreDesignedPostRender(designedUrl, input.headline);
+        const observed = await scoreDesignedPostRender(designedUrl, canvasHeadline);
         falGrafikerObservedScore = observed?.score ?? null;
         falGrafikerReviewed = observed?.score != null;
         lastTextValidUrl = designedUrl;
@@ -659,7 +677,7 @@ export async function produceFalDesignedPost(
       && serverConfig.fal.configured
       && (!purposePinnedForIdeogram || allowPinnedIdeogram)
     )) {
-      const canvasChannelIdeogram = aspectRatio === '9:16' ? 'reel' : 'feed_post';
+      const canvasChannelIdeogram = resolveFalCanvasChannel({ aspectRatio });
       const paintOverlayIdeogram = resolveSlotPaintOverlay({
         headline: input.headline,
         subtitle: input.subtitle || input.cta,
@@ -740,6 +758,7 @@ export async function produceFalDesignedPost(
       imageUrl = still.imageUrl;
       falGrafikerScore = still.grafikerScore;
       falGrafikerPass = still.grafikerPass;
+      falGrafikerReviewed = still.grafikerReviewed !== false && still.grafikerScore != null;
       falDesignEngine = 'fal_ideogram';
       costDelta += 0.05;
     }

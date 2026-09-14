@@ -13,6 +13,7 @@ import {
   type OverlayLocale,
 } from '@/lib/fal-caption-headline';
 import { isNonVenueSectorProfile } from '@/lib/sector-production-profile';
+import { sharesAgglutinativeRoot } from '@/lib/turkish-root';
 
 const TOURISM_FRAMING_RX =
   /\b(agro[-\s]?turizm|agroturizm|agro\s+tourism|turizm\s+deneyim|seyahat\s+acent|tatil\s+paket|turist\s+rehber)\b/i;
@@ -68,7 +69,8 @@ function captionContainsOverlayToken(captionNorm: string, token: string): boolea
   if (stem !== token && (cBlob.includes(` ${stem} `) || captionNorm.includes(stem))) return true;
   // Plural in caption, singular in headline (or reverse).
   if (cBlob.includes(` ${stem}s `) || cBlob.includes(` ${stem}es `)) return true;
-  return false;
+  // Turkish suffix chain: zeytinyağı ↔ zeytinyağlarımızı.
+  return captionNorm.split(' ').some((w) => sharesAgglutinativeRoot(w, token));
 }
 
 /** True when headline tokens substantially appear in the caption body. */
