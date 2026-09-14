@@ -609,7 +609,8 @@ export async function produceFalDesignedPost(
             });
           }
           console.warn(
-            `[auto-produce] [fal-design] template lock grafiker ${grafiker.score ?? '—'}/10 — retry ${attempt + 2}/${maxGptAttempts}`,
+            `[auto-produce] [fal-design] template lock grafiker ${grafiker.score ?? '—'}/10 — retry ${attempt + 2}/${maxGptAttempts} `
+            + `issues=${JSON.stringify(grafiker.issues ?? [])} frame=${designedUrl.slice(0, 160)}`,
           );
           continue;
         }

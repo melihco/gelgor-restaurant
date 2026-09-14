@@ -108,56 +108,108 @@ export async function runGrafikerVisionReview(
     const openai = new OpenAI({ apiKey: openaiKey });
     const thumbB64 = imageBuffer.toString('base64');
     const mime = imageBuffer[0] === 0x89 ? 'image/png' : 'image/jpeg';
+    const dataUrl = `data:${mime};base64,${thumbB64}`;
 
-    const reviewResp = await openai.chat.completions.create({
-      model,
-      max_tokens: 400,
-      temperature: 0.05,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: getSystemPrompt(mode) },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: getUserPrompt(mode, label) },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mime};base64,${thumbB64}`, detail: imageDetail },
-            },
-          ],
-        },
-      ],
+    const first = await callGrafiker(openai, {
+      model, imageDetail, mode, label, dataUrl, telemetry,
     });
+    if (!first) return null;
+    if (first.pass || !grafikerFailNeedsConfirmation(model, imageDetail)) return first;
 
-    try {
-      const { emitOpenAiCostLine } = await import('@/lib/ai-cost-telemetry');
-      emitOpenAiCostLine({
-        callType: 'grafiker_vision',
-        model,
-        usage: reviewResp.usage,
-        attempt: telemetry?.attempt,
-        missionId: telemetry?.missionId,
-        workspaceId: telemetry?.workspaceId,
-        slotKey: telemetry?.slotKey,
-        detail: `${mode}:${label}${imageDetail === 'low' ? ':lite' : ''}`,
-      });
-    } catch {
-      // telemetri üretimi bozmamalı
-    }
-
-    const reviewRaw = reviewResp.choices[0]?.message?.content?.trim() ?? '{}';
-    const review = JSON.parse(reviewRaw.match(/\{[\s\S]*\}/)?.[0] ?? reviewRaw) as GrafikerReviewResult;
-    return {
-      score: review.score ?? null,
-      pass: review.pass === true,
-      text_overlap: review.text_overlap,
-      text_legibility: review.text_legibility,
-      overlay_sufficient: review.overlay_sufficient,
-      hierarchy_ok: review.hierarchy_ok,
-      issues: review.issues,
-      verdict: review.verdict,
-    };
+    // Cheap pass (mini + 512px) hallucinates "clipped letters at the frame edge"
+    // on clean, centered type — measured 2–3/10 on frames gpt-4o/high scores 9.
+    // A fail from the cheap reviewer is a claim, not a verdict: confirm it once
+    // at full detail. The confirmed review wins either way.
+    const confirm = await callGrafiker(openai, {
+      model: GRAFIKER_CONFIRM_MODEL,
+      imageDetail: 'high',
+      mode,
+      label,
+      dataUrl,
+      telemetry,
+      detailSuffix: ':confirm',
+    });
+    if (!confirm) return first;
+    console.warn(
+      `[grafiker] cheap fail ${first.score ?? '—'}/10 → confirm ${confirm.score ?? '—'}/10 `
+      + `(${confirm.pass ? 'pass' : 'fail'}) "${label.slice(0, 40)}" `
+      + `issues=${JSON.stringify(confirm.issues ?? [])}`,
+    );
+    return confirm;
   } catch {
     return null;
   }
+}
+
+/** Full-detail reviewer used to confirm a cheap-tier fail. */
+export const GRAFIKER_CONFIRM_MODEL = 'gpt-4o';
+
+/** Only a mini/low first pass needs a second opinion; gpt-4o/high is already final. */
+export function grafikerFailNeedsConfirmation(model: string, detail: 'low' | 'high'): boolean {
+  return detail === 'low' || /mini/i.test(model);
+}
+
+async function callGrafiker(
+  openai: { chat: { completions: { create: (args: any) => Promise<any> } } },
+  args: {
+    model: string;
+    imageDetail: 'low' | 'high';
+    mode: GrafikerMode;
+    label: string;
+    dataUrl: string;
+    telemetry?: GrafikerTelemetryContext;
+    detailSuffix?: string;
+  },
+): Promise<GrafikerReviewResult | null> {
+  const { model, imageDetail, mode, label, dataUrl, telemetry } = args;
+  const reviewResp = await openai.chat.completions.create({
+    model,
+    max_tokens: 400,
+    temperature: 0.05,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: getSystemPrompt(mode) },
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: getUserPrompt(mode, label) },
+          { type: 'image_url', image_url: { url: dataUrl, detail: imageDetail } },
+        ],
+      },
+    ],
+  });
+
+  try {
+    const { emitOpenAiCostLine } = await import('@/lib/ai-cost-telemetry');
+    emitOpenAiCostLine({
+      callType: 'grafiker_vision',
+      model,
+      usage: reviewResp.usage,
+      attempt: telemetry?.attempt,
+      missionId: telemetry?.missionId,
+      workspaceId: telemetry?.workspaceId,
+      slotKey: telemetry?.slotKey,
+      detail: `${mode}:${label}${imageDetail === 'low' ? ':lite' : ''}${args.detailSuffix ?? ''}`,
+    });
+  } catch {
+    // telemetri üretimi bozmamalı
+  }
+
+  const reviewRaw = reviewResp.choices?.[0]?.message?.content?.trim() ?? '{}';
+  let review: GrafikerReviewResult;
+  try {
+    review = JSON.parse(reviewRaw.match(/\{[\s\S]*\}/)?.[0] ?? reviewRaw) as GrafikerReviewResult;
+  } catch {
+    return null;
+  }
+  return {
+    score: review.score ?? null,
+    pass: review.pass === true,
+    text_overlap: review.text_overlap,
+    text_legibility: review.text_legibility,
+    overlay_sufficient: review.overlay_sufficient,
+    hierarchy_ok: review.hierarchy_ok,
+    issues: review.issues,
+    verdict: review.verdict,
+  };
 }
