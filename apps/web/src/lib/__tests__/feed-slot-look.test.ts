@@ -686,10 +686,11 @@ describe('feed-slot-look — shop + beach', () => {
         language: 'Turkish',
         ideationHint: 'Müşterilerimiz çam balını çok seviyor. Doğal çam balımız rafta.',
         inventoryText: 'ÇAM BALI PINE HONEY SÜZME ÇİÇEK BALI',
-        candidates: [{
-          url: 'https://cdn.example.com/flower.jpg',
-          visibleLabelText: 'SÜZME ÇİÇEK BALI',
-        }],
+        // The named jar is on the shortlist; the model still picked the other one.
+        candidates: [
+          { url: 'https://cdn.example.com/flower.jpg', visibleLabelText: 'SÜZME ÇİÇEK BALI' },
+          { url: 'https://cdn.example.com/pine.jpg', visibleLabelText: 'ÇAM BALI' },
+        ],
       },
       {
         openai: fakeOpenai({
@@ -704,6 +705,35 @@ describe('feed-slot-look — shop + beach', () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
+  it('shop sell: generic favorite idea keeps the model pick (live no_pick storm)', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        language: 'Turkish',
+        ideationHint: 'Siz de bu eşsiz lezzeti deneyin — Müşterilerimiz doğallığını ve tadını çok seviyor! Doğal lezzetleri keşfedin',
+        inventoryText: 'Karaman Dala Süzme Çiçek Balı honey doğal bal SÜZME KEKİK BALI SÜZME ÇAM BALı Süzme Çiçek Balı Karaman Datça Petek Balı',
+        candidates: [
+          { url: 'https://cdn.example.com/dala.jpg', visibleLabelText: 'Karaman Dala Süzme Çiçek Balı' },
+          { url: 'https://cdn.example.com/kekik.jpg', visibleLabelText: 'SÜZME KEKİK BALI' },
+          { url: 'https://cdn.example.com/cam.jpg', visibleLabelText: 'SÜZME ÇAM BALı' },
+          { url: 'https://cdn.example.com/cicek.jpg', visibleLabelText: 'Süzme Çiçek Balı' },
+        ],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: "Etiket: 'Karaman Dala Süzme Çiçek Balı'. Kavanoz, ahşap kaşık.",
+          caption: 'Karaman Dala süzme çiçek balı müşterilerimizin favorisi. Kavanoz rafta.',
+          headline: 'Müşterilerimizin favorisi süzme çiçek balı',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
   });
 
   it('shop sell: English vision headline is taken from the Turkish caption', async () => {

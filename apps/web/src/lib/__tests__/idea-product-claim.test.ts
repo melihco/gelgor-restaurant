@@ -6,6 +6,7 @@ import {
   ideaShelfLabelOverlap,
   ideaShelfLabelOverlapRooted,
   judgeInventedProductClaim,
+  pickMissesNamedCandidateSku,
 } from '@/lib/idea-product-claim';
 
 function fakeJudgeOpenai(invented: boolean, calls: { count: number }) {
@@ -189,5 +190,37 @@ describe('ideaCoveredByShelfLabels — shop + restaurant', () => {
       'The terrace holds the last light',
       'lunch plate salad',
     )).toBe(false);
+  });
+});
+
+describe('pickMissesNamedCandidateSku (live Karaman no_pick storm)', () => {
+  const honeyShelf = [
+    'Karaman Dala Süzme Çiçek Balı',
+    'SÜZME KEKİK BALI',
+    'SÜZME ÇAM BALı',
+    'Süzme Çiçek Balı',
+  ];
+
+  it('generic customer-favorite idea names nothing → model pick stands', () => {
+    const idea = 'Siz de bu eşsiz lezzeti deneyin — Müşterilerimiz doğallığını ve tadını çok seviyor! 🍯 Doğal lezzetleri keşfedin';
+    expect(pickMissesNamedCandidateSku(idea, honeyShelf, 'Karaman Dala Süzme Çiçek Balı')).toBe(false);
+  });
+
+  it('idea naming Süzme Çam Balı rejects a çiçek jar and accepts the çam jar', () => {
+    const idea = 'Süzme Çam Balı’nı keşfedin ve sağlıklı yaşam';
+    expect(pickMissesNamedCandidateSku(idea, honeyShelf, 'Süzme Çiçek Balı')).toBe(true);
+    expect(pickMissesNamedCandidateSku(idea, honeyShelf, 'SÜZME ÇAM BALı')).toBe(false);
+  });
+
+  it('house words (Karaman, Datça) shared by most labels do not count as SKU identity', () => {
+    const shelf = ['Karaman Datça Petek Balı', 'Karaman Datça Erken Hasat Zeytinyağı', 'Karaman Datça Kekik Balı'];
+    const idea = 'Karaman Datça’da bu hafta lezzet dolu günler';
+    expect(pickMissesNamedCandidateSku(idea, shelf, 'Karaman Datça Petek Balı')).toBe(false);
+  });
+
+  it('beach club: cocktail idea names Aperol; a Hugo pick misses', () => {
+    const shelf = ['Aperol Spritz', 'Hugo Spritz', 'Limoncello Spritz'];
+    expect(pickMissesNamedCandidateSku('Gün batımında Aperol Spritz saati', shelf, 'Hugo Spritz')).toBe(true);
+    expect(pickMissesNamedCandidateSku('Gün batımında Aperol Spritz saati', shelf, 'Aperol Spritz')).toBe(false);
   });
 });

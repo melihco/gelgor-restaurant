@@ -89,6 +89,57 @@ export function ideaShelfLabelOverlapRooted(ideaText: string, labelText: string)
   return ideaShelfLabelOverlap(ideaText, labelText, { roots: true });
 }
 
+/**
+ * Tokens printed on most labels are the brand / house words ("Karaman",
+ * "Datça", "Süzme"), not SKU identity. Strip them before asking whether an
+ * idea names one jar over another.
+ */
+export function shelfHouseTokens(labels: string[]): Set<string> {
+  const clean = labels.map((l) => new Set(claimTokens(l))).filter((s) => s.size > 0);
+  const house = new Set<string>();
+  if (clean.length < 3) return house;
+  const counts = new Map<string, number>();
+  for (const set of clean) for (const t of set) counts.set(t, (counts.get(t) ?? 0) + 1);
+  for (const [t, n] of counts) if (n * 2 >= clean.length) house.add(t);
+  return house;
+}
+
+function stripTokens(text: string, drop: Set<string>): string {
+  if (drop.size === 0) return text;
+  return claimTokens(text).filter((t) => !drop.has(t)).join(' ');
+}
+
+/**
+ * Did the idea name a specific SKU that is on one of the candidate labels, and
+ * is the picked label a *different* SKU?
+ *
+ * Judged per label (never against the whole gallery inventory blob — that is
+ * covered by any honey word) and with house tokens removed. A generic idea
+ * ("bu eşsiz lezzeti deneyin") names nothing → the model's pick stands.
+ * "Süzme Çam Balı" idea → çam jar scores 2, çiçek jar 1 → çiçek pick misses.
+ */
+export function pickMissesNamedCandidateSku(
+  ideaText: string,
+  candidateLabels: string[],
+  pickLabel: string,
+): boolean {
+  const labels = candidateLabels.map((l) => String(l ?? '').trim()).filter((l) => l.length >= 3);
+  const pick = String(pickLabel ?? '').trim();
+  if (pick.length < 3 || labels.length === 0) return false;
+  const house = shelfHouseTokens(labels);
+  const idea = stripTokens(ideaText, house);
+  if (idea.trim().length < 3) return false;
+  let best = 0;
+  for (const label of labels) {
+    best = Math.max(best, ideaShelfLabelOverlap(idea, stripTokens(label, house), { roots: true }));
+  }
+  // House words are already gone, so one specific token (aperol, çam,
+  // kekik) is identity. Zero → generic idea, nothing named.
+  if (best < 1) return false;
+  const pickScore = ideaShelfLabelOverlap(idea, stripTokens(pick, house), { roots: true });
+  return pickScore < best;
+}
+
 export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): boolean {
   // Tek ortak cins (bal / spritz) yetmez. Çam+balı geçer; şam+balı ve
   // lagoon+spritz modele kalır.

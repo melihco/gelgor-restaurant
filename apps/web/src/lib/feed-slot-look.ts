@@ -19,7 +19,7 @@ import {
   type FeedPackConsistencyVerdict,
 } from '@/lib/feed-pack-consistency';
 import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
-import { ideaCoveredByShelfLabels } from '@/lib/idea-product-claim';
+import { pickMissesNamedCandidateSku } from '@/lib/idea-product-claim';
 import {
   deriveHeadlineFromCaption,
   groundFeedSlotCopy,
@@ -212,16 +212,22 @@ function copyNamesPickLabel(copy: unknown, seed: FeedSlotLookCandidate): boolean
   });
 }
 
-/** Idea named a shelf SKU; this jar's label is a different SKU. */
+/**
+ * Idea named a shelf SKU; this jar's label is a different SKU.
+ * Judged against the candidates' own labels (house words stripped) — the
+ * gallery inventory blob is covered by any generic honey/oil idea and turned
+ * every model pick into no_pick.
+ */
 function pickMissesNamedIdea(
   idea: string,
-  inventory: string,
+  candidates: FeedSlotLookCandidate[],
   pickLabel: string,
 ): boolean {
-  const label = pickLabel.trim();
-  if (label.length < 3) return false;
-  if (!ideaCoveredByShelfLabels(idea, inventory)) return false;
-  return !ideaCoveredByShelfLabels(idea, label);
+  return pickMissesNamedCandidateSku(
+    idea,
+    candidates.map((c) => String(c.visibleLabelText ?? '')),
+    pickLabel,
+  );
 }
 
 function headlineBelongsToCaption(headline: string, caption: string): boolean {
@@ -713,7 +719,7 @@ export async function lookFeedSlotPack(
     if (
       pickMissesNamedIdea(
         String(input.ideationHint ?? ''),
-        String(input.inventoryText ?? ''),
+        candidates,
         String(picked?.visibleLabelText ?? ''),
       )
     ) {
