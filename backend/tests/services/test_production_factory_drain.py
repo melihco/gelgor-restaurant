@@ -217,6 +217,9 @@ def test_silent_post_inflight_reclaim_is_shorter_than_reel_window() -> None:
     assert "NOT ILIKE '%reel%'" in src
     assert "silent-inflight" in src
     assert "updated_at" in src
+    runnable = inspect.getsource(pjs.has_runnable_jobs)
+    assert '"silent_sec"' in runnable
+    assert "stale_sec" in runnable
     assert "attempts = j.attempts + 1" in src
     assert ":backoff" in src
     assert "run_after = now() +" in src

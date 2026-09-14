@@ -19,6 +19,7 @@ import {
   type OverlayHeadlineChannel,
 } from '@/lib/fal-caption-headline';
 import { shouldPreserveLockedPunchlineHeadline } from '@/lib/fal-design-copy';
+import { deriveHeadlineFromCaption } from '@/lib/feed-slot-pack';
 import type { GalleryPhotoMeta } from '@/lib/gallery-photo-matcher';
 import { resolveSlotSublineForRender } from '@/lib/slot-subline-policy';
 import type { TemplateTypeBudget } from '@/lib/template-type-budget';
@@ -185,6 +186,24 @@ export function shouldKeepProductionGalleryPin(input: {
   preferredUsable: boolean;
 }): boolean {
   return Boolean(input.preferredUsable && input.preferredUrl);
+}
+
+/**
+ * Canvas headline after template bind. Locked packs keep the planned line.
+ * Unlocked slots may take a caption-derived rescue — never the jar label.
+ */
+export function resolvePaintCanvasHeadline(input: {
+  paintHeadline: string;
+  plannedHeadline: string;
+  caption: string;
+  punchlineLockSource?: PunchlineLockSource;
+}): string {
+  const painted = input.paintHeadline.trim();
+  const planned = input.plannedHeadline.trim();
+  if (shouldPreserveLockedPunchlineHeadline(input.punchlineLockSource)) {
+    return painted || planned;
+  }
+  return painted || deriveHeadlineFromCaption(input.caption) || planned;
 }
 
 /** Retry shorten for locked punchlines — clamp only, never invent a stem. */

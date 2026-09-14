@@ -516,7 +516,7 @@ describe('resolveArtifactPublishReady', () => {
     expect(d.code).toBe('caption_design_incoherent');
   });
 
-  it('shop: looked pack + leftover motto still publishes when the photo matches', () => {
+  it('shop: looked pack + leftover motto hides when overlay fights the caption', () => {
     const d = resolveArtifactPublishReady({
       meta: {
         pipeline: 'fal_design',
@@ -554,9 +554,52 @@ describe('resolveArtifactPublishReady', () => {
       format: 'post',
       designedVisualReady: true,
     });
-    expect(d.ready).toBe(true);
-    expect(d.blockFeed).toBe(false);
-    expect(d.code).toBe('ready');
+    expect(d.ready).toBe(false);
+    expect(d.blockFeed).toBe(true);
+    expect(d.code).toBe('caption_design_incoherent');
+  });
+
+  it('beach: looked pack + leftover template sample hides when overlay fights the caption', () => {
+    const d = resolveArtifactPublishReady({
+      meta: {
+        pipeline: 'fal_design',
+        production_role: 'fal_designed_post',
+        fal_designer_produced: true,
+        grafiker_score: 8,
+        grafiker_pass: true,
+        business_type: 'beach_club',
+        catalog_slot_key: 'beach_club_sunset_ambiance_story',
+        brand_design_template_match_quality: 'soft',
+        brand_design_template_sample_headline: 'DJ Night',
+        reference_photo_url: 'https://cdn.example.com/sunset.jpg',
+        gallery_photo_meta: {
+          contentTags: ['sunset', 'deck', 'sea'],
+          description: 'Sunset over the beach club deck',
+          suggestedAssetType: 'venue_reference',
+          primarySubject: 'venue',
+        },
+        ...stampFeedSlotPackMetadata({
+          slotJob: 'gün batımı',
+          photoUrl: 'https://cdn.example.com/sunset.jpg',
+          photoRole: 'venue',
+          caption: 'Gün batımında masada kal. Altın saat açık denizde duruyor.',
+          headline: 'Gün batımında masada kal',
+          shellDirection: 'venue_ambiance',
+          evidenceNote: 'Teras ve açık deniz',
+        }),
+      },
+      content: {
+        kind: 'instagram_post',
+        caption: 'Gün batımında masada kal. Altın saat açık denizde duruyor.',
+        headline: 'DJ Night',
+        design_overlay_headline: 'DJ Night',
+      },
+      format: 'story',
+      designedVisualReady: true,
+    });
+    expect(d.ready).toBe(false);
+    expect(d.blockFeed).toBe(true);
+    expect(d.code).toBe('caption_design_incoherent');
   });
 
   it('shop: produce-ready stamp is not re-scored by overlay/theme on Akış', () => {

@@ -42,7 +42,6 @@ import {
   resolveBestGalleryUrl,
   resolveUrlInPool,
   matchPhotoToContent,
-  pickMissionDiverseFallbackPhoto,
   assignmentRequiresCaptionPhotoMatch,
   isHardGalleryThemeMismatch,
   rankPhotosForContent,
@@ -443,7 +442,6 @@ import {
 } from '@/lib/production-slot-failures';
 import {
   confirmGalleryPickWithAiJudge,
-  escalateSubjectAlignedPick,
 } from '@/lib/gallery-ai-match-judge';
 import { resolveFalRequireGroundedGallery } from '@/lib/fal-designer-production';
 import type { TypographyBackgroundStyle } from '@/types/brand-theme';
@@ -2582,6 +2580,13 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             console.warn(
               `[auto-produce] batch gallery hard theme mismatch — drop "${ideationHeadline.slice(0, 48)}"`,
             );
+          } else if (
+            typeof batchAssigned.score === 'number'
+            && batchAssigned.score < MIN_ACCEPT_SCORE
+          ) {
+            console.warn(
+              `[auto-produce] batch gallery below floor (${batchAssigned.score}) — drop "${ideationHeadline.slice(0, 48)}"`,
+            );
           } else {
             referenceUrl = batchAssigned.url;
             galleryMatchScore = batchAssigned.score;
@@ -2589,32 +2594,19 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         }
         if (!referenceUrl) {
           console.warn(
-            `[auto-produce] no gallery match for slot ${gallerySlotKey} "${ideationHeadline.slice(0, 48)}" — fallback pick`,
+            `[auto-produce] no gallery match for slot ${gallerySlotKey} "${ideationHeadline.slice(0, 48)}" — scored rematch only`,
           );
           // The judge already ruled these frames wrong for this copy, so the
-          // fallback must look elsewhere instead of landing on them again.
+          // rematch must look elsewhere instead of landing on them again.
           const slotFallbackExclude = [
             ...missionGalleryExclude,
             ...(missionGalleryJudgeRejects.get(gallerySlotKey) ?? []),
           ];
-          const diverseFallback = assignmentRequiresCaptionPhotoMatch(assignment)
-            ? null
-            : pickMissionDiverseFallbackPhoto(
-              galleryPhotos,
-              new Set(slotFallbackExclude.map(normalizeGalleryUrl)),
-              galleryMeta,
-              slotFallbackExclude,
-              batchMatchInput,
-            );
-          if (diverseFallback?.url) {
-            referenceUrl = diverseFallback.url;
-            galleryMatchScore = diverseFallback.score;
-          } else {
           // Strict captions (nightlife / food / beauty) never use bestEffort ≥10.
           const missionFallbackStrict = captionRequiresStrictGalleryMatch(
             ideationCaption, galleryMatchHeadline,
           ) || captionHasExplicitBeautyService(ideationCaption, galleryMatchHeadline);
-          referenceUrl = pickMissionGallery(
+          const scoredFallback = pickMissionGallery(
             ideationCaption,
             galleryMatchHeadline,
             mood,
@@ -2630,11 +2622,11 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             missionFallbackStrict,
             ideaIndex,
           );
-          if (referenceUrl) {
-            galleryMatchScore = scoreIdeationPhotoMatch({
+          if (scoredFallback) {
+            const fallbackScore = scoreIdeationPhotoMatch({
               caption: ideationCaption,
               headline: galleryMatchHeadline,
-              photoUrl: referenceUrl ?? '',
+              photoUrl: scoredFallback,
               galleryAnalysis: galleryMeta,
               businessType: brandBusinessType,
               mood,
@@ -2643,27 +2635,12 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
               visualDirection: activeGalleryMatchExtras.visualDirection,
               strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
             });
-          }
-          }
-          // Last resort before failing the slot: sub-threshold but
-          // subject-aligned photo confirmed by the AI judge (fail-closed).
-          if (!referenceUrl) {
-            const escalatedPick = await escalateSubjectAlignedPick(
-              batchMatchInput,
-              galleryMeta,
-              galleryPhotos,
-              {
-                excludeUrls: missionGalleryExclude,
-                workspaceId,
-                missionId,
-                slotKey,
-              },
-            );
-            if (escalatedPick?.url) {
-              referenceUrl = escalatedPick.url;
-              galleryMatchScore = escalatedPick.score;
-              console.log(
-                `[auto-produce] judge escalation assigned photo (score ${escalatedPick.score}) for "${ideationHeadline.slice(0, 40)}"`,
+            if (fallbackScore >= MIN_ACCEPT_SCORE) {
+              referenceUrl = scoredFallback;
+              galleryMatchScore = fallbackScore;
+            } else {
+              console.warn(
+                `[auto-produce] rematch below floor (${fallbackScore}) — withhold "${ideationHeadline.slice(0, 48)}"`,
               );
             }
           }
@@ -2882,7 +2859,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       // External CDN URL dead — rematch + mirror brand gallery before any caption scratch.
       console.warn(`[auto-produce] broken external gallery URL — rematching brand gallery: ${referenceUrl.slice(0, 100)}`);
       const fallbackCandidates = galleryPhotos.filter((u) => u !== referenceUrl);
-      const heuristicPick = fallbackCandidates.length
+      const heuristicRaw = fallbackCandidates.length
         ? pickMissionGallery(
             ideationCaption,
             galleryMatchHeadline,
@@ -2897,6 +2874,23 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             Boolean(missionId),
             ideaIndex,
           )
+        : null;
+      const heuristicScore = heuristicRaw
+        ? scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: galleryMatchHeadline,
+          photoUrl: heuristicRaw,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: postType,
+          subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
+        })
+        : 0;
+      const heuristicPick = heuristicRaw && heuristicScore >= MIN_ACCEPT_SCORE
+        ? heuristicRaw
         : null;
       const rematch = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
         ? await rematchMirroredBrandGalleryUrl({
@@ -2975,9 +2969,28 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           )
         : null;
       if (emptyFallback) {
-        console.log(`[auto-produce] empty gallery URL — fallback pick: ${emptyFallback.slice(0, 80)}`);
-        referenceUrl = emptyFallback;
-        referenceIsStock = isStockGalleryPhotoUrl(emptyFallback);
+        const emptyScore = scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: galleryMatchHeadline,
+          photoUrl: emptyFallback,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: postType,
+          subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
+        });
+        if (emptyScore >= MIN_ACCEPT_SCORE) {
+          console.log(`[auto-produce] empty gallery URL — scored rematch: ${emptyFallback.slice(0, 80)}`);
+          referenceUrl = emptyFallback;
+          referenceIsStock = isStockGalleryPhotoUrl(emptyFallback);
+          galleryMatchScore = emptyScore;
+        } else {
+          console.warn(
+            `[auto-produce] empty gallery URL rematch below floor (${emptyScore}) — withhold`,
+          );
+        }
       }
     }
 
@@ -3029,10 +3042,29 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
             ideaIndex,
           )
         : null;
-      if (internalFallback && internalFallback !== referenceUrl) {
-        console.log(`[auto-produce] broken internal URL — fallback pick: ${internalFallback.slice(0, 80)}`);
+      const internalFallbackScore = internalFallback && internalFallback !== referenceUrl
+        ? scoreIdeationPhotoMatch({
+          caption: ideationCaption,
+          headline: galleryMatchHeadline,
+          photoUrl: internalFallback,
+          galleryAnalysis: galleryMeta,
+          businessType: brandBusinessType,
+          mood,
+          contentType: postType,
+          subjectKey: ideationSubjectKey,
+          visualDirection: activeGalleryMatchExtras.visualDirection,
+          strategicPurpose: activeGalleryMatchExtras.strategicPurpose,
+        })
+        : 0;
+      if (
+        internalFallback
+        && internalFallback !== referenceUrl
+        && internalFallbackScore >= MIN_ACCEPT_SCORE
+      ) {
+        console.log(`[auto-produce] broken internal URL — scored rematch: ${internalFallback.slice(0, 80)}`);
         referenceUrl = internalFallback;
         referenceIsStock = isStockGalleryPhotoUrl(internalFallback);
+        galleryMatchScore = internalFallbackScore;
       } else {
         const rematch = canRetryBrandGalleryRecovery(assignment.pipeline, assignment.slot_role)
           ? await rematchMirroredBrandGalleryUrl({

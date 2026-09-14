@@ -452,7 +452,7 @@ describe('feed-slot-look — shop + beach', () => {
     expect(JSON.stringify(messages)).toMatch(/sell job/i);
   });
 
-  it('shop: adaptive bind keeps a labeled seed when look returns null', async () => {
+  it('shop: adaptive sell does not bind a labeled seed when look returns null', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'ürün hero',
@@ -477,14 +477,11 @@ describe('feed-slot-look — shop + beach', () => {
         }),
       },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pack.photoUrl).toBe('https://cdn.example.com/oil.jpg');
-      expect(result.pack.caption.length).toBeGreaterThanOrEqual(16);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
-  it('beach: adaptive bind keeps a plated seed when look returns null', async () => {
+  it('beach: adaptive place does not bind a plated seed when look returns null', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'gün batımı',
@@ -509,11 +506,8 @@ describe('feed-slot-look — shop + beach', () => {
         }),
       },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pack.photoUrl).toBe('https://cdn.example.com/plate.jpg');
-      expect(result.pack.caption.toLowerCase()).toMatch(/gün batım|masa|deniz/);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
   it('beach place: does not force a labeled bottle when the first look refuses', async () => {
@@ -532,7 +526,7 @@ describe('feed-slot-look — shop + beach', () => {
     if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
-  it('shop sell: bind after null writes the label, not the sawed weekly hook', async () => {
+  it('shop sell: look null does not bind a labeled jar anyway', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'müşteri favorisi',
@@ -551,13 +545,8 @@ describe('feed-slot-look — shop + beach', () => {
         ]),
       },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pack.photoUrl).toBe('https://cdn.example.com/almond.jpg');
-      expect(result.pack.evidenceNote).toMatch(/BADEM EZMESİ/);
-      expect(result.pack.caption).toMatch(/badem|ezme/i);
-      expect(result.pack.caption).not.toMatch(/en sevdiği lezzetlerden biri:$/);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
   it('shop sell: skipPackConsistency does not call the pack judge', async () => {
@@ -591,7 +580,7 @@ describe('feed-slot-look — shop + beach', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('shop sell: labeled shortlist binds after look returns null twice', async () => {
+  it('shop sell: labeled shortlist stays no_pick after look returns null twice', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'müşteri favorisi',
@@ -610,14 +599,11 @@ describe('feed-slot-look — shop + beach', () => {
         ]),
       },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pack.photoUrl).toBe('https://cdn.example.com/almond.jpg');
-      expect(result.pack.evidenceNote).toMatch(/BADEM EZMESİ/);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
-  it('shop sell: adaptive bind works when look candidates lost the label', async () => {
+  it('shop sell: adaptive does not bind an unlabeled still when look returns null', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'ürün hero',
@@ -640,10 +626,98 @@ describe('feed-slot-look — shop + beach', () => {
         }),
       },
     );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
+  it('shop process: adaptive farm may keep a labeled bottle when look returns null', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'çiftlik ziyareti',
+        catalogSlotKey: 'local_products_shop_farm_visit_story',
+        language: 'Turkish',
+        adaptiveScene: true,
+        ideationHint: 'Çiftlikte hasat günü, sızma zeytinyağı üretimde.',
+        candidates: [{
+          url: 'https://cdn.example.com/oil.jpg',
+          visibleLabelText: 'NATUREL SIZMA ZEYTİNYAĞI',
+          description: 'Labeled oil bottle on a shelf',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: null,
+          caption: '',
+          headline: '',
+          evidenceNote: '',
+          photoRole: 'venue',
+          shellDirection: 'venue_ambiance',
+        }),
+      },
+    );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.pack.photoUrl).toBe('https://cdn.example.com/oil.jpg');
-      expect(result.pack.caption.toLowerCase()).toMatch(/zeytin|hasat|damla/);
+      expect(result.pack.caption.toLowerCase()).toMatch(/hasat|çiftlik|uretim|üretim|zeytin/);
+    }
+  });
+
+  it('shop sell: named çam idea does not keep a çiçek pick', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        language: 'Turkish',
+        ideationHint: 'Müşterilerimiz çam balını çok seviyor. Doğal çam balımız rafta.',
+        inventoryText: 'ÇAM BALI PINE HONEY SÜZME ÇİÇEK BALI',
+        candidates: [{
+          url: 'https://cdn.example.com/flower.jpg',
+          visibleLabelText: 'SÜZME ÇİÇEK BALI',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: "Etiket: 'SÜZME ÇİÇEK BALI'",
+          caption: 'Çam balımız her damak tadına hitap ediyor.',
+          headline: 'Karaman çiçek balı etiket',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
+  });
+
+  it('shop sell: English vision headline is taken from the Turkish caption', async () => {
+    const result = await lookFeedSlotPack(
+      {
+        slotJob: 'müşteri favorisi',
+        catalogSlotKey: 'local_products_shop_customer_favorite_post',
+        language: 'Turkish',
+        ideationHint: 'Badem ezmesinin tadına varın. Rafta duruyor.',
+        inventoryText: 'BADEM EZMESİ',
+        candidates: [{
+          url: 'https://cdn.example.com/almond.jpg',
+          visibleLabelText: 'BADEM EZMESİ',
+        }],
+      },
+      {
+        openai: fakeOpenai({
+          pickIndex: 0,
+          photoRole: 'product_for_sale',
+          evidenceNote: "Etiket: 'BADEM EZMESİ'",
+          caption: 'Badem ezmesinin tadına varın. Rafta duruyor.',
+          headline: 'featuring almond pieces and elegant gold and green accents',
+          shellDirection: 'product_hero',
+        }),
+      },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.pack.headline).toMatch(/badem|rafta/i);
+      expect(result.pack.headline).not.toMatch(/featuring/i);
     }
   });
 
@@ -878,7 +952,7 @@ describe('feed-slot-look — shop + beach', () => {
     expect(adaptive).toMatch(/Do not return null because the farm, shop, or process is not in the frame/i);
     expect(adaptive).not.toMatch(/A bottle cannot prove a shop-interior/);
     expect(adaptive).not.toMatch(/Still pick a real hero \(labeled product/);
-    expect(base).toMatch(/separate on-canvas social line/i);
+    expect(base).toMatch(/complete line taken from that caption/i);
     expect(base).not.toMatch(/must come from the caption/);
   });
 
@@ -1027,7 +1101,7 @@ describe('feed-slot-look — shop + beach', () => {
     }
   });
 
-  it('shop: scene_fill on a labeled bottle still binds the shortlist', async () => {
+  it('shop: scene_fill on a labeled bottle does not bind the shortlist', async () => {
     const result = await lookFeedSlotPack(
       {
         slotJob: 'ürün hero',
@@ -1049,12 +1123,8 @@ describe('feed-slot-look — shop + beach', () => {
         }),
       },
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.pack.photoUrl).toBe('https://cdn.example.com/oil.jpg');
-      expect(result.pack.caption.toLowerCase()).not.toMatch(/ayva/);
-      expect(result.pack.evidenceNote).toMatch(/SIZMA/);
-    }
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues).toContain('no_pick');
   });
 
   it('shop: retries one timed-out look call in-process', async () => {

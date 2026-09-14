@@ -19,9 +19,11 @@ import {
   type FeedPackConsistencyVerdict,
 } from '@/lib/feed-pack-consistency';
 import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import { ideaCoveredByShelfLabels } from '@/lib/idea-product-claim';
 import {
   deriveHeadlineFromCaption,
   groundFeedSlotCopy,
+  headlineTakenFromCaption,
   isCaptionOpeningHeadline,
   parseFeedSlotPack,
   sellingCopyMissesEvidence,
@@ -35,6 +37,7 @@ import {
   isIncompleteOverlayPhrase,
   keepCompleteOverlaySentence,
 } from '@/lib/fal-caption-headline';
+import { overlayHeadlineGroundedInCaption } from '@/lib/overlay-caption-grounding';
 import { isLookModelVisionUrl } from '@/studio/look-urls';
 import {
   inlineLookVisionDataUris,
@@ -148,10 +151,9 @@ Rules:
 - Never copy ideation_hint wording unless every claim is visible in the photo. If the hint says a harvest or event the label does not show, drop those words and write from the readable label of the SAME product.
 - Name water only from the frame. Open horizon water, waves, or a coast next to lawn and umbrellas is sea (deniz), not a lake (göl). Say göl/lake only when the water is clearly an enclosed inland lake.
 - evidenceNote names what is in the frame (lawn, umbrellas, loungers, sea). Caption is a magazine motto about that place — not a furniture inventory and not brochure filler ("mükemmel bir yer", "dinlendirici", "perfect place").
-- Caption is the Instagram body. Headline is a separate on-canvas social line — not the caption's first sentence and not a cut of it.
+- Caption is the Instagram body. Headline is a complete line taken from that caption — same language, same claim. Not a new slogan and not an English photo inventory.
 - Headline must be a complete phrase in the requested language. Type can shrink later; do not drop a word to hit a box. No hashtags.
 - Headline and caption share the same claim and a noun visible in evidenceNote (terrace, sea, oil, jam). Do not invent grades, origins, or events.
-- Headline is a punchline. Never copy the caption's first sentence or its opening words.
 - brand_tone is the voice: luxury/premium → quiet editorial; warm/samimi → intimate; energetic → alive. Not a shop command ("gelin", "alın"), not a photo inventory, not brochure ("sizi bekliyoruz", "keşfedin", "experience").
 - A bottle or glass on a set table at a venue is table_prop unless the photo is clearly a product-for-sale hero (packaging fills the frame).
 - table_prop must not use product_hero.
@@ -190,18 +192,21 @@ function copyNamesPickLabel(copy: unknown, seed: FeedSlotLookCandidate): boolean
   });
 }
 
-/** Sell shortlist is already SKU-ranked. Model null / scene_fill must not drop the card. Place never lands here. */
-function bindSellShortlistPick(input: {
-  pickIndex: number | null;
-  jobKind: LookJobKind;
-  restage: boolean;
-  candidates: readonly FeedSlotLookCandidate[];
-}): number | null {
-  if (input.pickIndex != null) return input.pickIndex;
-  if (input.jobKind !== 'sell' || input.candidates.length === 0) return null;
-  const labeled = input.candidates.findIndex(candidateHasReadableIdentity);
-  if (labeled >= 0) return labeled;
-  return input.restage ? 0 : null;
+/** Idea named a shelf SKU; this jar's label is a different SKU. */
+function pickMissesNamedIdea(
+  idea: string,
+  inventory: string,
+  pickLabel: string,
+): boolean {
+  const label = pickLabel.trim();
+  if (label.length < 3) return false;
+  if (!ideaCoveredByShelfLabels(idea, inventory)) return false;
+  return !ideaCoveredByShelfLabels(idea, label);
+}
+
+function headlineBelongsToCaption(headline: string, caption: string): boolean {
+  return headlineTakenFromCaption(headline, caption)
+    || overlayHeadlineGroundedInCaption(headline, caption);
 }
 
 function fillAdaptiveLookDraft(
@@ -416,7 +421,10 @@ async function withResolvedVisionUrls(
 }
 
 function completeHeadlineFromCaption(caption: string): string {
-  return deriveHeadlineFromCaption(caption);
+  const later = deriveHeadlineFromCaption(caption);
+  if (later) return later;
+  const first = caption.split(/[.!?…\n—–]/)[0]?.replace(/[.!?…]+$/g, '').trim() ?? '';
+  return keepCompleteOverlaySentence(first) || first;
 }
 
 function completeLookPack(
@@ -425,16 +433,12 @@ function completeLookPack(
 ): FeedSlotPack | null {
   if (
     !isIncompleteOverlayPhrase(pack.headline)
-    && !isCaptionOpeningHeadline(pack.headline, pack.caption)
+    && headlineBelongsToCaption(pack.headline, pack.caption)
   ) {
     return pack;
   }
   const rescued = completeHeadlineFromCaption(pack.caption);
-  if (
-    !rescued
-    || isIncompleteOverlayPhrase(rescued)
-    || isCaptionOpeningHeadline(rescued, pack.caption)
-  ) {
+  if (!rescued || isIncompleteOverlayPhrase(rescued)) {
     return null;
   }
   const parsed = parseFeedSlotPack({ ...pack, headline: rescued }, opts);
@@ -673,18 +677,26 @@ export async function lookFeedSlotPack(
       ({ pickIndex, draft } = draftFromLookJson(parseLookJson(raw), candidates, slotJob));
     }
     const modelPick = pickIndex;
-    pickIndex = bindSellShortlistPick({
-      pickIndex: contract.bindPickIndex(pickIndex),
-      jobKind,
-      restage: contract.restage,
-      candidates,
-    });
+    // Process + adaptive: a labeled still may seed a later restage.
+    // Sell / place: look null stays no_pick — do not bind the first jar.
+    pickIndex = (jobKind === 'process' && contract.restage)
+      ? contract.bindPickIndex(pickIndex)
+      : pickIndex;
     if (pickIndex == null) {
       return { ok: false, issues: ['no_pick'] };
     }
     const picked = candidates[pickIndex];
+    if (
+      pickMissesNamedIdea(
+        String(input.ideationHint ?? ''),
+        String(input.inventoryText ?? ''),
+        String(picked?.visibleLabelText ?? ''),
+      )
+    ) {
+      return { ok: false, issues: ['no_pick'] };
+    }
     draft = { ...draft, photoUrl: picked?.url };
-    if (picked && (contract.restage || (jobKind === 'sell' && modelPick == null))) {
+    if (picked && contract.restage && jobKind === 'process') {
       const seedDraft = modelPick == null
         ? {
           ...draft,

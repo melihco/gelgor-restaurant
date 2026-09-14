@@ -68,8 +68,7 @@ import { allowDegradedVisualFallback } from '@/lib/visual-quality-fallback-polic
 import { GRAFIKER_PASS_THRESHOLD } from '@/lib/grafiker-quality';
 import { resolveDesignedPostProductionOrder } from '@/lib/designed-post-production-order';
 import { composePackagingLockedPaintPrompt } from '@/lib/product-packaging-fidelity';
-import { deriveHeadlineFromCaption } from '@/lib/feed-slot-pack';
-import { resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
+import { resolvePaintCanvasHeadline, resolveSlotPaintOverlay } from '@/lib/slot-production-bundle';
 import { isHardDesignWithholdBreak } from '@/lib/caption-design-post-coherence';
 import { generateDesignedPostImage } from '../handlers/image-generators';
 import {
@@ -341,14 +340,12 @@ export async function produceFalDesignedPost(
           + `"${input.headline.slice(0, 36)}" → "${paintOverlay.headline.slice(0, 36)}"`,
         );
       }
-      const canvasHeadline = paintOverlay.headline.trim()
-        || deriveHeadlineFromCaption(input.caption)
-        || String(input.galleryPhotoMeta?.visibleLabelText ?? '')
-          .split('\n')[0]
-          ?.replace(/\s+/g, ' ')
-          .trim()
-          .slice(0, 48)
-        || '';
+      const canvasHeadline = resolvePaintCanvasHeadline({
+        paintHeadline: paintOverlay.headline,
+        plannedHeadline: input.headline,
+        caption: input.caption,
+        punchlineLockSource: input.punchlineLockSource,
+      });
       const dedupedSubtitle = paintOverlay.subtitle;
       const coherence = paintOverlay.coherence;
       if (!paintOverlay.preserved && coherence.repaired && coherence.overlayHeadline) {

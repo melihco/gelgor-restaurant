@@ -407,7 +407,7 @@ describe('gallery-first — one look owns the pack', () => {
     expect(gf?.photoUrl).toBe(r2);
   });
 
-  it('beach: R2 display URL binds site analysis on an adaptive sunset seed', () => {
+  it('beach: adaptive sunset does not seed an R2 lunch plate', () => {
     const site = 'https://club.example.com/uploads/lunch-plate.jpg';
     const r2 = '/api/media?key=tenant/gallery/lunch-plate.jpg';
     const shortlist = buildCaptionFitLookShortlist({
@@ -427,7 +427,7 @@ describe('gallery-first — one look owns the pack', () => {
       ideationHeadline: 'Gün batımında masada kal',
       adaptiveScene: true,
     });
-    expect(shortlist.map((row) => row.url)).toContain(r2);
+    expect(shortlist).toHaveLength(0);
   });
 
   it('shop: adaptive farm slot ranks a labeled bottle when the gallery has no farm still', () => {
@@ -490,7 +490,7 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).toContain(FALLBACK);
   });
 
-  it('beach: adaptive sunset slot can seed from a table still when no terrace exists', () => {
+  it('beach: adaptive sunset slot does not seed a lunch plate when no terrace exists', () => {
     const shortlist = buildCaptionFitLookShortlist({
       assignment: beachAssignment(),
       galleryPhotos: [PLATE],
@@ -502,7 +502,7 @@ describe('gallery-first — one look owns the pack', () => {
       ideationHeadline: 'Gün batımında masada kal',
       adaptiveScene: true,
     });
-    expect(shortlist.map((row) => row.url)).toContain(PLATE);
+    expect(shortlist).toHaveLength(0);
   });
 
   it('beach: sunset caption ranks the terrace over a forced lunch plate', () => {
@@ -819,6 +819,58 @@ describe('gallery-first — one look owns the pack', () => {
     });
     expect(shortlist[0]?.url).toBe(HONEY);
     expect(shortlist.map((row) => row.url)).not.toContain(OIL);
+  });
+
+  it('shop: named çam idea does not shortlist a çiçek jar', () => {
+    const PINE = 'https://cdn.example.com/gallery/pine-honey.jpg';
+    const FLOWER = 'https://cdn.example.com/gallery/flower-honey.jpg';
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [PINE]: {
+        primarySubject: 'honey',
+        visibleLabelText: 'ÇAM BALI PINE HONEY',
+        suggestedAssetType: 'product_image',
+      },
+      [FLOWER]: {
+        primarySubject: 'honey',
+        visibleLabelText: 'SÜZME ÇİÇEK BALI',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+        catalog_slot_label: 'müşteri favorisi',
+      },
+      galleryPhotos: [FLOWER, PINE, OIL],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Müşterilerimiz çam balını çok seviyor. Doğal çam balımız rafta.',
+      ideationHeadline: 'Çam balı',
+    });
+    expect(shortlist.map((row) => row.url)).toEqual([PINE]);
+  });
+
+  it('shop: ambiance does not fall back to a labeled jar', () => {
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_shop_ambiance_post',
+        catalog_slot_label: 'dükkân ambiyansı',
+      },
+      galleryPhotos: [OIL, JAM],
+      galleryMeta: shopMeta(),
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Doğal lezzetlerimizin tadına bakmak için bekliyoruz.',
+      ideationHeadline: 'Dükkânda bekliyoruz',
+      adaptiveScene: true,
+    });
+    expect(shortlist).toHaveLength(0);
   });
 
   it('beach: EN terrace caption ranks the TR venue still over the plate', () => {

@@ -1376,7 +1376,11 @@ async def has_runnable_jobs(
                 LIMIT 1
                 """
             ),
-            {"mission_id": str(mission_id), "stale_sec": int(stale_sec)},
+            {
+                "mission_id": str(mission_id),
+                "stale_sec": int(stale_sec),
+                "silent_sec": int(_SILENT_POST_INFLIGHT_SEC),
+            },
         )
         return res.first() is not None
 

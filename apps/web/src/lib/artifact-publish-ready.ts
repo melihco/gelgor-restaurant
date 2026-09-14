@@ -263,19 +263,14 @@ export function resolveArtifactPublishReady(input: {
   const coherence = evaluateArtifactPublishCoherence(meta, content);
   if (coherence && isPublishCoherenceBlock(coherence.breaks)) {
     const photoFight = coherence.breaks.includes('photo_theme_conflict');
-    // Look already judged caption + headline + photo. Soft template sample
-    // or a leftover motto must not drop the painted still.
-    const lookedPackHolds = meta.feed_slot_pack_ok === true && !photoFight;
-    if (!lookedPackHolds) {
-      return {
-        ready: false,
-        blockFeed: true,
-        reason: photoFight
-          ? 'Yazı, foto ve başlık aynı işi anlatmıyor'
-          : 'Yazı, şablon ve başlık aynı işi anlatmıyor',
-        code: 'caption_design_incoherent',
-      };
-    }
+    return {
+      ready: false,
+      blockFeed: true,
+      reason: photoFight
+        ? 'Yazı, foto ve başlık aynı işi anlatmıyor'
+        : 'Yazı, şablon ve başlık aynı işi anlatmıyor',
+      code: 'caption_design_incoherent',
+    };
   }
 
   const scorecard = buildProductionQualityScorecard(stub, meta);

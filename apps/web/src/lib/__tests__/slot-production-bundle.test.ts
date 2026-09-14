@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  resolvePaintCanvasHeadline,
   resolveSlotPaintOverlay,
   shouldKeepProductionGalleryPin,
   shortenLockedPunchlineForImageRetry,
@@ -152,6 +153,33 @@ describe('slot-production-bundle', () => {
     });
     expect(result.preserved).toBe(true);
     expect(result.headline.toLocaleLowerCase('tr-TR')).toContain('çeşitlerimizle');
+  });
+
+  it('shop: locked pack paint never takes the jar label', () => {
+    expect(resolvePaintCanvasHeadline({
+      paintHeadline: '',
+      plannedHeadline: 'Sızma zeytinyağımız raflarda',
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+      punchlineLockSource: 'feed_slot_pack',
+    })).toBe('Sızma zeytinyağımız raflarda');
+  });
+
+  it('beach: locked pack paint keeps the planned line, not a caption stem', () => {
+    expect(resolvePaintCanvasHeadline({
+      paintHeadline: 'Sunset on the deck',
+      plannedHeadline: 'Sunset on the deck',
+      caption: 'Sunset cocktails on the deck tonight. Come early for a table.',
+      punchlineLockSource: 'feed_slot_pack',
+    })).toBe('Sunset on the deck');
+  });
+
+  it('unlocked shop paint may rescue from the caption', () => {
+    const rescued = resolvePaintCanvasHeadline({
+      paintHeadline: '',
+      plannedHeadline: '',
+      caption: 'Sızma zeytinyağımız raflarda. Sofraya bir damla yeter.',
+    }).toLocaleLowerCase('tr-TR');
+    expect(rescued).toMatch(/sızma|zeytinyağ|sofraya|damla/);
   });
 
   it('locked retry shorten uses soft-clamp only', () => {

@@ -53,7 +53,7 @@ import {
   applyFeedPackConsistency,
   type FeedPackConsistencyVerdict,
 } from '@/lib/feed-pack-consistency';
-import { judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import { ideaCoveredByShelfLabels, judgeInventedProductClaim } from '@/lib/idea-product-claim';
 import {
   galleryInventoryTextForIdea,
   galleryShelfLabelTextForIdea,
@@ -64,7 +64,6 @@ import {
 import {
   isAdaptiveIdentitySeed,
   isFallbackGalleryAnalysis,
-  keepWeeklySceneCopy,
 } from '@/lib/caption-scene-fit';
 import { assignmentUsesGalleryPhoto } from '@/lib/auto-produce/gallery-orchestrator';
 import type { ProductionAssignment, ProductionSlotRole } from '@/lib/mission-production-manifest';
@@ -506,13 +505,14 @@ function collectFeedSlotLookUrls(input: {
     String(input.assignment.catalog_slot_key ?? input.catalogSlotKey ?? ''),
   );
   if (jobKind === 'place' || jobKind === 'process') {
-    if (adaptive && !hoursPlace) {
+    if (adaptive && jobKind === 'process' && !hoursPlace) {
       jobKindPool = realProving.length > 0
         ? uniqueUrls([...realProving, ...identitySeeds])
         : identitySeeds;
     } else {
       jobKindPool = proving;
     }
+    if (jobKindPool.length === 0) return [];
   }
   const captionIsStrong = isStrongIdeationCaption(input.ideationCaption);
   const preferredPool = !captionIsStrong && input.matchInput.preferredAssetTypes?.length
@@ -522,9 +522,6 @@ function collectFeedSlotLookUrls(input: {
       input.matchInput.preferredAssetTypes,
     )
     : [];
-  if (jobKind === 'place' && hoursPlace && jobKindPool.length === 0) {
-    return [];
-  }
   const pool = jobKindPool.length > 0
     ? jobKindPool
     : preferredPool.length > 0
@@ -555,10 +552,24 @@ function collectFeedSlotLookUrls(input: {
 
   const skipCaptionTrim = (jobKind === 'place' || jobKind === 'process')
     && !(adaptive && realProving.length === 0 && identitySeeds.length > 0);
+  const ideaText = [input.ideationHeadline, input.ideationCaption].filter(Boolean).join(' ');
+  const inventoryText = input.galleryPhotos
+    .map((url) => String(metaFor(url)?.visibleLabelText ?? '').trim())
+    .filter(Boolean)
+    .join(' ');
+  const restrictNamedSku = (rows: Array<{ url: string; score: number }>) => {
+    if (jobKind !== 'sell') return rows;
+    if (!ideaCoveredByShelfLabels(ideaText, inventoryText)) return rows;
+    return rows.filter((row) => (
+      ideaCoveredByShelfLabels(ideaText, String(metaFor(row.url)?.visibleLabelText ?? ''))
+    ));
+  };
   const finish = (rows: Array<{ url: string; score: number }>) => (
-    skipCaptionTrim
-      ? rows.slice(0, LOOK_CANDIDATE_LIMIT)
-      : trimLookShortlistToCaptionFit(rows)
+    restrictNamedSku(
+      skipCaptionTrim
+        ? rows.slice(0, LOOK_CANDIDATE_LIMIT)
+        : trimLookShortlistToCaptionFit(rows),
+    )
   );
 
   const picked: Array<{ url: string; score: number }> = [];
@@ -757,20 +768,11 @@ export async function resolveGalleryFirstForSlot(input: {
       photoSideText,
       language: input.language,
     });
-    const sceneCopy = keepWeeklySceneCopy({
-      adaptiveScene: Boolean(input.adaptiveScene),
-      ideationHint,
-      caption: groundedCopy.caption,
-      headline: groundedCopy.headline,
-      evidenceNote: groundedCopy.evidenceNote,
-      photoSideText,
-      photoUrl: looked.pack.photoUrl,
-    });
     const locked = parseFeedSlotPack({
       ...looked.pack,
       evidenceNote: groundedCopy.evidenceNote,
-      caption: sceneCopy.caption,
-      headline: sceneCopy.headline,
+      caption: groundedCopy.caption,
+      headline: groundedCopy.headline,
     }, { adaptiveScene: Boolean(input.adaptiveScene) });
     if (!locked.ok) {
       return emptySlotLookResult(locked.issues);
