@@ -53,7 +53,10 @@ import {
   applyFeedPackConsistency,
   type FeedPackConsistencyVerdict,
 } from '@/lib/feed-pack-consistency';
-import { ideaCoveredByShelfLabels, judgeInventedProductClaim } from '@/lib/idea-product-claim';
+import {
+  ideaShelfLabelOverlap,
+  judgeInventedProductClaim,
+} from '@/lib/idea-product-claim';
 import {
   galleryInventoryTextForIdea,
   galleryShelfLabelTextForIdea,
@@ -553,16 +556,33 @@ function collectFeedSlotLookUrls(input: {
   const skipCaptionTrim = (jobKind === 'place' || jobKind === 'process')
     && !(adaptive && realProving.length === 0 && identitySeeds.length > 0);
   const ideaText = [input.ideationHeadline, input.ideationCaption].filter(Boolean).join(' ');
-  const inventoryText = input.galleryPhotos
-    .map((url) => String(metaFor(url)?.visibleLabelText ?? '').trim())
-    .filter(Boolean)
-    .join(' ');
   const restrictNamedSku = (rows: Array<{ url: string; score: number }>) => {
     if (jobKind !== 'sell') return rows;
-    if (!ideaCoveredByShelfLabels(ideaText, inventoryText)) return rows;
-    return rows.filter((row) => (
-      ideaCoveredByShelfLabels(ideaText, String(metaFor(row.url)?.visibleLabelText ?? ''))
-    ));
+    const overlapOf = (url: string) => (
+      ideaShelfLabelOverlap(ideaText, String(metaFor(url)?.visibleLabelText ?? ''))
+    );
+    const keepBest = (cands: Array<{ url: string; score: number; skuOverlap: number }>) => {
+      const max = Math.max(0, ...cands.map((row) => row.skuOverlap));
+      if (max < 2) return null;
+      return cands
+        .filter((row) => row.skuOverlap === max)
+        .slice(0, LOOK_CANDIDATE_LIMIT)
+        .map(({ url, score }) => ({ url, score }));
+    };
+    const inRows = keepBest(rows.map((row) => ({ ...row, skuOverlap: overlapOf(row.url) })));
+    if (inRows) return inRows;
+    // Ranked slice missed the labeled SKU — scan the sell pool, still do not empty.
+    const seen = new Set(rows.map((row) => normalizeGalleryUrl(row.url)));
+    const extras: Array<{ url: string; score: number; skuOverlap: number }> = [];
+    for (const url of subjectLocked) {
+      const key = normalizeGalleryUrl(url);
+      if (seen.has(key) || !isUsableGalleryPhotoUrl(url)) continue;
+      const skuOverlap = overlapOf(url);
+      if (skuOverlap < 2) continue;
+      extras.push({ url, score: 0, skuOverlap });
+      seen.add(key);
+    }
+    return keepBest(extras) ?? rows;
   };
   const finish = (rows: Array<{ url: string; score: number }>) => (
     restrictNamedSku(

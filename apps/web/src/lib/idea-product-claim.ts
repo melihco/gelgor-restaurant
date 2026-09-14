@@ -58,14 +58,11 @@ function claimTokens(text: string): string[] {
   return foldClaim(text).split(' ').filter((w) => w.length >= 3);
 }
 
-/**
- * Fikir, etiket katmanında duruyor mu? İki ayrı etiket kökü gerekir.
- * Şam ≠ çam — tek harf kayması örtüşme sayılmaz.
- */
-export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): boolean {
+/** How many shelf-label tokens the idea actually hits. Şam ≠ çam. */
+export function ideaShelfLabelOverlap(ideaText: string, labelText: string): number {
   const idea = claimTokens(ideaText);
   const shelf = claimTokens(labelText);
-  if (idea.length === 0 || shelf.length === 0) return false;
+  if (idea.length === 0 || shelf.length === 0) return 0;
   const matched = new Set<string>();
   for (const token of idea) {
     for (const label of shelf) {
@@ -76,9 +73,13 @@ export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): b
       if (exact || prefixed) matched.add(label);
     }
   }
+  return matched.size;
+}
+
+export function ideaCoveredByShelfLabels(ideaText: string, labelText: string): boolean {
   // Tek ortak cins (bal / spritz) yetmez. Çam+balı geçer; şam+balı ve
   // lagoon+spritz modele kalır.
-  return matched.size >= 2;
+  return ideaShelfLabelOverlap(ideaText, labelText) >= 2;
 }
 
 function shelfReady(ideaText: string, inventoryText: string): boolean {

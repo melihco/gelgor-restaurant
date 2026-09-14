@@ -98,6 +98,22 @@ describe('feed-slot-look — shop + beach', () => {
       slotJob: 'çiftlik ziyareti',
       catalogSlotKey: 'local_products_shop_farm_visit_story',
     })).toBe('process');
+    expect(lookJobKind({
+      slotJob: 'premium editorial hikâye',
+      catalogSlotKey: 'local_products_shop_premium_editorial_campaign_story',
+    })).toBe('other');
+    expect(lookJobKind({
+      slotJob: 'mevsim hasadı',
+      catalogSlotKey: 'local_products_shop_seasonal_harvest_post',
+    })).toBe('other');
+    expect(lookJobKind({
+      slotJob: 'premium editorial',
+      catalogSlotKey: 'local_products_shop_premium_editorial_campaign_post',
+    })).toBe('sell');
+    expect(lookJobKind({
+      slotJob: 'premium editorial hikâye',
+      catalogSlotKey: 'beach_club_premium_editorial_campaign_story',
+    })).toBe('other');
   });
 
   it('shop: invented SKU caption skips the look call', async () => {

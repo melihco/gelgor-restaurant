@@ -821,6 +821,65 @@ describe('gallery-first — one look owns the pack', () => {
     expect(shortlist.map((row) => row.url)).not.toContain(OIL);
   });
 
+  it('shop: early-harvest oil caption still shortlists a sızma bottle', () => {
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [JAM]: {
+        ...shopMeta()[JAM],
+        visibleLabelText: 'DATÇA DOĞAL LEZZET İNCİR REÇELİ',
+      },
+    };
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_customer_favorite_post',
+        catalog_slot_label: 'müşteri favorisi',
+      },
+      galleryPhotos: [OIL, JAM],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Müşterilerimiz bunu çok seviyor. Erken hasat zeytinyağlarımızla yemeklerinize lezzet katın.',
+      ideationHeadline: 'Erken hasat zeytinyağlarımızla yemeklerinize',
+      subjectKey: 'olive_oil',
+    });
+    expect(shortlist.map((row) => row.url)).toContain(OIL);
+    expect(shortlist).not.toHaveLength(0);
+  });
+
+  it('shop: range caption keeps oil and jam, not an empty list', () => {
+    const HONEY = 'https://cdn.example.com/gallery/cicek-bali.jpg';
+    const galleryMeta: Record<string, GalleryPhotoMeta> = {
+      ...shopMeta(),
+      [JAM]: {
+        ...shopMeta()[JAM],
+        visibleLabelText: 'DATÇA DOĞAL LEZZET İNCİR REÇELİ',
+      },
+      [HONEY]: {
+        primarySubject: 'honey',
+        visibleLabelText: 'SÜZME ÇİÇEK BALI',
+        suggestedAssetType: 'product_image',
+      },
+    };
+    const shortlist = buildCaptionFitLookShortlist({
+      assignment: {
+        ...shopAssignment(),
+        catalog_slot_key: 'local_products_shop_product_range_carousel',
+        catalog_slot_label: 'ürün yelpazesi',
+      },
+      galleryPhotos: [OIL, HONEY, JAM],
+      galleryMeta,
+      excludeUrls: [],
+      brandName: 'Dükkan',
+      businessType: 'local_products_shop',
+      ideationCaption: 'Erken hasat zeytinyağları, özel bal çeşitleri ve lezzetli reçeller.',
+      ideationHeadline: 'Ürün yelpazesi',
+    });
+    expect(shortlist.length).toBeGreaterThan(0);
+    expect(shortlist.map((row) => row.url)).toContain(OIL);
+  });
+
   it('shop: named çam idea does not shortlist a çiçek jar', () => {
     const PINE = 'https://cdn.example.com/gallery/pine-honey.jpg';
     const FLOWER = 'https://cdn.example.com/gallery/flower-honey.jpg';

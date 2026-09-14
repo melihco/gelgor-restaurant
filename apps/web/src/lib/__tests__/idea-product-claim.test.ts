@@ -3,6 +3,7 @@ import type OpenAI from 'openai';
 import { galleryInventoryText } from '@/lib/feed-slot-pack';
 import {
   ideaCoveredByShelfLabels,
+  ideaShelfLabelOverlap,
   judgeInventedProductClaim,
 } from '@/lib/idea-product-claim';
 
@@ -151,6 +152,32 @@ describe('ideaCoveredByShelfLabels — shop + restaurant', () => {
     expect(ideaCoveredByShelfLabels(
       'Serpme köy kahvaltımızla buluşun',
       'garden table dining turkish_breakfast',
+    )).toBe(false);
+  });
+
+  it('shop: plural harvest copy does not count as a sızma-label hit', () => {
+    expect(ideaShelfLabelOverlap(
+      'Erken hasat zeytinyağlarımızla yemeklerinize lezzet katın',
+      'NATUREL SIZMA ZEYTİNYAĞI',
+    )).toBe(0);
+    expect(ideaShelfLabelOverlap(
+      'Sızma zeytinyağımız raflarda',
+      'NATUREL SIZMA ZEYTİNYAĞI',
+    )).toBe(2);
+    expect(ideaCoveredByShelfLabels(
+      'Erken hasat zeytinyağlarımızla yemeklerinize lezzet katın',
+      'NATUREL SIZMA ZEYTİNYAĞI DATÇA DOĞAL LEZZET İNCİR REÇELİ',
+    )).toBe(false);
+  });
+
+  it('beach: terrace copy hits venue tags, not a plate', () => {
+    expect(ideaShelfLabelOverlap(
+      'The terrace holds the last light',
+      'terrace sunset umbrellas sea',
+    )).toBeGreaterThanOrEqual(1);
+    expect(ideaCoveredByShelfLabels(
+      'The terrace holds the last light',
+      'lunch plate salad',
     )).toBe(false);
   });
 });
