@@ -4,7 +4,14 @@ import { loadLocalEnv } from './load-local-env';
 loadLocalEnv();
 
 import { Worker, type Job } from 'bullmq';
-import { getQueueConnection, PRODUCTION_SLOTS_QUEUE, type ProductionSlotJobData } from '../lib/queue-client';
+import {
+  getQueueConnection,
+  isBriefProduceJobData,
+  PRODUCTION_SLOTS_QUEUE,
+  type BriefProduceJobData,
+  type ProductionQueueJobData,
+  type ProductionSlotJobData,
+} from '../lib/queue-client';
 import {
   productionGlobalInflightMax,
   releaseGlobalProductionSlot,
@@ -74,7 +81,7 @@ async function touchFactoryJobs(
   }
 }
 
-async function processSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
+async function processSlotBatch(job: Job<ProductionQueueJobData>): Promise<unknown> {
   const acquired = await tryAcquireGlobalProductionSlot();
   if (!acquired) {
     throw new Error(
@@ -83,10 +90,93 @@ async function processSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknow
   }
 
   try {
-    return await runSlotBatch(job);
+    if (isBriefProduceJobData(job.data)) {
+      return await runBriefJob(job as Job<BriefProduceJobData>);
+    }
+    return await runSlotBatch(job as Job<ProductionSlotJobData>);
   } finally {
     await releaseGlobalProductionSlot();
   }
+}
+
+/** Mark a brief job failed when the web app never got to run it (unreachable / transport error). */
+async function markBriefJobFailed(jobId: string, workspaceId: string, error: string): Promise<void> {
+  try {
+    await fetch(`${WEB_BASE_URL}/api/brief-produce/status`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Api-Key': INTERNAL_KEY,
+        'X-Tenant-Id': workspaceId,
+      },
+      body: JSON.stringify({ jobId, status: 'failed', error: error.slice(0, 300) }),
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch {
+    /* status TTL + feed stale-clear cover the rest */
+  }
+}
+
+/**
+ * "+" brief job: the web app owns the pipeline; the worker only makes it durable.
+ * POST /api/brief-produce synchronously with the stored body + jobId — the route
+ * flips brief-job-status running → complete|failed itself.
+ */
+async function runBriefJob(job: Job<BriefProduceJobData>): Promise<unknown> {
+  const { jobId, workspaceId, officeId, produceBody } = job.data;
+  const bodyWorkspace = String(produceBody?.workspaceId ?? '').trim();
+  if (bodyWorkspace && bodyWorkspace.toLowerCase() !== workspaceId.toLowerCase()) {
+    throw new Error(`tenant envelope mismatch brief=${jobId} workspace=${workspaceId}`);
+  }
+
+  const fetchTimeoutMs = Math.max(
+    60_000,
+    Number(process.env.PRODUCTION_WORKER_FETCH_TIMEOUT_MS ?? 620_000),
+  );
+  const FETCH_RETRY_DELAYS_MS = [8_000, 20_000] as const;
+
+  for (let attempt = 0; attempt <= FETCH_RETRY_DELAYS_MS.length; attempt++) {
+    if (!(await isNextJsReachable())) {
+      const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
+      if (retryDelay === undefined) break;
+      console.warn(`[production-worker] brief=${jobId} Next.js health-check failed — retrying in ${retryDelay}ms`);
+      await sleep(retryDelay);
+      continue;
+    }
+
+    const abortController = new AbortController();
+    const fetchTimer = setTimeout(() => abortController.abort(), fetchTimeoutMs);
+    try {
+      const resp = await fetch(`${WEB_BASE_URL}/api/brief-produce`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Api-Key': INTERNAL_KEY,
+          'X-Tenant-Id': workspaceId,
+          ...(officeId ? { 'X-Office-Id': officeId } : {}),
+        },
+        body: JSON.stringify({ ...produceBody, workspaceId, background: false, jobId }),
+        signal: abortController.signal,
+      });
+      const data = (await resp.json().catch(() => ({}))) as Record<string, unknown>;
+      // 422 production_failed is a terminal business outcome the route already recorded.
+      return { brief: jobId, httpStatus: resp.status, produced: Number(data.produced ?? 0) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'brief-produce fetch failed';
+      const retryDelay = FETCH_RETRY_DELAYS_MS[attempt];
+      if (retryDelay === undefined) {
+        await markBriefJobFailed(jobId, workspaceId, message);
+        throw new Error(`brief-produce unreachable: ${message}`);
+      }
+      console.warn(`[production-worker] brief=${jobId} fetch failed (${message}) — retrying in ${retryDelay}ms`);
+      await sleep(retryDelay);
+    } finally {
+      clearTimeout(fetchTimer);
+    }
+  }
+
+  await markBriefJobFailed(jobId, workspaceId, 'web app unreachable');
+  throw new Error(`brief-produce unreachable after retries brief=${jobId}`);
 }
 
 async function runSlotBatch(job: Job<ProductionSlotJobData>): Promise<unknown> {
@@ -226,7 +316,7 @@ function main(): void {
     process.exit(1);
   }
 
-  const worker = new Worker<ProductionSlotJobData>(PRODUCTION_SLOTS_QUEUE, processSlotBatch, {
+  const worker = new Worker<ProductionQueueJobData>(PRODUCTION_SLOTS_QUEUE, processSlotBatch, {
     connection,
     concurrency: CONCURRENCY,
     limiter: { max: RATE_MAX, duration: RATE_DURATION_MS },

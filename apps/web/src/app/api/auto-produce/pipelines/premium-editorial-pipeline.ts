@@ -5,7 +5,7 @@
  * preferred pin, and pass `galleryAnalysis` so the orchestrator can rematch when needed.
  */
 
-import { resolveDesignProductionMode } from '@/lib/design-production-mode';
+import { resolveDesignProductionModeForRun } from '@/lib/design-production-mode';
 import {
   runPremiumEditorialCampaign,
   premiumEditorialArtifactMetadata,
@@ -71,9 +71,10 @@ export const premiumEditorialHandler: ProductionPipelineHandler = {
       brandColors: { primary: '#111111', accent: '#C9A227' },
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: null,
-      designProductionMode: resolveDesignProductionMode(
-        inputs.brandTheme as Record<string, unknown> | null | undefined,
-      ),
+      designProductionMode: resolveDesignProductionModeForRun({
+        brandTheme: inputs.brandTheme as Record<string, unknown> | null | undefined,
+        adHocBrief: Boolean(inputs.adHocBrief),
+      }),
     });
     const layoutUrl = templateLayoutReferenceUrl(templateBinding);
     const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched, templateBinding)

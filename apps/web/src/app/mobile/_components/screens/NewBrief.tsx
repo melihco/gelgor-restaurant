@@ -21,10 +21,28 @@ import {
 } from '@/lib/recent-brief-history';
 import { invalidateMobileArtifactPool } from '../../_lib/mobile-artifacts';
 import type { PendingBriefOutputType } from '@/lib/pending-brief-job';
+import {
+  BRIEF_DESIGN_DIRECTIONS,
+  BRIEF_GOALS,
+  isBriefDesignDirectionId,
+  isBriefGoalId,
+  suggestBriefGoal,
+  type BriefDesignDirectionId,
+  type BriefDetails,
+  type BriefGoalId,
+} from '@/lib/brief-design-direction';
+
+const DETAIL_FIELDS: { key: keyof BriefDetails; label: string; placeholder: string; inputMode?: 'text' | 'numeric' | 'url' }[] = [
+  { key: 'date', label: 'Tarih', placeholder: '12 Eylül Cuma' },
+  { key: 'time', label: 'Saat', placeholder: '21:00' },
+  { key: 'price', label: 'Fiyat', placeholder: '₺350 · %20' },
+  { key: 'location', label: 'Yer', placeholder: 'İskele · Şube adı' },
+  { key: 'cta', label: 'Çağrı (CTA)', placeholder: 'Rezervasyon · DM' },
+];
 
 const MAX_PHOTOS = 5;
 
-type OutputType = 'story' | 'reel' | 'post';
+type OutputType = 'story' | 'reel' | 'post' | 'carousel';
 
 const OUTPUT_TYPES: {
   id: OutputType;
@@ -54,9 +72,26 @@ const OUTPUT_TYPES: {
     desc: 'Tasarımlı kapak + video',
     format: '9:16 video',
   },
+  {
+    id: 'carousel',
+    label: 'Karusel',
+    icon: '▦',
+    desc: 'Kaydırmalı çok kare',
+    format: '2–6 kare',
+  },
 ];
 
 const COUNT_OPTIONS = ['1', '2', '3'] as const;
+const SLIDE_OPTIONS = ['3', '4', '5', '6'] as const;
+
+function outputTypeWord(t: OutputType): string {
+  switch (t) {
+    case 'story': return 'hikaye';
+    case 'reel': return 'reel';
+    case 'carousel': return 'karusel';
+    default: return 'gönderi';
+  }
+}
 
 export function NewBrief() {
   const { goBack, navigate, enqueueBriefProduction, clearFeedMissionFilter } = useMobileStore();
@@ -96,6 +131,21 @@ export function NewBrief() {
   const [lockUserHeadline, setLockUserHeadline] = useState(false);
   const [outputType, setOutputType] = useState<OutputType>('post');
   const [count, setCount] = useState('1');
+  const [variants, setVariants] = useState<'1' | '2' | '3'>('2');
+  const variantsApply = outputType === 'post' || outputType === 'story';
+  const [goal, setGoal] = useState<BriefGoalId | null>(null);
+  const [goalTouched, setGoalTouched] = useState(false);
+  const [designDirection, setDesignDirection] = useState<BriefDesignDirectionId>('brand');
+  const [details, setDetails] = useState<BriefDetails>({});
+  const [showDetails, setShowDetails] = useState(false);
+
+  // Auto-suggest the goal from the title until the owner picks one by hand.
+  useEffect(() => {
+    if (goalTouched) return;
+    setGoal(suggestBriefGoal(title));
+  }, [title, goalTouched]);
+
+  const filledDetailCount = Object.values(details).filter((v) => String(v ?? '').trim()).length;
   const [photos, setPhotos] = useState<{ dataUrl: string; uploadedUrl?: string; uploading?: boolean }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -197,20 +247,24 @@ export function NewBrief() {
       count,
       lockUserHeadline,
       photoUrls: photos.map((p) => p.uploadedUrl).filter(Boolean) as string[],
+      goal,
+      designDirection,
+      details: filledDetailCount > 0 ? { ...details } : undefined,
       savedAt: new Date().toISOString(),
     });
     setLocalDrafts(loadRecentBriefDrafts(tenantId));
     setAppliedDraftId(draftId);
-  }, [tenantId, title, description, outputType, count, photos, appliedDraftId, lockUserHeadline]);
+  }, [tenantId, title, description, outputType, count, photos, appliedDraftId, lockUserHeadline, goal, designDirection, details, filledDetailCount]);
 
   function applyDraft(draft: RecentBriefDraft) {
     setTitle(draft.title);
     setDescription(draft.extraDirection ?? '');
     setLockUserHeadline(draft.lockUserHeadline === true);
-    if (draft.outputType === 'story' || draft.outputType === 'reel' || draft.outputType === 'post') {
+    if (draft.outputType === 'story' || draft.outputType === 'reel' || draft.outputType === 'post' || draft.outputType === 'carousel') {
       setOutputType(draft.outputType);
     }
-    if (draft.count && COUNT_OPTIONS.includes(draft.count as typeof COUNT_OPTIONS[number])) {
+    const countPool: readonly string[] = draft.outputType === 'carousel' ? SLIDE_OPTIONS : COUNT_OPTIONS;
+    if (draft.count && countPool.includes(draft.count)) {
       setCount(draft.count);
     }
     if (draft.photoUrls?.length) {
@@ -218,6 +272,14 @@ export function NewBrief() {
     } else {
       setPhotos([]);
     }
+    if (isBriefGoalId(draft.goal)) {
+      setGoal(draft.goal);
+      setGoalTouched(true);
+    }
+    if (isBriefDesignDirectionId(draft.designDirection)) setDesignDirection(draft.designDirection);
+    const draftDetails = (draft.details ?? {}) as BriefDetails;
+    setDetails(draftDetails);
+    setShowDetails(Object.values(draftDetails).some((v) => String(v ?? '').trim()));
     setAppliedDraftId(draft.id);
   }
 
@@ -257,6 +319,10 @@ export function NewBrief() {
           outputType,
           count: parseInt(count, 10) || 1,
           photoUrls: readyPhotoUrls,
+          goal,
+          designDirection,
+          details,
+          variants: variantsApply ? parseInt(variants, 10) : 1,
           background: true,
         }),
         signal: AbortSignal.timeout(15_000),
@@ -265,6 +331,7 @@ export function NewBrief() {
         ok?: boolean;
         queued?: boolean;
         jobId?: string;
+        expectedArtifacts?: number;
         error?: string;
       };
       if (!res.ok || !data.ok || !data.jobId) {
@@ -278,7 +345,9 @@ export function NewBrief() {
         id: data.jobId,
         title: title.trim(),
         outputType: outputType as PendingBriefOutputType,
-        count: parseInt(count, 10) || 1,
+        // artifacts to wait for: ideas × looks (one carousel = one artifact)
+        count: data.expectedArtifacts
+          ?? (outputType === 'carousel' ? 1 : (parseInt(count, 10) || 1) * (variantsApply ? parseInt(variants, 10) : 1)),
         startedAt: Date.now(),
         status: 'queued',
       });
@@ -426,11 +495,16 @@ export function NewBrief() {
 
         <div style={{ marginBottom: 22 }}>
           <Label text="Format" />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
             {OUTPUT_TYPES.map((ot) => {
               const sel = outputType === ot.id;
               return (
-                <button key={ot.id} type="button" onClick={() => setOutputType(ot.id)} style={{ padding: '14px 10px', borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}` }}>
+                <button key={ot.id} type="button" onClick={() => {
+                  setOutputType(ot.id);
+                  // count semantics flip between "designs" and "slides"
+                  if (ot.id === 'carousel' && !(SLIDE_OPTIONS as readonly string[]).includes(count)) setCount('4');
+                  if (ot.id !== 'carousel' && !(COUNT_OPTIONS as readonly string[]).includes(count)) setCount('1');
+                }} style={{ padding: '14px 10px', borderRadius: 14, cursor: 'pointer', textAlign: 'center', background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}` }}>
                   <div style={{ fontSize: 20, marginBottom: 6, color: sel ? '#9DBECE' : 'rgba(255,255,255,0.35)' }}>{ot.icon}</div>
                   <div style={{ fontSize: 12, fontWeight: sel ? 700 : 500, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.6)' }}>{ot.label}</div>
                   <div style={{ fontSize: 9, color: sel ? 'rgba(157,190,206,0.45)' : 'rgba(148,163,184,0.25)', marginTop: 4 }}>{ot.format}</div>
@@ -441,18 +515,135 @@ export function NewBrief() {
         </div>
 
         <div style={{ marginBottom: 22 }}>
-          <Label text="Kaç tasarım?" />
+          <Label text="Amaç" />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {BRIEF_GOALS.map((g) => {
+              const sel = goal === g.id;
+              return (
+                <Chip
+                  key={g.id}
+                  selected={sel}
+                  onClick={() => {
+                    setGoalTouched(true);
+                    setGoal(sel ? null : g.id);
+                  }}
+                >
+                  {g.label}
+                </Chip>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+            {goal && !goalTouched
+              ? 'Başlığınızdan tahmin edildi — yanlışsa değiştirin.'
+              : 'Ne için paylaşıyorsunuz? Başlık, çağrı ve düzen buna göre kurulur.'}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 22 }}>
+          <Label text="Görünüm" />
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, margin: '0 -4px', scrollbarWidth: 'none' }}>
+            {BRIEF_DESIGN_DIRECTIONS.map((d) => {
+              const sel = designDirection === d.id;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDesignDirection(d.id)}
+                  style={{
+                    flexShrink: 0,
+                    minWidth: 118,
+                    minHeight: 56,
+                    padding: '10px 12px',
+                    borderRadius: 14,
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                    background: sel ? 'rgba(157,190,206,0.14)' : 'rgba(255,255,255,0.04)',
+                    border: `0.5px solid ${sel ? 'rgba(157,190,206,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700, color: sel ? '#9DBECE' : '#e2e8f0' }}>{d.label}</div>
+                  <div style={{ fontSize: 10, color: sel ? 'rgba(157,190,206,0.6)' : 'rgba(148,163,184,0.45)', marginTop: 3 }}>{d.desc}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+            Şablona bağlı değil — markanızın kimliği üzerine bu tonda tasarlanır.
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 22 }}>
+          <button
+            type="button"
+            onClick={() => setShowDetails((v) => !v)}
+            style={{ width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'transparent', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            <Label text={`Detaylar${filledDetailCount ? ` (${filledDetailCount})` : ''}`} />
+            <span style={{ fontSize: 11, color: '#9DBECE', fontWeight: 600, marginBottom: 10 }}>
+              {showDetails ? 'Gizle' : 'Tarih · fiyat · yer · çağrı'}
+            </span>
+          </button>
+          {showDetails && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {DETAIL_FIELDS.map((f) => (
+                <div key={f.key} style={{ gridColumn: f.key === 'cta' || f.key === 'location' ? '1 / -1' : undefined }}>
+                  <div style={{ fontSize: 10, color: 'rgba(148,163,184,0.5)', marginBottom: 4, fontWeight: 600 }}>{f.label}</div>
+                  <input
+                    value={details[f.key] ?? ''}
+                    onChange={(e) => setDetails((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder}
+                    inputMode={f.inputMode ?? 'text'}
+                    autoComplete="off"
+                    enterKeyHint="next"
+                    style={{ width: '100%', minHeight: 44, padding: '10px 12px', borderRadius: 12, outline: 'none', boxSizing: 'border-box', fontSize: 16, background: 'rgba(255,255,255,0.05)', border: `0.5px solid ${details[f.key] ? 'rgba(157,190,206,0.3)' : 'rgba(255,255,255,0.09)'}`, color: '#f8fafc' }}
+                  />
+                </div>
+              ))}
+              <div style={{ gridColumn: '1 / -1', fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+                Yazdığınız aynen karta ve açıklamaya girer; yazmadığınız hiçbir fiyat, tarih veya iddia uydurulmaz.
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 22 }}>
+          <Label text={outputType === 'carousel' ? 'Kaç kare?' : 'Kaç tasarım?'} />
           <div style={{ display: 'flex', gap: 8 }}>
-            {COUNT_OPTIONS.map((n) => (
+            {(outputType === 'carousel' ? SLIDE_OPTIONS : COUNT_OPTIONS).map((n) => (
               <button key={n} type="button" onClick={() => setCount(n)} style={{ flex: 1, padding: '12px', borderRadius: 12, cursor: 'pointer', fontSize: 16, fontWeight: 600, background: count === n ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${count === n ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`, color: count === n ? '#9DBECE' : 'rgba(148,163,184,0.5)' }}>
                 {n}
               </button>
             ))}
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)' }}>
-            Her adet farklı galeri fotoğrafı ve tasarım diliyle üretilir.
+            {outputType === 'carousel'
+              ? 'İlk kare tasarımlı kapak; diğer kareler konuya uyan fotoğraflardan. Kendi fotoğraflarınızı eklerseniz kareler onlardan kurulur.'
+              : 'Her adet farklı galeri fotoğrafı ve tasarım diliyle üretilir.'}
           </div>
         </div>
+
+        {variantsApply && (
+          <div style={{ marginBottom: 22 }}>
+            <Label text="Kaç görünüm arasından seçeceksiniz?" />
+            <div style={{ display: 'flex', gap: 8 }}>
+              {(['1', '2', '3'] as const).map((n) => {
+                const sel = variants === n;
+                return (
+                  <button key={n} type="button" onClick={() => setVariants(n)} style={{ flex: 1, minHeight: 44, padding: '10px 8px', borderRadius: 12, cursor: 'pointer', background: sel ? 'rgba(157,190,206,0.12)' : 'rgba(255,255,255,0.04)', border: `0.5px solid ${sel ? 'rgba(157,190,206,0.35)' : 'rgba(255,255,255,0.08)'}`, color: sel ? '#9DBECE' : 'rgba(148,163,184,0.5)' }}>
+                    <div style={{ fontSize: 15, fontWeight: 700 }}>{n === '1' ? 'Tek' : n}</div>
+                    <div style={{ fontSize: 9, marginTop: 2, opacity: 0.8 }}>{n === '1' ? 'doğrudan' : 'görünüm'}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(148,163,184,0.35)', lineHeight: 1.5 }}>
+              {variants === '1'
+                ? 'Seçtiğiniz görünümde tek tasarım gelir.'
+                : `Aynı fikir ${variants} farklı görünümde gelir; Akış'ta birini seçersiniz, diğerleri kalkar.`}
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 22 }}>
           <Label text={`Referans fotoğraf (opsiyonel, en fazla ${MAX_PHOTOS})`} />
@@ -529,7 +720,10 @@ export function NewBrief() {
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '12px 20px', paddingBottom: 'max(20px, env(safe-area-inset-bottom))', background: 'rgba(5,5,8,0.96)', backdropFilter: 'blur(24px)', borderTop: '0.5px solid rgba(255,255,255,0.07)' }}>
         {title.trim() && (
           <div style={{ marginBottom: 10, fontSize: 11, color: 'rgba(148,163,184,0.4)', textAlign: 'center', lineHeight: 1.45 }}>
-            {brandName ? `${brandName} · ` : ''}{count} adet {outputType === 'story' ? 'hikaye' : outputType === 'reel' ? 'reel' : 'gönderi'} · Akış&apos;ta görünür
+            {brandName ? `${brandName} · ` : ''}
+            {outputType === 'carousel' ? `${count} kareli karusel` : `${count} adet ${outputTypeWord(outputType)}`}
+            {variantsApply && variants !== '1' ? ` · ${variants} görünüm` : ''}
+            {' '}· Akış&apos;ta görünür
           </div>
         )}
         <button
@@ -560,6 +754,28 @@ export function NewBrief() {
         </button>
       </div>
     </div>
+  );
+}
+
+function Chip({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        minHeight: 40,
+        padding: '9px 14px',
+        borderRadius: 20,
+        cursor: 'pointer',
+        fontSize: 13,
+        fontWeight: selected ? 700 : 500,
+        background: selected ? 'rgba(157,190,206,0.16)' : 'rgba(255,255,255,0.04)',
+        border: `0.5px solid ${selected ? 'rgba(157,190,206,0.45)' : 'rgba(255,255,255,0.08)'}`,
+        color: selected ? '#9DBECE' : 'rgba(148,163,184,0.7)',
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

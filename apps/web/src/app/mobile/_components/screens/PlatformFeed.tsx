@@ -22,6 +22,19 @@ import { resolveArtifact, parseArtifactContent, normalizeHashtags as normalizeHa
 import { resolveFeedDisplayCaption, resolveFeedDisplayHeadline, buildMissionIdeationCaptionLookup } from '@/lib/feed-display-caption';
 import { SafeCoverImage } from '../SafeCoverImage';
 import {
+  briefVariantSiblingsToDismiss,
+  briefVariantTabLabel,
+  collapseBriefVariantsForFeed,
+  groupPendingBriefVariants,
+  readBriefVariantTag,
+} from '@/lib/brief-variants';
+import {
+  BRIEF_MAX_REVISION_ROUNDS,
+  canReviseBriefArtifact,
+  readBriefRevisionRound,
+} from '@/lib/brief-revision';
+import type { PendingBriefOutputType } from '@/lib/pending-brief-job';
+import {
   dedupeFeedDisplayArtifacts,
   dedupeStoryBarArtifacts,
   filterConsumerStoryBar,
@@ -78,6 +91,7 @@ import {
   MOBILE_ARTIFACT_FEED_LIMIT,
   MOBILE_ARTIFACT_FEED_PAGE,
   MOBILE_ARTIFACT_FEED_RENDER_PAGE,
+  invalidateMobileArtifactPool,
   refetchMobileFeedPool,
 } from '../../_lib/mobile-artifacts';
 import {
@@ -349,6 +363,162 @@ function InstagramProfileBar({ handle, logoUrl, postCount, storyCount }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const BRIEF_REVISE_QUICK_NOTES = [
+  'Başlığı büyüt',
+  'Daha sade olsun',
+  'Zemini koyulaştır',
+  'Renkleri markaya çek',
+  'Fotoğrafı değiştir',
+  'Yazıyı alta al',
+] as const;
+
+/**
+ * "+" owner strip above a brief card. Two jobs, both optional:
+ *  - pick-one: one tab per look (A · Marka çizgisi, B · Cesur…), "Bunu seç" keeps
+ *    the shown look and dismisses the siblings;
+ *  - düzelt: one sentence → same idea repainted with that correction (round-capped).
+ */
+function BriefOwnerBar({
+  group, activeId, onSelect, onPick, busy, dark, accent,
+  canRevise, revisionRound, maxRevisionRounds, onRevise, revising,
+}: {
+  group: readonly OutputArtifact[] | null;
+  activeId: string;
+  onSelect: (artifactId: string) => void;
+  onPick: () => void;
+  busy?: boolean;
+  dark: boolean;
+  accent: string;
+  canRevise: boolean;
+  revisionRound: number;
+  maxRevisionRounds: number;
+  onRevise: (note: string) => void;
+  revising?: boolean;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [note, setNote] = React.useState('');
+  const fg = dark ? '#f8fafc' : '#0f172a';
+  const dim = dark ? 'rgba(148,163,184,0.75)' : 'rgba(71,85,105,0.85)';
+  const shell = dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const line = dark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.08)';
+  const hasGroup = Boolean(group && group.length >= 2);
+  const roundsLeft = Math.max(0, maxRevisionRounds - revisionRound);
+
+  const pill = (sel: boolean): React.CSSProperties => ({
+    flexShrink: 0,
+    minHeight: 36,
+    padding: '7px 12px',
+    borderRadius: 18,
+    cursor: 'pointer',
+    fontSize: 12,
+    fontWeight: sel ? 700 : 500,
+    background: sel ? `${accent}26` : shell,
+    border: `0.5px solid ${sel ? `${accent}99` : line}`,
+    color: sel ? fg : dim,
+    whiteSpace: 'nowrap',
+  });
+  const primary = (disabled: boolean): React.CSSProperties => ({
+    flexShrink: 0,
+    minHeight: 36,
+    padding: '7px 14px',
+    borderRadius: 18,
+    border: 'none',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#fff',
+    background: `linear-gradient(135deg, ${accent}cc, ${accent}88)`,
+    opacity: disabled ? 0.6 : 1,
+  });
+
+  const submit = () => {
+    const n = note.trim();
+    if (!n || revising) return;
+    onRevise(n);
+    setNote('');
+    setOpen(false);
+  };
+
+  return (
+    <div style={{ padding: '12px 14px 8px', background: dark ? '#07090F' : '#fff', borderBottom: `0.5px solid ${line}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: fg, letterSpacing: '-0.01em' }}>
+          {hasGroup ? `${group!.length} farklı tasarım — birini seçin` : revisionRound > 0 ? `Düzeltilmiş tasarım (${revisionRound}/${maxRevisionRounds})` : 'Sizin isteğiniz'}
+        </div>
+        {canRevise && (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            style={{ ...pill(open), minHeight: 32, padding: '5px 11px' }}
+          >
+            {open ? 'Vazgeç' : `✎ Düzelt${roundsLeft < maxRevisionRounds ? ` (${roundsLeft} hak)` : ''}`}
+          </button>
+        )}
+      </div>
+
+      {hasGroup && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, flex: 1, overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {group!.map((a) => {
+              const sel = a.id === activeId;
+              return (
+                <button key={a.id} type="button" onClick={() => onSelect(a.id)} aria-pressed={sel} style={pill(sel)}>
+                  {briefVariantTabLabel(a)}
+                </button>
+              );
+            })}
+          </div>
+          <button type="button" onClick={onPick} disabled={busy} style={primary(Boolean(busy))}>
+            {busy ? 'Seçiliyor…' : 'Bunu seç'}
+          </button>
+        </div>
+      )}
+
+      {open && canRevise && (
+        <div style={{ marginTop: hasGroup ? 10 : 0 }}>
+          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 6 }}>
+            {BRIEF_REVISE_QUICK_NOTES.map((q) => (
+              <button key={q} type="button" onClick={() => setNote(q)} style={{ ...pill(note === q), minHeight: 32, padding: '5px 11px', fontSize: 11 }}>
+                {q}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              placeholder="Tek cümle: neyi değiştirelim?"
+              enterKeyHint="send"
+              autoComplete="off"
+              maxLength={240}
+              style={{
+                flex: 1,
+                minHeight: 44,
+                padding: '10px 12px',
+                borderRadius: 12,
+                outline: 'none',
+                boxSizing: 'border-box',
+                fontSize: 16,
+                background: shell,
+                border: `0.5px solid ${note ? `${accent}66` : line}`,
+                color: fg,
+              }}
+            />
+            <button type="button" onClick={submit} disabled={!note.trim() || revising} style={{ ...primary(!note.trim() || Boolean(revising)), minHeight: 44 }}>
+              {revising ? 'Gönderiliyor…' : 'Düzelt'}
+            </button>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 10, color: dim, lineHeight: 1.5 }}>
+            Aynı fikir ve görünüm, sadece bu düzeltmeyle yeniden çizilir; eski kart kalkar. {roundsLeft} düzeltme hakkınız var.
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2647,6 +2817,14 @@ function PlatformFeedInner() {
     [filteredFeedArtifacts],
   );
 
+  // "+" pick-one: sibling looks of the same brief idea render as one chooser card.
+  const briefVariantGroups = useMemo(() => groupPendingBriefVariants(artifacts), [artifacts]);
+  const feedListItems = useMemo(
+    () => collapseBriefVariantsForFeed(artifacts, briefVariantGroups),
+    [artifacts, briefVariantGroups],
+  );
+  const [activeVariantByGroup, setActiveVariantByGroup] = useState<Record<string, string>>({});
+
   const feedPostCount = useMemo(() => allArtifacts.filter((a) => {
     const k = detectKind(a);
     return k === 'post' || k === 'reel' || detectPreviewMode(a, k) === 'carousel';
@@ -2663,6 +2841,50 @@ function PlatformFeedInner() {
   const handleRevisionById = useCallback((artifactId: string) => {
     revisionMutation.mutate(artifactId);
   }, [revisionMutation.mutate]);
+
+  /** "Düzelt": queue a corrected repaint, then dismiss the source card so the new one takes its place. */
+  const enqueueBriefProduction = useMobileStore((s) => s.enqueueBriefProduction);
+  const briefReviseMutation = useMutation({
+    mutationFn: async ({ artifact, note }: { artifact: OutputArtifact; note: string }) => {
+      if (!tenantId) throw new Error('Workspace bulunamadı');
+      const res = await fetch('/api/brief-revise', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getTenantBffHeaders(tenantId) },
+        body: JSON.stringify({ workspaceId: tenantId, artifactId: artifact.id, note }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const data = await res.json().catch(() => ({})) as {
+        ok?: boolean; jobId?: string; error?: string; outputType?: string; expectedArtifacts?: number; title?: string;
+      };
+      if (!res.ok || !data.jobId) throw new Error(data.error ?? 'Düzeltme kuyruğa alınamadı');
+      await apiClient.requestRevision(artifact.id, `Düzelt: ${note}`);
+      return { data, artifact, note };
+    },
+    onSuccess: ({ data, artifact, note }) => {
+      const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+      enqueueBriefProduction({
+        id: data.jobId!,
+        title: data.title ?? String(meta.headline ?? note),
+        outputType: (data.outputType as PendingBriefOutputType | undefined) ?? 'post',
+        count: data.expectedArtifacts ?? 1,
+        startedAt: Date.now(),
+        status: 'queued',
+      });
+      if (tenantId) invalidateMobileArtifactPool(queryClient, tenantId);
+    },
+    onError: (err: Error, vars) => {
+      setPublishErrors((prev) => ({ ...prev, [vars.artifact.id]: err.message }));
+    },
+  });
+
+  /** Keep one look, dismiss its siblings (same path as "Geç"). */
+  const handlePickBriefVariant = useCallback((groupId: string, keepId: string) => {
+    const list = briefVariantGroups.get(groupId);
+    if (!list) return;
+    for (const id of briefVariantSiblingsToDismiss(list, keepId)) {
+      revisionMutation.mutate(id);
+    }
+  }, [briefVariantGroups, revisionMutation.mutate]);
 
   const handleRetryRenderById = useCallback((artifactId: string) => {
     void retryStoryRender(artifactId);
@@ -3980,13 +4202,18 @@ function PlatformFeedInner() {
       ) : (
         <div style={{ background: feedBg }}>
           <FeedLazyPostList
-            items={artifacts}
+            items={feedListItems}
             itemKey={(artifact) => artifact.id}
             pageSize={MOBILE_ARTIFACT_FEED_RENDER_PAGE}
             onNearEnd={growFeedArchive}
             hasMoreRemote={hasMoreFeedArchive || artifactsFetching}
             loadMoreLabel="Daha fazla gönderi yükleniyor…"
-            renderItem={(artifact, idx) => {
+            renderItem={(leadArtifact, idx) => {
+              const variantTag = readBriefVariantTag(leadArtifact.metadata);
+              const variantGroup = variantTag ? briefVariantGroups.get(variantTag.group) : undefined;
+              const artifact = variantGroup
+                ? (variantGroup.find((a) => a.id === activeVariantByGroup[variantTag!.group]) ?? leadArtifact)
+                : leadArtifact;
               const isApproving = approveMutation.isPending && approveMutation.variables?.id === artifact.id;
               const isRevisioning = revisionMutation.isPending && revisionMutation.variables === artifact.id;
               return (
@@ -3998,6 +4225,28 @@ function PlatformFeedInner() {
                     animationDelay: idx < 6 ? `${Math.min(idx * 40, 240)}ms` : undefined,
                   }}
                 >
+                  {(() => {
+                    const meta = (artifact.metadata ?? {}) as Record<string, unknown>;
+                    const isBriefCard = meta.source === 'new_brief' && artifact.status === 'pending_review';
+                    const revisable = isBriefCard && canReviseBriefArtifact(meta);
+                    if (!variantGroup && !isBriefCard) return null;
+                    return (
+                      <BriefOwnerBar
+                        group={variantGroup ?? null}
+                        activeId={artifact.id}
+                        dark={t.isDark}
+                        accent={t.accent}
+                        busy={revisionMutation.isPending}
+                        onSelect={(id) => variantTag && setActiveVariantByGroup((prev) => ({ ...prev, [variantTag.group]: id }))}
+                        onPick={() => variantTag && handlePickBriefVariant(variantTag.group, artifact.id)}
+                        canRevise={revisable}
+                        revisionRound={readBriefRevisionRound(meta)}
+                        maxRevisionRounds={BRIEF_MAX_REVISION_ROUNDS}
+                        revising={briefReviseMutation.isPending && briefReviseMutation.variables?.artifact.id === artifact.id}
+                        onRevise={(note) => briefReviseMutation.mutate({ artifact, note })}
+                      />
+                    );
+                  })()}
                   <NativeFeedCard
                     artifact={artifact}
                     platform={operatorMode ? platformView : 'instagram'}

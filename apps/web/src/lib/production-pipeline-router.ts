@@ -211,6 +211,18 @@ export function inferAdHocBriefAssignment(
     };
   }
 
+  if (fmt === 'carousel') {
+    return {
+      idea_index: ideaIndex,
+      slot_role: 'organic_carousel',
+      pipeline: 'carousel_gallery',
+      copy_bundle_id: bundleId,
+      publish_channel: publishChannelForRole('organic_carousel'),
+      visual_subject_hint: sceneHint || undefined,
+      rationale: 'ad_hoc_brief_carousel',
+    };
+  }
+
   return {
     idea_index: ideaIndex,
     slot_role: 'fal_designed_post',

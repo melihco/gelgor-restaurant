@@ -46,6 +46,18 @@ describe('inferAdHocBriefAssignment', () => {
     expect(a.pipeline).toBe('fal_reel');
   });
 
+  it('routes carousel briefs to the gallery carousel painter', () => {
+    const a = inferAdHocBriefAssignment(0, {
+      content_type: 'carousel',
+      format: 'carousel',
+      visual_direction: 'product range on wooden shelf',
+    }, '');
+    expect(a.slot_role).toBe('organic_carousel');
+    expect(a.pipeline).toBe('carousel_gallery');
+    expect(a.publish_channel).toBe('instagram_organic');
+    expect(a.rationale).toBe('ad_hoc_brief_carousel');
+  });
+
   it('routes post briefs to fal_designed_post', () => {
     const a = inferAdHocBriefAssignment(0, {
       content_type: 'feed_post',

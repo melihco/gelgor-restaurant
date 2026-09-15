@@ -5,7 +5,7 @@
  * fal_reel  → designed still + Kling locked-composition video.
  */
 
-import { resolveDesignProductionMode } from '@/lib/design-production-mode';
+import { resolveDesignProductionModeForRun } from '@/lib/design-production-mode';
 import {
   produceFalDesignedPostStill,
   produceFalDesignerVideo,
@@ -237,9 +237,10 @@ export const falVideoHandler: ProductionPipelineHandler = {
       brandColors: falBrand.brandColors,
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
-      designProductionMode: resolveDesignProductionMode(
-        inputs.brandTheme as Record<string, unknown> | null | undefined,
-      ),
+      designProductionMode: resolveDesignProductionModeForRun({
+        brandTheme: inputs.brandTheme as Record<string, unknown> | null | undefined,
+        adHocBrief: Boolean(inputs.adHocBrief),
+      }),
     });
 
     const designVibe =

@@ -4,6 +4,7 @@ import {
   getBriefJobStatus,
   setBriefJobStatus,
 } from '../brief-job-status';
+import { buildBriefProduceQueueJobId, isBriefProduceJobData } from '../queue-client';
 
 describe('brief-job-status', () => {
   afterEach(() => {
@@ -50,5 +51,33 @@ describe('brief-job-status', () => {
 
   it('returns null for unknown jobId', async () => {
     expect(await getBriefJobStatus('missing')).toBeNull();
+  });
+
+  it('keeps the owner request summary, revision lineage and executor on the record', async () => {
+    await setBriefJobStatus({
+      jobId: 'job-shop-2',
+      workspaceId: 'ws-local-products',
+      status: 'queued',
+      produced: 0,
+      title: 'Yeni bal rafta',
+      outputType: 'carousel',
+      expectedArtifacts: 1,
+      revisionOf: 'art-9',
+      revisionRound: 1,
+      executor: 'bullmq',
+    });
+    const rec = await getBriefJobStatus('job-shop-2');
+    expect(rec?.title).toBe('Yeni bal rafta');
+    expect(rec?.outputType).toBe('carousel');
+    expect(rec?.expectedArtifacts).toBe(1);
+    expect(rec?.revisionOf).toBe('art-9');
+    expect(rec?.revisionRound).toBe(1);
+    expect(rec?.executor).toBe('bullmq');
+  });
+
+  it('queue job envelope: brief jobs are distinguishable from slot batches', () => {
+    expect(isBriefProduceJobData({ kind: 'brief', jobId: 'j', workspaceId: 'w', officeId: '', produceBody: {} })).toBe(true);
+    expect(isBriefProduceJobData({ autoProduceBody: {}, factoryJobs: [], missionId: 'm', workspaceId: 'w', callbackUrl: '' })).toBe(false);
+    expect(buildBriefProduceQueueJobId('a1b2:c3')).toBe('brief-a1b2-c3');
   });
 });

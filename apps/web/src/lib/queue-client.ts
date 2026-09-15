@@ -44,7 +44,33 @@ export interface ProductionSlotJobData {
   callbackUrl: string;
 }
 
-let _queue: Queue<ProductionSlotJobData> | null = null;
+/**
+ * "+" (New Brief) job — same queue, same worker, no Python callback. The worker
+ * POSTs the stored brief-produce body back to /api/brief-produce synchronously
+ * (with `jobId`), which owns status transitions in brief-job-status.
+ */
+export interface BriefProduceJobData {
+  kind: 'brief';
+  /** brief-job-status id the mobile feed polls. */
+  jobId: string;
+  workspaceId: string;
+  officeId: string;
+  /** Validated /api/brief-produce body (background stripped). */
+  produceBody: Record<string, unknown>;
+}
+
+export type ProductionQueueJobData = ProductionSlotJobData | BriefProduceJobData;
+
+export function isBriefProduceJobData(data: ProductionQueueJobData): data is BriefProduceJobData {
+  return (data as BriefProduceJobData).kind === 'brief';
+}
+
+/** Stable BullMQ id for a brief job (one enqueue per brief-job-status id). */
+export function buildBriefProduceQueueJobId(jobId: string): string {
+  return `brief-${String(jobId).replace(/[^a-zA-Z0-9_-]/g, '-')}`.slice(0, 200);
+}
+
+let _queue: Queue<ProductionQueueJobData> | null = null;
 let _initialized = false;
 
 const DEFAULT_JOB_OPTS: QueueOptions['defaultJobOptions'] = {
@@ -54,7 +80,7 @@ const DEFAULT_JOB_OPTS: QueueOptions['defaultJobOptions'] = {
   removeOnFail: { age: 24 * 3600 },
 };
 
-export function getProductionQueue(): Queue<ProductionSlotJobData> | null {
+export function getProductionQueue(): Queue<ProductionQueueJobData> | null {
   if (_initialized) return _queue;
   _initialized = true;
 
@@ -64,7 +90,7 @@ export function getProductionQueue(): Queue<ProductionSlotJobData> | null {
     return null;
   }
 
-  _queue = new Queue<ProductionSlotJobData>(PRODUCTION_SLOTS_QUEUE, {
+  _queue = new Queue<ProductionQueueJobData>(PRODUCTION_SLOTS_QUEUE, {
     connection,
     defaultJobOptions: DEFAULT_JOB_OPTS,
   });

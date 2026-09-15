@@ -4,7 +4,7 @@
  */
 import type { Brief } from '@/types';
 
-export type BriefOutputType = 'story' | 'reel' | 'post' | 'caption' | 'ad' | 'report';
+export type BriefOutputType = 'story' | 'reel' | 'post' | 'carousel' | 'caption' | 'ad' | 'report';
 export type BriefPriority = 'normal' | 'high' | 'urgent';
 
 export interface RecentBriefDraft {
@@ -17,13 +17,17 @@ export interface RecentBriefDraft {
   priority?: BriefPriority;
   photoUrls?: string[];
   lockUserHeadline?: boolean;
+  /** "+" owner choices (ids from brief-design-direction). */
+  goal?: string | null;
+  designDirection?: string | null;
+  details?: Record<string, string | undefined>;
   savedAt: string;
   source: 'local' | 'api';
 }
 
 const STORAGE_PREFIX = 'smart-agency:recent-brief-drafts:';
 const MAX_LOCAL = 24;
-const OUTPUT_TYPES = new Set<BriefOutputType>(['story', 'reel', 'post', 'caption', 'ad', 'report']);
+const OUTPUT_TYPES = new Set<BriefOutputType>(['story', 'reel', 'post', 'carousel', 'caption', 'ad', 'report']);
 const PRIORITIES = new Set<BriefPriority>(['normal', 'high', 'urgent']);
 
 function storageKey(workspaceId: string) {
@@ -168,6 +172,7 @@ export function outputTypeLabel(type: BriefOutputType | null | undefined): strin
     case 'story': return 'Story';
     case 'reel': return 'Reel';
     case 'post': return 'Gönderi';
+    case 'carousel': return 'Karusel';
     case 'caption': return 'Caption';
     case 'ad': return 'Reklam';
     case 'report': return 'Rapor';

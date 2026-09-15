@@ -1,6 +1,6 @@
 import type { OutputArtifact } from '@/types';
 
-export type PendingBriefOutputType = 'story' | 'reel' | 'post';
+export type PendingBriefOutputType = 'story' | 'reel' | 'post' | 'carousel';
 
 export type PendingBriefJobStatus = 'queued' | 'running' | 'complete' | 'failed';
 
@@ -47,6 +47,7 @@ export function pendingBriefOutputLabel(outputType: PendingBriefOutputType): str
   switch (outputType) {
     case 'story': return 'story';
     case 'reel': return 'reel';
+    case 'carousel': return 'karusel';
     default: return 'gönderi';
   }
 }

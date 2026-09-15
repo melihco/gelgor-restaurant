@@ -28,12 +28,13 @@ describe('validateBriefProduceRequest', () => {
     expect(validateBriefProduceRequest({
       workspaceId: 'w',
       title: 'Bal',
-      outputType: 'carousel',
+      outputType: 'pdf',
     })).toEqual({
       ok: false,
-      error: 'outputType must be story, reel, or post',
+      error: 'outputType must be story, reel, post, or carousel',
       status: 400,
     });
+    expect(validateBriefProduceRequest({ workspaceId: 'w', title: 'Bal', outputType: 'carousel' }).ok).toBe(true);
     expect(validateBriefProduceRequest({
       workspaceId: 'w',
       title: 'Bal',

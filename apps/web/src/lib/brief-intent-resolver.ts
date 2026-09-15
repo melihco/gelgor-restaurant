@@ -5,7 +5,13 @@
  * art-director prompts, caption for feed metadata.
  */
 
-export type BriefOutputType = 'story' | 'reel' | 'post';
+export type BriefOutputType = 'story' | 'reel' | 'post' | 'carousel';
+
+export const BRIEF_OUTPUT_TYPES: readonly BriefOutputType[] = ['post', 'story', 'reel', 'carousel'];
+
+export function isBriefOutputType(v: unknown): v is BriefOutputType {
+  return typeof v === 'string' && (BRIEF_OUTPUT_TYPES as readonly string[]).includes(v);
+}
 
 export interface ResolvedBriefIntent {
   headline: string;
@@ -58,6 +64,7 @@ function defaultCaption(title: string, outputType: BriefOutputType, direction: s
     story: 'Instagram story',
     reel: 'Instagram reel',
     post: 'Instagram gönderisi',
+    carousel: 'Instagram karuseli',
   };
   return `${title.trim()} — ${labels[outputType]}`.slice(0, 500);
 }

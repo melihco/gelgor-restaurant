@@ -17,10 +17,35 @@ import { type BriefOutputType } from '@/lib/brief-intent-resolver';
 import { interpretBriefAsBrand, type BrandCreativeDirectorOutput } from '@/lib/brand-creative-director';
 import {
   buildBriefProduceIdeas,
-  clampBriefIdeaCount,
+  type BriefOwnerChoices,
+  clampBriefCarouselSlides,
+  resolveBriefIdeaCount,
+  resolveBriefVariantCount,
+  stampBriefRequestSnapshot,
   validateBriefProduceRequest,
 } from '@/lib/brief-produce-plan';
-import { setBriefJobStatus } from '@/lib/brief-job-status';
+import {
+  briefDesignDirectionLabel,
+  briefGoalLabel,
+  buildBriefDetailSubline,
+  isBriefDesignDirectionId,
+  isBriefGoalId,
+  sanitizeBriefDetails,
+} from '@/lib/brief-design-direction';
+import { setBriefJobStatus, type BriefJobStatus } from '@/lib/brief-job-status';
+import {
+  buildBriefProduceQueueJobId,
+  getProductionQueue,
+  PRODUCTION_SLOTS_QUEUE,
+  type BriefProduceJobData,
+} from '@/lib/queue-client';
+import { getProductionQueueWorkerSnapshot } from '@/lib/production-queue-health';
+import { isTrustedInternalRequest } from '@/lib/tenant-production-guard';
+import {
+  BRIEF_MAX_REVISION_ROUNDS,
+  buildBriefRequestSnapshot,
+  sanitizeRevisionNote,
+} from '@/lib/brief-revision';
 import { serverConfig } from '@/lib/server-config';
 import { getNextjsInternalOrigin } from '@/lib/runtime-config';
 
@@ -53,10 +78,18 @@ interface BriefProduceParams {
   direction: string;
   outputType: BriefOutputType;
   ideaCount: number;
+  /** Carousel only — requested slide count (2–6). */
+  carouselSlides: number;
   photoUrls: string[];
   tenantId: string;
   officeId: string;
   lockUserHeadline: boolean;
+  /** "+" owner choices — goal, design direction, facts. */
+  choices: BriefOwnerChoices;
+  /** "Pick one" looks per idea (1–3; reel/carousel forced to 1). */
+  variantCount: number;
+  /** Brief job id — seeds sibling variant groups. */
+  jobId: string;
 }
 
 interface BriefProduceResult {
@@ -72,6 +105,7 @@ async function loadBrandCreativeDirector(
   direction: string,
   outputType: BriefOutputType,
   lockUserHeadline: boolean,
+  choices: BriefOwnerChoices,
 ): Promise<BrandCreativeDirectorOutput | null> {
   try {
     const CREW_BACKEND = serverConfig.crewBackend.baseUrl;
@@ -101,6 +135,10 @@ async function loadBrandCreativeDirector(
       customRules: typeof brandCtx.custom_rules === 'string' ? brandCtx.custom_rules : undefined,
       locale: typeof brandCtx.locale === 'string' ? brandCtx.locale : 'tr',
       lockUserHeadline,
+      ownerGoal: briefGoalLabel(choices.goal) ?? undefined,
+      ownerDesignDirection: briefDesignDirectionLabel(choices.designDirection) ?? undefined,
+      ownerFacts: choices.details ? buildBriefDetailSubline(choices.details) || undefined : undefined,
+      ownerRevision: choices.revision?.note || undefined,
     });
   } catch (bcdErr) {
     console.warn('[brief-produce] BCD brand context fetch failed, using rule-based:', bcdErr instanceof Error ? bcdErr.message : bcdErr);
@@ -115,28 +153,52 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
     direction,
     outputType,
     ideaCount,
+    carouselSlides,
     photoUrls,
     tenantId,
     officeId,
     lockUserHeadline,
+    choices,
+    variantCount,
+    jobId,
   } = params;
 
+  // Goal / look / facts go to the director as structured fields (not folded
+  // into the direction text, which the director echoes back as the caption).
   const bcd = await loadBrandCreativeDirector(
     workspaceId,
     title,
     direction,
     outputType,
     lockUserHeadline,
+    choices,
   );
-  const ideas = buildBriefProduceIdeas({
+  const rawIdeas = buildBriefProduceIdeas({
     title,
     extraDirection: direction,
     outputType,
-    count: ideaCount,
+    count: outputType === 'carousel' ? carouselSlides : ideaCount,
     photoUrls,
     bcd,
     lockUserHeadline,
+    choices,
+    variantCount,
+    variantGroupSeed: jobId,
   });
+  const ideas = stampBriefRequestSnapshot(
+    rawIdeas,
+    buildBriefRequestSnapshot({
+      title,
+      direction,
+      outputType,
+      count: outputType === 'carousel' ? carouselSlides : ideaCount,
+      goal: choices.goal,
+      designDirection: choices.designDirection,
+      details: choices.details,
+      lockUserHeadline,
+      photoUrls,
+    }),
+  );
 
   const BASE = getNextjsInternalOrigin();
   const INTERNAL_KEY = serverConfig.internal.apiKey;
@@ -200,6 +262,70 @@ async function executeBriefProduction(params: BriefProduceParams): Promise<Brief
   };
 }
 
+type BriefStatusBase = Pick<BriefJobStatus, 'workspaceId' | 'title' | 'outputType' | 'expectedArtifacts' | 'revisionOf' | 'revisionRound'>;
+
+/** queued → running → complete|failed on one brief-job-status record. */
+async function runTrackedBriefProduction(
+  jobId: string,
+  base: BriefStatusBase,
+  params: BriefProduceParams,
+): Promise<BriefProduceResult> {
+  try {
+    await setBriefJobStatus({ ...base, jobId, status: 'running', produced: 0 });
+    const result = await executeBriefProduction(params);
+    const catalogSlotKeys = catalogKeysFromArtifacts(result.artifacts);
+    if (result.produced === 0) {
+      console.error('[brief-produce] job produced 0:', jobId, result.error);
+      await setBriefJobStatus({
+        ...base,
+        jobId,
+        status: 'failed',
+        produced: 0,
+        error: result.error ?? 'İçerik üretilemedi',
+        catalogSlotKeys,
+      });
+    } else {
+      console.info('[brief-produce] job complete:', jobId, `produced=${result.produced}`);
+      await setBriefJobStatus({ ...base, jobId, status: 'complete', produced: result.produced, catalogSlotKeys });
+    }
+    return result;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'production failed';
+    console.error('[brief-produce] job failed:', jobId, message);
+    await setBriefJobStatus({ ...base, jobId, status: 'failed', produced: 0, error: message });
+    return { produced: 0, artifacts: [], brandInterpretation: null, error: message };
+  }
+}
+
+/**
+ * Put the brief on the BullMQ production queue when the stack runs on it.
+ * Returns ok:false (with a reason) so the caller can fall back to inline `after()`.
+ */
+async function enqueueBriefProduceJob(
+  data: Omit<BriefProduceJobData, 'kind'>,
+): Promise<{ ok: true; queueJobId: string } | { ok: false; reason: string }> {
+  if ((process.env.PRODUCTION_EXECUTOR ?? '').toLowerCase() !== 'bullmq') {
+    return { ok: false, reason: 'executor_not_bullmq' };
+  }
+  const queue = getProductionQueue();
+  if (!queue) return { ok: false, reason: 'queue_unavailable' };
+  const workers = await getProductionQueueWorkerSnapshot();
+  if (!workers.available || workers.workerCount < 1) {
+    console.warn(`[brief-produce] BullMQ worker offline (${workers.reason ?? 'no workers'}) — running brief ${data.jobId} inline`);
+    return { ok: false, reason: 'production_worker_offline' };
+  }
+  try {
+    const queueJobId = buildBriefProduceQueueJobId(data.jobId);
+    // Briefs are owner-initiated: jump ahead of the weekly slot batches.
+    await queue.add(PRODUCTION_SLOTS_QUEUE, { kind: 'brief', ...data }, { jobId: queueJobId, priority: 1, attempts: 2 });
+    return { ok: true, queueJobId };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'enqueue failed';
+    console.warn(`[brief-produce] enqueue failed (${reason}) — running brief ${data.jobId} inline`);
+    return { ok: false, reason };
+  }
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: {
     workspaceId?: string;
@@ -212,6 +338,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     photoUrls?: string[];
     background?: boolean;
     lockUserHeadline?: boolean;
+    /** "+" owner choices. */
+    goal?: string;
+    designDirection?: string;
+    details?: Record<string, unknown>;
+    /** "Pick one" looks per idea (1–3). */
+    variants?: string | number;
+    /** "Düzelt" round — set by /api/brief-revise. */
+    revision?: { of?: string; round?: number; note?: string };
+    /** BullMQ worker replay — internal callers only. */
+    jobId?: string;
   };
   try {
     body = await req.json();
@@ -229,7 +365,24 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     photoUrls = [],
     background = false,
     lockUserHeadline = false,
+    goal,
+    designDirection,
+    details,
+    variants,
+    revision,
   } = body;
+  const revisionNote = sanitizeRevisionNote(revision?.note);
+  const revisionRound = Math.round(Number(revision?.round) || 0);
+  const revisionOf = String(revision?.of ?? '').trim();
+  const activeRevision = revisionNote && revisionOf && revisionRound >= 1 && revisionRound <= BRIEF_MAX_REVISION_ROUNDS
+    ? { of: revisionOf, round: revisionRound, note: revisionNote }
+    : null;
+  const choices: BriefOwnerChoices = {
+    goal: isBriefGoalId(goal) ? goal : null,
+    designDirection: isBriefDesignDirectionId(designDirection) ? designDirection : null,
+    details: sanitizeBriefDetails(details),
+    revision: activeRevision,
+  };
 
   const validation = validateBriefProduceRequest({ workspaceId, title, outputType });
   if (!validation.ok) {
@@ -238,9 +391,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const resolvedWorkspaceId = validation.workspaceId;
   const direction = (extraDirection ?? description).trim();
-  const ideaCount = clampBriefIdeaCount(count);
+  // Carousel: `count` is the slide count of a single carousel (kept on the idea).
+  const ideaCount = resolveBriefIdeaCount(outputType, count);
+  const carouselSlides = clampBriefCarouselSlides(count);
+  // A revise round repaints one card — never fans out into looks again.
+  const variantCount = activeRevision ? 1 : resolveBriefVariantCount(outputType, variants);
+  const expectedArtifacts = ideaCount * variantCount;
   const tenantId = req.headers.get('X-Tenant-Id') || resolvedWorkspaceId;
   const officeId = req.headers.get('X-Office-Id') || '';
+  // Worker replay: the BullMQ worker posts the stored body back with the original
+  // jobId so status stays on one record. Only trusted internal callers may set it.
+  const replayJobId = String(body.jobId ?? '').trim();
+  const trackedReplay = Boolean(replayJobId && isTrustedInternalRequest(req));
+  const jobId = trackedReplay ? replayJobId : crypto.randomUUID();
 
   const productionParams: BriefProduceParams = {
     workspaceId: resolvedWorkspaceId,
@@ -248,76 +411,75 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     direction,
     outputType,
     ideaCount,
+    carouselSlides,
     photoUrls,
     tenantId,
     officeId,
     lockUserHeadline: Boolean(lockUserHeadline),
+    choices,
+    variantCount,
+    jobId,
+  };
+
+  const statusBase = {
+    workspaceId: resolvedWorkspaceId,
+    title: title.trim().slice(0, 120),
+    outputType,
+    expectedArtifacts,
+    ...(activeRevision ? { revisionOf: activeRevision.of, revisionRound: activeRevision.round } : {}),
   };
 
   if (background) {
-    const jobId = crypto.randomUUID();
-    await setBriefJobStatus({
+    // Durable path: BullMQ worker replays this body. Inline `after()` only when
+    // the queue is not configured or no worker is online (local/dev).
+    const queued = await enqueueBriefProduceJob({
       jobId,
       workspaceId: resolvedWorkspaceId,
+      officeId,
+      produceBody: {
+        workspaceId: resolvedWorkspaceId,
+        title: title.trim(),
+        extraDirection: direction,
+        outputType,
+        count,
+        photoUrls,
+        lockUserHeadline: Boolean(lockUserHeadline),
+        goal: choices.goal,
+        designDirection: choices.designDirection,
+        details: choices.details,
+        variants: variantCount,
+        ...(activeRevision ? { revision: activeRevision } : {}),
+      },
+    });
+    await setBriefJobStatus({
+      ...statusBase,
+      jobId,
       status: 'queued',
       produced: 0,
+      executor: queued.ok ? 'bullmq' : 'inline',
     });
 
-    after(async () => {
-      try {
-        await setBriefJobStatus({
-          jobId,
-          workspaceId: resolvedWorkspaceId,
-          status: 'running',
-          produced: 0,
-        });
-        const result = await executeBriefProduction(productionParams);
-        const catalogSlotKeys = catalogKeysFromArtifacts(result.artifacts);
-        if (result.produced === 0) {
-          console.error('[brief-produce] background job produced 0:', jobId, result.error);
-          await setBriefJobStatus({
-            jobId,
-            workspaceId: resolvedWorkspaceId,
-            status: 'failed',
-            produced: 0,
-            error: result.error ?? 'İçerik üretilemedi',
-            catalogSlotKeys,
-          });
-        } else {
-          console.info('[brief-produce] background job complete:', jobId, `produced=${result.produced}`);
-          await setBriefJobStatus({
-            jobId,
-            workspaceId: resolvedWorkspaceId,
-            status: 'complete',
-            produced: result.produced,
-            catalogSlotKeys,
-          });
-        }
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'background production failed';
-        console.error('[brief-produce] background job failed:', jobId, message);
-        await setBriefJobStatus({
-          jobId,
-          workspaceId: resolvedWorkspaceId,
-          status: 'failed',
-          produced: 0,
-          error: message,
-        });
-      }
-    });
+    if (!queued.ok) {
+      after(() => runTrackedBriefProduction(jobId, statusBase, productionParams));
+    }
 
     return NextResponse.json({
       ok: true,
       queued: true,
       jobId,
+      executor: queued.ok ? 'bullmq' : 'inline',
       title: title.trim(),
       outputType,
       count: ideaCount,
+      variants: variantCount,
+      expectedArtifacts,
     }, { status: 202 });
   }
 
   try {
-    const result = await executeBriefProduction(productionParams);
+    const result = trackedReplay
+      ? await runTrackedBriefProduction(jobId, statusBase, productionParams)
+      : await executeBriefProduction(productionParams);
     if (result.error && result.produced === 0) {
       return NextResponse.json(
         { error: result.error, produced: 0, code: 'production_failed' },

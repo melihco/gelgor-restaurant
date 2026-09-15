@@ -30,6 +30,22 @@ export function resolveDesignProductionMode(
   return DEFAULT_DESIGN_PRODUCTION_MODE;
 }
 
+/**
+ * Mode a single production run actually paints with.
+ *
+ * The weekly feed honours the Brand Hub toggle. The "+" (New Brief / ad-hoc)
+ * request is the user's own idea for their brand — it is never locked to a
+ * saved template shell, so it always paints freeform from brand DNA. This is a
+ * slot-policy decision (ad-hoc vs. calendar), not a tenant or sector branch.
+ */
+export function resolveDesignProductionModeForRun(input: {
+  brandTheme: Record<string, unknown> | null | undefined;
+  adHocBrief?: boolean;
+}): DesignProductionMode {
+  if (input.adHocBrief) return 'freeform_brand';
+  return resolveDesignProductionMode(input.brandTheme);
+}
+
 export function isFreeformDesignProduction(
   brandTheme: Record<string, unknown> | null | undefined,
 ): boolean {

@@ -9,7 +9,7 @@
  * Behavior is identical to the previous inline block.
  */
 
-import { resolveDesignProductionMode } from '@/lib/design-production-mode';
+import { resolveDesignProductionModeForRun } from '@/lib/design-production-mode';
 import type { TypographyVibe, TypographyBackgroundStyle } from '@/types/brand-theme';
 import {
   buildDesignedPostDesignCardPrompt,
@@ -861,9 +861,10 @@ export const falDesignHandler: ProductionPipelineHandler = {
       visualSourceMode: resolveVisualSourceMode(
         inputs.brandTheme as Record<string, unknown> | null | undefined,
       ),
-      designProductionMode: resolveDesignProductionMode(
-        inputs.brandTheme as Record<string, unknown> | null | undefined,
-      ),
+      designProductionMode: resolveDesignProductionModeForRun({
+        brandTheme: inputs.brandTheme as Record<string, unknown> | null | undefined,
+        adHocBrief: Boolean(inputs.adHocBrief),
+      }),
     });
     if (templateBinding.matched) {
       console.log(

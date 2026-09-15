@@ -13,6 +13,15 @@ export interface BriefJobStatus {
   produced: number;
   error?: string;
   catalogSlotKeys?: string[];
+  /** Owner request summary — lets the feed banner describe the job without the form. */
+  title?: string;
+  outputType?: string;
+  expectedArtifacts?: number;
+  /** "Düzelt" lineage. */
+  revisionOf?: string;
+  revisionRound?: number;
+  /** Where the job ran: BullMQ worker or inline Next `after()`. */
+  executor?: 'bullmq' | 'inline';
   updatedAt: number;
 }
 
@@ -56,6 +65,16 @@ export async function setBriefJobStatus(
     ...(input.catalogSlotKeys?.length
       ? { catalogSlotKeys: input.catalogSlotKeys.map(String).filter(Boolean).slice(0, 20) }
       : {}),
+    ...(input.title ? { title: String(input.title).slice(0, 120) } : {}),
+    ...(input.outputType ? { outputType: String(input.outputType) } : {}),
+    ...(Number.isFinite(Number(input.expectedArtifacts)) && Number(input.expectedArtifacts) > 0
+      ? { expectedArtifacts: Math.round(Number(input.expectedArtifacts)) }
+      : {}),
+    ...(input.revisionOf ? { revisionOf: String(input.revisionOf) } : {}),
+    ...(Number.isFinite(Number(input.revisionRound)) && Number(input.revisionRound) > 0
+      ? { revisionRound: Math.round(Number(input.revisionRound)) }
+      : {}),
+    ...(input.executor ? { executor: input.executor } : {}),
     updatedAt: input.updatedAt ?? Date.now(),
   };
 

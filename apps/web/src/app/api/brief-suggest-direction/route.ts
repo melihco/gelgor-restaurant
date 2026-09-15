@@ -4,6 +4,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { suggestBriefDirection } from '@/lib/brand-creative-director';
+import { isBriefOutputType, type BriefOutputType } from '@/lib/brief-intent-resolver';
 import { serverConfig } from '@/lib/server-config';
 
 export const runtime = 'nodejs';
@@ -13,7 +14,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   let body: {
     workspaceId?: string;
     title?: string;
-    outputType?: 'story' | 'reel' | 'post';
+    outputType?: BriefOutputType;
   };
   try {
     body = await req.json();
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!title.trim()) {
     return NextResponse.json({ error: 'title required' }, { status: 400 });
   }
-  if (!['story', 'reel', 'post'].includes(outputType)) {
+  if (!isBriefOutputType(outputType)) {
     return NextResponse.json({ error: 'Invalid outputType' }, { status: 400 });
   }
 

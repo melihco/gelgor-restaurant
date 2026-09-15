@@ -9,7 +9,7 @@
  * Post slot (`fal_only_post`) → designed still when no gallery; editorial photo when gallery exists.
  */
 
-import { resolveDesignProductionMode } from '@/lib/design-production-mode';
+import { resolveDesignProductionModeForRun } from '@/lib/design-production-mode';
 import type { TypographyVibe } from '@/types/brand-theme';
 import {
   produceFalDesignedPostStill,
@@ -629,9 +629,10 @@ export const falOnlyHandler: ProductionPipelineHandler = {
       brandColors: falBrand.brandColors,
       logoUrl: inputs.brandLogoUrl || undefined,
       brandVibe: falBrand.vibe,
-      designProductionMode: resolveDesignProductionMode(
-        inputs.brandTheme as Record<string, unknown> | null | undefined,
-      ),
+      designProductionMode: resolveDesignProductionModeForRun({
+        brandTheme: inputs.brandTheme as Record<string, unknown> | null | undefined,
+        adHocBrief: Boolean(inputs.adHocBrief),
+      }),
     });
     const withhold = catalogTemplateWithholdReason(inputs.catalogSlotKey, templateBinding.matched, templateBinding)
       ?? librarySlotShellMissingReason(

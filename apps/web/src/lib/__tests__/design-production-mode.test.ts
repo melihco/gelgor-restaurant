@@ -3,6 +3,7 @@ import {
   buildDesignProductionModePatch,
   isFreeformDesignProduction,
   resolveDesignProductionMode,
+  resolveDesignProductionModeForRun,
 } from '../design-production-mode';
 import { catalogTemplateWithholdReason } from '../brand-design-template-production';
 
@@ -21,6 +22,19 @@ describe('design production mode (Şablon ile üret)', () => {
     // explicit mode wins over the boolean
     expect(resolveDesignProductionMode({ design_production_mode: 'template_shell', use_template_shell: false })).toBe('template_shell');
     expect(isFreeformDesignProduction({ use_template_shell: false })).toBe(true);
+  });
+
+  it('"+" (ad-hoc brief) always paints freeform, regardless of the brand toggle or sector', () => {
+    const beachClubShell = { design_production_mode: 'template_shell', business_type: 'beach_club' };
+    const shopShell = { use_template_shell: true, business_type: 'local_products_shop' };
+    expect(resolveDesignProductionModeForRun({ brandTheme: beachClubShell, adHocBrief: true })).toBe('freeform_brand');
+    expect(resolveDesignProductionModeForRun({ brandTheme: shopShell, adHocBrief: true })).toBe('freeform_brand');
+    expect(resolveDesignProductionModeForRun({ brandTheme: null, adHocBrief: true })).toBe('freeform_brand');
+  });
+
+  it('weekly feed (non ad-hoc) keeps honouring the Brand Hub toggle', () => {
+    expect(resolveDesignProductionModeForRun({ brandTheme: { business_type: 'beach_club' }, adHocBrief: false })).toBe('template_shell');
+    expect(resolveDesignProductionModeForRun({ brandTheme: { use_template_shell: false, business_type: 'local_products_shop' } })).toBe('freeform_brand');
   });
 
   it('toggle patch keeps both keys in sync', () => {

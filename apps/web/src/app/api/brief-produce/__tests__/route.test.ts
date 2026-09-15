@@ -52,15 +52,63 @@ describe('POST /api/brief-produce (CRUD / contract, no image spend)', () => {
       body: JSON.stringify({
         workspaceId: '327db521-ede2-48e0-8f06-4146ee458c50',
         title: 'Bal',
-        outputType: 'carousel',
+        outputType: 'pdf',
         background: true,
       }),
       headers: { 'Content-Type': 'application/json' },
     }));
     expect(badType.status).toBe(400);
     await expect(badType.json()).resolves.toEqual({
-      error: 'outputType must be story, reel, or post',
+      error: 'outputType must be story, reel, post, or carousel',
     });
+  });
+
+  it('carousel brief queues one artifact whose count is the slide target; variants forced to 1', async () => {
+    const { POST } = await import('../route');
+    const res = await POST(new NextRequest('http://localhost/api/brief-produce', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: '327db521-ede2-48e0-8f06-4146ee458c50',
+        title: 'Ürün çeşitlerimiz',
+        outputType: 'carousel',
+        count: 5,
+        variants: 3,
+        background: true,
+      }),
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': '327db521-ede2-48e0-8f06-4146ee458c50' },
+    }));
+    expect(res.status).toBe(202);
+    const data = await res.json() as { count: number; variants: number; expectedArtifacts: number; executor: string };
+    expect(data.count).toBe(1);
+    expect(data.variants).toBe(1);
+    expect(data.expectedArtifacts).toBe(1);
+    // No PRODUCTION_EXECUTOR=bullmq in test → inline after() fallback
+    expect(data.executor).toBe('inline');
+    expect(afterMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('post brief with 2 looks reports 2 expected artifacts per idea', async () => {
+    const { POST } = await import('../route');
+    const res = await POST(new NextRequest('http://localhost/api/brief-produce', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspaceId: '327db521-ede2-48e0-8f06-4146ee458c50',
+        title: 'Cuma DJ Night',
+        outputType: 'post',
+        count: 2,
+        variants: 2,
+        goal: 'event',
+        designDirection: 'bold',
+        details: { date: '12 Eylül', time: '22:00' },
+        background: true,
+      }),
+      headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': '327db521-ede2-48e0-8f06-4146ee458c50' },
+    }));
+    expect(res.status).toBe(202);
+    const data = await res.json() as { count: number; variants: number; expectedArtifacts: number };
+    expect(data.count).toBe(2);
+    expect(data.variants).toBe(2);
+    expect(data.expectedArtifacts).toBe(4);
   });
 
   it('queues background job with format + count and does not invoke auto-produce in test', async () => {

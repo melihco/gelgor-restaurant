@@ -4816,8 +4816,20 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       );
       const carouselMinScore = MIN_ACCEPT_SCORE;
       const carouselVisualDirection = String(idea.visual_direction ?? '').trim() || undefined;
+      // "+" brief may ask for N slides; weekly slots keep the sector target.
+      const requestedSlides = Number((idea as ParsedIdea).carousel_slide_target);
+      const carouselSlideTarget = adHocBrief && Number.isFinite(requestedSlides) && requestedSlides >= CAROUSEL_MIN_SLIDES
+        ? Math.min(Math.round(requestedSlides), 6)
+        : CAROUSEL_TARGET_SLIDES;
 
-      if (hasGallery) {
+      if (forceAttachedPhotos && attachedPhotoUrls.length >= CAROUSEL_MIN_SLIDES) {
+        // Owner uploaded the slides themselves — never repick from the gallery.
+        carouselUrls = attachedPhotoUrls.slice(0, carouselSlideTarget);
+        carouselGalleryUrls = [...carouselUrls];
+        console.log(
+          `[auto-produce] Carousel from ${carouselUrls.length} user-attached photos — "${headline.slice(0, 40)}"`,
+        );
+      } else if (hasGallery) {
         const carouselResult = await generateVibeCarousel({
           workspaceId,
           headline,
@@ -4836,7 +4848,7 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
           galleryAnalysis: galleryMeta,
           candidateUrls: galleryPhotos,
           excludeUrls: carouselExclude,
-          count:        CAROUSEL_TARGET_SLIDES,
+          count:        carouselSlideTarget,
           minScore:     carouselMinScore,
           minSlides:    CAROUSEL_MIN_SLIDES,
         });
@@ -4852,6 +4864,8 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
         carouselUrls,
         carouselGalleryUrls,
         galleryPhotos,
+        CAROUSEL_MIN_SLIDES,
+        carouselSlideTarget,
       );
       carouselUrls = filled.carouselUrls;
       carouselGalleryUrls = filled.carouselGalleryUrls;
@@ -5659,6 +5673,30 @@ export async function runProduction(params: RunProductionParams): Promise<NextRe
       strategic_purpose: strategicPurpose,
       auto_produced: true,
       ...(adHocBrief ? { ad_hoc_brief: true } : {}),
+      // "+" pick-one siblings — feed groups these into a single chooser card.
+      ...(adHocBrief && typeof (idea as ParsedIdea).brief_variant_group === 'string' && (idea as ParsedIdea).brief_variant_group
+        ? {
+            brief_variant_group: (idea as ParsedIdea).brief_variant_group,
+            brief_variant_index: Number((idea as ParsedIdea).brief_variant_index ?? 0),
+            brief_variant_count: Number((idea as ParsedIdea).brief_variant_count ?? 1),
+            ...((idea as ParsedIdea).brief_variant_label
+              ? { brief_variant_label: String((idea as ParsedIdea).brief_variant_label) }
+              : {}),
+          }
+        : {}),
+      // "+" revise loop — request snapshot + round so the card can be corrected later.
+      ...(adHocBrief && (idea as ParsedIdea).brief_request && typeof (idea as ParsedIdea).brief_request === 'object'
+        ? { brief_request: (idea as ParsedIdea).brief_request }
+        : {}),
+      ...(adHocBrief && (idea as ParsedIdea).brief_revision_of
+        ? {
+            brief_revision_of: String((idea as ParsedIdea).brief_revision_of),
+            brief_revision_round: Number((idea as ParsedIdea).brief_revision_round ?? 1),
+            ...((idea as ParsedIdea).brief_revision_note
+              ? { brief_revision_note: String((idea as ParsedIdea).brief_revision_note) }
+              : {}),
+          }
+        : {}),
       gallery_sourced: !captionDrivenGenerated,
       gallery_only: GALLERY_ONLY,
       ...(captionDrivenGenerated ? { caption_driven_visual: true } : {}),

@@ -105,6 +105,19 @@ export interface ParsedIdea {
   force_attached_photos?: boolean;
   /** New Brief: owner title is the canvas headline (checkbox). */
   lock_user_headline?: boolean;
+  /** New Brief carousel: requested slide count (clamped 2–6 by the plan). */
+  carousel_slide_target?: number;
+  /** New Brief "pick one": siblings share a group; index/count/label identify the look. */
+  brief_variant_group?: string;
+  brief_variant_index?: number;
+  brief_variant_count?: number;
+  brief_variant_label?: string;
+  /** New Brief: compact owner request snapshot so a card can be revised later. */
+  brief_request?: Record<string, unknown>;
+  /** New Brief revise loop: source artifact id, round (1..N) and owner's note. */
+  brief_revision_of?: string;
+  brief_revision_round?: number;
+  brief_revision_note?: string;
   event_details?: {
     artist_name?: string;
     date?: string;

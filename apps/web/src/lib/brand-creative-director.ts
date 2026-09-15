@@ -18,7 +18,7 @@ import { serverConfig } from './server-config';
 export interface BrandCreativeDirectorInput {
   title: string;
   extraDirection?: string;
-  outputType: 'story' | 'reel' | 'post';
+  outputType: 'story' | 'reel' | 'post' | 'carousel';
   brandName: string;
   brandBusinessType: string;
   brandLocation: string;
@@ -31,6 +31,13 @@ export interface BrandCreativeDirectorInput {
   locale?: string;
   /** Owner title is the canvas headline — do not invent a punchline. */
   lockUserHeadline?: boolean;
+  /** "+" owner choices — human labels, sector-agnostic. */
+  ownerGoal?: string;
+  ownerDesignDirection?: string;
+  /** Hard facts (date · time · price · place) — must be used verbatim, never invented. */
+  ownerFacts?: string;
+  /** "Düzelt" note — change only this; keep the rest of the card as it was. */
+  ownerRevision?: string;
 }
 
 export interface BrandCreativeDirectorOutput {
@@ -95,8 +102,20 @@ function buildUserPrompt(input: BrandCreativeDirectorInput): string {
     `- Title: "${input.title}"`,
     input.extraDirection ? `- Direction: "${input.extraDirection.slice(0, 300)}"` : '',
     `- Format: ${input.outputType}`,
+    input.ownerGoal ? `- Goal (owner picked): ${input.ownerGoal}` : '',
+    input.ownerDesignDirection ? `- Look (owner picked): ${input.ownerDesignDirection}` : '',
+    input.ownerFacts ? `- Facts (verbatim, never alter or invent others): ${input.ownerFacts}` : '',
     '',
     `Interpret this brief AS the brand's creative director. Design and scene must match the owner's Title + Direction vibe.`,
+    input.ownerGoal || input.ownerDesignDirection
+      ? `The owner's Goal and Look are binding: the headline serves the Goal, visualDirection follows the Look while staying inside brand DNA.`
+      : '',
+    input.ownerFacts
+      ? `FACTS RULE: the caption may repeat the Facts exactly; never add a price, date, place or claim that is not in Title, Direction or Facts.`
+      : '',
+    input.ownerRevision
+      ? `REVISION (owner, binding): "${input.ownerRevision}" — apply this to visualDirection/sceneHint only where it asks; keep headline and caption meaning unchanged unless the note is about the text.`
+      : '',
     input.lockUserHeadline
       ? `HEADLINE LOCK: the JSON headline field must be exactly: "${input.title.trim().slice(0, 80)}"`
       : `Write the overlay headline from Title + Direction (caption/vibe). Do not copy the Title unless it is already a punchy 2–5 word hook.`,
